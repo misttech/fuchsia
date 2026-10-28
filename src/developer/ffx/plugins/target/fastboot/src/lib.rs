@@ -301,11 +301,11 @@ async fn cmd_impl(
 #[cfg(test)]
 mod test {
     use super::*;
-    use async_trait::async_trait;
     use chrono::Duration;
     use ffx_fastboot_interface::fastboot_interface::*;
     use ffx_fastboot_interface::stream::StreamCommand;
     use ffx_fastboot_tool_args::AuthorizeSubcommand;
+    use ffx_futures::BoxFuture;
     use ffx_writer::{Format, TestBuffers};
     use serde_json::json;
     use std::sync::{Arc, Mutex};
@@ -323,84 +323,101 @@ mod test {
 
     impl FastbootInterface for MockInterface {}
 
-    #[async_trait]
     impl Fastboot for MockInterface {
-        async fn stage(
-            &mut self,
-            path: &str,
+        fn stage<'a>(
+            &'a mut self,
+            path: &'a str,
             _sender: mpsc::Sender<UploadProgress>,
-        ) -> Result<(), FastbootError> {
-            *self.staged_path.lock().unwrap() = Some(path.to_string());
-            Ok(())
+        ) -> BoxFuture<'a, Result<(), FastbootError>> {
+            Box::pin(async move {
+                *self.staged_path.lock().unwrap() = Some(path.to_string());
+                Ok(())
+            })
         }
 
-        async fn oem(&mut self, command: &str) -> Result<(), FastbootError> {
-            self.oem_commands.lock().unwrap().push(format!("oem {}", command));
-            Ok(())
+        fn oem<'a>(&'a mut self, command: &'a str) -> BoxFuture<'a, Result<(), FastbootError>> {
+            Box::pin(async move {
+                self.oem_commands.lock().unwrap().push(format!("oem {}", command));
+                Ok(())
+            })
         }
 
-        async fn continue_boot(&mut self) -> Result<(), FastbootError> {
-            *self.continue_boot_called.lock().unwrap() = true;
-            Ok(())
+        fn continue_boot(&mut self) -> BoxFuture<'_, Result<(), FastbootError>> {
+            Box::pin(async move {
+                *self.continue_boot_called.lock().unwrap() = true;
+                Ok(())
+            })
         }
 
-        async fn flash(
-            &mut self,
-            _partition_name: &str,
-            _path: &str,
+        fn flash<'a>(
+            &'a mut self,
+            _partition_name: &'a str,
+            _path: &'a str,
             _listener: Sender<UploadProgress>,
             _timeout: Duration,
-        ) -> Result<(), FastbootError> {
+        ) -> BoxFuture<'a, Result<(), FastbootError>> {
             unimplemented!()
         }
-        async fn flash_from_reader(
-            &mut self,
-            _partition_name: &str,
+        fn flash_from_reader<'a>(
+            &'a mut self,
+            _partition_name: &'a str,
             _size: u32,
-            _reader: &mut (dyn std::io::Read + Send),
+            _reader: &'a mut (dyn std::io::Read + Send),
             _listener: Sender<UploadProgress>,
             _timeout: Duration,
-        ) -> Result<(), FastbootError> {
+        ) -> BoxFuture<'a, Result<(), FastbootError>> {
             unimplemented!()
         }
-        async fn erase(&mut self, _partition_name: &str) -> Result<(), FastbootError> {
+        fn erase<'a>(
+            &'a mut self,
+            _partition_name: &'a str,
+        ) -> BoxFuture<'a, Result<(), FastbootError>> {
             unimplemented!()
         }
-        async fn reboot(&mut self) -> Result<(), FastbootError> {
+        fn reboot(&mut self) -> BoxFuture<'_, Result<(), FastbootError>> {
             unimplemented!()
         }
-        async fn reboot_bootloader(
+        fn reboot_bootloader(
             &mut self,
             _sender: mpsc::Sender<RebootEvent>,
-        ) -> Result<(), FastbootError> {
+        ) -> BoxFuture<'_, Result<(), FastbootError>> {
             unimplemented!()
         }
-        async fn get_var(&mut self, _name: &str) -> Result<String, FastbootError> {
+        fn get_var<'a>(
+            &'a mut self,
+            _name: &'a str,
+        ) -> BoxFuture<'a, Result<String, FastbootError>> {
             unimplemented!()
         }
-        async fn get_all_vars(
+        fn get_all_vars(
             &mut self,
             _sender: mpsc::Sender<Variable>,
-        ) -> Result<(), FastbootError> {
+        ) -> BoxFuture<'_, Result<(), FastbootError>> {
             unimplemented!()
         }
-        async fn set_active(&mut self, _slot: &str) -> Result<(), FastbootError> {
+        fn set_active<'a>(
+            &'a mut self,
+            _slot: &'a str,
+        ) -> BoxFuture<'a, Result<(), FastbootError>> {
             unimplemented!()
         }
-        async fn boot(&mut self) -> Result<(), FastbootError> {
+        fn boot(&mut self) -> BoxFuture<'_, Result<(), FastbootError>> {
             unimplemented!()
         }
-        async fn get_staged(&mut self, _path: &str) -> Result<(), FastbootError> {
+        fn get_staged<'a>(
+            &'a mut self,
+            _path: &'a str,
+        ) -> BoxFuture<'a, Result<(), FastbootError>> {
             unimplemented!()
         }
 
-        async fn stream<'a>(
-            &mut self,
-            _partition_name: &str,
+        fn stream<'a>(
+            &'a mut self,
+            _partition_name: &'a str,
             _stream_command: StreamCommand,
-            _listener: &Sender<UploadProgress>,
+            _listener: &'a Sender<UploadProgress>,
             _timeout: chrono::TimeDelta,
-        ) -> Result<(), FastbootError> {
+        ) -> BoxFuture<'a, Result<(), FastbootError>> {
             unimplemented!()
         }
     }

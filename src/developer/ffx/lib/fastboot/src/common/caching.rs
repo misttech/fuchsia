@@ -3,12 +3,12 @@
 // found in the LICENSE file.
 
 use super::vars::is_cacheable_variable;
-use async_trait::async_trait;
 use chrono::Duration;
 use ffx_fastboot_interface::fastboot_interface::{
     Fastboot, FastbootError, FastbootInterface, RebootEvent, UploadProgress, Variable,
 };
 use ffx_fastboot_interface::stream::StreamCommand;
+use ffx_futures::BoxFuture;
 use std::collections::HashMap;
 use tokio::sync::mpsc::Sender;
 
@@ -37,137 +37,152 @@ impl<T> CachingFastboot<T> {
     }
 }
 
-#[async_trait]
 impl<T: Fastboot + Send> Fastboot for CachingFastboot<T> {
-    async fn get_var(&mut self, name: &str) -> Result<String, FastbootError> {
-        let should_cache = is_cacheable_variable(name);
-        if should_cache && let Some(cached) = self.var_cache.get(name) {
-            return cached
-                .as_ref()
-                .map(|val| {
-                    log::trace!("Returning cached fastboot var {name}: '{val}'");
-                    val.clone()
-                })
-                .map_err(|msg| {
-                    log::trace!("Returning cached failure for fastboot var {name}: '{msg}'");
-                    FastbootError::GetVariableError {
-                        variable: name.to_string(),
-                        message: msg.clone(),
+    fn get_var<'a>(&'a mut self, name: &'a str) -> BoxFuture<'a, Result<String, FastbootError>> {
+        Box::pin(async move {
+            let should_cache = is_cacheable_variable(name);
+            if should_cache && let Some(cached) = self.var_cache.get(name) {
+                return cached
+                    .as_ref()
+                    .map(|val| {
+                        log::trace!("Returning cached fastboot var {name}: '{val}'");
+                        val.clone()
+                    })
+                    .map_err(|msg| {
+                        log::trace!("Returning cached failure for fastboot var {name}: '{msg}'");
+                        FastbootError::GetVariableError {
+                            variable: name.to_string(),
+                            message: msg.clone(),
+                        }
+                    });
+            }
+
+            match self.inner.get_var(name).await {
+                Ok(val) => {
+                    if should_cache {
+                        log::trace!("Caching successful fastboot var {name}: '{val}'");
+                        self.var_cache.insert(name.to_string(), Ok(val.clone()));
                     }
-                });
-        }
-
-        match self.inner.get_var(name).await {
-            Ok(val) => {
-                if should_cache {
-                    log::trace!("Caching successful fastboot var {name}: '{val}'");
-                    self.var_cache.insert(name.to_string(), Ok(val.clone()));
+                    Ok(val)
                 }
-                Ok(val)
-            }
-            Err(FastbootError::GetVariableError { ref variable, ref message }) => {
-                if should_cache {
-                    log::trace!("Caching failed fastboot var {name}: '{message}'");
-                    self.var_cache.insert(variable.clone(), Err(message.clone()));
+                Err(FastbootError::GetVariableError { ref variable, ref message }) => {
+                    if should_cache {
+                        log::trace!("Caching failed fastboot var {name}: '{message}'");
+                        self.var_cache.insert(variable.clone(), Err(message.clone()));
+                    }
+                    Err(FastbootError::GetVariableError {
+                        variable: variable.clone(),
+                        message: message.clone(),
+                    })
                 }
-                Err(FastbootError::GetVariableError {
-                    variable: variable.clone(),
-                    message: message.clone(),
-                })
+                Err(e) => Err(e),
             }
-            Err(e) => Err(e),
-        }
+        })
     }
 
-    async fn get_all_vars(&mut self, listener: Sender<Variable>) -> Result<(), FastbootError> {
-        let (cached_tx, mut cached_rx) = tokio::sync::mpsc::channel(100);
-        let Self { inner, var_cache } = self;
-        let (send_res, ()) = futures::join!(inner.get_all_vars(cached_tx), async {
-            while let Some(var) = cached_rx.recv().await {
-                if is_cacheable_variable(&var.name) {
-                    var_cache.insert(var.name.clone(), Ok(var.value.clone()));
-                }
-                let _ = listener.send(var).await;
-            }
-        });
-        send_res
-    }
-
-    async fn flash(
+    fn get_all_vars(
         &mut self,
-        partition_name: &str,
-        path: &str,
+        listener: Sender<Variable>,
+    ) -> BoxFuture<'_, Result<(), FastbootError>> {
+        Box::pin(async move {
+            let (cached_tx, mut cached_rx) = tokio::sync::mpsc::channel(100);
+            let Self { inner, var_cache } = self;
+            let (send_res, ()) = futures::join!(inner.get_all_vars(cached_tx), async {
+                while let Some(var) = cached_rx.recv().await {
+                    if is_cacheable_variable(&var.name) {
+                        var_cache.insert(var.name.clone(), Ok(var.value.clone()));
+                    }
+                    let _ = listener.send(var).await;
+                }
+            });
+            send_res
+        })
+    }
+
+    fn flash<'a>(
+        &'a mut self,
+        partition_name: &'a str,
+        path: &'a str,
         listener: Sender<UploadProgress>,
         timeout: Duration,
-    ) -> Result<(), FastbootError> {
-        self.inner.flash(partition_name, path, listener, timeout).await
+    ) -> BoxFuture<'a, Result<(), FastbootError>> {
+        self.inner.flash(partition_name, path, listener, timeout)
     }
 
-    async fn flash_from_reader(
-        &mut self,
-        partition_name: &str,
+    fn flash_from_reader<'a>(
+        &'a mut self,
+        partition_name: &'a str,
         size: u32,
-        reader: &mut (dyn std::io::Read + Send),
+        reader: &'a mut (dyn std::io::Read + Send),
         listener: Sender<UploadProgress>,
         timeout: Duration,
-    ) -> Result<(), FastbootError> {
-        self.inner.flash_from_reader(partition_name, size, reader, listener, timeout).await
+    ) -> BoxFuture<'a, Result<(), FastbootError>> {
+        self.inner.flash_from_reader(partition_name, size, reader, listener, timeout)
     }
 
-    async fn erase(&mut self, partition_name: &str) -> Result<(), FastbootError> {
-        self.inner.erase(partition_name).await
+    fn erase<'a>(
+        &'a mut self,
+        partition_name: &'a str,
+    ) -> BoxFuture<'a, Result<(), FastbootError>> {
+        self.inner.erase(partition_name)
     }
 
-    async fn boot(&mut self) -> Result<(), FastbootError> {
-        self.var_cache.clear();
-        self.inner.boot().await
+    fn boot(&mut self) -> BoxFuture<'_, Result<(), FastbootError>> {
+        Box::pin(async move {
+            self.var_cache.clear();
+            self.inner.boot().await
+        })
     }
 
-    async fn reboot(&mut self) -> Result<(), FastbootError> {
-        self.var_cache.clear();
-        self.inner.reboot().await
+    fn reboot(&mut self) -> BoxFuture<'_, Result<(), FastbootError>> {
+        Box::pin(async move {
+            self.var_cache.clear();
+            self.inner.reboot().await
+        })
     }
 
-    async fn reboot_bootloader(
+    fn reboot_bootloader(
         &mut self,
         listener: Sender<RebootEvent>,
-    ) -> Result<(), FastbootError> {
-        self.var_cache.clear();
-        self.inner.reboot_bootloader(listener).await
+    ) -> BoxFuture<'_, Result<(), FastbootError>> {
+        Box::pin(async move {
+            self.var_cache.clear();
+            self.inner.reboot_bootloader(listener).await
+        })
     }
 
-    async fn continue_boot(&mut self) -> Result<(), FastbootError> {
-        self.inner.continue_boot().await
+    fn continue_boot(&mut self) -> BoxFuture<'_, Result<(), FastbootError>> {
+        self.inner.continue_boot()
     }
 
-    async fn get_staged(&mut self, path: &str) -> Result<(), FastbootError> {
-        self.inner.get_staged(path).await
+    fn get_staged<'a>(&'a mut self, path: &'a str) -> BoxFuture<'a, Result<(), FastbootError>> {
+        self.inner.get_staged(path)
     }
 
-    async fn stage(
-        &mut self,
-        path: &str,
+    fn stage<'a>(
+        &'a mut self,
+        path: &'a str,
         listener: Sender<UploadProgress>,
-    ) -> Result<(), FastbootError> {
-        self.inner.stage(path, listener).await
+    ) -> BoxFuture<'a, Result<(), FastbootError>> {
+        self.inner.stage(path, listener)
     }
 
-    async fn set_active(&mut self, slot: &str) -> Result<(), FastbootError> {
-        self.inner.set_active(slot).await
+    fn set_active<'a>(&'a mut self, slot: &'a str) -> BoxFuture<'a, Result<(), FastbootError>> {
+        self.inner.set_active(slot)
     }
 
-    async fn oem(&mut self, command: &str) -> Result<(), FastbootError> {
-        self.inner.oem(command).await
+    fn oem<'a>(&'a mut self, command: &'a str) -> BoxFuture<'a, Result<(), FastbootError>> {
+        self.inner.oem(command)
     }
 
-    async fn stream<'a>(
-        &mut self,
-        partition_name: &str,
+    fn stream<'a>(
+        &'a mut self,
+        partition_name: &'a str,
         stream_command: StreamCommand,
-        listener: &Sender<UploadProgress>,
+        listener: &'a Sender<UploadProgress>,
         timeout: Duration,
-    ) -> Result<(), FastbootError> {
-        self.inner.stream(partition_name, stream_command, listener, timeout).await
+    ) -> BoxFuture<'a, Result<(), FastbootError>> {
+        self.inner.stream(partition_name, stream_command, listener, timeout)
     }
 }
 

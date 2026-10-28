@@ -19,9 +19,6 @@ rustc_library(
     ],
     crate_name = "ffx_fastboot_interface",
     edition = "2024",
-    proc_macro_deps = [
-        "//third_party/rust_crates/vendor:async-trait",
-    ],
     target_compatible_with = HOST_CONSTRAINTS,
     # The unit test is built and run by Bazel only, see
     # //src/developer/ffx:tests, so it is not synced back to GN.
@@ -49,6 +46,7 @@ rustc_library(
     with_host_unit_tests = True,  # @bazel2gn:skip
     deps = [
         "//src/developer/fastboot:lib",
+        "//src/developer/ffx/lib/futures:lib",
         "//src/developer/ffx/lib/usb_fastboot_discovery:lib",
         "//src/storage/lib/sparse/rust:lib",
         "//third_party/rust_crates/vendor:anyhow",

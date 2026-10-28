@@ -3,246 +3,259 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use async_trait::async_trait;
 use chrono::Duration;
 use fastboot::command::Command;
+use ffx_futures::BoxFuture;
 use tokio::sync::mpsc::Sender;
 
 use crate::stream::StreamCommand;
 
 pub trait FastbootInterface: std::fmt::Debug + Fastboot {}
 
-#[async_trait]
 pub trait Fastboot: Send {
-    async fn get_var(&mut self, name: &str) -> Result<String, FastbootError>;
+    fn get_var<'a>(&'a mut self, name: &'a str) -> BoxFuture<'a, Result<String, FastbootError>>;
 
-    async fn get_all_vars(&mut self, listener: Sender<Variable>) -> Result<(), FastbootError>;
-
-    async fn flash(
+    fn get_all_vars(
         &mut self,
-        partition_name: &str,
-        path: &str,
+        listener: Sender<Variable>,
+    ) -> BoxFuture<'_, Result<(), FastbootError>>;
+
+    fn flash<'a>(
+        &'a mut self,
+        partition_name: &'a str,
+        path: &'a str,
         listener: Sender<UploadProgress>,
         timeout: Duration,
-    ) -> Result<(), FastbootError>;
+    ) -> BoxFuture<'a, Result<(), FastbootError>>;
 
-    async fn flash_from_reader(
-        &mut self,
-        partition_name: &str,
+    fn flash_from_reader<'a>(
+        &'a mut self,
+        partition_name: &'a str,
         size: u32,
-        reader: &mut (dyn std::io::Read + Send),
+        reader: &'a mut (dyn std::io::Read + Send),
         listener: Sender<UploadProgress>,
         timeout: Duration,
-    ) -> Result<(), FastbootError>;
+    ) -> BoxFuture<'a, Result<(), FastbootError>>;
 
-    async fn erase(&mut self, partition_name: &str) -> Result<(), FastbootError>;
+    fn erase<'a>(&'a mut self, partition_name: &'a str)
+    -> BoxFuture<'a, Result<(), FastbootError>>;
 
-    async fn boot(&mut self) -> Result<(), FastbootError>;
+    fn boot(&mut self) -> BoxFuture<'_, Result<(), FastbootError>>;
 
-    async fn reboot(&mut self) -> Result<(), FastbootError>;
+    fn reboot(&mut self) -> BoxFuture<'_, Result<(), FastbootError>>;
 
-    async fn reboot_bootloader(
+    fn reboot_bootloader(
         &mut self,
         listener: Sender<RebootEvent>,
-    ) -> Result<(), FastbootError>;
+    ) -> BoxFuture<'_, Result<(), FastbootError>>;
 
-    async fn continue_boot(&mut self) -> Result<(), FastbootError>;
+    fn continue_boot(&mut self) -> BoxFuture<'_, Result<(), FastbootError>>;
 
-    async fn get_staged(&mut self, path: &str) -> Result<(), FastbootError>;
+    fn get_staged<'a>(&'a mut self, path: &'a str) -> BoxFuture<'a, Result<(), FastbootError>>;
 
-    async fn stage(
-        &mut self,
-        path: &str,
+    fn stage<'a>(
+        &'a mut self,
+        path: &'a str,
         listener: Sender<UploadProgress>,
-    ) -> Result<(), FastbootError>;
+    ) -> BoxFuture<'a, Result<(), FastbootError>>;
 
-    async fn set_active(&mut self, slot: &str) -> Result<(), FastbootError>;
+    fn set_active<'a>(&'a mut self, slot: &'a str) -> BoxFuture<'a, Result<(), FastbootError>>;
 
     /// Sends OEM commands.
     ///
     /// On success returns the OKAY response, and all INFO responses.
-    async fn oem(&mut self, command: &str) -> Result<(), FastbootError>;
+    fn oem<'a>(&'a mut self, command: &'a str) -> BoxFuture<'a, Result<(), FastbootError>>;
 
-    async fn stream<'a>(
-        &mut self,
-        partition_name: &str,
+    fn stream<'a>(
+        &'a mut self,
+        partition_name: &'a str,
         stream_command: StreamCommand,
-        listener: &Sender<UploadProgress>,
+        listener: &'a Sender<UploadProgress>,
         timeout: Duration,
-    ) -> Result<(), FastbootError>;
+    ) -> BoxFuture<'a, Result<(), FastbootError>>;
 }
 
 // We sometimes get called with the Box<FastbootInterface> that
 // ffx_fastboot_connection_factory::get_fastboot_interface() returns
-#[async_trait]
 impl<F: Fastboot + ?Sized> Fastboot for Box<F> {
-    async fn get_var(&mut self, name: &str) -> Result<String, FastbootError> {
-        (**self).get_var(name).await
+    fn get_var<'a>(&'a mut self, name: &'a str) -> BoxFuture<'a, Result<String, FastbootError>> {
+        (**self).get_var(name)
     }
 
-    async fn get_all_vars(&mut self, listener: Sender<Variable>) -> Result<(), FastbootError> {
-        (**self).get_all_vars(listener).await
-    }
-
-    async fn flash(
+    fn get_all_vars(
         &mut self,
-        partition_name: &str,
-        path: &str,
+        listener: Sender<Variable>,
+    ) -> BoxFuture<'_, Result<(), FastbootError>> {
+        (**self).get_all_vars(listener)
+    }
+
+    fn flash<'a>(
+        &'a mut self,
+        partition_name: &'a str,
+        path: &'a str,
         listener: Sender<UploadProgress>,
         timeout: Duration,
-    ) -> Result<(), FastbootError> {
-        (**self).flash(partition_name, path, listener, timeout).await
+    ) -> BoxFuture<'a, Result<(), FastbootError>> {
+        (**self).flash(partition_name, path, listener, timeout)
     }
 
-    async fn flash_from_reader(
-        &mut self,
-        partition_name: &str,
+    fn flash_from_reader<'a>(
+        &'a mut self,
+        partition_name: &'a str,
         size: u32,
-        reader: &mut (dyn std::io::Read + Send),
+        reader: &'a mut (dyn std::io::Read + Send),
         listener: Sender<UploadProgress>,
         timeout: Duration,
-    ) -> Result<(), FastbootError> {
-        (**self).flash_from_reader(partition_name, size, reader, listener, timeout).await
+    ) -> BoxFuture<'a, Result<(), FastbootError>> {
+        (**self).flash_from_reader(partition_name, size, reader, listener, timeout)
     }
 
-    async fn erase(&mut self, partition_name: &str) -> Result<(), FastbootError> {
-        (**self).erase(partition_name).await
+    fn erase<'a>(
+        &'a mut self,
+        partition_name: &'a str,
+    ) -> BoxFuture<'a, Result<(), FastbootError>> {
+        (**self).erase(partition_name)
     }
 
-    async fn boot(&mut self) -> Result<(), FastbootError> {
-        (**self).boot().await
+    fn boot(&mut self) -> BoxFuture<'_, Result<(), FastbootError>> {
+        (**self).boot()
     }
 
-    async fn reboot(&mut self) -> Result<(), FastbootError> {
-        (**self).reboot().await
+    fn reboot(&mut self) -> BoxFuture<'_, Result<(), FastbootError>> {
+        (**self).reboot()
     }
 
-    async fn reboot_bootloader(
+    fn reboot_bootloader(
         &mut self,
         listener: Sender<RebootEvent>,
-    ) -> Result<(), FastbootError> {
-        (**self).reboot_bootloader(listener).await
+    ) -> BoxFuture<'_, Result<(), FastbootError>> {
+        (**self).reboot_bootloader(listener)
     }
 
-    async fn continue_boot(&mut self) -> Result<(), FastbootError> {
-        (**self).continue_boot().await
+    fn continue_boot(&mut self) -> BoxFuture<'_, Result<(), FastbootError>> {
+        (**self).continue_boot()
     }
 
-    async fn get_staged(&mut self, path: &str) -> Result<(), FastbootError> {
-        (**self).get_staged(path).await
+    fn get_staged<'a>(&'a mut self, path: &'a str) -> BoxFuture<'a, Result<(), FastbootError>> {
+        (**self).get_staged(path)
     }
 
-    async fn stage(
-        &mut self,
-        path: &str,
+    fn stage<'a>(
+        &'a mut self,
+        path: &'a str,
         listener: Sender<UploadProgress>,
-    ) -> Result<(), FastbootError> {
-        (**self).stage(path, listener).await
+    ) -> BoxFuture<'a, Result<(), FastbootError>> {
+        (**self).stage(path, listener)
     }
 
-    async fn set_active(&mut self, slot: &str) -> Result<(), FastbootError> {
-        (**self).set_active(slot).await
+    fn set_active<'a>(&'a mut self, slot: &'a str) -> BoxFuture<'a, Result<(), FastbootError>> {
+        (**self).set_active(slot)
     }
 
-    async fn oem(&mut self, command: &str) -> Result<(), FastbootError> {
-        (**self).oem(command).await
+    fn oem<'a>(&'a mut self, command: &'a str) -> BoxFuture<'a, Result<(), FastbootError>> {
+        (**self).oem(command)
     }
 
-    async fn stream<'a>(
-        &mut self,
-        partition_name: &str,
+    fn stream<'a>(
+        &'a mut self,
+        partition_name: &'a str,
         stream_command: StreamCommand,
-        listener: &Sender<UploadProgress>,
+        listener: &'a Sender<UploadProgress>,
         timeout: Duration,
-    ) -> Result<(), FastbootError> {
-        (**self).stream(partition_name, stream_command, listener, timeout).await
+    ) -> BoxFuture<'a, Result<(), FastbootError>> {
+        (**self).stream(partition_name, stream_command, listener, timeout)
     }
 }
 
 impl<F: FastbootInterface + ?Sized> FastbootInterface for Box<F> {}
 
-#[async_trait]
 impl<F: Fastboot + ?Sized> Fastboot for &mut F {
-    async fn get_var(&mut self, name: &str) -> Result<String, FastbootError> {
-        (**self).get_var(name).await
+    fn get_var<'a>(&'a mut self, name: &'a str) -> BoxFuture<'a, Result<String, FastbootError>> {
+        (**self).get_var(name)
     }
 
-    async fn get_all_vars(&mut self, listener: Sender<Variable>) -> Result<(), FastbootError> {
-        (**self).get_all_vars(listener).await
-    }
-
-    async fn flash(
+    fn get_all_vars(
         &mut self,
-        partition_name: &str,
-        path: &str,
+        listener: Sender<Variable>,
+    ) -> BoxFuture<'_, Result<(), FastbootError>> {
+        (**self).get_all_vars(listener)
+    }
+
+    fn flash<'a>(
+        &'a mut self,
+        partition_name: &'a str,
+        path: &'a str,
         listener: Sender<UploadProgress>,
         timeout: Duration,
-    ) -> Result<(), FastbootError> {
-        (**self).flash(partition_name, path, listener, timeout).await
+    ) -> BoxFuture<'a, Result<(), FastbootError>> {
+        (**self).flash(partition_name, path, listener, timeout)
     }
 
-    async fn flash_from_reader(
-        &mut self,
-        partition_name: &str,
+    fn flash_from_reader<'a>(
+        &'a mut self,
+        partition_name: &'a str,
         size: u32,
-        reader: &mut (dyn std::io::Read + Send),
+        reader: &'a mut (dyn std::io::Read + Send),
         listener: Sender<UploadProgress>,
         timeout: Duration,
-    ) -> Result<(), FastbootError> {
-        (**self).flash_from_reader(partition_name, size, reader, listener, timeout).await
+    ) -> BoxFuture<'a, Result<(), FastbootError>> {
+        (**self).flash_from_reader(partition_name, size, reader, listener, timeout)
     }
 
-    async fn erase(&mut self, partition_name: &str) -> Result<(), FastbootError> {
-        (**self).erase(partition_name).await
+    fn erase<'a>(
+        &'a mut self,
+        partition_name: &'a str,
+    ) -> BoxFuture<'a, Result<(), FastbootError>> {
+        (**self).erase(partition_name)
     }
 
-    async fn boot(&mut self) -> Result<(), FastbootError> {
-        (**self).boot().await
+    fn boot(&mut self) -> BoxFuture<'_, Result<(), FastbootError>> {
+        (**self).boot()
     }
 
-    async fn reboot(&mut self) -> Result<(), FastbootError> {
-        (**self).reboot().await
+    fn reboot(&mut self) -> BoxFuture<'_, Result<(), FastbootError>> {
+        (**self).reboot()
     }
 
-    async fn reboot_bootloader(
+    fn reboot_bootloader(
         &mut self,
         listener: Sender<RebootEvent>,
-    ) -> Result<(), FastbootError> {
-        (**self).reboot_bootloader(listener).await
+    ) -> BoxFuture<'_, Result<(), FastbootError>> {
+        (**self).reboot_bootloader(listener)
     }
 
-    async fn continue_boot(&mut self) -> Result<(), FastbootError> {
-        (**self).continue_boot().await
+    fn continue_boot(&mut self) -> BoxFuture<'_, Result<(), FastbootError>> {
+        (**self).continue_boot()
     }
 
-    async fn get_staged(&mut self, path: &str) -> Result<(), FastbootError> {
-        (**self).get_staged(path).await
+    fn get_staged<'a>(&'a mut self, path: &'a str) -> BoxFuture<'a, Result<(), FastbootError>> {
+        (**self).get_staged(path)
     }
 
-    async fn stage(
-        &mut self,
-        path: &str,
+    fn stage<'a>(
+        &'a mut self,
+        path: &'a str,
         listener: Sender<UploadProgress>,
-    ) -> Result<(), FastbootError> {
-        (**self).stage(path, listener).await
+    ) -> BoxFuture<'a, Result<(), FastbootError>> {
+        (**self).stage(path, listener)
     }
 
-    async fn set_active(&mut self, slot: &str) -> Result<(), FastbootError> {
-        (**self).set_active(slot).await
+    fn set_active<'a>(&'a mut self, slot: &'a str) -> BoxFuture<'a, Result<(), FastbootError>> {
+        (**self).set_active(slot)
     }
 
-    async fn oem(&mut self, command: &str) -> Result<(), FastbootError> {
-        (**self).oem(command).await
+    fn oem<'a>(&'a mut self, command: &'a str) -> BoxFuture<'a, Result<(), FastbootError>> {
+        (**self).oem(command)
     }
 
-    async fn stream<'a>(
-        &mut self,
-        partition_name: &str,
+    fn stream<'a>(
+        &'a mut self,
+        partition_name: &'a str,
         stream_command: StreamCommand,
-        listener: &Sender<UploadProgress>,
+        listener: &'a Sender<UploadProgress>,
         timeout: Duration,
-    ) -> Result<(), FastbootError> {
-        (**self).stream(partition_name, stream_command, listener, timeout).await
+    ) -> BoxFuture<'a, Result<(), FastbootError>> {
+        (**self).stream(partition_name, stream_command, listener, timeout)
     }
 }
 

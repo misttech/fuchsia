@@ -9,7 +9,6 @@ use crate::fastboot_interface::{
 use crate::interface_factory::InterfaceFactory;
 use crate::stream::{StreamCommand, StreamOp};
 use anyhow::{Result, anyhow};
-use async_trait::async_trait;
 use chrono::Duration;
 use fastboot::UploadError::*;
 use fastboot::command::{ClientVariable, Command};
@@ -19,6 +18,7 @@ use fastboot::{
     send, send_with_listener, send_with_timeout, upload, upload_from_reader,
     upload_with_read_timeout,
 };
+use ffx_futures::BoxFuture;
 use futures::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use std::fmt::Debug;
 use std::fs::File;
@@ -277,403 +277,436 @@ async fn upload_data<T: AsyncRead + AsyncWrite + Unpin>(
     Ok(())
 }
 
-#[async_trait]
 impl<T, F> Fastboot for FastbootProxy<T, F>
 where
     T: AsyncRead + AsyncWrite + Unpin + Debug + Send,
     F: InterfaceFactory<T>,
 {
-    async fn get_var(&mut self, name: &str) -> core::result::Result<String, FastbootError> {
-        let command = Command::GetVar(ClientVariable::Oem(name.to_string()));
-        match send(self.ctx.clone(), command.clone(), self.interface().await?).await {
-            Ok(r) => match r {
-                Reply::Okay(v) => {
-                    log::trace!("Got var {}. Content: '{:?}", name, v);
-                    Ok(v.trim_end_matches('\0').to_string())
+    fn get_var<'a>(&'a mut self, name: &'a str) -> BoxFuture<'a, Result<String, FastbootError>> {
+        Box::pin(async move {
+            let command = Command::GetVar(ClientVariable::Oem(name.to_string()));
+            match send(self.ctx.clone(), command.clone(), self.interface().await?).await {
+                Ok(r) => match r {
+                    Reply::Okay(v) => {
+                        log::trace!("Got var {}. Content: '{:?}", name, v);
+                        Ok(v.trim_end_matches('\0').to_string())
+                    }
+                    Reply::Fail(message) => {
+                        Err(FastbootError::GetVariableError { variable: name.to_string(), message })
+                    }
+                    r @ _ => Err(FastbootError::UnexpectedReply {
+                        method: command.to_string(),
+                        reply: r.to_string(),
+                    }),
+                },
+                Err(e) => Err(e.into()),
+            }
+        })
+    }
+
+    fn get_all_vars(
+        &mut self,
+        listener: Sender<Variable>,
+    ) -> BoxFuture<'_, Result<(), FastbootError>> {
+        Box::pin(async move {
+            let variable_listener = VariableListener::new(listener);
+            let command = Command::GetVar(ClientVariable::All);
+            match send_with_listener(
+                self.ctx.clone(),
+                command.clone(),
+                self.interface().await?,
+                &variable_listener,
+            )
+            .await?
+            {
+                Reply::Okay(_) => Ok(()),
+                Reply::Fail(s) => Err(FastbootError::GetAllVarsFailed(s)),
+                r @ _ => Err(FastbootError::UnexpectedReply {
+                    method: command.to_string(),
+                    reply: r.to_string(),
+                }),
+            }
+        })
+    }
+
+    fn flash<'a>(
+        &'a mut self,
+        partition_name: &'a str,
+        path: &'a str,
+        listener: Sender<UploadProgress>,
+        timeout: Duration,
+    ) -> BoxFuture<'a, Result<(), FastbootError>> {
+        Box::pin(async move {
+            let file_to_flash = File::open(path).map_err(FlashError::from)?;
+            let size = file_to_flash.metadata().map_err(FlashError::from)?.len();
+            let size = u32::try_from(size).map_err(|e| FlashError::InvalidFileSize(e))?;
+            let progress_listener = ProgressListener::new(&listener);
+            let upload_reply = upload_with_read_timeout(
+                self.ctx.clone(),
+                size,
+                file_to_flash,
+                self.interface().await?,
+                &progress_listener,
+                timeout,
+            )
+            .await?;
+            match upload_reply {
+                Reply::Okay(s) => log::debug!("Received response from download command: {}", s),
+                Reply::Fail(s) => {
+                    return Err(FastbootError::StageError(StageError::UploadFailed {
+                        path: partition_name.to_string(),
+                        message: s,
+                    }));
                 }
-                Reply::Fail(message) => {
-                    Err(FastbootError::GetVariableError { variable: name.to_string(), message })
+                r @ _ => {
+                    return Err(FastbootError::UnexpectedReply {
+                        method: Command::Download(size).to_string(),
+                        reply: r.to_string(),
+                    });
+                }
+            };
+            self.flash_uploaded(partition_name, timeout).await
+        })
+    }
+
+    fn flash_from_reader<'a>(
+        &'a mut self,
+        partition_name: &'a str,
+        size: u32,
+        reader: &'a mut (dyn std::io::Read + Send),
+        listener: Sender<UploadProgress>,
+        timeout: Duration,
+    ) -> BoxFuture<'a, Result<(), FastbootError>> {
+        Box::pin(async move {
+            let progress_listener = ProgressListener::new(&listener);
+            let upload_reply = upload_from_reader(
+                self.ctx.clone(),
+                size,
+                reader,
+                self.interface().await?,
+                &progress_listener,
+                timeout,
+            )
+            .await?;
+            match upload_reply {
+                Reply::Okay(s) => log::debug!("Received response from download command: {}", s),
+                Reply::Fail(s) => {
+                    return Err(FastbootError::StageError(StageError::UploadFailed {
+                        path: partition_name.to_string(),
+                        message: s,
+                    }));
+                }
+                r @ _ => {
+                    return Err(FastbootError::UnexpectedReply {
+                        method: Command::Download(size).to_string(),
+                        reply: r.to_string(),
+                    });
+                }
+            };
+            self.flash_uploaded(partition_name, timeout).await
+        })
+    }
+
+    fn erase<'a>(
+        &'a mut self,
+        partition_name: &'a str,
+    ) -> BoxFuture<'a, Result<(), FastbootError>> {
+        Box::pin(async move {
+            let command = Command::Erase(partition_name.to_string());
+            let reply = send(self.ctx.clone(), command.clone(), self.interface().await?).await?;
+            match reply {
+                Reply::Okay(_) => {
+                    log::debug!("Successfully erased parition: {}", partition_name);
+                    Ok(())
+                }
+                Reply::Fail(s) => {
+                    return Err(FastbootError::ErasePartitionFailed {
+                        partition: partition_name.to_string(),
+                        message: s,
+                    });
                 }
                 r @ _ => Err(FastbootError::UnexpectedReply {
                     method: command.to_string(),
                     reply: r.to_string(),
                 }),
-            },
-            Err(e) => Err(e.into()),
-        }
-    }
-
-    async fn get_all_vars(&mut self, listener: Sender<Variable>) -> Result<(), FastbootError> {
-        let variable_listener = VariableListener::new(listener);
-        let command = Command::GetVar(ClientVariable::All);
-        match send_with_listener(
-            self.ctx.clone(),
-            command.clone(),
-            self.interface().await?,
-            &variable_listener,
-        )
-        .await?
-        {
-            Reply::Okay(_) => Ok(()),
-            Reply::Fail(s) => Err(FastbootError::GetAllVarsFailed(s)),
-            r @ _ => Err(FastbootError::UnexpectedReply {
-                method: command.to_string(),
-                reply: r.to_string(),
-            }),
-        }
-    }
-
-    async fn flash(
-        &mut self,
-        partition_name: &str,
-        path: &str,
-        listener: Sender<UploadProgress>,
-        timeout: Duration,
-    ) -> Result<(), FastbootError> {
-        let file_to_flash = File::open(path).map_err(FlashError::from)?;
-        let size = file_to_flash.metadata().map_err(FlashError::from)?.len();
-        let size = u32::try_from(size).map_err(|e| FlashError::InvalidFileSize(e))?;
-        let progress_listener = ProgressListener::new(&listener);
-        let upload_reply = upload_with_read_timeout(
-            self.ctx.clone(),
-            size,
-            file_to_flash,
-            self.interface().await?,
-            &progress_listener,
-            timeout,
-        )
-        .await?;
-        match upload_reply {
-            Reply::Okay(s) => log::debug!("Received response from download command: {}", s),
-            Reply::Fail(s) => {
-                return Err(FastbootError::StageError(StageError::UploadFailed {
-                    path: partition_name.to_string(),
-                    message: s,
-                }));
             }
-            r @ _ => {
-                return Err(FastbootError::UnexpectedReply {
-                    method: Command::Download(size).to_string(),
+        })
+    }
+
+    fn boot(&mut self) -> BoxFuture<'_, Result<(), FastbootError>> {
+        Box::pin(async move {
+            // Note: the target may not successfully send a response when asked to boot,
+            // so let's use a short time-out, and treat a timeout error as a success.
+            let reply = handle_timeout_as_okay(
+                send_with_timeout(
+                    self.ctx.clone(),
+                    Command::Boot,
+                    self.interface().await?,
+                    Duration::seconds(3),
+                )
+                .await,
+            )?;
+            match reply {
+                Reply::Okay(_) => {
+                    log::debug!("Successfully sent boot");
+                    Ok(())
+                }
+
+                Reply::Fail(s) => return Err(FastbootError::BootFailed(s)),
+                r @ _ => Err(FastbootError::UnexpectedReply {
+                    method: Command::Reboot.to_string(),
                     reply: r.to_string(),
-                });
+                }),
             }
-        };
-        self.flash_uploaded(partition_name, timeout).await
+        })
     }
 
-    async fn flash_from_reader(
-        &mut self,
-        partition_name: &str,
-        size: u32,
-        reader: &mut (dyn std::io::Read + Send),
-        listener: Sender<UploadProgress>,
-        timeout: Duration,
-    ) -> Result<(), FastbootError> {
-        let progress_listener = ProgressListener::new(&listener);
-        let upload_reply = upload_from_reader(
-            self.ctx.clone(),
-            size,
-            reader,
-            self.interface().await?,
-            &progress_listener,
-            timeout,
-        )
-        .await?;
-        match upload_reply {
-            Reply::Okay(s) => log::debug!("Received response from download command: {}", s),
-            Reply::Fail(s) => {
-                return Err(FastbootError::StageError(StageError::UploadFailed {
-                    path: partition_name.to_string(),
-                    message: s,
-                }));
-            }
-            r @ _ => {
-                return Err(FastbootError::UnexpectedReply {
-                    method: Command::Download(size).to_string(),
+    fn reboot(&mut self) -> BoxFuture<'_, Result<(), FastbootError>> {
+        Box::pin(async move {
+            // Note: the target may not successfully send a response when asked to reboot,
+            // so let's use a short time-out, and treat a timeout error as a success.
+            let reply = handle_timeout_as_okay(
+                send_with_timeout(
+                    self.ctx.clone(),
+                    Command::Reboot,
+                    self.interface().await?,
+                    Duration::seconds(3),
+                )
+                .await,
+            )?;
+            match reply {
+                Reply::Okay(_) => {
+                    log::debug!("Successfully sent reboot");
+                    Ok(())
+                }
+                Reply::Fail(s) => return Err(FastbootError::RebootFailed(s)),
+                r @ _ => Err(FastbootError::UnexpectedReply {
+                    method: Command::Reboot.to_string(),
                     reply: r.to_string(),
-                });
+                }),
             }
-        };
-        self.flash_uploaded(partition_name, timeout).await
+        })
     }
 
-    async fn erase(&mut self, partition_name: &str) -> Result<(), FastbootError> {
-        let command = Command::Erase(partition_name.to_string());
-        let reply = send(self.ctx.clone(), command.clone(), self.interface().await?).await?;
-        match reply {
-            Reply::Okay(_) => {
-                log::debug!("Successfully erased parition: {}", partition_name);
-                Ok(())
-            }
-            Reply::Fail(s) => {
-                return Err(FastbootError::ErasePartitionFailed {
-                    partition: partition_name.to_string(),
-                    message: s,
-                });
-            }
-            r @ _ => Err(FastbootError::UnexpectedReply {
-                method: command.to_string(),
-                reply: r.to_string(),
-            }),
-        }
-    }
-
-    async fn boot(&mut self) -> Result<(), FastbootError> {
-        // Note: the target may not successfully send a response when asked to boot,
-        // so let's use a short time-out, and treat a timeout error as a success.
-        let reply = handle_timeout_as_okay(
-            send_with_timeout(
-                self.ctx.clone(),
-                Command::Boot,
-                self.interface().await?,
-                Duration::seconds(3),
-            )
-            .await,
-        )?;
-        match reply {
-            Reply::Okay(_) => {
-                log::debug!("Successfully sent boot");
-                Ok(())
-            }
-
-            Reply::Fail(s) => return Err(FastbootError::BootFailed(s)),
-            r @ _ => Err(FastbootError::UnexpectedReply {
-                method: Command::Reboot.to_string(),
-                reply: r.to_string(),
-            }),
-        }
-    }
-
-    async fn reboot(&mut self) -> Result<(), FastbootError> {
-        // Note: the target may not successfully send a response when asked to reboot,
-        // so let's use a short time-out, and treat a timeout error as a success.
-        let reply = handle_timeout_as_okay(
-            send_with_timeout(
-                self.ctx.clone(),
-                Command::Reboot,
-                self.interface().await?,
-                Duration::seconds(3),
-            )
-            .await,
-        )?;
-        match reply {
-            Reply::Okay(_) => {
-                log::debug!("Successfully sent reboot");
-                Ok(())
-            }
-            Reply::Fail(s) => return Err(FastbootError::RebootFailed(s)),
-            r @ _ => Err(FastbootError::UnexpectedReply {
-                method: Command::Reboot.to_string(),
-                reply: r.to_string(),
-            }),
-        }
-    }
-
-    async fn reboot_bootloader(
+    fn reboot_bootloader(
         &mut self,
         listener: Sender<RebootEvent>,
-    ) -> Result<(), FastbootError> {
-        // Note: the target may not successfully send a response when asked to reboot-bootloader,
-        // so let's use a short time-out, and treat a timeout error as a success.
-        let reply = handle_timeout_as_okay(
-            send_with_timeout(
-                self.ctx.clone(),
-                Command::RebootBootLoader,
-                self.interface().await?,
-                Duration::seconds(3),
-            )
-            .await,
-        )?;
-        match reply {
-            Reply::Okay(_) => {
-                log::debug!("Successfully sent reboot bootloader");
-                let send_res = listener.send(RebootEvent::OnReboot).await;
-                if send_res.is_err() {
-                    log::debug!(
-                        "reboot_bootloader hit error sending the reboot event to caller: {:#?}",
-                        send_res
-                    );
+    ) -> BoxFuture<'_, Result<(), FastbootError>> {
+        Box::pin(async move {
+            // Note: the target may not successfully send a response when asked to reboot-bootloader,
+            // so let's use a short time-out, and treat a timeout error as a success.
+            let reply = handle_timeout_as_okay(
+                send_with_timeout(
+                    self.ctx.clone(),
+                    Command::RebootBootLoader,
+                    self.interface().await?,
+                    Duration::seconds(3),
+                )
+                .await,
+            )?;
+            match reply {
+                Reply::Okay(_) => {
+                    log::debug!("Successfully sent reboot bootloader");
+                    let send_res = listener.send(RebootEvent::OnReboot).await;
+                    if send_res.is_err() {
+                        log::debug!(
+                            "reboot_bootloader hit error sending the reboot event to caller: {:#?}",
+                            send_res
+                        );
+                    }
                 }
-            }
-            Reply::Fail(s) => return Err(FastbootError::RebootBootloaderFailed { message: s }),
-            r @ _ => {
-                return Err(FastbootError::UnexpectedReply {
-                    method: Command::RebootBootLoader.to_string(),
+                Reply::Fail(s) => return Err(FastbootError::RebootBootloaderFailed { message: s }),
+                r @ _ => {
+                    return Err(FastbootError::UnexpectedReply {
+                        method: Command::RebootBootLoader.to_string(),
+                        reply: r.to_string(),
+                    });
+                }
+            };
+            // Once the target is rebooted, reconnect
+            self.reconnect().await?;
+            Ok(())
+        })
+    }
+
+    fn continue_boot(&mut self) -> BoxFuture<'_, Result<(), FastbootError>> {
+        Box::pin(async move {
+            // Note: the target may not successfully send a response when asked to continue,
+            // so let's use a short time-out, and treat a timeout error as a success.
+            let reply = handle_timeout_as_okay(
+                send_with_timeout(
+                    self.ctx.clone(),
+                    Command::Continue,
+                    self.interface().await?,
+                    Duration::seconds(3),
+                )
+                .await,
+            )?;
+            match reply {
+                Reply::Okay(_) => {
+                    log::debug!("Successfully sent continue");
+                    Ok(())
+                }
+                Reply::Fail(s) => return Err(FastbootError::ContinueBootFailed(s)),
+                r @ _ => Err(FastbootError::UnexpectedReply {
+                    method: Command::Continue.to_string(),
                     reply: r.to_string(),
-                });
+                }),
             }
-        };
-        // Once the target is rebooted, reconnect
-        self.reconnect().await?;
-        Ok(())
+        })
     }
 
-    async fn continue_boot(&mut self) -> Result<(), FastbootError> {
-        // Note: the target may not successfully send a response when asked to continue,
-        // so let's use a short time-out, and treat a timeout error as a success.
-        let reply = handle_timeout_as_okay(
-            send_with_timeout(
-                self.ctx.clone(),
-                Command::Continue,
-                self.interface().await?,
-                Duration::seconds(3),
-            )
-            .await,
-        )?;
-        match reply {
-            Reply::Okay(_) => {
-                log::debug!("Successfully sent continue");
-                Ok(())
+    fn get_staged<'a>(&'a mut self, path: &'a str) -> BoxFuture<'a, Result<(), FastbootError>> {
+        Box::pin(async move {
+            match download(self.ctx.clone(), &path.to_string(), self.interface().await?).await? {
+                Reply::Okay(_) => {
+                    log::debug!("Successfully downloaded to \"{}\"", path);
+                    Ok(())
+                }
+                Reply::Fail(message) => {
+                    return Err(FastbootError::DownloadFailed { path: path.to_string(), message });
+                }
+                r @ _ => Err(FastbootError::UnexpectedReply {
+                    method: Command::Upload.to_string(),
+                    reply: r.to_string(),
+                }),
             }
-            Reply::Fail(s) => return Err(FastbootError::ContinueBootFailed(s)),
-            r @ _ => Err(FastbootError::UnexpectedReply {
-                method: Command::Continue.to_string(),
-                reply: r.to_string(),
-            }),
-        }
+        })
     }
 
-    async fn get_staged(&mut self, path: &str) -> Result<(), FastbootError> {
-        match download(self.ctx.clone(), &path.to_string(), self.interface().await?).await? {
-            Reply::Okay(_) => {
-                log::debug!("Successfully downloaded to \"{}\"", path);
-                Ok(())
-            }
-            Reply::Fail(message) => {
-                return Err(FastbootError::DownloadFailed { path: path.to_string(), message });
-            }
-            r @ _ => Err(FastbootError::UnexpectedReply {
-                method: Command::Upload.to_string(),
-                reply: r.to_string(),
-            }),
-        }
-    }
-
-    async fn stage(
-        &mut self,
-        path: &str,
+    fn stage<'a>(
+        &'a mut self,
+        path: &'a str,
         listener: Sender<UploadProgress>,
-    ) -> Result<(), FastbootError> {
-        let progress_listener = ProgressListener::new(&listener);
-        let file_to_stage = File::open(path).map_err(StageError::from)?;
-        let size = file_to_stage.metadata().map_err(StageError::from)?.len();
-        let size = u32::try_from(size).map_err(|e| StageError::InvalidFileSize(e))?;
-        log::debug!("uploading file size: {}", size);
-        match upload(
-            self.ctx.clone(),
-            size,
-            file_to_stage,
-            self.interface().await?,
-            &progress_listener,
-        )
-        .await?
-        {
-            Reply::Okay(s) => {
-                log::debug!("Received response from download command: {}", s);
-                Ok(())
-            }
-            Reply::Fail(s) => {
-                return Err(FastbootError::StageError(StageError::UploadFailed {
-                    path: path.to_string(),
-                    message: s,
-                }));
-            }
-            r @ _ => Err(FastbootError::UnexpectedReply {
-                method: Command::Download(size).to_string(),
-                reply: r.to_string(),
-            }),
-        }
-    }
-
-    async fn set_active(&mut self, slot: &str) -> Result<(), FastbootError> {
-        // Note: the target may not successfully send a response when asked to set active,
-        // so let's use a short time-out, and treat a timeout error as a success.
-        // See b/405436515 for more information.
-        let command = Command::SetActive(slot.to_string());
-        let reply = handle_timeout_as_okay(
-            send_with_timeout(
+    ) -> BoxFuture<'a, Result<(), FastbootError>> {
+        Box::pin(async move {
+            let progress_listener = ProgressListener::new(&listener);
+            let file_to_stage = File::open(path).map_err(StageError::from)?;
+            let size = file_to_stage.metadata().map_err(StageError::from)?.len();
+            let size = u32::try_from(size).map_err(|e| StageError::InvalidFileSize(e))?;
+            log::debug!("uploading file size: {}", size);
+            match upload(
                 self.ctx.clone(),
-                command.clone(),
+                size,
+                file_to_stage,
                 self.interface().await?,
-                Duration::seconds(3),
+                &progress_listener,
             )
-            .await,
-        )?;
-        match reply {
-            Reply::Okay(_) => {
-                log::debug!("Successfully sent set_active");
-                Ok(())
+            .await?
+            {
+                Reply::Okay(s) => {
+                    log::debug!("Received response from download command: {}", s);
+                    Ok(())
+                }
+                Reply::Fail(s) => {
+                    return Err(FastbootError::StageError(StageError::UploadFailed {
+                        path: path.to_string(),
+                        message: s,
+                    }));
+                }
+                r @ _ => Err(FastbootError::UnexpectedReply {
+                    method: Command::Download(size).to_string(),
+                    reply: r.to_string(),
+                }),
             }
-            Reply::Fail(message) => {
-                return Err(FastbootError::SetActiveFailed { slot: slot.to_string(), message });
-            }
-            r @ _ => Err(FastbootError::UnexpectedReply {
-                method: command.to_string(),
-                reply: r.to_string(),
-            }),
-        }
+        })
     }
 
-    async fn oem(&mut self, command: &str) -> Result<(), FastbootError> {
-        let command = Command::Oem(command.to_string());
-        match send(self.ctx.clone(), command.clone(), self.interface().await?).await? {
-            Reply::Okay(_) => {
-                log::debug!("Successfully sent oem command \"{}\"", command);
-                Ok(())
+    fn set_active<'a>(&'a mut self, slot: &'a str) -> BoxFuture<'a, Result<(), FastbootError>> {
+        Box::pin(async move {
+            // Note: the target may not successfully send a response when asked to set active,
+            // so let's use a short time-out, and treat a timeout error as a success.
+            // See b/405436515 for more information.
+            let command = Command::SetActive(slot.to_string());
+            let reply = handle_timeout_as_okay(
+                send_with_timeout(
+                    self.ctx.clone(),
+                    command.clone(),
+                    self.interface().await?,
+                    Duration::seconds(3),
+                )
+                .await,
+            )?;
+            match reply {
+                Reply::Okay(_) => {
+                    log::debug!("Successfully sent set_active");
+                    Ok(())
+                }
+                Reply::Fail(message) => {
+                    return Err(FastbootError::SetActiveFailed { slot: slot.to_string(), message });
+                }
+                r @ _ => Err(FastbootError::UnexpectedReply {
+                    method: command.to_string(),
+                    reply: r.to_string(),
+                }),
             }
-            Reply::Fail(message) => {
-                return Err(FastbootError::OemCommandFailed {
-                    command: command.to_string(),
-                    message,
-                });
-            }
-            r @ _ => Err(FastbootError::UnexpectedReply {
-                method: command.to_string(),
-                reply: r.to_string(),
-            }),
-        }
+        })
     }
 
-    async fn stream<'a>(
-        &mut self,
-        name: &str,
+    fn oem<'a>(&'a mut self, command: &'a str) -> BoxFuture<'a, Result<(), FastbootError>> {
+        Box::pin(async move {
+            let command = Command::Oem(command.to_string());
+            match send(self.ctx.clone(), command.clone(), self.interface().await?).await? {
+                Reply::Okay(_) => {
+                    log::debug!("Successfully sent oem command \"{}\"", command);
+                    Ok(())
+                }
+                Reply::Fail(message) => {
+                    return Err(FastbootError::OemCommandFailed {
+                        command: command.to_string(),
+                        message,
+                    });
+                }
+                r @ _ => Err(FastbootError::UnexpectedReply {
+                    method: command.to_string(),
+                    reply: r.to_string(),
+                }),
+            }
+        })
+    }
+
+    fn stream<'a>(
+        &'a mut self,
+        name: &'a str,
         stream_command: StreamCommand,
-        listener: &Sender<UploadProgress>,
+        listener: &'a Sender<UploadProgress>,
         timeout: Duration,
-    ) -> Result<(), FastbootError> {
-        let progress_listener = ProgressListener::new(listener);
-        let StreamCommand { offset_bytes, op } = stream_command;
-        let ctx = self.ctx.clone();
-        let interface = self.interface().await?;
+    ) -> BoxFuture<'a, Result<(), FastbootError>> {
+        Box::pin(async move {
+            let progress_listener = ProgressListener::new(listener);
+            let StreamCommand { offset_bytes, op } = stream_command;
+            let ctx = self.ctx.clone();
+            let interface = self.interface().await?;
 
-        let length_bytes = match op {
-            StreamOp::Fill { val, length_bytes } => {
-                log::trace!("fastboot: filling {} bytes", length_bytes);
-                let finishing_cmd = Command::StreamFill {
-                    partition: name.to_owned(),
-                    offset_bytes,
-                    length_bytes,
-                    val,
-                };
-                handle_command(&ctx, &finishing_cmd, interface, timeout).await?;
-                progress_listener
-                    .on_progress(length_bytes)
-                    .await
-                    .map_err(|e| fastboot::FastbootError::from(e))?;
-                length_bytes
-            }
-            StreamOp::Flash { data, crc32 } => {
-                let _lock = ctx.lock_transfer().await;
-                upload_data(&ctx, &data, interface, &progress_listener, timeout).await?;
-                let finishing_cmd =
-                    Command::StreamFlash { partition: name.to_owned(), offset_bytes, crc32 };
-                handle_command(&ctx, &finishing_cmd, interface, timeout).await?;
-                u64::try_from(data.len()).unwrap()
-            }
-        };
+            let length_bytes = match op {
+                StreamOp::Fill { val, length_bytes } => {
+                    log::trace!("fastboot: filling {} bytes", length_bytes);
+                    let finishing_cmd = Command::StreamFill {
+                        partition: name.to_owned(),
+                        offset_bytes,
+                        length_bytes,
+                        val,
+                    };
+                    handle_command(&ctx, &finishing_cmd, interface, timeout).await?;
+                    progress_listener
+                        .on_progress(length_bytes)
+                        .await
+                        .map_err(|e| fastboot::FastbootError::from(e))?;
+                    length_bytes
+                }
+                StreamOp::Flash { data, crc32 } => {
+                    let _lock = ctx.lock_transfer().await;
+                    upload_data(&ctx, &data, interface, &progress_listener, timeout).await?;
+                    let finishing_cmd =
+                        Command::StreamFlash { partition: name.to_owned(), offset_bytes, crc32 };
+                    handle_command(&ctx, &finishing_cmd, interface, timeout).await?;
+                    u64::try_from(data.len()).unwrap()
+                }
+            };
 
-        log::trace!("fastboot: streamed {length_bytes} bytes to {name}");
-        Ok(())
+            log::trace!("fastboot: streamed {length_bytes} bytes to {name}");
+            Ok(())
+        })
     }
 }
 

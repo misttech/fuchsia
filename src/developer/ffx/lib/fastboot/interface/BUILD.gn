@@ -46,7 +46,6 @@ if (is_host) {
     ]
     crate_name = "ffx_fastboot_interface"
     edition = "2024"
-    proc_macro_deps = [ "//third_party/rust_crates:async-trait" ]
     visibility = [
       ":*",
       "//src/developer/ffx:*",
@@ -63,6 +62,7 @@ if (is_host) {
     ]
     deps = [
       "//src/developer/fastboot:lib",
+      "//src/developer/ffx/lib/futures:lib",
       "//src/developer/ffx/lib/usb_fastboot_discovery:lib",
       "//src/storage/lib/sparse/rust:lib",
       "//third_party/rust_crates:anyhow",

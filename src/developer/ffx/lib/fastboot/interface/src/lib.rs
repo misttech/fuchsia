@@ -13,8 +13,8 @@ pub mod test {
         Fastboot, FastbootError, FastbootInterface, RebootEvent, UploadProgress, Variable,
     };
     use super::stream::StreamCommand;
-    use async_trait::async_trait;
     use chrono::Duration;
+    use ffx_futures::BoxFuture;
     use std::collections::HashMap;
     use std::default::Default;
     use std::sync::{Arc, Mutex};
@@ -76,165 +76,199 @@ pub mod test {
 
     impl FastbootInterface for TestFastbootInterface {}
 
-    #[async_trait]
     impl Fastboot for TestFastbootInterface {
-        async fn get_var(&mut self, name: &str) -> Result<String, FastbootError> {
-            let mut state = self.state.lock().unwrap();
-            match state.variables.get_mut(name) {
-                Some((Some(val), count)) => {
-                    *count += 1;
-                    Ok(val.clone())
-                }
-                Some((None, count)) => {
-                    *count += 1;
-                    Err(FastbootError::GetVariableError {
-                        variable: name.to_string(),
-                        message: "Variable not found".to_string(),
-                    })
-                }
-                None => {
-                    state.variables.insert(name.to_string(), (None, 1));
-                    Err(FastbootError::GetVariableError {
-                        variable: name.to_string(),
-                        message: "Variable not found".to_string(),
-                    })
-                }
-            }
-        }
-
-        async fn get_all_vars(&mut self, listener: Sender<Variable>) -> Result<(), FastbootError> {
-            let vars: Vec<Variable> = {
-                let state = self.state.lock().unwrap();
-                if state.variables.is_empty() {
-                    vec![Variable { name: "test".to_string(), value: "test".to_string() }]
-                } else {
-                    state
-                        .variables
-                        .iter()
-                        .filter_map(|(name, (val, _))| {
-                            val.as_ref().map(|v| Variable { name: name.clone(), value: v.clone() })
+        fn get_var<'a>(
+            &'a mut self,
+            name: &'a str,
+        ) -> BoxFuture<'a, Result<String, FastbootError>> {
+            Box::pin(async move {
+                let mut state = self.state.lock().unwrap();
+                match state.variables.get_mut(name) {
+                    Some((Some(val), count)) => {
+                        *count += 1;
+                        Ok(val.clone())
+                    }
+                    Some((None, count)) => {
+                        *count += 1;
+                        Err(FastbootError::GetVariableError {
+                            variable: name.to_string(),
+                            message: "Variable not found".to_string(),
                         })
-                        .collect()
+                    }
+                    None => {
+                        state.variables.insert(name.to_string(), (None, 1));
+                        Err(FastbootError::GetVariableError {
+                            variable: name.to_string(),
+                            message: "Variable not found".to_string(),
+                        })
+                    }
                 }
-            };
-            for var in vars {
-                listener.send(var).await.unwrap();
-            }
-            Ok(())
+            })
         }
 
-        async fn flash(
+        fn get_all_vars(
             &mut self,
-            _partition_name: &str,
-            _path: &str,
+            listener: Sender<Variable>,
+        ) -> BoxFuture<'_, Result<(), FastbootError>> {
+            Box::pin(async move {
+                let vars: Vec<Variable> = {
+                    let state = self.state.lock().unwrap();
+                    if state.variables.is_empty() {
+                        vec![Variable { name: "test".to_string(), value: "test".to_string() }]
+                    } else {
+                        state
+                            .variables
+                            .iter()
+                            .filter_map(|(name, (val, _))| {
+                                val.as_ref()
+                                    .map(|v| Variable { name: name.clone(), value: v.clone() })
+                            })
+                            .collect()
+                    }
+                };
+                for var in vars {
+                    listener.send(var).await.unwrap();
+                }
+                Ok(())
+            })
+        }
+
+        fn flash<'a>(
+            &'a mut self,
+            _partition_name: &'a str,
+            _path: &'a str,
             listener: Sender<UploadProgress>,
             _timeout: Duration,
-        ) -> Result<(), FastbootError> {
-            listener
-                .send(UploadProgress::OnStarted { size: 1 })
-                .await
-                .map_err(|_| FastbootError::ProgressSendError)?;
-            listener
-                .send(UploadProgress::OnProgress { bytes_written: 1 })
-                .await
-                .map_err(|_| FastbootError::ProgressSendError)?;
-            listener
-                .send(UploadProgress::OnFinished)
-                .await
-                .map_err(|_| FastbootError::ProgressSendError)?;
-            Ok(())
+        ) -> BoxFuture<'a, Result<(), FastbootError>> {
+            Box::pin(async move {
+                listener
+                    .send(UploadProgress::OnStarted { size: 1 })
+                    .await
+                    .map_err(|_| FastbootError::ProgressSendError)?;
+                listener
+                    .send(UploadProgress::OnProgress { bytes_written: 1 })
+                    .await
+                    .map_err(|_| FastbootError::ProgressSendError)?;
+                listener
+                    .send(UploadProgress::OnFinished)
+                    .await
+                    .map_err(|_| FastbootError::ProgressSendError)?;
+                Ok(())
+            })
         }
 
-        async fn flash_from_reader(
-            &mut self,
-            _partition_name: &str,
+        fn flash_from_reader<'a>(
+            &'a mut self,
+            _partition_name: &'a str,
             size: u32,
-            _reader: &mut (dyn std::io::Read + Send),
+            _reader: &'a mut (dyn std::io::Read + Send),
             listener: Sender<UploadProgress>,
             _timeout: Duration,
-        ) -> Result<(), FastbootError> {
-            listener
-                .send(UploadProgress::OnStarted { size: size as u64 })
-                .await
-                .map_err(|_| FastbootError::ProgressSendError)?;
-            listener
-                .send(UploadProgress::OnProgress { bytes_written: size as u64 })
-                .await
-                .map_err(|_| FastbootError::ProgressSendError)?;
-            listener
-                .send(UploadProgress::OnFinished)
-                .await
-                .map_err(|_| FastbootError::ProgressSendError)?;
-            Ok(())
+        ) -> BoxFuture<'a, Result<(), FastbootError>> {
+            Box::pin(async move {
+                listener
+                    .send(UploadProgress::OnStarted { size: size as u64 })
+                    .await
+                    .map_err(|_| FastbootError::ProgressSendError)?;
+                listener
+                    .send(UploadProgress::OnProgress { bytes_written: size as u64 })
+                    .await
+                    .map_err(|_| FastbootError::ProgressSendError)?;
+                listener
+                    .send(UploadProgress::OnFinished)
+                    .await
+                    .map_err(|_| FastbootError::ProgressSendError)?;
+                Ok(())
+            })
         }
 
-        async fn erase(&mut self, _partition_name: &str) -> Result<(), FastbootError> {
-            Ok(())
+        fn erase<'a>(
+            &'a mut self,
+            _partition_name: &'a str,
+        ) -> BoxFuture<'a, Result<(), FastbootError>> {
+            Box::pin(async move { Ok(()) })
         }
 
-        async fn boot(&mut self) -> Result<(), FastbootError> {
-            let mut state = self.state.lock().unwrap();
-            state.boots += 1;
-            Ok(())
+        fn boot(&mut self) -> BoxFuture<'_, Result<(), FastbootError>> {
+            Box::pin(async move {
+                let mut state = self.state.lock().unwrap();
+                state.boots += 1;
+                Ok(())
+            })
         }
 
-        async fn reboot(&mut self) -> Result<(), FastbootError> {
-            Ok(())
+        fn reboot(&mut self) -> BoxFuture<'_, Result<(), FastbootError>> {
+            Box::pin(async move { Ok(()) })
         }
 
-        async fn reboot_bootloader(
+        fn reboot_bootloader(
             &mut self,
             listener: Sender<RebootEvent>,
-        ) -> Result<(), FastbootError> {
-            listener.send(RebootEvent::OnReboot).await.unwrap();
-            let mut state = self.state.lock().unwrap();
-            state.bootloader_reboots += 1;
-            Ok(())
+        ) -> BoxFuture<'_, Result<(), FastbootError>> {
+            Box::pin(async move {
+                listener.send(RebootEvent::OnReboot).await.unwrap();
+                let mut state = self.state.lock().unwrap();
+                state.bootloader_reboots += 1;
+                Ok(())
+            })
         }
 
-        async fn continue_boot(&mut self) -> Result<(), FastbootError> {
-            let mut state = self.state.lock().unwrap();
-            state.continue_boots += 1;
-            Ok(())
+        fn continue_boot(&mut self) -> BoxFuture<'_, Result<(), FastbootError>> {
+            Box::pin(async move {
+                let mut state = self.state.lock().unwrap();
+                state.continue_boots += 1;
+                Ok(())
+            })
         }
 
-        async fn get_staged(&mut self, _path: &str) -> Result<(), FastbootError> {
-            Ok(())
+        fn get_staged<'a>(
+            &'a mut self,
+            _path: &'a str,
+        ) -> BoxFuture<'a, Result<(), FastbootError>> {
+            Box::pin(async move { Ok(()) })
         }
 
-        async fn stage(
-            &mut self,
-            path: &str,
+        fn stage<'a>(
+            &'a mut self,
+            path: &'a str,
             _listener: Sender<UploadProgress>,
-        ) -> Result<(), FastbootError> {
-            let mut state = self.state.lock().unwrap();
-            state.staged_files.push(path.to_string());
-            Ok(())
+        ) -> BoxFuture<'a, Result<(), FastbootError>> {
+            Box::pin(async move {
+                let mut state = self.state.lock().unwrap();
+                state.staged_files.push(path.to_string());
+                Ok(())
+            })
         }
 
-        async fn set_active(&mut self, slot: &str) -> Result<(), FastbootError> {
-            let mut state = self.state.lock().unwrap();
-            state.set_actives.push(slot.to_string());
-            Ok(())
+        fn set_active<'a>(&'a mut self, slot: &'a str) -> BoxFuture<'a, Result<(), FastbootError>> {
+            Box::pin(async move {
+                let mut state = self.state.lock().unwrap();
+                state.set_actives.push(slot.to_string());
+                Ok(())
+            })
         }
 
-        async fn oem(&mut self, command: &str) -> Result<(), FastbootError> {
-            let mut state = self.state.lock().unwrap();
-            state.oem_commands.push(format!("oem {}", command));
-            Ok(())
+        fn oem<'a>(&'a mut self, command: &'a str) -> BoxFuture<'a, Result<(), FastbootError>> {
+            Box::pin(async move {
+                let mut state = self.state.lock().unwrap();
+                state.oem_commands.push(format!("oem {}", command));
+                Ok(())
+            })
         }
 
-        async fn stream<'a>(
-            &mut self,
-            _partition_name: &str,
+        fn stream<'a>(
+            &'a mut self,
+            _partition_name: &'a str,
             _stream_command: StreamCommand,
-            listener: &Sender<UploadProgress>,
+            listener: &'a Sender<UploadProgress>,
             _timeout: Duration,
-        ) -> Result<(), FastbootError> {
-            listener
-                .send(UploadProgress::OnProgress { bytes_written: 1 })
-                .await
-                .map_err(|_| FastbootError::ProgressSendError)
+        ) -> BoxFuture<'a, Result<(), FastbootError>> {
+            Box::pin(async move {
+                listener
+                    .send(UploadProgress::OnProgress { bytes_written: 1 })
+                    .await
+                    .map_err(|_| FastbootError::ProgressSendError)
+            })
         }
     }
 
