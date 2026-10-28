@@ -15,7 +15,8 @@ use fho::Result;
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::ErrorKind;
-use std::os::unix::fs::FileTypeExt;
+use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt};
+use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 use tokio::net::UnixStream;
 
@@ -42,6 +43,13 @@ pub enum FixType {
     DeleteMetadataFiles {
         /// The 16-character hex target IDs whose files should be removed.
         target_ids: Vec<String>,
+    },
+    /// Terminate a process holding an exclusive lock on `port_path` and clean up stale metadata.
+    KillDriverLockingPort {
+        /// Process ID holding the exclusive port lock.
+        pid: u32,
+        /// Filesystem path of the locked serial port.
+        port_path: PathBuf,
     },
 }
 
@@ -171,6 +179,47 @@ fn matches_target_filter(
         },
         None => false,
     }
+}
+
+/// Returns `(json_path, target_id, ConnectionMetadata)` for all valid metadata files matching `target`.
+fn matching_metadata_entries(
+    context: &EnvironmentContext,
+    target: Option<&str>,
+) -> Vec<(PathBuf, String, ConnectionMetadata)> {
+    let shared_path = get_shared_uart_path(context).unwrap_or_default();
+    let Ok(entries) = fs::read_dir(&shared_path) else {
+        return Vec::new();
+    };
+    let target_filter_id = target.map(resolve_target_filter_id);
+    let mut results = Vec::new();
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file() && path.extension().map_or(false, |ext| ext == "json") {
+            let filename = path.file_name().and_then(|f| f.to_str()).unwrap_or_default();
+            let file_target_id = filename
+                .strip_prefix("ffx_uart_")
+                .and_then(|f| f.strip_suffix(".json"))
+                .unwrap_or_default()
+                .to_string();
+
+            if let Ok(content) = fs::read_to_string(&path) {
+                if let Ok(meta) = serde_json::from_str::<ConnectionMetadata>(&content) {
+                    let target_id = if !file_target_id.is_empty() {
+                        file_target_id
+                    } else {
+                        meta.id
+                            .clone()
+                            .unwrap_or_else(|| get_target_id(&canonicalize_target(&meta.target)))
+                    };
+                    if matches_target_filter(target_filter_id.as_deref(), &target_id, Some(&meta)) {
+                        results.push((path, target_id, meta));
+                    }
+                }
+            }
+        }
+    }
+    results
 }
 
 /// Verifies metadata JSON integrity and detects stale metadata for dead daemon PIDs.
@@ -311,6 +360,141 @@ impl DiagnosticCheck for MetadataCheck {
         }
         if !warnings.is_empty() {
             return Ok(CheckStatus::Warning(warnings.join("\n    ")));
+        }
+
+        Ok(CheckStatus::Success)
+    }
+}
+
+/// Detects when a serial character device is exclusively locked by an external or stale process.
+#[derive(Debug)]
+pub struct PortLockCheck;
+
+impl PortLockCheck {
+    /// Finds the PID holding an exclusive `FLOCK` `WRITE` lock on `(dev, ino)` in `/proc/locks`.
+    fn find_flock_holder_pid(dev: u64, ino: u64) -> Option<u32> {
+        let locks_data = fs::read_to_string("/proc/locks").ok()?;
+        let major = nix::sys::stat::major(dev);
+        let minor = nix::sys::stat::minor(dev);
+        let expected_dev_ino = format!("{:02x}:{:02x}:{}", major, minor, ino);
+
+        for line in locks_data.lines() {
+            if line.contains("FLOCK") && line.contains("WRITE") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 6 && parts[5] == expected_dev_ino {
+                    if let Ok(pid) = parts[4].parse::<u32>() {
+                        return Some(pid);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn check_port_lock(path: PathBuf, active_daemon_pid: Option<u32>) -> Option<CheckStatus> {
+        if !path.exists() || path.to_string_lossy().starts_with("tcp:") {
+            return None;
+        }
+        let metadata = fs::metadata(&path).ok()?;
+        if !metadata.file_type().is_char_device() {
+            return None;
+        }
+        // `O_NONBLOCK` keeps the probe from waiting on carrier detect, and `O_NOCTTY` keeps the
+        // device from becoming this process's controlling terminal.
+        let file = match fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(nix::libc::O_NONBLOCK | nix::libc::O_NOCTTY)
+            .open(&path)
+        {
+            Ok(f) => f,
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                return Some(CheckStatus::Failure {
+                    message: format!(
+                        "Permission denied opening port {:?}. Check dialout/plugdev group permissions.",
+                        path
+                    ),
+                    fix_type: None,
+                });
+            }
+            Err(_) => return None,
+        };
+
+        #[allow(deprecated)]
+        let res = nix::fcntl::flock(file.as_raw_fd(), nix::fcntl::FlockArg::LockExclusiveNonblock);
+        match res {
+            Err(nix::errno::Errno::EWOULDBLOCK) => {
+                if let Some(pid) = Self::find_flock_holder_pid(metadata.dev(), metadata.ino()) {
+                    if active_daemon_pid == Some(pid) {
+                        return None;
+                    }
+                    // Only offer to kill leaked `ffx-uart-driver` processes; terminal programs
+                    // such as minicom or picocom must be closed by the user.
+                    if is_driver_running(pid) {
+                        return Some(CheckStatus::Failure {
+                            message: format!(
+                                "Port {:?} is locked exclusively by a stale ffx-uart-driver process (PID {}).",
+                                path, pid
+                            ),
+                            fix_type: Some(FixType::KillDriverLockingPort { pid, port_path: path }),
+                        });
+                    }
+                    return Some(CheckStatus::Failure {
+                        message: format!(
+                            "Port {:?} is locked exclusively by another process (PID {}). Close that process and retry.",
+                            path, pid
+                        ),
+                        fix_type: None,
+                    });
+                } else if active_daemon_pid.is_none() {
+                    return Some(CheckStatus::Failure {
+                        message: format!(
+                            "Port {:?} is locked exclusively by another process.",
+                            path
+                        ),
+                        fix_type: None,
+                    });
+                }
+            }
+            Ok(()) => {
+                #[allow(deprecated)]
+                let _ = nix::fcntl::flock(file.as_raw_fd(), nix::fcntl::FlockArg::Unlock);
+            }
+            _ => {}
+        }
+        None
+    }
+}
+
+impl DiagnosticCheck for PortLockCheck {
+    fn name(&self) -> &'static str {
+        "Exclusive Port Lock"
+    }
+
+    async fn diagnose(
+        &self,
+        context: &EnvironmentContext,
+        target: Option<&str>,
+    ) -> Result<CheckStatus> {
+        let mut targets_to_check: Vec<(String, Option<u32>)> =
+            matching_metadata_entries(context, target)
+                .into_iter()
+                .map(|(_p, _id, meta)| {
+                    let active_pid =
+                        if is_driver_running(meta.pid) { Some(meta.pid) } else { None };
+                    (meta.target, active_pid)
+                })
+                .collect();
+
+        if let Some(t) = target {
+            if targets_to_check.is_empty() {
+                targets_to_check.push((t.to_string(), None));
+            }
+        }
+
+        for (t, active_daemon_pid) in targets_to_check {
+            if let Some(failure) = Self::check_port_lock(PathBuf::from(&t), active_daemon_pid) {
+                return Ok(failure);
+            }
         }
 
         Ok(CheckStatus::Success)

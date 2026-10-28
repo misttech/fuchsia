@@ -5,11 +5,11 @@
 use crate::args::DoctorCommand;
 use crate::doctor::{
     CheckStatus, ConnectionExistsCheck, DiagnosticCheck, FixType, MetadataCheck,
-    has_live_connection, uart_file_path,
+    PortLockCheck, has_live_connection, uart_file_path,
 };
 use crate::metadata::{
     CONTROL_SOCKET_EXTENSION, ConnectionMetadata, METADATA_FILE_EXTENSION, UNIX_SOCKET_EXTENSION,
-    find_active_connection, get_shared_uart_path, is_target_id,
+    canonicalize_target, find_active_connection, get_shared_uart_path, get_target_id, is_target_id,
 };
 use crate::sys::{get_peer_pid, is_driver_running};
 use ffx_config::EnvironmentContext;
@@ -159,6 +159,13 @@ impl DoctorTool {
                 }
                 Ok(outcome)
             }
+            FixType::KillDriverLockingPort { pid, port_path } => {
+                crate::driver::terminate_process(pid).await?;
+                let canonical = canonicalize_target(&port_path.to_string_lossy());
+                let target_id = get_target_id(&canonical);
+                self.terminate_and_delete_files_for_target_id(&target_id).await?;
+                Ok(FixOutcome::Repaired)
+            }
         }
     }
 
@@ -214,6 +221,7 @@ impl DoctorTool {
 
         self.run_check(ConnectionExistsCheck, target_str, &mut counts, writer).await?;
         self.run_check(MetadataCheck, target_str, &mut counts, writer).await?;
+        self.run_check(PortLockCheck, target_str, &mut counts, writer).await?;
 
         let DoctorCounts { issues_found, issues_repaired, issues_cleared } = counts;
         let cleared_msg = if issues_cleared > 0 {
