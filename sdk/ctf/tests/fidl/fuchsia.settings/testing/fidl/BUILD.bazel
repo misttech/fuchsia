@@ -1,0 +1,24 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fidl_library(
+    name = "fuchsia.settings.test",
+    testonly = True,
+    srcs = [
+        "realm_factory.test.fidl",
+    ],
+    api_area = "Experiences",
+    category = "compat_test",
+    enable_hlcpp = True,
+    stable = True,
+    visibility = ["//sdk/ctf/tests/fidl/fuchsia.settings:__subpackages__"],
+    deps = [
+        "//sdk/fidl/fuchsia.component.sandbox",
+        "//sdk/fidl/fuchsia.testing.harness",
+    ],
+)

@@ -320,6 +320,9 @@ HOST_TOOL_FIDL_LIBRARY_ATOMS_LIST = [
 COMPAT_TEST_FIDL_LIBRARY_ATOMS_LIST = [
     # buildifier: keep sorted
     "//examples/fidl/fuchsia.examples:fuchsia.examples_idk",
+    "//sdk/ctf/tests/fidl/fuchsia.element/testing/fidl:fuchsia.element.test_idk",
+    "//sdk/ctf/tests/fidl/fuchsia.intl/testing/fidl:fuchsia.intl.test_idk",
+    "//sdk/ctf/tests/fidl/fuchsia.settings/testing/fidl:fuchsia.settings.test_idk",
     "//sdk/fidl/fuchsia.testing.harness:fuchsia.testing.harness_idk",
     "//sdk/fidl/fuchsia.ui.focus:fuchsia.ui.focus_idk",
     "//sdk/fidl/fuchsia.ui.observation.scope:fuchsia.ui.observation.scope_idk",
