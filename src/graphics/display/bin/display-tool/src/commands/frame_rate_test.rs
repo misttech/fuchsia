@@ -26,7 +26,7 @@ const BLUE: [u8; 4] = [255, 0, 0, 255];
 //
 // Callers must call `image.cache_clean()` to flush the cache after finishing
 // drawing everything.
-fn draw_grid(
+pub fn draw_grid(
     grid: Rect<u32>,
     rows: u32,
     cols: u32,
@@ -80,7 +80,7 @@ fn get_cell_color_for_frame(frame_num: u64, rows: u32, cols: u32) -> &'static [u
 //
 // TODO(https://fxbug.dev/42084641): The precondition can be relaxed to "either `rows` or
 // `cols` must be even".
-fn get_position_in_grid_for_frame(frame_num: u64, rows: u32, cols: u32) -> Point2D<u32> {
+pub fn get_position_in_grid_for_frame(frame_num: u64, rows: u32, cols: u32) -> Point2D<u32> {
     // Assume the grid is of size 10 x 6, by connecting 00->01->...->58->59->00
     // in the grid below, we can get a Hamiltonian loop describing the movement
     // of the colored cell.
@@ -215,6 +215,7 @@ pub async fn run(
     display: &DisplayInfo,
     grid_width: Option<u32>,
     grid_height: Option<u32>,
+    mode_index: usize,
 ) -> Result<()> {
     // TODO(https://fxbug.dev/42084882): Rather than manually checking the display engine
     // output performance, we should add an automatic check to print error /
@@ -226,9 +227,14 @@ pub async fn run(
         );
     }
 
-    // Obtain the display resolution based on the display's preferred mode.
+    // Obtain the display resolution and refresh rate from the selected mode. All the modes
+    // considered by `--refresh-rate` have the preferred mode's resolution.
     let (width, height, expected_frame_rate) = {
-        let mode = &display.0.modes[0];
+        let mode = display
+            .0
+            .modes
+            .get(mode_index)
+            .with_context(|| format!("display has no mode {}", mode_index))?;
         (
             mode.active_area.width,
             mode.active_area.height,

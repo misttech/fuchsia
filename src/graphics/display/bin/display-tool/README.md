@@ -41,6 +41,23 @@ ffx target ssh -- display-tool <command> [options]
 To terminate continuous animation or vsync monitoring commands, send `SIGINT`
 (Ctrl+C).
 
+### Selecting a display mode
+
+By default, every command uses the display's preferred mode (mode 0 in `info`).
+The top-level `--refresh-rate <hz>` option goes before the command. It selects
+the mode whose refresh rate is closest to `<hz>`, among the modes with the
+preferred mode's resolution, and prints the selected mode. It also prints a
+warning if the selected mode's rate is more than 2% away from `<hz>`.
+
+```posix-terminal
+ffx target ssh -- display-tool --refresh-rate 60 frame-rate-test
+```
+
+The option applies to the command's display (the first display if the command
+does not name one). The mode takes effect when the command commits its first
+configuration, so `info` ignores it. `frame-rate-test` prints the
+selected mode's rate as its expected frame rate.
+
 ---
 
 ## Intended use for display testing
@@ -218,3 +235,82 @@ Additional checks:
 
 * Every `SetDisplayPowerMode` line reports `-> Ok(Ok(()))`.
 * After each power on, a `first vsync after power on` line appears.
+
+### Step 8: Refresh cadence
+
+Test that the display driver delivers vsync events at the selected mode's rate,
+and shows each submitted frame promptly, whatever the client's frame rate. This
+step matters most for displays with several refresh rates or a variable refresh
+rate.
+
+```posix-terminal
+ffx target ssh -- display-tool --refresh-rate 120 cadence --fps 24 \
+    --burst-frames 48 --idle-ms 3000 --duration-s 20 --verbose
+```
+
+`cadence` presents frames on a timer that does not depend on vsync, and records
+every vsync event. Before the measurement starts, it presents a black warm-up
+frame and waits until a vsync reports it, plus one more vsync. So a mode switch
+that `--refresh-rate` causes, and the display pipeline's start-up, stay out of
+the measurement. Each frame is rendered as soon as its image is free, and
+committed when it is due. Options:
+
+* `--fps <f>`: frame rate. Defaults to 60. `0` presents one frame and then
+  idles, which shows the vsync cadence of a static screen.
+* `--burst-frames <n> --idle-ms <ms>`: present `n` frames, pause for `ms`
+  milliseconds (more than 0), and repeat. If frames fall behind the schedule, a
+  burst starts `ms` milliseconds after the last frame of the previous burst was
+  committed, rather than back to back with it, and the rest of the schedule
+  moves with it.
+* `--duration-s <s>`: length of the measurement. Defaults to 10.
+* `--verbose`: also report every second. Each report covers the second that
+  just ended. A frame counts as shown in the report of the second it was
+  presented in, so a frame whose first vsync comes after the report counts as
+  not shown there, but as shown in the final report.
+* `--log-vsync`: print a line for every vsync event, with its time, the interval
+  since the previous vsync, the displayed config stamp, and the frame it shows.
+
+The final report includes:
+
+* the vsync count, the number of vsyncs with a stale config stamp (0, or lower
+  than an earlier one), and the mean vsync rate;
+* the minimum, median, 90th percentile and maximum vsync interval;
+* a histogram of vsync intervals, with buckets that separate common refresh
+  rates;
+* the number of frames presented, shown (reported by a vsync), and late
+  (committed more than half a frame period after their scheduled time, because
+  the display had not shown a later frame yet, so the frame's image was not
+  free, or because rendering the frame did not finish in time);
+* the minimum, median, 90th percentile and maximum latency from committing a
+  frame to the first vsync that reports it.
+
+The same values are printed on one `cadence_summary` line (`cadence_window`
+for `--verbose` reports) of space-separated `key=value` pairs, for scripts.
+Missing values are `nan`.
+
+#### Expected visuals
+
+The same 10x6 grid as the frame rate test. The moving cell's color changes every
+frame, cycling through red, green, blue, yellow, cyan, magenta and white. A bar
+below the grid shows the same color.
+
+#### Verification
+
+* In a fixed-rate mode, vsync intervals cluster around the mode's period.
+* With a variable refresh rate whose vsyncs follow the panel's refresh, vsync
+  intervals may stretch while no frames are presented. Then, the first vsync
+  after a frame is submitted arrives within about one period of the fastest
+  rate. A mode whose vsyncs come from a fixed-rate tearing effect signal, such
+  as the adaptive refresh mode of a command-mode panel (120 Hz), keeps a fixed
+  vsync interval even when the panel itself refreshes more slowly.
+* `frames_shown` is close to `frames_presented` when `--fps` is clearly below
+  the selected mode's refresh rate. Near the refresh rate, the phase between the
+  frame timer and vsync drifts, and some frames are replaced before a vsync
+  reports them. Check the rate the tool printed when it selected the mode: for
+  example, `--refresh-rate 60` may select a 58.897 Hz mode, which is below the
+  default `--fps 60`. The frame committed last may also still be waiting for its
+  vsync when the measurement ends.
+* `vsyncs_stale` is 0.
+* The moving cell advances by one position per frame, and the color changes on
+  every frame.
+

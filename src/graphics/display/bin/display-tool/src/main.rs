@@ -14,6 +14,7 @@ use std::time::Duration;
 mod commands;
 mod draw;
 mod fps;
+mod mode_selection;
 mod rgb;
 mod runner;
 mod runner_multilayer;
@@ -21,6 +22,14 @@ mod runner_multilayer;
 /// Top-level list of this tool's command-line arguments
 #[derive(FromArgs)]
 struct Args {
+    /// before running the command, select the display mode whose refresh
+    /// rate is closest to this value, in Hz. Only modes with the preferred
+    /// mode's resolution are considered. Applies to the command's display, and
+    /// takes effect when the command commits its first configuration. Ignored
+    /// by info, which commits no configuration.
+    #[argh(option)]
+    refresh_rate: Option<f64>,
+
     #[argh(subcommand)]
     cmd: SubCommands,
 }
@@ -139,6 +148,48 @@ struct FrameRateTestArgs {
     grid_height: Option<u32>,
 }
 
+/// Measure the vsync cadence while presenting frames on a timer-driven
+/// schedule.
+///
+/// Frames show a moving cell whose color changes every frame. Every vsync is
+/// recorded. The command prints vsync interval statistics and the latency from
+/// submitting each frame to the first vsync that reports it, as text and as one
+/// `cadence_summary` line of key=value pairs.
+#[derive(FromArgs)]
+#[argh(subcommand, name = "cadence")]
+struct CadenceArgs {
+    /// ID of the display to present on
+    #[argh(positional)]
+    id: Option<u64>,
+
+    /// frames per second to present, paced by a timer that does not depend on
+    /// vsync. 0 presents one frame and then idles. Defaults to 60.
+    #[argh(option, default = "60.0")]
+    fps: f64,
+
+    /// number of frames in each burst. Requires --idle-ms. By default, frames
+    /// are presented without pause.
+    #[argh(option)]
+    burst_frames: Option<NonZero<u64>>,
+
+    /// time between the last frame of a burst and the first frame of the next
+    /// burst, in milliseconds. Requires --burst-frames.
+    #[argh(option)]
+    idle_ms: Option<u64>,
+
+    /// length of the measurement, in seconds. Defaults to 10.
+    #[argh(option, default = "NonZero::new(10).unwrap()")]
+    duration_s: NonZero<u64>,
+
+    /// also print statistics for every second of the measurement
+    #[argh(switch)]
+    verbose: bool,
+
+    /// print a line for every vsync event
+    #[argh(switch)]
+    log_vsync: bool,
+}
+
 #[derive(FromArgs)]
 #[argh(subcommand)]
 enum SubCommands {
@@ -148,6 +199,22 @@ enum SubCommands {
     Squares(SquaresArgs),
     MultiLayerSquares(MultiLayerSquaresArgs),
     FrameRateTest(FrameRateTestArgs),
+    Cadence(CadenceArgs),
+}
+
+impl SubCommands {
+    /// Returns the ID of the display that the command uses, if one was given.
+    fn display_id(&self) -> Option<u64> {
+        match self {
+            SubCommands::Info(args) => args.id,
+            SubCommands::Vsync(args) => args.id,
+            SubCommands::Color(args) => args.id,
+            SubCommands::Squares(args) => args.id,
+            SubCommands::MultiLayerSquares(args) => args.id,
+            SubCommands::FrameRateTest(args) => args.id,
+            SubCommands::Cadence(args) => args.id,
+        }
+    }
 }
 
 #[fuchsia::main]
@@ -156,6 +223,21 @@ async fn main() -> Result<(), Error> {
 
     let args: Args = argh::from_env();
     let coordinator = Coordinator::init(TEST_UTILITY_CLIENT_PRIORITY).await?;
+
+    // Index of the selected mode in the display's mode list.
+    let mode_index = match args.refresh_rate {
+        None => 0,
+        // Why: `info` commits no configuration, so the mode request would never take effect.
+        Some(_) if matches!(args.cmd, SubCommands::Info(_)) => {
+            println!("--refresh-rate has no effect on info; ignoring it");
+            0
+        }
+        Some(refresh_rate_hz) => {
+            let display =
+                mode_selection::find_display(&coordinator, args.cmd.display_id().map(DisplayId))?;
+            mode_selection::set_refresh_rate(&coordinator, &display, refresh_rate_hz)?
+        }
+    };
 
     let fidl_events_future = coordinator.handle_events().err_into();
     let cmd_future = async {
@@ -190,6 +272,22 @@ async fn main() -> Result<(), Error> {
                     args.id.map(DisplayId),
                     args.grid_width,
                     args.grid_height,
+                    mode_index,
+                )
+                .await
+            }
+            SubCommands::Cadence(args) => {
+                commands::cadence(
+                    &coordinator,
+                    args.id.map(DisplayId),
+                    commands::CadenceArgs {
+                        fps: args.fps,
+                        burst_frames: args.burst_frames,
+                        idle_ms: args.idle_ms,
+                        duration: Duration::from_secs(args.duration_s.get()),
+                        verbose: args.verbose,
+                        log_vsync: args.log_vsync,
+                    },
                 )
                 .await
             }

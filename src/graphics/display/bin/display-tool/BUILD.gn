@@ -36,6 +36,7 @@ rustc_binary("bin") {
   sources = [
     "src/commands.rs",
     "src/commands/bouncing_squares.rs",
+    "src/commands/cadence.rs",
     "src/commands/display_color_layer.rs",
     "src/commands/frame_rate_test.rs",
     "src/commands/multilayer_squares.rs",
@@ -43,6 +44,7 @@ rustc_binary("bin") {
     "src/draw.rs",
     "src/fps.rs",
     "src/main.rs",
+    "src/mode_selection.rs",
     "src/rgb.rs",
     "src/runner.rs",
     "src/runner_multilayer.rs",

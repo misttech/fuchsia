@@ -4,9 +4,11 @@
 
 use anyhow::{Result, format_err};
 use display_utils::{Coordinator, DisplayId, PixelFormat};
+use std::num::NonZero;
 use std::time::Duration;
 
 mod bouncing_squares;
+mod cadence;
 mod display_color_layer;
 mod frame_rate_test;
 mod multilayer_squares;
@@ -119,6 +121,7 @@ pub async fn frame_rate_test(
     id: Option<DisplayId>,
     grid_width: Option<u32>,
     grid_height: Option<u32>,
+    mode_index: usize,
 ) -> Result<()> {
     let displays = coordinator.displays();
     if displays.is_empty() {
@@ -134,7 +137,7 @@ pub async fn frame_rate_test(
             .ok_or_else(|| format_err!("display with id '{:?}' not found", id))?,
     };
 
-    frame_rate_test::run(coordinator, display, grid_width, grid_height).await
+    frame_rate_test::run(coordinator, display, grid_width, grid_height, mode_index).await
 }
 
 pub async fn multilayer_squares(
@@ -157,4 +160,49 @@ pub async fn multilayer_squares(
     };
 
     multilayer_squares::run(coordinator, display, layer_count).await
+}
+
+/// Arguments for [`cadence`].
+pub struct CadenceArgs {
+    /// Frames per second, or 0 to present one frame.
+    pub fps: f64,
+    /// Frames per burst. Requires `idle_ms`.
+    pub burst_frames: Option<NonZero<u64>>,
+    /// Idle time between bursts. Requires `burst_frames`.
+    pub idle_ms: Option<u64>,
+    /// Length of the run.
+    pub duration: Duration,
+    /// Print a report every second.
+    pub verbose: bool,
+    /// Print a line for every vsync event.
+    pub log_vsync: bool,
+}
+
+/// Presents frames on a timer-driven schedule on `id` (or the first available display) and
+/// reports the vsync cadence.
+///
+/// # Outcome
+///
+/// Returns an error if the arguments are invalid, no displays are attached, `id` is not found, or
+/// the measurement fails.
+pub async fn cadence(
+    coordinator: &Coordinator,
+    id: Option<DisplayId>,
+    args: CadenceArgs,
+) -> Result<()> {
+    let schedule = cadence::Schedule::new(args.fps, args.burst_frames, args.idle_ms)?;
+    let duration_ns = i64::try_from(args.duration.as_nanos())
+        .map_err(|_| format_err!("--duration-s is too large"))?;
+    let display = crate::mode_selection::find_display(coordinator, id)?;
+    cadence::run(
+        coordinator,
+        cadence::Args {
+            display: &display,
+            schedule,
+            duration_ns,
+            verbose: args.verbose,
+            log_vsync: args.log_vsync,
+        },
+    )
+    .await
 }
