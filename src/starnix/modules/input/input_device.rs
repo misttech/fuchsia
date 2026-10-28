@@ -5,7 +5,7 @@
 use crate::InputFile;
 use crate::input_event_relay::{
     FUCHSIA_KEYBOARD_PRODUCT_ID, FUCHSIA_MOUSE_PRODUCT_ID, FUCHSIA_TOUCH_PRODUCT_ID,
-    FUCHSIA_VENDOR_ID, OpenedFiles,
+    FUCHSIA_VENDOR_ID, OpenedFiles, event_time_ns_from_events,
 };
 use futures::FutureExt;
 use starnix_core::device::kobject::{Device, DeviceMetadata};
@@ -394,6 +394,15 @@ impl InputDevice {
         }
     }
 
+    /// Dispatches converted Linux `uapi::input_event`s to any open files for this device,
+    /// or buffers them if no files have been opened yet.
+    pub fn dispatch_events(&self, events: &[uapi::input_event]) {
+        if self.open_files.lock().dispatch_events(events) {
+            let event_time_ns = event_time_ns_from_events(events);
+            self.inspect_status.count_total_generated_events(events.len() as u64, event_time_ns);
+        }
+    }
+
     /// Registers the input device, and its event interface, with the kernel's device registry.
     ///
     /// Linux exposes each input device as an `inputN` device of the `input` class, with the
@@ -417,8 +426,20 @@ impl InputDevice {
     /// both devices.
     pub fn register(self, kernel: &Kernel, minor: u32) -> Result<Device, Errno> {
         let registry = &kernel.device_registry;
+        let event_name = format!("event{minor}");
+        let event_metadata = DeviceMetadata::new(
+            format!("input/{event_name}").into(),
+            StarnixDeviceId::new(INPUT_MAJOR, minor),
+            DeviceMode::Char,
+        );
+        registry.register_minor(
+            event_name.as_str().into(),
+            event_metadata.clone(),
+            self.clone(),
+        )?;
+
         let input_class = registry.objects.input_class();
-        let info = self.info.clone();
+        let info = self.info;
 
         let input_device = registry.add_numberless_device(
             format!("input{minor}").as_str().into(),
@@ -453,19 +474,15 @@ impl InputDevice {
             },
         );
 
-        Ok(registry.add_device_with_dir(
+        let event_device = registry.add_major_device(
             kernel,
-            format!("event{minor}").as_str().into(),
-            DeviceMetadata::new(
-                format!("input/event{minor}").into(),
-                StarnixDeviceId::new(INPUT_MAJOR, minor),
-                DeviceMode::Char,
-            ),
+            event_name.as_str().into(),
+            event_metadata,
             Some(input_device),
             input_class,
             build_device_directory,
-            self,
-        ))
+        );
+        Ok(event_device)
     }
 
     /// Unregisters an input device previously registered with [`Self::register`].
@@ -3985,6 +4002,56 @@ mod test {
 
             InputDevice::unregister(&current_task, event_device);
             assert!(root.lookup("devices/virtual/input/input8".into()).is_none());
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_register_duplicate_minor_returns_eexist_without_corrupting_state() {
+        spawn_kernel_and_run(async move |current_task| {
+            let kernel = current_task.kernel();
+            let inspector = fuchsia_inspect::Inspector::default();
+            let descriptor = fidl_fuchsia_input_report::DeviceDescriptor::default();
+            let dev1 = InputDevice::from_device_descriptor(
+                &descriptor,
+                None,
+                "input_dev_1",
+                &inspector.root(),
+            );
+            let dev2 = InputDevice::from_device_descriptor(
+                &descriptor,
+                None,
+                "input_dev_2",
+                &inspector.root(),
+            );
+
+            let event_device1 = dev1.register(kernel, 5).expect("first register should succeed");
+            assert_eq!(event_device1.name(), "event5");
+
+            // Attempting to register another device on the same minor must fail with EEXIST.
+            let err = dev2.register(kernel, 5).expect_err("second register should fail");
+            assert_eq!(err, starnix_uapi::errno!(EEXIST));
+
+            // Verify original device's sysfs nodes and device registration were not perturbed.
+            let root = &kernel.device_registry.objects.root;
+            assert!(root.lookup("devices/virtual/input/input5".into()).is_some());
+            assert!(root.lookup("devices/virtual/input/input5/event5".into()).is_some());
+            assert!(
+                kernel
+                    .device_registry
+                    .get_device(StarnixDeviceId::new(INPUT_MAJOR, 5), DeviceMode::Char)
+                    .is_ok()
+            );
+
+            // Cleanup
+            InputDevice::unregister(&current_task, event_device1);
+            assert!(root.lookup("devices/virtual/input/input5".into()).is_none());
+            assert!(
+                kernel
+                    .device_registry
+                    .get_device(StarnixDeviceId::new(INPUT_MAJOR, 5), DeviceMode::Char)
+                    .is_err()
+            );
         })
         .await;
     }

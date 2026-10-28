@@ -204,9 +204,14 @@ impl RegisteredDevices {
 
     /// Register a minor device.
     ///
-    /// Overwrites any existing minor device registered with the given `DeviceId`.
-    fn register_minor(&mut self, devt: DeviceId, entry: DeviceEntry) {
-        self.minors.insert(devt, entry);
+    /// Returns `EEXIST` if the minor device is already registered.
+    fn register_minor(&mut self, devt: DeviceId, entry: DeviceEntry) -> Result<(), Errno> {
+        if let Entry::Vacant(slot) = self.minors.entry(devt) {
+            slot.insert(entry);
+            Ok(())
+        } else {
+            error!(EEXIST)
+        }
     }
 
     /// Unregister a minor device.
@@ -381,7 +386,9 @@ impl DeviceRegistry {
         dev_ops: impl DeviceOps,
     ) -> Device {
         let entry = DeviceEntry::new(name.into(), dev_ops);
-        self.devices(metadata.mode).register_minor(metadata.devt, entry);
+        if let Err(err) = self.devices(metadata.mode).register_minor(metadata.devt, entry) {
+            log_error!("Cannot register minor device {:?} ({:?})", metadata.devt, err);
+        }
         self.add_major_device(kernel, name, metadata, parent, subsystem, build_directory)
     }
 
@@ -481,8 +488,26 @@ impl DeviceRegistry {
         let devt = self.state.lock().dyn_chardev_allocator.allocate()?;
         let metadata = DeviceMetadata::new(name.into(), devt, DeviceMode::Char);
         let entry = DeviceEntry::new(name.into(), dev_ops);
-        self.devices(metadata.mode).register_minor(metadata.devt, entry);
+        self.devices(metadata.mode).register_minor(metadata.devt, entry)?;
         Ok(metadata)
+    }
+
+    /// Register a minor device without adding it to the `KObjectStore`.
+    ///
+    /// Returns `EEXIST` if the minor device is already registered.
+    pub fn register_minor(
+        &self,
+        name: &FsStr,
+        metadata: DeviceMetadata,
+        dev_ops: impl DeviceOps,
+    ) -> Result<(), Errno> {
+        let entry = DeviceEntry::new(name.into(), dev_ops);
+        self.devices(metadata.mode).register_minor(metadata.devt, entry)
+    }
+
+    /// Unregister a minor device.
+    pub fn unregister_minor(&self, metadata: &DeviceMetadata) {
+        self.devices(metadata.mode).unregister_minor(metadata.devt);
     }
 
     /// Adds a numbered device whose major number was previously registered via

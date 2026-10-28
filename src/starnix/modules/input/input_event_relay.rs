@@ -87,6 +87,7 @@ use starnix_sync::{
     InputEventRelayOpenedFilesLock, InputRelayDeviceInfosLock, InputRelayDisplaySizeLock,
     LockDepMutex,
 };
+use starnix_types::time::duration_from_timeval;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{error, uapi};
 use std::collections::VecDeque;
@@ -118,6 +119,22 @@ pub struct StartRelaysArgs {
     pub display_height: i32,
 }
 
+const MAX_PRE_OPEN_BUFFERED_EVENTS: usize = 1024;
+
+/// Computes the event timestamp in nanoseconds from the last event in a slice, using
+/// `duration_from_timeval` and falling back to saturating arithmetic.
+pub fn event_time_ns_from_events(events: &[uapi::input_event]) -> i64 {
+    events.last().map_or(0, |last| {
+        duration_from_timeval::<zx::MonotonicTimeline>(last.time)
+            .map(|d| d.into_nanos())
+            .unwrap_or_else(|_| {
+                (last.time.tv_sec as i64)
+                    .saturating_mul(1_000_000_000)
+                    .saturating_add((last.time.tv_usec as i64).saturating_mul(1_000))
+            })
+    })
+}
+
 #[derive(Default)]
 pub struct OpenedFilesState {
     files: Vec<Weak<InputFile>>,
@@ -130,10 +147,49 @@ impl OpenedFilesState {
         if !self.has_been_opened {
             self.has_been_opened = true;
             if !self.buffered_events.is_empty() {
-                file.add_events(std::mem::take(&mut self.buffered_events));
+                let events = std::mem::take(&mut self.buffered_events);
+                if let Some(inspect) = &file.inspect_status {
+                    let event_time_ns = event_time_ns_from_events(&events);
+                    inspect.count_generated_events(events.len() as u64, event_time_ns);
+                }
+                file.add_events(events);
             }
         }
         self.files.push(Arc::downgrade(file));
+    }
+
+    pub fn dispatch_events(&mut self, events: &[uapi::input_event]) -> bool {
+        if events.is_empty() {
+            return false;
+        }
+        if !self.has_been_opened {
+            let available_space =
+                MAX_PRE_OPEN_BUFFERED_EVENTS.saturating_sub(self.buffered_events.len());
+            if events.len() <= available_space {
+                self.buffered_events.extend_from_slice(events);
+                return true;
+            } else {
+                log_warn!(
+                    "Dropping {} pre-open input events: buffer capacity exceeded (buffered: {}, limit: {})",
+                    events.len(),
+                    self.buffered_events.len(),
+                    MAX_PRE_OPEN_BUFFERED_EVENTS
+                );
+                return false;
+            }
+        }
+        let event_time_ns = event_time_ns_from_events(events);
+        self.files.retain(|f| {
+            let Some(file) = f.upgrade() else {
+                return false;
+            };
+            if let Some(inspect) = &file.inspect_status {
+                inspect.count_generated_events(events.len() as u64, event_time_ns);
+            }
+            file.add_events(events.to_vec());
+            true
+        });
+        true
     }
 }
 
@@ -3113,5 +3169,155 @@ mod test {
             });
         })
         .await;
+    }
+
+    #[::fuchsia::test]
+    fn test_opened_files_state_bounding_and_buffering() {
+        let mut state = OpenedFilesState::default();
+        let dummy_event = uapi::input_event {
+            time: uapi::timeval { tv_sec: 0, tv_usec: 0 },
+            type_: uapi::EV_KEY as u16,
+            code: 1,
+            value: 1,
+        };
+        // Dispatch batch that fits within MAX_PRE_OPEN_BUFFERED_EVENTS (1024)
+        let batch = vec![dummy_event; 1000];
+        assert!(state.dispatch_events(&batch));
+        assert_eq!(state.buffered_events.len(), 1000);
+
+        // Dispatch a batch that exceeds remaining space (24); entire batch should be dropped
+        let overflow_batch = vec![dummy_event; 50];
+        assert!(!state.dispatch_events(&overflow_batch));
+        assert_eq!(state.buffered_events.len(), 1000);
+
+        // Flushing buffered pre-open events into the first opened InputFile via on_file_opened
+        let inspector = fuchsia_inspect::Inspector::default();
+        let file1 = Arc::new(InputFile::new_keyboard(
+            InputDeviceInfo::new(
+                uapi::input_id { bustype: 0, vendor: 0, product: 0, version: 0 },
+                "keyboard_1".to_string(),
+            ),
+            inspector.root(),
+        ));
+        file1.init_inspect_status();
+        state.on_file_opened(&file1);
+
+        assert_eq!(file1.read_events(2000).len(), 1000);
+        assert_eq!(
+            file1
+                .inspect_status
+                .as_ref()
+                .unwrap()
+                .uapi_events_generated_count
+                .load(Ordering::Relaxed),
+            1000
+        );
+
+        // A second opened file should not receive the flushed pre-open events
+        let file2 = Arc::new(InputFile::new_keyboard(
+            InputDeviceInfo::new(
+                uapi::input_id { bustype: 0, vendor: 0, product: 0, version: 0 },
+                "keyboard_2".to_string(),
+            ),
+            inspector.root(),
+        ));
+        file2.init_inspect_status();
+        state.on_file_opened(&file2);
+
+        assert!(file2.read_events(2000).is_empty());
+        assert_eq!(
+            file2
+                .inspect_status
+                .as_ref()
+                .unwrap()
+                .uapi_events_generated_count
+                .load(Ordering::Relaxed),
+            0
+        );
+    }
+
+    #[::fuchsia::test]
+    fn test_input_device_dispatch_events_and_inspect_counters() {
+        let inspector = fuchsia_inspect::Inspector::default();
+        let input_device = InputDevice::new_keyboard(
+            InputDeviceInfo::new(
+                uapi::input_id { bustype: 0, vendor: 0, product: 0, version: 0 },
+                "test_keyboard".to_string(),
+            ),
+            "test_keyboard",
+            inspector.root(),
+        );
+
+        // 1. Dispatch events prior to any files being opened (buffered and counted)
+        let pre_open_event = uapi::input_event {
+            time: uapi::timeval { tv_sec: 1, tv_usec: 0 },
+            type_: uapi::EV_KEY as u16,
+            code: 10,
+            value: 1,
+        };
+        input_device.dispatch_events(&[pre_open_event]);
+        assert_eq!(
+            input_device.inspect_status.total_uapi_events_generated_count.load(Ordering::Relaxed),
+            1
+        );
+
+        // 2. Open first file; receives buffered pre-open event and updates its inspect counter
+        let _file_ops1 = input_device.open_internal();
+        let file1 = input_device.open_files.lock()[0].upgrade().expect("file1 upgraded");
+        assert_eq!(file1.read_events(10).len(), 1);
+        assert_eq!(
+            file1
+                .inspect_status
+                .as_ref()
+                .unwrap()
+                .uapi_events_generated_count
+                .load(Ordering::Relaxed),
+            1
+        );
+
+        // 3. Open second file; does NOT receive flushed pre-open event
+        let _file_ops2 = input_device.open_internal();
+        let file2 = input_device.open_files.lock()[1].upgrade().expect("file2 upgraded");
+        assert!(file2.read_events(10).is_empty());
+        assert_eq!(
+            file2
+                .inspect_status
+                .as_ref()
+                .unwrap()
+                .uapi_events_generated_count
+                .load(Ordering::Relaxed),
+            0
+        );
+
+        // 4. Dispatch events while files are open; delivers to both files and updates counters
+        let live_event = uapi::input_event {
+            time: uapi::timeval { tv_sec: 2, tv_usec: 0 },
+            type_: uapi::EV_KEY as u16,
+            code: 20,
+            value: 1,
+        };
+        input_device.dispatch_events(&[live_event]);
+
+        assert_eq!(file1.read_events(10).len(), 1);
+        assert_eq!(file2.read_events(10).len(), 1);
+
+        let total_device_events =
+            input_device.inspect_status.total_uapi_events_generated_count.load(Ordering::Relaxed);
+        let file1_events = file1
+            .inspect_status
+            .as_ref()
+            .unwrap()
+            .uapi_events_generated_count
+            .load(Ordering::Relaxed);
+        let file2_events = file2
+            .inspect_status
+            .as_ref()
+            .unwrap()
+            .uapi_events_generated_count
+            .load(Ordering::Relaxed);
+
+        assert_eq!(total_device_events, 2);
+        assert_eq!(file1_events, 2);
+        assert_eq!(file2_events, 1);
     }
 }

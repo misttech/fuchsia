@@ -356,7 +356,7 @@ impl KObjectStore {
     ///
     /// Most clients hold weak references to KObjects, which means those references will become
     /// invalid shortly after this function is called.
-    pub(super) fn remove(&self, device: &Device) {
+    pub fn remove(&self, device: &Device) {
         let name = device.name();
         // Remove the device from its views in the reverse order in which it was added.
         if let Some(metadata) = device.metadata() {
