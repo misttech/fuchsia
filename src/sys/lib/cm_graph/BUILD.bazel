@@ -21,7 +21,7 @@ rustc_library(
     ],
     with_unit_tests = True,
     deps = [
-        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust_common",
         "//src/lib/directed_graph",
         "//third_party/rust_crates/vendor:flyweights",
     ],

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use directed_graph::DirectedGraph;
-use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_decl_common as fdecl;
 use flyweights::FlyStr;
 use std::fmt;
 
