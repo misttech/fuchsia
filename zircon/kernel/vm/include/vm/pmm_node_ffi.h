@@ -43,18 +43,10 @@ void rust_pmm_node_begin_free_loaned_array(PmmNode* node, vm_page_t** pages, siz
                                                                 void* cookie),
                                            void* cookie, FreeLoanedPagesHolder* flph);
 void rust_pmm_node_unwire_page(PmmNode* node, vm_page_t* page);
-void rust_pmm_node_begin_loan(PmmNode* node, VmPageDoublyLinkedList* page_list,
-                              PmmOptDelayReuse delay_reuse);
-void rust_pmm_node_cancel_loan(PmmNode* node, vm_page_t* page);
-void rust_pmm_node_end_loan(PmmNode* node, vm_page_t* page);
-bool rust_pmm_node_set_free_memory_signal(PmmNode* node, uint64_t free_lower_bound,
-                                          uint64_t free_upper_bound,
-                                          uint64_t delay_allocations_pages, Event* event);
 zx_status_t rust_pmm_node_wait_for_single_page_allocation(PmmNode* node, zx_instant_mono_t deadline,
                                                           zx_duration_t slack_amount,
                                                           slack_mode slack_mode, bool suspendable,
                                                           vm_page_t** out_page);
-void rust_pmm_node_stop_returning_should_wait(PmmNode* node);
 uint64_t rust_pmm_node_count_free_pages(const PmmNode* node);
 uint64_t rust_pmm_node_count_loaned_free_pages(const PmmNode* node);
 uint64_t rust_pmm_node_count_loan_cancelled_pages(const PmmNode* node);
@@ -65,14 +57,12 @@ void rust_pmm_node_dump_free(const PmmNode* node);
 void rust_pmm_node_dump(const PmmNode* node, bool is_panic);
 zx_status_t rust_pmm_node_get_arena_info(const PmmNode* node, size_t count, uint64_t i,
                                          pmm_arena_info_t* buffer, size_t buffer_size);
-void rust_pmm_node_add_free_pages(PmmNode* node, VmPageDoublyLinkedList* list);
 void rust_pmm_node_fill_free_pages_and_arm(PmmNode* node);
 void rust_pmm_node_check_all_free_pages(PmmNode* node);
 void rust_pmm_node_poison_all_free_pages(PmmNode* node);
 bool rust_pmm_node_enable_free_page_filling(PmmNode* node, size_t fill_size, uint8_t action);
 void rust_pmm_node_seed_random_should_wait(PmmNode* node);
 void rust_pmm_node_report_alloc_failure(PmmNode* node, const PmmNode::AllocFailure* failure);
-void rust_pmm_node_get_first_alloc_failure(const PmmNode* node, PmmNode::AllocFailure* out_failure);
 
 __END_CDECLS
 

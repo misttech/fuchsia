@@ -139,54 +139,6 @@ class PmmNode {
 
   void UnwirePage(vm_page* page);
 
-  // Frees all pages in the given list and places them in the loaned state available to be returned
-  // from AllocLoanedPage.
-  //
-  // |delay_reuse| controls whether the newly loaned pages are eligile for immediate or delayed
-  // reuse.
-  void BeginLoan(VmPageDoublyLinkedList* page_list,
-                 PmmOptDelayReuse delay_reuse = PmmOptDelayReuse::Default);
-
-  // Marks a page that had been previously provided to BeginLoan as cancelled. This page may be in
-  // the FREE_LOANED state, or presently in use.
-  //
-  // This call prevents the page from being reused for any new purpose until EndLoan(). For
-  // presently-FREE_LOANED pages, this removes the pages from free_loaned_list_. For presently-used
-  // pages, this specifies that the page will not be added to free_loaned_list_ when later freed.
-  // Once this page is FREE_LOANED (to be ensured by the caller via PhysicalPageProvider reclaim of
-  // the pages), the loan can be ended with EndLoan().
-  void CancelLoan(vm_page_t* page);
-
-  // Allocates the page to the caller as a regular non-loaned page. Must currently be:
-  //  * Loaned (via BeginLoan).
-  //  * Have had its loan cancelled (via CancelLoan).
-  //  * Be in the FREE_LOANED state.
-  void EndLoan(vm_page_t* page);
-
-  // Configures the free memory bounds and allows for setting a one shot signal as well as a level
-  // where allocations should start being delayed.
-  //
-  // The event is signaled once the number of PMM free pages falls outside of the range given by
-  // |free_lower_bound| and |free_upper_bound|. As the event is one shot, one signaled this must be
-  // called again to configure a new range. If the number of free pages is already outside the
-  // requested bound then this method fails (returns false) and no event is setup. In this case the
-  // caller should recalculate a correct bounds and try again.
-  //
-  // In addition to exiting the provided memory bounds, the event will also get signaled on the
-  // first time an allocation fails (i.e. the first time at which has_alloc_failed_no_mem would
-  // return true).
-  //
-  // |delay_allocations_pages| is the number of PMM free pages below which the PMM will transition
-  // to delaying allocations that can wait, i.e. those with PMM_ALLOC_FLAG_CAN_WAIT. This transition
-  // is sticky, and even if pages are freed to go back above this line, allocations will remain
-  // delayed until this method is called again to re-set the level. For this reason, and since there
-  // is only a single common Event, the |delay_allocations_pages| must either be <= the
-  // |free_lower_bound|, ensuring that the caller will have been notified and can respond by freeing
-  // memory and/or setting a new level, or |delay_allocations_pages| can be UINT64_MAX, indicating
-  // allocations should start and remain delayed.
-  bool SetFreeMemorySignal(uint64_t free_lower_bound, uint64_t free_upper_bound,
-                           uint64_t delay_allocations_pages, Event* event);
-
   // Waits the system to exit low memory state and then attempts to allocate.
   //
   // To prevent herding problem, and because allocation compete for the `PmmNode::lock_` anyway,
@@ -206,8 +158,6 @@ class PmmNode {
   // `ZX_ERR_INTERNAL_INTR_RETRY` if the thread is suspended. If false, suspension is ignored and
   // the wait continues.
   zx::result<vm_page_t*> WaitForSinglePageAllocation(Deadline deadline, bool suspendable);
-
-  void StopReturningShouldWait();
 
   uint64_t CountFreePages() const;
   uint64_t CountLoanedFreePages() const;
@@ -239,9 +189,6 @@ class PmmNode {
   //
   // Returns ZX_ERR_BUFFER_TOO_SMALL if the buffer is too small.
   zx_status_t GetArenaInfo(size_t count, uint64_t i, pmm_arena_info_t* buffer, size_t buffer_size);
-
-  // add new pages to the free queue. used when boostrapping a PmmArena
-  void AddFreePages(VmPageDoublyLinkedList* list);
 
   PageQueues* GetPageQueues() { return &page_queues_; }
 
@@ -282,11 +229,6 @@ class PmmNode {
   // For test and diagnostic purposes.
   PmmChecker* Checker() { return &checker_; }
 
-  // See |alloc_failed_no_mem_|.
-  bool has_alloc_failed_no_mem() const {
-    return alloc_failed_no_mem_.load(ktl::memory_order_relaxed);
-  }
-
   // If randomly waiting on allocations is enabled, this re-seeds from the global prng, otherwise it
   // does nothing.
   void SeedRandomShouldWait();
@@ -307,10 +249,6 @@ class PmmNode {
     uint64_t free_count = 0;
   };
   void ReportAllocFailure(AllocFailure failure) TA_EXCL(lock_);
-
-  // Retrieves information given to |ReportAllocFailure|. Due to book keeping limitations this will
-  // only return information from the first failure.
-  AllocFailure GetFirstAllocFailure() TA_EXCL(lock_);
 
  private:
   zx_status_t InitArena(const PmmArenaSelection& selected);
@@ -385,7 +323,7 @@ class PmmNode {
 
   // Indicates whether a PMM alloc call has ever failed with ZX_ERR_NO_MEMORY.  Used to trigger an
   // OOM response.  See |MemoryWatchdog::WorkerThread|.
-  ktl::atomic<bool> alloc_failed_no_mem_{false};
+  [[maybe_unused]] ktl::atomic<bool> alloc_failed_no_mem_{false};
 
   // A record of the first time an allocation failure is reported to aid in diagnostics.
   [[maybe_unused]] AllocFailure first_alloc_failure_ TA_GUARDED(lock_);

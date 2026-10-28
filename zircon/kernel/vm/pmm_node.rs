@@ -2731,60 +2731,6 @@ unsafe extern "C" fn rust_pmm_node_unwire_page(
 }
 
 #[unsafe(no_mangle)]
-unsafe extern "C" fn rust_pmm_node_begin_loan(
-    node: *mut PmmNode,
-    page_list: *mut VmPageDoublyLinkedList,
-    delay_reuse: PmmOptDelayReuse,
-) {
-    // SAFETY: node and page_list are valid and pinned.
-    let node = unsafe { &*node };
-    let page_list = unsafe { Pin::new_unchecked(&mut *page_list) };
-    unsafe { node.begin_loan(page_list, delay_reuse) };
-}
-
-#[unsafe(no_mangle)]
-unsafe extern "C" fn rust_pmm_node_cancel_loan(
-    node: *mut PmmNode,
-    page: *mut page_bindings::vm_page_t,
-) {
-    // SAFETY: node and page are valid.
-    let node = unsafe { &*node };
-    let page = unsafe { VmPagePtr::from_ffi(page) }.expect("null page");
-    unsafe { node.cancel_loan(page) };
-}
-
-#[unsafe(no_mangle)]
-unsafe extern "C" fn rust_pmm_node_end_loan(
-    node: *mut PmmNode,
-    page: *mut page_bindings::vm_page_t,
-) {
-    // SAFETY: node and page are valid.
-    let node = unsafe { &*node };
-    let page = unsafe { VmPagePtr::from_ffi(page) }.expect("null page");
-    unsafe { node.end_loan(page) };
-}
-
-#[unsafe(no_mangle)]
-unsafe extern "C" fn rust_pmm_node_set_free_memory_signal(
-    node: *mut PmmNode,
-    free_lower_bound: u64,
-    free_upper_bound: u64,
-    delay_allocations_pages: u64,
-    event: *mut Event,
-) -> bool {
-    // SAFETY: node is valid and caller guarantees event is valid.
-    unsafe {
-        let node = &*node;
-        node.set_free_memory_signal(
-            free_lower_bound,
-            free_upper_bound,
-            delay_allocations_pages,
-            event,
-        )
-    }
-}
-
-#[unsafe(no_mangle)]
 unsafe extern "C" fn rust_pmm_node_wait_for_single_page_allocation(
     node: *mut PmmNode,
     deadline: zx_instant_mono_t,
@@ -2805,13 +2751,6 @@ unsafe extern "C" fn rust_pmm_node_wait_for_single_page_allocation(
         }
         Err(status) => status.into_raw(),
     }
-}
-
-#[unsafe(no_mangle)]
-unsafe extern "C" fn rust_pmm_node_stop_returning_should_wait(node: *mut PmmNode) {
-    // SAFETY: node is valid.
-    let node = unsafe { &*node };
-    node.stop_returning_should_wait();
 }
 
 #[unsafe(no_mangle)]
@@ -2961,28 +2900,6 @@ unsafe extern "C" fn rust_pmm_node_report_alloc_failure(
     let node = unsafe { &*node };
     let failure = unsafe { *failure };
     node.report_alloc_failure(failure);
-}
-
-#[unsafe(no_mangle)]
-unsafe extern "C" fn rust_pmm_node_get_first_alloc_failure(
-    node: *const PmmNode,
-    out_failure: *mut AllocFailure,
-) {
-    // SAFETY: node and out_failure are valid.
-    let node = unsafe { &*node };
-    let failure = node.get_first_alloc_failure();
-    unsafe { *out_failure = failure };
-}
-
-#[unsafe(no_mangle)]
-unsafe extern "C" fn rust_pmm_node_add_free_pages(
-    node: *mut PmmNode,
-    list: *mut VmPageDoublyLinkedList,
-) {
-    // SAFETY: Caller guarantees these are not null and are pinned.
-    unsafe {
-        (*node).add_free_pages(Pin::new_unchecked(&mut *list));
-    }
 }
 
 /// Unit tests for PmmNode.

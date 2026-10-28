@@ -219,6 +219,7 @@ impl PmmArena {
     ///
     /// `page_array` must point to a valid array of `VmPage` structs of at least
     /// `info.size / PAGE_SIZE` elements, or be null if size is 0.
+    #[cfg(ktest)]
     pub unsafe fn init_for_test(&mut self, info: &PmmArenaInfo, page_array: *mut VmPage) {
         self.info = info.clone();
         self.page_array = page_array;
@@ -541,39 +542,6 @@ pub unsafe extern "C" fn rust_pmm_arena_init(
         selected_bookkeeping_size,
         node,
     );
-}
-
-/// # Safety
-///
-/// The caller must ensure `arena` points to a valid `PmmArena` and `info` is a valid pointer.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_pmm_arena_init_for_test(
-    arena: *mut PmmArena,
-    info: *const PmmArenaInfo,
-    page_array: *mut page_bindings::vm_page_t,
-) {
-    // SAFETY: The caller ensures `arena` and `info` are valid pointers.
-    let arena = unsafe { &mut *arena };
-    let info = unsafe { &*info };
-    unsafe {
-        arena.init_for_test(info, page_array.cast());
-    }
-}
-
-/// # Safety
-///
-/// The caller must ensure `arena` points to an initialized `PmmArena`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_pmm_arena_find_free_contiguous(
-    arena: *mut PmmArena,
-    count: usize,
-    alignment_log2: u8,
-) -> *mut page_bindings::vm_page_t {
-    // SAFETY: The caller ensures `arena` points to an initialized `PmmArena`.
-    let arena = unsafe { &mut *arena };
-    arena
-        .find_free_contiguous(count, alignment_log2)
-        .map_or(core::ptr::null_mut(), |p| p.as_ptr().cast())
 }
 
 /// Unit tests for PmmArena.

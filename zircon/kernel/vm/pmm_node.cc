@@ -103,10 +103,6 @@ zx_status_t PmmNode::GetArenaInfo(size_t count, uint64_t i, pmm_arena_info_t* bu
   return rust_pmm_node_get_arena_info(this, count, i, buffer, buffer_size);
 }
 
-void PmmNode::AddFreePages(VmPageDoublyLinkedList* list) TA_NO_THREAD_SAFETY_ANALYSIS {
-  rust_pmm_node_add_free_pages(this, list);
-}
-
 void PmmNode::FillFreePagesAndArm() { rust_pmm_node_fill_free_pages_and_arm(this); }
 
 void PmmNode::CheckAllFreePages() { rust_pmm_node_check_all_free_pages(this); }
@@ -278,30 +274,8 @@ void PmmNode::DumpFree() const TA_NO_THREAD_SAFETY_ANALYSIS { rust_pmm_node_dump
 
 void PmmNode::Dump(bool is_panic) const { rust_pmm_node_dump(this, is_panic); }
 
-bool PmmNode::SetFreeMemorySignal(uint64_t free_lower_bound, uint64_t free_upper_bound,
-                                  uint64_t delay_allocations_pages, Event* event) {
-  return rust_pmm_node_set_free_memory_signal(this, free_lower_bound, free_upper_bound,
-                                              delay_allocations_pages, event);
-}
-
-void PmmNode::StopReturningShouldWait() { rust_pmm_node_stop_returning_should_wait(this); }
-
-void PmmNode::BeginLoan(VmPageDoublyLinkedList* page_list, PmmOptDelayReuse delay_reuse) {
-  rust_pmm_node_begin_loan(this, page_list, delay_reuse);
-}
-
-void PmmNode::CancelLoan(vm_page_t* page) { rust_pmm_node_cancel_loan(this, page); }
-
-void PmmNode::EndLoan(vm_page_t* page) { rust_pmm_node_end_loan(this, page); }
-
 void PmmNode::ReportAllocFailure(AllocFailure failure) {
   rust_pmm_node_report_alloc_failure(this, &failure);
-}
-
-PmmNode::AllocFailure PmmNode::GetFirstAllocFailure() {
-  AllocFailure failure;
-  rust_pmm_node_get_first_alloc_failure(this, &failure);
-  return failure;
 }
 
 void PmmNode::SeedRandomShouldWait() { rust_pmm_node_seed_random_should_wait(this); }

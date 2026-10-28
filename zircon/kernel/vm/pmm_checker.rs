@@ -385,19 +385,8 @@ extern "C" fn rust_pmm_checker_is_valid_fill_size(fill_size: usize) -> bool {
 
 // The `checker` parameters of the functions below are references, so C++ callers must pass a
 // non-null pointer to a valid `PmmChecker` that is not mutated by another CPU for the duration of
-// the call (other than `armed`, see below). `&mut` parameters additionally require that no other
-// CPU accesses the checker for the duration of the call. Functions that access `armed` carry the
-// requirements of the `PmmChecker` method they call; see `PmmChecker`'s documentation.
-
-/// # Safety
-///
-/// `checker` must not be accessed by any other CPU for the duration of the call, and `fill_size`
-/// must satisfy [`PmmChecker::is_valid_fill_size`].
-#[unsafe(no_mangle)]
-unsafe extern "C" fn rust_pmm_checker_set_fill_size(checker: &mut PmmChecker, fill_size: usize) {
-    // SAFETY: The caller guarantees `fill_size` is valid.
-    unsafe { checker.set_fill_size(fill_size) };
-}
+// the call (other than `armed`, see below). Functions that access `armed` carry the requirements of
+// the `PmmChecker` method they call; see `PmmChecker`'s documentation.
 
 /// # Safety
 ///
@@ -410,15 +399,6 @@ unsafe extern "C" fn rust_pmm_checker_is_armed(checker: &PmmChecker) -> bool {
 
 /// # Safety
 ///
-/// The caller must uphold the requirements of [`PmmChecker::arm`].
-#[unsafe(no_mangle)]
-unsafe extern "C" fn rust_pmm_checker_arm(checker: &PmmChecker) {
-    // SAFETY: The caller upholds the requirements of `arm`.
-    unsafe { checker.arm() };
-}
-
-/// # Safety
-///
 /// The caller must uphold the requirements of [`PmmChecker::print_status`].
 #[unsafe(no_mangle)]
 unsafe extern "C" fn rust_pmm_checker_print_status(
@@ -427,50 +407,6 @@ unsafe extern "C" fn rust_pmm_checker_print_status(
 ) {
     // SAFETY: The caller upholds the requirements of `print_status`.
     unsafe { checker.print_status(f) };
-}
-
-/// # Safety
-///
-/// `page` must be a non-null pointer to a valid page that may be written to.
-#[unsafe(no_mangle)]
-unsafe extern "C" fn rust_pmm_checker_fill_pattern(
-    checker: &PmmChecker,
-    page: *mut page_bindings::vm_page_t,
-) {
-    // SAFETY: The caller guarantees `page` is non-null and valid.
-    let page = unsafe { VmPagePtr::from_ffi_unchecked(page) };
-    // SAFETY: The caller guarantees `page` may be written to.
-    unsafe { checker.fill_pattern(page) };
-}
-
-/// # Safety
-///
-/// `page` must be a non-null pointer to a valid page that may be read, and the caller must uphold
-/// the requirements of [`PmmChecker::validate_pattern`].
-#[unsafe(no_mangle)]
-unsafe extern "C" fn rust_pmm_checker_validate_pattern(
-    checker: &PmmChecker,
-    page: *mut page_bindings::vm_page_t,
-) -> bool {
-    // SAFETY: The caller guarantees `page` is non-null and valid.
-    let page = unsafe { VmPagePtr::from_ffi_unchecked(page) };
-    // SAFETY: The caller upholds the requirements of `validate_pattern`.
-    unsafe { checker.validate_pattern(page) }
-}
-
-/// # Safety
-///
-/// `page` must be a non-null pointer to a valid page that may be read, and the caller must uphold
-/// the requirements of [`PmmChecker::assert_pattern`].
-#[unsafe(no_mangle)]
-unsafe extern "C" fn rust_pmm_checker_assert_pattern(
-    checker: &PmmChecker,
-    page: *mut page_bindings::vm_page_t,
-) {
-    // SAFETY: The caller guarantees `page` is non-null and valid.
-    let page = unsafe { VmPagePtr::from_ffi_unchecked(page) };
-    // SAFETY: The caller upholds the requirements of `assert_pattern`.
-    unsafe { checker.assert_pattern(page) };
 }
 
 /// Unit tests for PmmChecker.

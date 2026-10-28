@@ -47,48 +47,15 @@ class PmmChecker {
   // kPageSize, inclusive.
   static bool IsValidFillSize(size_t fill_size);
 
-  // Sets the size of the pattern to be written / validated.
-  //
-  // It is an error to call this method with an invalid fill size (see |IsValidFillSize|.
-  //
-  // It is an error to call this method if the checker |IsArmed|.  After changing the fill size, be
-  // sure to re-fill any free pages to ensure that a future call to |ValidatePattern| or
-  // |AssertPattern| won't supriously report corruption.
-  void SetFillSize(size_t fill_size);
-
-  // Returns the fill size.
-  size_t GetFillSize() const { return fill_size_; }
-
-  void SetAction(CheckFailAction action) { action_ = action; }
-  CheckFailAction GetAction() const { return action_; }
-
   // Returns true if armed.
   bool IsArmed() const;
 
-  void Arm();
-
   void PrintStatus(FILE* f) const;
 
-  // Fills |page| with a pattern.
-  void FillPattern(vm_page_t* page) const;
-
-  // Returns true if |page| contains the expected fill pattern or |IsArmed| is false.
-  //
-  // Otherwise, returns false.
-  __WARN_UNUSED_RESULT bool ValidatePattern(vm_page_t* page) const;
-
-  // Panics the kernel if |page| does not contain the expected fill pattern and |IsArmed| is true.
-  //
-  // Otherwise, does nothing.
-  void AssertPattern(vm_page_t* page) const;
-
  private:
-  // The number of bytes to fill/validate.
-  size_t fill_size_ = kPageSize;
-
-  CheckFailAction action_ = kDefaultAction;
-
   // Only accessed by Rust after construction.
+  [[maybe_unused]] size_t fill_size_ = kPageSize;
+  [[maybe_unused]] CheckFailAction action_ = kDefaultAction;
   [[maybe_unused]] bool armed_ = false;
 };
 
