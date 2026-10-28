@@ -4189,7 +4189,28 @@ mod tests {
             file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
         }
 
-        // Writing outside the allocated range fails (because not overwrite mode.)
+        // Wait for any in-flight background journal compaction to finish and prevent new
+        // compactions from running asynchronously.
+        fixture.fs().journal().pause_compactions().await;
+
+        // Force a compaction while paused so that any uncompacted journal extents from the
+        // fill loop are reclaimed immediately and journal bytes reset near 0.
+        fixture.fs().journal().force_compact().await.unwrap();
+
+        // Top off the disk fill to consume any space reclaimed by compaction.
+        loop {
+            match file.write(&write_data).await.unwrap().map_err(zx::Status::err_from_raw) {
+                Ok(len) => assert_eq!(len, page_size),
+                Err(status) => {
+                    assert_eq!(status, zx::Status::NO_SPACE);
+                    break;
+                }
+            }
+            file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
+        }
+
+        // Writing outside the allocated range fails (because not overwrite mode and compactions
+        // are paused, so no background compaction can free space).
         assert_eq!(
             file.write_at(&write_data, page_size.get())
                 .await
@@ -4197,6 +4218,9 @@ mod tests {
                 .map_err(zx::Status::err_from_raw),
             Err(zx::Status::NO_SPACE)
         );
+
+        // Resume compactions so the journal can compact during the overwrite loop if needed.
+        fixture.fs().journal().resume_compactions();
 
         for _ in 0..100 {
             // Writing inside the allocated range succeeds indefinitely (because overwrite mode).
