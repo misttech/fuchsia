@@ -10,7 +10,11 @@
 
 #include <gtest/gtest.h>
 
+#include "src/cobalt/bin/app/key_fetcher.h"
+#include "src/cobalt/bin/testing/fake_clock.h"
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
+#include "third_party/cobalt/src/lib/util/dynamic_encrypted_message_maker.h"
+#include "third_party/cobalt/src/lib/util/encrypted_message_util.h"
 
 namespace cobalt {
 
@@ -20,8 +24,21 @@ using inspect::testing::NameMatches;
 using inspect::testing::NodeMatches;
 using inspect::testing::PropertyList;
 using inspect::testing::StringIs;
+using inspect::testing::UintIs;
+using ::testing::IsEmpty;
 using ::testing::IsSupersetOf;
 using ::testing::UnorderedElementsAre;
+
+namespace {
+
+constexpr int64_t kDefaultNowSecs = 1700000000;
+
+util::ParsedKey MakeTestKey(uint32_t key_index, int64_t expiration_timestamp_secs) {
+  return util::ParsedKey(util::EncryptedMessageMaker::MakeUnencrypted(), key_index,
+                         expiration_timestamp_secs);
+}
+
+}  // namespace
 
 class DiagnosticsTest : public gtest::TestLoopFixture {
  public:
@@ -276,6 +293,354 @@ TEST_F(DiagnosticsTest, TrackDiskUsage) {
                                           PropertyList(UnorderedElementsAre(
                                               IntIs("current_bytes", 124), IntIs("max_bytes", 124),
                                               IntIs("byte_limit", 0)))))))))))))))))))));
+}
+
+TEST_F(DiagnosticsTest, UpdateKeyRotationInspectUninitializedMakers) {
+  FakeSystemClock clock(kDefaultNowSecs);
+  util::DynamicEncryptedMessageMaker shuffler_maker(&clock);
+  util::DynamicEncryptedMessageMaker analyzer_maker(&clock);
+
+  listener_->UpdateKeyRotationInspect(shuffler_maker, analyzer_maker, KeyFetchStatus::kNetworkError,
+                                      /*consecutive_fetch_failures=*/1, kDefaultNowSecs);
+
+  EXPECT_THAT(
+      InspectHierarchy(),
+      AllOf(NodeMatches(NameMatches("root")),
+            ChildrenMatch(UnorderedElementsAre(AllOf(
+                NodeMatches(NameMatches("core")),
+                ChildrenMatch(AllOf(
+                    Contains(NodeMatches(AllOf(
+                        NameMatches("key_rotation"),
+                        PropertyList(UnorderedElementsAre(
+                            StringIs("shuffler_key_state", "uninitialized"),
+                            StringIs("analyzer_key_state", "uninitialized"),
+                            UintIs("analyzer_key_index", 0), UintIs("shuffler_key_index", 0),
+                            IntIs("expiration_time_utc", 0),
+                            IntIs("last_fetch_attempt_time", kDefaultNowSecs),
+                            StringIs("last_fetch_status", "NetworkError"),
+                            UintIs("consecutive_fetch_failures", 1)))))),
+                    Contains(AllOf(NodeMatches(NameMatches("internal_metrics")),
+                                   ChildrenMatch(Contains(
+                                       NodeMatches(AllOf(NameMatches("key_fetch_status"),
+                                                         PropertyList(UnorderedElementsAre(UintIs(
+                                                             "NetworkError", 1))))))))))))))));
+}
+
+TEST_F(DiagnosticsTest, UpdateKeyRotationInspectPartiallyInitializedMakers) {
+  constexpr uint32_t kShufflerKeyIndex = 10;
+  constexpr int64_t kShufflerExpirationUtc = 1800000000;
+  FakeSystemClock clock(kDefaultNowSecs);
+  util::DynamicEncryptedMessageMaker shuffler_maker(
+      MakeTestKey(kShufflerKeyIndex, kShufflerExpirationUtc), &clock);
+  util::DynamicEncryptedMessageMaker analyzer_maker(&clock);
+
+  listener_->UpdateKeyRotationInspect(shuffler_maker, analyzer_maker,
+                                      KeyFetchStatus::kUninitialized,
+                                      /*consecutive_fetch_failures=*/0,
+                                      /*last_fetch_attempt_time_secs=*/0);
+
+  EXPECT_THAT(
+      InspectHierarchy(),
+      AllOf(NodeMatches(NameMatches("root")),
+            ChildrenMatch(UnorderedElementsAre(
+                AllOf(NodeMatches(NameMatches("core")),
+                      ChildrenMatch(Contains(NodeMatches(AllOf(
+                          NameMatches("key_rotation"),
+                          PropertyList(UnorderedElementsAre(
+                              StringIs("shuffler_key_state", "valid"),
+                              StringIs("analyzer_key_state", "uninitialized"),
+                              UintIs("analyzer_key_index", 0),
+                              UintIs("shuffler_key_index", kShufflerKeyIndex),
+                              IntIs("expiration_time_utc", 0), IntIs("last_fetch_attempt_time", 0),
+                              StringIs("last_fetch_status", "Uninitialized"),
+                              UintIs("consecutive_fetch_failures", 0))))))))))));
+}
+
+TEST_F(DiagnosticsTest, UpdateKeyRotationInspectUninitializedShufflerInitializedAnalyzer) {
+  constexpr uint32_t kAnalyzerKeyIndex = 14;
+  constexpr int64_t kAnalyzerExpirationUtc = 1800000000;
+  FakeSystemClock clock(kDefaultNowSecs);
+  util::DynamicEncryptedMessageMaker shuffler_maker(&clock);
+  util::DynamicEncryptedMessageMaker analyzer_maker(
+      MakeTestKey(kAnalyzerKeyIndex, kAnalyzerExpirationUtc), &clock);
+
+  listener_->UpdateKeyRotationInspect(shuffler_maker, analyzer_maker,
+                                      KeyFetchStatus::kUninitialized,
+                                      /*consecutive_fetch_failures=*/0,
+                                      /*last_fetch_attempt_time_secs=*/0);
+
+  EXPECT_THAT(InspectHierarchy(),
+              AllOf(NodeMatches(NameMatches("root")),
+                    ChildrenMatch(UnorderedElementsAre(AllOf(
+                        NodeMatches(NameMatches("core")),
+                        ChildrenMatch(Contains(NodeMatches(AllOf(
+                            NameMatches("key_rotation"),
+                            PropertyList(UnorderedElementsAre(
+                                StringIs("shuffler_key_state", "uninitialized"),
+                                StringIs("analyzer_key_state", "valid"),
+                                UintIs("analyzer_key_index", kAnalyzerKeyIndex),
+                                UintIs("shuffler_key_index", 0), IntIs("expiration_time_utc", 0),
+                                IntIs("last_fetch_attempt_time", 0),
+                                StringIs("last_fetch_status", "Uninitialized"),
+                                UintIs("consecutive_fetch_failures", 0))))))))))));
+}
+
+TEST_F(DiagnosticsTest, UpdateKeyRotationInspectBundledFallbackDoesNotCreateStatusCounter) {
+  constexpr uint32_t kShufflerKeyIndex = 11;
+  constexpr uint32_t kAnalyzerKeyIndex = 12;
+  FakeSystemClock clock(kDefaultNowSecs);
+  util::DynamicEncryptedMessageMaker shuffler_maker(
+      MakeTestKey(kShufflerKeyIndex, kBundledKeyExpirationSecs), &clock);
+  util::DynamicEncryptedMessageMaker analyzer_maker(
+      MakeTestKey(kAnalyzerKeyIndex, kBundledKeyExpirationSecs), &clock);
+
+  listener_->UpdateKeyRotationInspect(shuffler_maker, analyzer_maker,
+                                      KeyFetchStatus::kUninitialized,
+                                      /*consecutive_fetch_failures=*/0,
+                                      /*last_fetch_attempt_time_secs=*/0);
+
+  EXPECT_THAT(
+      InspectHierarchy(),
+      AllOf(NodeMatches(NameMatches("root")),
+            ChildrenMatch(UnorderedElementsAre(AllOf(
+                NodeMatches(NameMatches("core")),
+                ChildrenMatch(AllOf(
+                    Contains(NodeMatches(AllOf(
+                        NameMatches("key_rotation"),
+                        PropertyList(UnorderedElementsAre(
+                            StringIs("shuffler_key_state", "bundled_fallback"),
+                            StringIs("analyzer_key_state", "bundled_fallback"),
+                            UintIs("analyzer_key_index", kAnalyzerKeyIndex),
+                            UintIs("shuffler_key_index", kShufflerKeyIndex),
+                            IntIs("expiration_time_utc", 0), IntIs("last_fetch_attempt_time", 0),
+                            StringIs("last_fetch_status", "Uninitialized"),
+                            UintIs("consecutive_fetch_failures", 0)))))),
+                    Contains(AllOf(
+                        NodeMatches(NameMatches("internal_metrics")),
+                        ChildrenMatch(Contains(NodeMatches(AllOf(
+                            NameMatches("key_fetch_status"), PropertyList(IsEmpty()))))))))))))));
+}
+
+TEST_F(DiagnosticsTest, UpdateKeyRotationInspectOneBundledFallbackOneValidExposesDisagreement) {
+  constexpr uint32_t kShufflerKeyIndex = 11;
+  constexpr uint32_t kAnalyzerKeyIndex = 12;
+  constexpr int64_t kAnalyzerExpirationUtc = 1800000000;
+  FakeSystemClock clock(kDefaultNowSecs);
+  util::DynamicEncryptedMessageMaker shuffler_maker(
+      MakeTestKey(kShufflerKeyIndex, kBundledKeyExpirationSecs), &clock);
+  util::DynamicEncryptedMessageMaker analyzer_maker(
+      MakeTestKey(kAnalyzerKeyIndex, kAnalyzerExpirationUtc), &clock);
+
+  listener_->UpdateKeyRotationInspect(shuffler_maker, analyzer_maker,
+                                      KeyFetchStatus::kUninitialized,
+                                      /*consecutive_fetch_failures=*/0,
+                                      /*last_fetch_attempt_time_secs=*/0);
+
+  EXPECT_THAT(
+      InspectHierarchy(),
+      AllOf(NodeMatches(NameMatches("root")),
+            ChildrenMatch(UnorderedElementsAre(
+                AllOf(NodeMatches(NameMatches("core")),
+                      ChildrenMatch(Contains(NodeMatches(AllOf(
+                          NameMatches("key_rotation"),
+                          PropertyList(UnorderedElementsAre(
+                              StringIs("shuffler_key_state", "bundled_fallback"),
+                              StringIs("analyzer_key_state", "valid"),
+                              UintIs("analyzer_key_index", kAnalyzerKeyIndex),
+                              UintIs("shuffler_key_index", kShufflerKeyIndex),
+                              IntIs("expiration_time_utc", 0), IntIs("last_fetch_attempt_time", 0),
+                              StringIs("last_fetch_status", "Uninitialized"),
+                              UintIs("consecutive_fetch_failures", 0))))))))))));
+}
+
+TEST_F(DiagnosticsTest, UpdateKeyRotationInspectCumulativeStatusCounterIncrement) {
+  constexpr uint32_t kShufflerKeyIndex = 10;
+  constexpr uint32_t kAnalyzerKeyIndex = 11;
+  constexpr int64_t kShufflerExpirationUtc = 1800000000;
+  constexpr int64_t kAnalyzerExpirationUtc = 1850000000;
+  FakeSystemClock clock(kDefaultNowSecs);
+  util::DynamicEncryptedMessageMaker shuffler_maker(
+      MakeTestKey(kShufflerKeyIndex, kShufflerExpirationUtc), &clock);
+  util::DynamicEncryptedMessageMaker analyzer_maker(
+      MakeTestKey(kAnalyzerKeyIndex, kAnalyzerExpirationUtc), &clock);
+
+  listener_->UpdateKeyRotationInspect(shuffler_maker, analyzer_maker, KeyFetchStatus::kSuccess,
+                                      /*consecutive_fetch_failures=*/0, kDefaultNowSecs);
+  listener_->UpdateKeyRotationInspect(shuffler_maker, analyzer_maker, KeyFetchStatus::kSuccess,
+                                      /*consecutive_fetch_failures=*/0, kDefaultNowSecs);
+
+  EXPECT_THAT(
+      InspectHierarchy(),
+      AllOf(NodeMatches(NameMatches("root")),
+            ChildrenMatch(UnorderedElementsAre(AllOf(
+                NodeMatches(NameMatches("core")),
+                ChildrenMatch(AllOf(Contains(NodeMatches(AllOf(
+                                        NameMatches("key_rotation"),
+                                        PropertyList(UnorderedElementsAre(
+                                            StringIs("shuffler_key_state", "valid"),
+                                            StringIs("analyzer_key_state", "valid"),
+                                            UintIs("analyzer_key_index", kAnalyzerKeyIndex),
+                                            UintIs("shuffler_key_index", kShufflerKeyIndex),
+                                            IntIs("expiration_time_utc", kShufflerExpirationUtc),
+                                            IntIs("last_fetch_attempt_time", kDefaultNowSecs),
+                                            StringIs("last_fetch_status", "Success"),
+                                            UintIs("consecutive_fetch_failures", 0)))))),
+                                    Contains(AllOf(NodeMatches(NameMatches("internal_metrics")),
+                                                   ChildrenMatch(Contains(NodeMatches(AllOf(
+                                                       NameMatches("key_fetch_status"),
+                                                       PropertyList(UnorderedElementsAre(
+                                                           UintIs("Success", 2))))))))))))))));
+}
+
+TEST_F(DiagnosticsTest, UpdateKeyRotationInspectSingleMakerExpiredReportsExpiredAndEarlierTime) {
+  constexpr uint32_t kShufflerKeyIndex = 10;
+  constexpr uint32_t kAnalyzerKeyIndex = 11;
+  constexpr int64_t kShufflerValidExpirationUtc = 1800000000;
+  constexpr int64_t kAnalyzerExpiredUtc = 1600000000;
+  FakeSystemClock clock(kDefaultNowSecs);
+  util::DynamicEncryptedMessageMaker shuffler_maker(
+      MakeTestKey(kShufflerKeyIndex, kShufflerValidExpirationUtc), &clock);
+  util::DynamicEncryptedMessageMaker analyzer_maker(
+      MakeTestKey(kAnalyzerKeyIndex, kAnalyzerExpiredUtc), &clock);
+
+  listener_->UpdateKeyRotationInspect(shuffler_maker, analyzer_maker, KeyFetchStatus::kExpiredKey,
+                                      /*consecutive_fetch_failures=*/1, kDefaultNowSecs);
+
+  EXPECT_THAT(InspectHierarchy(),
+              AllOf(NodeMatches(NameMatches("root")),
+                    ChildrenMatch(UnorderedElementsAre(
+                        AllOf(NodeMatches(NameMatches("core")),
+                              ChildrenMatch(Contains(NodeMatches(
+                                  AllOf(NameMatches("key_rotation"),
+                                        PropertyList(UnorderedElementsAre(
+                                            StringIs("shuffler_key_state", "valid"),
+                                            StringIs("analyzer_key_state", "expired"),
+                                            UintIs("analyzer_key_index", kAnalyzerKeyIndex),
+                                            UintIs("shuffler_key_index", kShufflerKeyIndex),
+                                            IntIs("expiration_time_utc", kAnalyzerExpiredUtc),
+                                            IntIs("last_fetch_attempt_time", kDefaultNowSecs),
+                                            StringIs("last_fetch_status", "ExpiredKey"),
+                                            UintIs("consecutive_fetch_failures", 1))))))))))));
+}
+
+TEST_F(DiagnosticsTest, UpdateKeyRotationInspectExpiredKeys) {
+  constexpr uint32_t kShufflerKeyIndex = 10;
+  constexpr uint32_t kAnalyzerKeyIndex = 11;
+  constexpr int64_t kExpirationUtc = 1600000000;
+  FakeSystemClock clock(kDefaultNowSecs);
+  util::DynamicEncryptedMessageMaker shuffler_maker(MakeTestKey(kShufflerKeyIndex, kExpirationUtc),
+                                                    &clock);
+  util::DynamicEncryptedMessageMaker analyzer_maker(MakeTestKey(kAnalyzerKeyIndex, kExpirationUtc),
+                                                    &clock);
+
+  listener_->UpdateKeyRotationInspect(shuffler_maker, analyzer_maker, KeyFetchStatus::kExpiredKey,
+                                      /*consecutive_fetch_failures=*/3, kDefaultNowSecs);
+
+  EXPECT_THAT(
+      InspectHierarchy(),
+      AllOf(
+          NodeMatches(NameMatches("root")),
+          ChildrenMatch(UnorderedElementsAre(AllOf(
+              NodeMatches(NameMatches("core")),
+              ChildrenMatch(AllOf(
+                  Contains(NodeMatches(AllOf(NameMatches("key_rotation"),
+                                             PropertyList(UnorderedElementsAre(
+                                                 StringIs("shuffler_key_state", "expired"),
+                                                 StringIs("analyzer_key_state", "expired"),
+                                                 UintIs("analyzer_key_index", kAnalyzerKeyIndex),
+                                                 UintIs("shuffler_key_index", kShufflerKeyIndex),
+                                                 IntIs("expiration_time_utc", kExpirationUtc),
+                                                 IntIs("last_fetch_attempt_time", kDefaultNowSecs),
+                                                 StringIs("last_fetch_status", "ExpiredKey"),
+                                                 UintIs("consecutive_fetch_failures", 3)))))),
+                  Contains(AllOf(
+                      NodeMatches(NameMatches("internal_metrics")),
+                      ChildrenMatch(Contains(NodeMatches(AllOf(
+                          NameMatches("key_fetch_status"),
+                          PropertyList(UnorderedElementsAre(UintIs("ExpiredKey", 1))))))))))))))));
+}
+
+TEST_F(DiagnosticsTest, UpdateKeyRotationInspectMultipleStatusTransitions) {
+  constexpr uint32_t kShufflerKeyIndex = 10;
+  constexpr uint32_t kAnalyzerKeyIndex = 11;
+  constexpr int64_t kExpirationUtc = 1800000000;
+  constexpr int64_t kSecondAttemptUtc = 1700000600;
+  FakeSystemClock clock(kDefaultNowSecs);
+  util::DynamicEncryptedMessageMaker shuffler_maker(MakeTestKey(kShufflerKeyIndex, kExpirationUtc),
+                                                    &clock);
+  util::DynamicEncryptedMessageMaker analyzer_maker(MakeTestKey(kAnalyzerKeyIndex, kExpirationUtc),
+                                                    &clock);
+
+  listener_->UpdateKeyRotationInspect(shuffler_maker, analyzer_maker, KeyFetchStatus::kNetworkError,
+                                      /*consecutive_fetch_failures=*/2, kDefaultNowSecs);
+  listener_->UpdateKeyRotationInspect(shuffler_maker, analyzer_maker, KeyFetchStatus::kSuccess,
+                                      /*consecutive_fetch_failures=*/0, kSecondAttemptUtc);
+
+  EXPECT_THAT(
+      InspectHierarchy(),
+      AllOf(NodeMatches(NameMatches("root")),
+            ChildrenMatch(UnorderedElementsAre(AllOf(
+                NodeMatches(NameMatches("core")),
+                ChildrenMatch(AllOf(Contains(NodeMatches(AllOf(
+                                        NameMatches("key_rotation"),
+                                        PropertyList(UnorderedElementsAre(
+                                            StringIs("shuffler_key_state", "valid"),
+                                            StringIs("analyzer_key_state", "valid"),
+                                            UintIs("analyzer_key_index", kAnalyzerKeyIndex),
+                                            UintIs("shuffler_key_index", kShufflerKeyIndex),
+                                            IntIs("expiration_time_utc", kExpirationUtc),
+                                            IntIs("last_fetch_attempt_time", kSecondAttemptUtc),
+                                            StringIs("last_fetch_status", "Success"),
+                                            UintIs("consecutive_fetch_failures", 0)))))),
+                                    Contains(AllOf(NodeMatches(NameMatches("internal_metrics")),
+                                                   ChildrenMatch(Contains(NodeMatches(AllOf(
+                                                       NameMatches("key_fetch_status"),
+                                                       PropertyList(UnorderedElementsAre(
+                                                           UintIs("NetworkError", 1),
+                                                           UintIs("Success", 1))))))))))))))));
+}
+
+TEST_F(DiagnosticsTest, UpdateKeyRotationInspectRefreshAfterClockAdvanceReportsExpired) {
+  constexpr uint32_t kShufflerKeyIndex = 10;
+  constexpr uint32_t kAnalyzerKeyIndex = 11;
+  constexpr int64_t kExpirationUtc = 1800000000;
+  constexpr int64_t kAfterExpirationUtc = 1900000000;
+  FakeSystemClock clock(kDefaultNowSecs);
+  util::DynamicEncryptedMessageMaker shuffler_maker(MakeTestKey(kShufflerKeyIndex, kExpirationUtc),
+                                                    &clock);
+  util::DynamicEncryptedMessageMaker analyzer_maker(MakeTestKey(kAnalyzerKeyIndex, kExpirationUtc),
+                                                    &clock);
+
+  listener_->UpdateKeyRotationInspect(shuffler_maker, analyzer_maker,
+                                      KeyFetchStatus::kUninitialized,
+                                      /*consecutive_fetch_failures=*/0,
+                                      /*last_fetch_attempt_time_secs=*/0);
+
+  clock.SetNowSecs(kAfterExpirationUtc);
+  listener_->UpdateKeyRotationInspect(shuffler_maker, analyzer_maker, KeyFetchStatus::kNetworkError,
+                                      /*consecutive_fetch_failures=*/1, kAfterExpirationUtc);
+
+  EXPECT_THAT(
+      InspectHierarchy(),
+      AllOf(NodeMatches(NameMatches("root")),
+            ChildrenMatch(UnorderedElementsAre(AllOf(
+                NodeMatches(NameMatches("core")),
+                ChildrenMatch(AllOf(Contains(NodeMatches(AllOf(
+                                        NameMatches("key_rotation"),
+                                        PropertyList(UnorderedElementsAre(
+                                            StringIs("shuffler_key_state", "expired"),
+                                            StringIs("analyzer_key_state", "expired"),
+                                            UintIs("analyzer_key_index", kAnalyzerKeyIndex),
+                                            UintIs("shuffler_key_index", kShufflerKeyIndex),
+                                            IntIs("expiration_time_utc", kExpirationUtc),
+                                            IntIs("last_fetch_attempt_time", kAfterExpirationUtc),
+                                            StringIs("last_fetch_status", "NetworkError"),
+                                            UintIs("consecutive_fetch_failures", 1)))))),
+                                    Contains(AllOf(NodeMatches(NameMatches("internal_metrics")),
+                                                   ChildrenMatch(Contains(NodeMatches(AllOf(
+                                                       NameMatches("key_fetch_status"),
+                                                       PropertyList(UnorderedElementsAre(
+                                                           UintIs("NetworkError", 1))))))))))))))));
 }
 
 }  // namespace cobalt

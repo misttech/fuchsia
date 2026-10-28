@@ -7,7 +7,15 @@
 
 #include <lib/inspect/cpp/inspect.h>
 
+#include <cstdint>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <string>
+
+#include "src/cobalt/bin/app/key_fetcher.h"
 #include "src/lib/fxl/macros.h"
+#include "third_party/cobalt/src/lib/util/dynamic_encrypted_message_maker.h"
 #include "third_party/cobalt/src/public/diagnostics_interface.h"
 #include "third_party/cobalt/src/public/lib/report_spec.h"
 
@@ -31,6 +39,26 @@ class DiagnosticsImpl : public DiagnosticsInterface {
                     const std::string& project) override;
 
   void TrackDiskUsage(int storageClass, int64_t bytes, int64_t byte_limit) override;
+
+  // Updates the `core/key_rotation` Inspect node and increments the
+  // `core/internal_metrics/key_fetch_status` counter when `last_fetch_status` is not
+  // `KeyFetchStatus::kUninitialized`.
+  //
+  // `shuffler_key_state` and `analyzer_key_state` ("uninitialized", "bundled_fallback", "valid",
+  // or "expired") are evaluated for each maker against its clock at call time (at startup after
+  // loading the disk cache and after each scheduled fetch attempt). `bundled_fallback` is
+  // reported when a maker has `expiration_timestamp_secs() == kBundledKeyExpirationSecs`. When
+  // both makers hold non-bundled keys, `expiration_time_utc` is published as the minimum of
+  // their expiration timestamps; otherwise it is published as 0 so the
+  // `kBundledKeyExpirationSecs` sentinel is not reported as a timestamp.
+  //
+  // `last_fetch_attempt_time_secs` is the UTC Unix timestamp in seconds of the most recent
+  // HTTP fetch attempt, or 0 if no HTTP fetch attempt has been made.
+  void UpdateKeyRotationInspect(const util::DynamicEncryptedMessageMaker& shuffler_maker,
+                                const util::DynamicEncryptedMessageMaker& analyzer_maker,
+                                KeyFetchStatus last_fetch_status,
+                                uint32_t consecutive_fetch_failures,
+                                int64_t last_fetch_attempt_time_secs);
 
  private:
   // Logger calls inspect storage for a single project or method in the Inspect hierarchy.
@@ -102,6 +130,25 @@ class DiagnosticsImpl : public DiagnosticsInterface {
   inspect::Node disk_usage_per_storage_class_node_;
   std::map<int, std::unique_ptr<DiskUsage>> disk_usage_per_storage_class_;
   std::mutex disk_usage_per_storage_class_lock_;
+
+  // Inspect data for dynamic public key rotation (`core/key_rotation`).
+  inspect::Node key_rotation_;
+  inspect::StringProperty shuffler_key_state_;
+  inspect::StringProperty analyzer_key_state_;
+  inspect::UintProperty analyzer_key_index_;
+  inspect::UintProperty shuffler_key_index_;
+  inspect::IntProperty expiration_time_utc_;
+  inspect::IntProperty last_fetch_attempt_time_;
+  inspect::StringProperty last_fetch_status_;
+  inspect::UintProperty consecutive_fetch_failures_;
+
+  // Internal telemetry counters for key_fetch_status (`core/internal_metrics/key_fetch_status`).
+  inspect::Node key_fetch_status_node_;
+  std::map<KeyFetchStatus, inspect::UintProperty> key_fetch_status_counts_;
+  // `DiagnosticsImpl` entry points are called from multiple Cobalt core threads, so this
+  // follows the class-wide lock-per-node convention to guard `key_fetch_status_counts_` and
+  // the `key_rotation_` Inspect properties.
+  std::mutex key_rotation_lock_;
 
   FXL_DISALLOW_COPY_AND_ASSIGN(DiagnosticsImpl);
 };

@@ -43,6 +43,24 @@ zx::duration RandomDuration(zx::duration min_inclusive, zx::duration max_inclusi
 
 }  // namespace
 
+const char* KeyFetchStatusToString(KeyFetchStatus status) {
+  switch (status) {
+    case KeyFetchStatus::kUninitialized:
+      return "Uninitialized";
+    case KeyFetchStatus::kSuccess:
+      return "Success";
+    case KeyFetchStatus::kNetworkError:
+      return "NetworkError";
+    case KeyFetchStatus::kParseError:
+      return "ParseError";
+    case KeyFetchStatus::kInvalidTinkKeyset:
+      return "InvalidTinkKeyset";
+    case KeyFetchStatus::kExpiredKey:
+      return "ExpiredKey";
+  }
+  return "Unknown";
+}
+
 KeyFetcher::KeyFetcher(async_dispatcher_t* dispatcher, std::unique_ptr<lib::HTTPClient> http_client,
                        util::DynamicEncryptedMessageMaker* shuffler_maker,
                        util::DynamicEncryptedMessageMaker* analyzer_maker,
@@ -217,6 +235,7 @@ void KeyFetcher::ApplyKeyset(util::ParsedKeyset keyset) {
 }
 
 void KeyFetcher::RunScheduledFetch() {
+  last_fetch_attempt_time_secs_ = util::ToUnixSeconds(system_clock_->now());
   last_fetch_status_ = FetchAndCachePublicKeys();
   zx::duration next_delay;
   if (last_fetch_status_ == KeyFetchStatus::kSuccess) {
@@ -226,6 +245,10 @@ void KeyFetcher::RunScheduledFetch() {
   } else {
     ++consecutive_fetch_failures_;
     next_delay = retry_backoff_.GetNext();
+  }
+  if (status_observer_) {
+    status_observer_(last_fetch_status_, consecutive_fetch_failures_,
+                     last_fetch_attempt_time_secs_);
   }
   target_boot_deadline_ = schedule_options_.boot_clock() + next_delay;
   ScheduleNextPoll(std::min(next_delay, schedule_options_.poll_interval));

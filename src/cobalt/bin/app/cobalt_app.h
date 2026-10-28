@@ -112,12 +112,13 @@ class CobaltApp {
       const std::string& product_name, const std::string& board_name, const std::string& version,
       std::unique_ptr<DiagnosticsImpl> diagnostics);
 
-  // The DynamicEncryptedMessageMakers installed on |target_pipeline| (whose ownership
-  // is transferred to CobaltService) must outlive the returned KeyFetcher.
+  // |diagnostics| must be non-null and, along with the DynamicEncryptedMessageMakers
+  // installed on |target_pipeline| (whose ownership is transferred to CobaltService),
+  // must outlive the returned KeyFetcher.
   static std::unique_ptr<KeyFetcher> ConfigureKeyRotation(
       async_dispatcher_t* dispatcher, TargetPipelineInterface* target_pipeline,
       std::unique_ptr<lib::HTTPClient> http_client, util::SystemClockInterface* encryption_clock,
-      std::string key_cache_dir, std::string public_keys_url);
+      DiagnosticsImpl* diagnostics, std::string key_cache_dir, std::string public_keys_url);
 
   CobaltApp(std::unique_ptr<sys::ComponentContext> context, async_dispatcher_t* dispatcher,
             fidl::InterfaceRequest<fuchsia::process::lifecycle::Lifecycle> lifecycle_handle,
@@ -143,7 +144,8 @@ class CobaltApp {
   // C++ destroys member variables in reverse declaration order:
   // - validated_clock_ and encryption_clock_ must be declared before cobalt_service_
   //   so they outlive cobalt_service_ and its DynamicEncryptedMessageMaker instances.
-  // - cobalt_service_ owns the DynamicEncryptedMessageMakers referenced by key_fetcher_.
+  // - cobalt_service_ owns the DiagnosticsImpl and the DynamicEncryptedMessageMakers
+  //   referenced by key_fetcher_ and its status observer.
   // - key_fetcher_ must be declared after cobalt_service_ so key_fetcher_ is destroyed
   //   first, canceling scheduled key updates before cobalt_service_ is torn down.
   std::unique_ptr<CobaltServiceInterface> cobalt_service_;

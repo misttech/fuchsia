@@ -7,6 +7,7 @@
 
 #include <lib/async/cpp/task.h>
 #include <lib/async/dispatcher.h>
+#include <lib/fit/function.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/time.h>
 
@@ -39,11 +40,19 @@ enum class KeyFetchStatus : uint8_t {
   kExpiredKey = 5,
 };
 
+[[nodiscard]] const char* KeyFetchStatusToString(KeyFetchStatus status);
+
 class KeyFetcher {
  public:
   // Returns the current time on ZX_CLOCK_BOOT (which continues advancing while
   // the system is suspended).
   using BootClock = std::function<zx::time_boot()>;
+
+  // Invoked on |dispatcher| after each scheduled network key fetch attempt
+  // (after any newly fetched keys have been applied to the makers) with the
+  // resulting status, current consecutive failure count, and the UTC Unix
+  // timestamp in seconds when the fetch was attempted.
+  using StatusObserver = fit::function<void(KeyFetchStatus, uint32_t, int64_t)>;
 
   struct ScheduleOptions {
     // Upper bound for the uniform random delay [0, max_initial_jitter] before
@@ -105,8 +114,16 @@ class KeyFetcher {
   // or expired, or with uniform random jitter otherwise).
   void OnSystemClockBecomesAccurate();
 
+  // Sets the optional observer invoked after each scheduled network fetch
+  // attempt, replacing any previous observer. Earlier attempts are not
+  // replayed. Captured pointers must outlive this KeyFetcher.
+  void SetStatusObserver(StatusObserver observer) { status_observer_ = std::move(observer); }
+
   [[nodiscard]] uint32_t consecutive_fetch_failures() const { return consecutive_fetch_failures_; }
   [[nodiscard]] KeyFetchStatus last_fetch_status() const { return last_fetch_status_; }
+  [[nodiscard]] int64_t last_fetch_attempt_time_secs() const {
+    return last_fetch_attempt_time_secs_;
+  }
   [[nodiscard]] const std::string& cache_file_path() const { return cache_file_path_; }
 
  private:
@@ -138,6 +155,8 @@ class KeyFetcher {
                                              kMaxRetryDelay};
   uint32_t consecutive_fetch_failures_ = 0;
   KeyFetchStatus last_fetch_status_ = KeyFetchStatus::kUninitialized;
+  int64_t last_fetch_attempt_time_secs_ = 0;
+  StatusObserver status_observer_;
   zx::time_boot target_boot_deadline_{0};
   async::TaskClosureMethod<KeyFetcher, &KeyFetcher::CheckBootDeadlineAndFetch> scheduled_task_{
       this};

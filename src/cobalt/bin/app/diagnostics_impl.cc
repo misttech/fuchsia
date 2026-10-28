@@ -6,9 +6,52 @@
 
 #include <lib/inspect/cpp/inspect.h>
 
+#include <algorithm>
 #include <chrono>
+#include <mutex>
+
+#include "src/cobalt/bin/app/key_fetcher.h"
+#include "third_party/cobalt/src/lib/util/dynamic_encrypted_message_maker.h"
 
 namespace cobalt {
+namespace {
+
+enum class KeyState : uint8_t {
+  kUninitialized = 0,
+  // TODO(https://fxbug.dev/539564173): Remove kBundledFallback after bundled key fallback is
+  // removed.
+  kBundledFallback = 1,
+  kValid = 2,
+  kExpired = 3,
+};
+
+[[nodiscard]] const char* KeyStateToString(KeyState state) {
+  switch (state) {
+    case KeyState::kUninitialized:
+      return "uninitialized";
+    case KeyState::kBundledFallback:
+      return "bundled_fallback";
+    case KeyState::kValid:
+      return "valid";
+    case KeyState::kExpired:
+      return "expired";
+  }
+  return "unknown";
+}
+
+[[nodiscard]] KeyState GetKeyState(const util::DynamicEncryptedMessageMaker& maker) {
+  if (!maker.IsInitialized()) {
+    return KeyState::kUninitialized;
+  }
+  // TODO(https://fxbug.dev/539564173): Remove kBundledKeyExpirationSecs check after bundled key
+  // fallback is removed.
+  if (maker.expiration_timestamp_secs() == kBundledKeyExpirationSecs) {
+    return KeyState::kBundledFallback;
+  }
+  return maker.IsExpired() ? KeyState::kExpired : KeyState::kValid;
+}
+
+}  // namespace
 
 DiagnosticsImpl::DiagnosticsImpl(inspect::Node node) : node_(std::move(node)) {
   // Diagnostics for sending observations to Clearcut.
@@ -36,6 +79,21 @@ DiagnosticsImpl::DiagnosticsImpl(inspect::Node node) : node_(std::move(node)) {
   logger_calls_per_method_node_ = logger_calls_.CreateChild("per_method");
   disk_usage_ = internal_metrics_.CreateChild("disk_usage");
   disk_usage_per_storage_class_node_ = disk_usage_.CreateChild("per_storage_class");
+  key_fetch_status_node_ = internal_metrics_.CreateChild("key_fetch_status");
+
+  // Diagnostics for dynamic public key rotation.
+  key_rotation_ = node_.CreateChild("key_rotation");
+  shuffler_key_state_ =
+      key_rotation_.CreateString("shuffler_key_state", KeyStateToString(KeyState::kUninitialized));
+  analyzer_key_state_ =
+      key_rotation_.CreateString("analyzer_key_state", KeyStateToString(KeyState::kUninitialized));
+  analyzer_key_index_ = key_rotation_.CreateUint("analyzer_key_index", 0);
+  shuffler_key_index_ = key_rotation_.CreateUint("shuffler_key_index", 0);
+  expiration_time_utc_ = key_rotation_.CreateInt("expiration_time_utc", 0);
+  last_fetch_attempt_time_ = key_rotation_.CreateInt("last_fetch_attempt_time", 0);
+  last_fetch_status_ = key_rotation_.CreateString(
+      "last_fetch_status", KeyFetchStatusToString(KeyFetchStatus::kUninitialized));
+  consecutive_fetch_failures_ = key_rotation_.CreateUint("consecutive_fetch_failures", 0);
 }
 
 void DiagnosticsImpl::SentObservationResult(const Status& status) {
@@ -141,6 +199,45 @@ void DiagnosticsImpl::TrackDiskUsage(int storageClass, int64_t bytes, int64_t by
   }
   if (byte_limit > 0) {
     disk_usage->byte_limit.Set(byte_limit);
+  }
+}
+
+void DiagnosticsImpl::UpdateKeyRotationInspect(
+    const util::DynamicEncryptedMessageMaker& shuffler_maker,
+    const util::DynamicEncryptedMessageMaker& analyzer_maker, KeyFetchStatus last_fetch_status,
+    uint32_t consecutive_fetch_failures, int64_t last_fetch_attempt_time_secs) {
+  const KeyState shuffler_key_state = GetKeyState(shuffler_maker);
+  const KeyState analyzer_key_state = GetKeyState(analyzer_maker);
+  int64_t expiration_time_utc = 0;
+  if (shuffler_key_state != KeyState::kUninitialized &&
+      shuffler_key_state != KeyState::kBundledFallback &&
+      analyzer_key_state != KeyState::kUninitialized &&
+      analyzer_key_state != KeyState::kBundledFallback) {
+    expiration_time_utc = std::min(shuffler_maker.expiration_timestamp_secs(),
+                                   analyzer_maker.expiration_timestamp_secs());
+  }
+
+  const uint32_t analyzer_key_index = analyzer_maker.key_index();
+  const uint32_t shuffler_key_index = shuffler_maker.key_index();
+  const char* status_str = KeyFetchStatusToString(last_fetch_status);
+  const std::lock_guard<std::mutex> lock(key_rotation_lock_);
+  shuffler_key_state_.Set(KeyStateToString(shuffler_key_state));
+  analyzer_key_state_.Set(KeyStateToString(analyzer_key_state));
+  analyzer_key_index_.Set(analyzer_key_index);
+  shuffler_key_index_.Set(shuffler_key_index);
+  expiration_time_utc_.Set(expiration_time_utc);
+  last_fetch_attempt_time_.Set(last_fetch_attempt_time_secs);
+  last_fetch_status_.Set(status_str);
+  consecutive_fetch_failures_.Set(consecutive_fetch_failures);
+
+  if (last_fetch_status != KeyFetchStatus::kUninitialized) {
+    auto it = key_fetch_status_counts_.find(last_fetch_status);
+    if (it != key_fetch_status_counts_.end()) {
+      it->second.Add(1);
+    } else {
+      key_fetch_status_counts_.emplace(last_fetch_status,
+                                       key_fetch_status_node_.CreateUint(status_str, 1));
+    }
   }
 }
 

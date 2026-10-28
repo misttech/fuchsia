@@ -186,7 +186,8 @@ CobaltConfig CobaltApp::CreateCobaltConfig(
 std::unique_ptr<KeyFetcher> CobaltApp::ConfigureKeyRotation(
     async_dispatcher_t* dispatcher, TargetPipelineInterface* target_pipeline,
     std::unique_ptr<lib::HTTPClient> http_client, util::SystemClockInterface* encryption_clock,
-    std::string key_cache_dir, std::string public_keys_url) {
+    DiagnosticsImpl* diagnostics, std::string key_cache_dir, std::string public_keys_url) {
+  FX_CHECK(diagnostics != nullptr);
   if (target_pipeline == nullptr) {
     return nullptr;
   }
@@ -211,10 +212,20 @@ std::unique_ptr<KeyFetcher> CobaltApp::ConfigureKeyRotation(
   pipeline->SetShufflerEncryptedMessageMaker(std::move(shuffler_maker));
   pipeline->SetAnalyzerEncryptedMessageMaker(std::move(analyzer_maker));
 
+  auto update_inspect = [diagnostics, shuffler_maker_ptr, analyzer_maker_ptr](
+                            KeyFetchStatus status, uint32_t consecutive_failures,
+                            int64_t attempt_time_secs) {
+    diagnostics->UpdateKeyRotationInspect(*shuffler_maker_ptr, *analyzer_maker_ptr, status,
+                                          consecutive_failures, attempt_time_secs);
+  };
+
   auto key_fetcher = std::make_unique<KeyFetcher>(
       dispatcher, std::move(http_client), shuffler_maker_ptr, analyzer_maker_ptr, encryption_clock,
       backend_env, std::move(key_cache_dir), std::move(public_keys_url));
+  key_fetcher->SetStatusObserver(update_inspect);
   key_fetcher->LoadKeysFromDiskCache();
+  update_inspect(key_fetcher->last_fetch_status(), key_fetcher->consecutive_fetch_failures(),
+                 key_fetcher->last_fetch_attempt_time_secs());
   return key_fetcher;
 }
 
@@ -247,16 +258,19 @@ lib::statusor::StatusOr<std::unique_ptr<CobaltApp>> CobaltApp::CreateCobaltApp(
     return loader_sync;
   };
 
+  auto diagnostics = std::make_unique<DiagnosticsImpl>(inspect_node.CreateChild("core"));
+  DiagnosticsImpl* diagnostics_ptr = diagnostics.get();
+
   CobaltConfig cobalt_config = CreateCobaltConfig(
       dispatcher, kMetricsRegistryPath, configuration_data, validated_clock.get(), loader_factory,
       upload_schedule_cfg, event_aggregator_backfill_days, test_dont_backfill_empty_reports,
       use_memory_observation_store, max_bytes_per_observation_store, storage_quotas, product_name,
-      board_name, version, std::make_unique<DiagnosticsImpl>(inspect_node.CreateChild("core")));
+      board_name, version, std::move(diagnostics));
 
-  std::unique_ptr<KeyFetcher> key_fetcher =
-      ConfigureKeyRotation(dispatcher, cobalt_config.target_pipeline.get(),
-                           std::make_unique<utils::FuchsiaHTTPClient>(loader_factory),
-                           encryption_clock.get(), kDefaultKeyCacheDir, kDefaultPublicKeysUrl);
+  std::unique_ptr<KeyFetcher> key_fetcher = ConfigureKeyRotation(
+      dispatcher, cobalt_config.target_pipeline.get(),
+      std::make_unique<utils::FuchsiaHTTPClient>(loader_factory), encryption_clock.get(),
+      diagnostics_ptr, kDefaultKeyCacheDir, kDefaultPublicKeysUrl);
 
   CB_ASSIGN_OR_RETURN(auto cobalt_service, CobaltService::Create(std::move(cobalt_config)));
 

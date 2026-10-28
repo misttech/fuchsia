@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -139,6 +140,16 @@ class KeyFetcherTest : public ::gtest::TestLoopFixture {
  private:
   std::string valid_tink_keyset_bytes_;
 };
+
+TEST(KeyFetchStatusToStringTest, ReturnsExpectedNames) {
+  EXPECT_STREQ(KeyFetchStatusToString(KeyFetchStatus::kUninitialized), "Uninitialized");
+  EXPECT_STREQ(KeyFetchStatusToString(KeyFetchStatus::kSuccess), "Success");
+  EXPECT_STREQ(KeyFetchStatusToString(KeyFetchStatus::kNetworkError), "NetworkError");
+  EXPECT_STREQ(KeyFetchStatusToString(KeyFetchStatus::kParseError), "ParseError");
+  EXPECT_STREQ(KeyFetchStatusToString(KeyFetchStatus::kInvalidTinkKeyset), "InvalidTinkKeyset");
+  EXPECT_STREQ(KeyFetchStatusToString(KeyFetchStatus::kExpiredKey), "ExpiredKey");
+  EXPECT_STREQ(KeyFetchStatusToString(static_cast<KeyFetchStatus>(99)), "Unknown");
+}
 
 TEST_F(KeyFetcherTest, LoadKeysFromDiskCacheMissingFileReturnsFalse) {
   FakeSystemClock clock(kInitialTimeSecs);
@@ -447,6 +458,126 @@ TEST_F(KeyFetcherTest, ScheduledFetchPersistsToDiskAndUpdatesMakers) {
   std::string cached_bytes;
   ASSERT_TRUE(files::ReadFileToString(fetcher.cache_file_path(), &cached_bytes));
   EXPECT_EQ(cached_bytes, pb_bytes);
+}
+
+TEST_F(KeyFetcherTest, LoadKeysFromDiskCacheDoesNotNotifyStatusObserver) {
+  FakeSystemClock clock(kInitialTimeSecs);
+  util::DynamicEncryptedMessageMaker shuffler_maker(&clock);
+  util::DynamicEncryptedMessageMaker analyzer_maker(&clock);
+
+  KeyFetcher fetcher(dispatcher(), std::make_unique<lib::EmptyHTTPClient>(), &shuffler_maker,
+                     &analyzer_maker, &clock, system_data::Environment::PROD, kTestCacheDir,
+                     kTestPublicKeysUrl);
+
+  bool observer_called = false;
+  fetcher.SetStatusObserver([&](KeyFetchStatus /*status*/, uint32_t /*failures*/,
+                                int64_t /*attempt_time_secs*/) { observer_called = true; });
+
+  const std::string pb_bytes =
+      BuildPublicKeysBytes(kCachedShufflerKeyIndex, kCachedAnalyzerKeyIndex, kValidExpirationSecs);
+  ASSERT_TRUE(files::WriteFile(fetcher.cache_file_path(), pb_bytes));
+  EXPECT_TRUE(fetcher.LoadKeysFromDiskCache());
+  EXPECT_FALSE(observer_called);
+  EXPECT_EQ(fetcher.last_fetch_status(), KeyFetchStatus::kUninitialized);
+  EXPECT_EQ(fetcher.last_fetch_attempt_time_secs(), 0);
+}
+
+TEST_F(KeyFetcherTest, ScheduledFetchNotifiesStatusObserver) {
+  FakeSystemClock clock(kInitialTimeSecs);
+  util::DynamicEncryptedMessageMaker shuffler_maker(&clock);
+  util::DynamicEncryptedMessageMaker analyzer_maker(&clock);
+
+  const std::string pb_bytes = BuildPublicKeysBytes(
+      kFetchedShufflerKeyIndex, kFetchedAnalyzerKeyIndex, kUpdatedExpirationSecs);
+  auto stub_http_client =
+      std::make_unique<StubHTTPClient>(lib::HTTPResponse(pb_bytes, Status::OkStatus(), kHttpOk));
+
+  KeyFetcher fetcher(dispatcher(), std::move(stub_http_client), &shuffler_maker, &analyzer_maker,
+                     &clock, system_data::Environment::PROD, kTestCacheDir, kTestPublicKeysUrl,
+                     ImmediateScheduleOptions());
+
+  KeyFetchStatus observed_status = KeyFetchStatus::kUninitialized;
+  std::optional<uint32_t> observed_failures;
+  int64_t observed_time_secs = 0;
+  uint32_t observed_shuffler_key_index = 0;
+  uint32_t observed_analyzer_key_index = 0;
+  fetcher.SetStatusObserver(
+      [&](KeyFetchStatus status, uint32_t consecutive_failures, int64_t attempt_time_secs) {
+        observed_status = status;
+        observed_failures = consecutive_failures;
+        observed_time_secs = attempt_time_secs;
+        observed_shuffler_key_index = shuffler_maker.key_index();
+        observed_analyzer_key_index = analyzer_maker.key_index();
+      });
+
+  fetcher.OnSystemClockBecomesAccurate();
+  RunLoopUntilIdle();
+
+  EXPECT_EQ(fetcher.last_fetch_attempt_time_secs(), kInitialTimeSecs);
+  EXPECT_EQ(observed_status, KeyFetchStatus::kSuccess);
+  EXPECT_EQ(observed_failures, 0u);
+  EXPECT_EQ(observed_time_secs, kInitialTimeSecs);
+  EXPECT_EQ(observed_shuffler_key_index, kFetchedShufflerKeyIndex);
+  EXPECT_EQ(observed_analyzer_key_index, kFetchedAnalyzerKeyIndex);
+}
+
+TEST_F(KeyFetcherTest, ScheduledFetchFailureAndRecoveryNotifiesStatusObserver) {
+  FakeSystemClock clock(kInitialTimeSecs);
+  util::DynamicEncryptedMessageMaker shuffler_maker(&clock);
+  util::DynamicEncryptedMessageMaker analyzer_maker(&clock);
+
+  auto stub_http_client = std::make_unique<StubHTTPClient>(
+      lib::HTTPResponse("unavailable", Status::OkStatus(), kHttpServiceUnavailable));
+  auto* stub_http_client_ptr = stub_http_client.get();
+
+  zx::time_boot fake_boot_time{0};
+  KeyFetcher::ScheduleOptions opts{
+      .max_initial_jitter = zx::sec(0),
+      .steady_state_interval = zx::hour(24),
+      .steady_state_jitter = zx::sec(0),
+      .poll_interval = zx::hour(1),
+      .boot_clock = [&fake_boot_time] { return fake_boot_time; },
+  };
+
+  KeyFetcher fetcher(dispatcher(), std::move(stub_http_client), &shuffler_maker, &analyzer_maker,
+                     &clock, system_data::Environment::PROD, kTestCacheDir, kTestPublicKeysUrl,
+                     opts);
+
+  KeyFetchStatus observed_status = KeyFetchStatus::kUninitialized;
+  std::optional<uint32_t> observed_failures;
+  int64_t observed_time_secs = 0;
+  fetcher.SetStatusObserver(
+      [&](KeyFetchStatus status, uint32_t consecutive_failures, int64_t attempt_time_secs) {
+        observed_status = status;
+        observed_failures = consecutive_failures;
+        observed_time_secs = attempt_time_secs;
+      });
+
+  fetcher.OnSystemClockBecomesAccurate();
+  RunLoopUntilIdle();
+  EXPECT_EQ(observed_status, KeyFetchStatus::kNetworkError);
+  EXPECT_EQ(observed_failures, 1u);
+  EXPECT_EQ(observed_time_secs, kInitialTimeSecs);
+
+  constexpr int64_t kSecondAttemptSecs = 1300;
+  clock.SetNowSecs(kSecondAttemptSecs);
+  fake_boot_time += zx::min(10);
+  RunLoopFor(zx::min(10));
+  EXPECT_EQ(observed_status, KeyFetchStatus::kNetworkError);
+  EXPECT_EQ(observed_failures, 2u);
+  EXPECT_EQ(observed_time_secs, kSecondAttemptSecs);
+
+  constexpr int64_t kRecoveryAttemptSecs = 2500;
+  clock.SetNowSecs(kRecoveryAttemptSecs);
+  stub_http_client_ptr->SetResponse(
+      lib::HTTPResponse(BuildPublicKeysBytes(kFetchedShufflerKeyIndex, kFetchedAnalyzerKeyIndex,
+                                             kScheduledExpirationSecs),
+                        Status::OkStatus(), kHttpOk));
+  fake_boot_time += zx::min(20);
+  RunLoopFor(zx::min(20));
+  EXPECT_EQ(observed_status, KeyFetchStatus::kSuccess);
+  EXPECT_EQ(observed_failures, 0u);
+  EXPECT_EQ(observed_time_secs, kRecoveryAttemptSecs);
 }
 
 TEST_F(KeyFetcherTest, ScheduledFetchDiskWriteFailureStillAppliesKeysInMemory) {
