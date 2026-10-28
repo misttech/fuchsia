@@ -461,10 +461,19 @@ impl<DS: DataStore, TS: SystemTimeSource> Server<DS, TS> {
         req: Message,
         requested_ip: Ipv4Addr,
     ) -> Result<ServerAction, ServerError> {
-        match self.validate_requested_addr_with_client(&req, requested_ip) {
+        let client_id = ClientIdentifier::from(&req);
+        match self.validate_requested_addr_with_client(&client_id, requested_ip) {
             Ok(()) => {
+                // Each DHCPACK grants the client a fresh lease of
+                // `IpAddressLeaseTime`, so the server's record must be
+                // refreshed to reflect the new lease start. Otherwise the server
+                // would consider the lease expired `lease_length_seconds` after
+                // the initial allocation regardless of any renewals, and could
+                // reclaim and reassign the address while the client still
+                // legitimately holds it.
+                self.refresh_lease(&client_id)?;
                 let dest = self.get_destination(&req, requested_ip);
-                Ok(ServerAction::SendResponse(self.build_ack(req, requested_ip)?, dest))
+                Ok(ServerAction::SendResponse(self.build_ack(req, &client_id, requested_ip)?, dest))
             }
             Err(e) => {
                 let (nak, dest) = self.build_nak(req, NakReason::ClientValidationFailure(e))?;
@@ -473,8 +482,31 @@ impl<DS: DataStore, TS: SystemTimeSource> Server<DS, TS> {
         }
     }
 
+    /// Restarts the lease held by `client_id` from the current time and
+    /// persists the updated record.
+    fn refresh_lease(&mut self, client_id: &ClientIdentifier) -> Result<(), ServerError> {
+        let Self { records, store, time_source, .. } = self;
+        let record = records
+            .get_mut(client_id)
+            .ok_or_else(|| ServerError::UnknownClientId(client_id.clone()))?;
+        let refreshed = record
+            .refreshed(time_source.now())
+            .map_err(|std::time::SystemTimeError { .. }| ServerError::ServerTimeError)?;
+        if let Some(store) = store {
+            store
+                .insert(client_id, &refreshed)
+                .map_err(|e| ServerError::DataStoreUpdateFailure(anyhow::Error::from(e).into()))?;
+        }
+        // The in-memory record is only updated once the record has been
+        // successfully persisted, so that a data store failure (which results
+        // in no DHCPACK being sent) does not leave the server believing the
+        // lease was extended.
+        *record = refreshed;
+        Ok(())
+    }
+
     /// The function below validates if the `requested_ip` is correctly
-    /// associated with the client whose request `req` is being processed.
+    /// associated with the client identified by `client_id`.
     ///
     /// It first checks if the client bindings can be found in server records.
     /// If not, the association is wrong and it returns an `Err()`.
@@ -487,11 +519,10 @@ impl<DS: DataStore, TS: SystemTimeSource> Server<DS, TS> {
     /// appropriate `Err()` value is returned.
     fn validate_requested_addr_with_client(
         &self,
-        req: &Message,
+        client_id: &ClientIdentifier,
         requested_ip: Ipv4Addr,
     ) -> Result<(), ServerError> {
-        let client_id = ClientIdentifier::from(req);
-        if let Some(record) = self.records.get(&client_id) {
+        if let Some(record) = self.records.get(client_id) {
             let now = self
                 .time_source
                 .now()
@@ -511,7 +542,7 @@ impl<DS: DataStore, TS: SystemTimeSource> Server<DS, TS> {
                 Err(ServerError::MissingRequestedAddr)
             }
         } else {
-            Err(ServerError::UnknownClientId(client_id))
+            Err(ServerError::UnknownClientId(client_id.clone()))
         }
     }
 
@@ -669,16 +700,20 @@ impl<DS: DataStore, TS: SystemTimeSource> Server<DS, TS> {
         )
     }
 
-    fn build_ack(&self, req: Message, requested_ip: Ipv4Addr) -> Result<Message, ServerError> {
-        let client_id = ClientIdentifier::from(&req);
-        let options = match self.records.get(&client_id) {
+    fn build_ack(
+        &self,
+        req: Message,
+        client_id: &ClientIdentifier,
+        requested_ip: Ipv4Addr,
+    ) -> Result<Message, ServerError> {
+        let options = match self.records.get(client_id) {
             Some(record) => {
                 let mut options = Vec::with_capacity(record.options.len() + 1);
                 options.push(DhcpOption::DhcpMessageType(MessageType::DHCPACK));
                 options.extend(record.options.iter().cloned());
                 options
             }
-            None => return Err(ServerError::UnknownClientId(client_id)),
+            None => return Err(ServerError::UnknownClientId(client_id.clone())),
         };
         let ack = Message { op: OpCode::BOOTREPLY, secs: 0, yiaddr: requested_ip, options, ..req };
         Ok(ack)
@@ -1311,6 +1346,17 @@ impl LeaseRecord {
             *lease_start_epoch_seconds + u64::from(*lease_length_seconds),
         );
         since_unix_epoch >= end
+    }
+
+    /// Returns a copy of this record with the lease restarted from
+    /// `lease_start`, keeping the lease length.
+    fn refreshed(
+        &self,
+        lease_start: std::time::SystemTime,
+    ) -> Result<Self, std::time::SystemTimeError> {
+        let lease_start_epoch_seconds =
+            lease_start.duration_since(std::time::UNIX_EPOCH)?.as_secs();
+        Ok(Self { lease_start_epoch_seconds, ..self.clone() })
     }
 }
 
@@ -2633,7 +2679,12 @@ pub mod tests {
                 ResponseTarget::Unicast(requested_ip, Some(req.chaddr)),
             ))
         };
+        let client_id = ClientIdentifier::from(&req);
         assert_eq!(server.dispatch(req), expected_response,);
+        assert_matches::assert_matches!(
+            server.store.expect("missing store").actions().as_slice(),
+            [DataStoreAction::StoreClientRecord { client_id: id, .. }] if *id == client_id
+        );
     }
 
     #[test]
@@ -2656,6 +2707,10 @@ pub mod tests {
         let _response = server.dispatch(req).unwrap();
         assert!(server.records.contains_key(&client_id));
         assert!(server.pool.addr_is_allocated(requested_ip));
+        assert_matches::assert_matches!(
+            server.store.expect("missing store").actions().as_slice(),
+            [DataStoreAction::StoreClientRecord { client_id: id, .. }] if *id == client_id
+        );
     }
 
     #[test]
@@ -2849,7 +2904,12 @@ pub mod tests {
                 ResponseTarget::Unicast(init_reboot_client_ip, Some(req.chaddr)),
             ))
         };
+        let client_id = ClientIdentifier::from(&req);
         assert_eq!(server.dispatch(req), expected_response,);
+        assert_matches::assert_matches!(
+            server.store.expect("missing store").actions().as_slice(),
+            [DataStoreAction::StoreClientRecord { client_id: id, .. }] if *id == client_id
+        );
     }
 
     #[test]
@@ -3052,6 +3112,7 @@ pub mod tests {
 
         let expected_dest = req.ciaddr;
 
+        let client_id = ClientIdentifier::from(&req);
         assert_eq!(
             server.dispatch(req),
             Ok(ServerAction::SendResponse(
@@ -3059,6 +3120,121 @@ pub mod tests {
                 ResponseTarget::Unicast(expected_dest, None)
             ))
         );
+        assert_matches::assert_matches!(
+            server.store.expect("missing store").actions().as_slice(),
+            [DataStoreAction::StoreClientRecord { client_id: id, .. }] if *id == client_id
+        );
+    }
+
+    #[test]
+    fn dispatch_with_renewing_request_refreshes_lease_expiration() {
+        let (mut server, mut time_source) = new_test_minimal_server_with_time_source();
+        let mut req = new_test_request();
+
+        let bound_client_ip = random_ipv4_generator();
+        let client_id = ClientIdentifier::from(&req);
+        let lease_length_seconds = server.params.lease_length.default_seconds;
+
+        assert!(server.pool.universe.insert(bound_client_ip));
+        assert!(server.pool.allocated.insert(bound_client_ip));
+        req.ciaddr = bound_client_ip;
+
+        assert_matches::assert_matches!(
+            server.records.insert(
+                client_id.clone(),
+                LeaseRecord::new(
+                    Some(bound_client_ip),
+                    vec![DhcpOption::IpAddressLeaseTime(lease_length_seconds)],
+                    time_source.now(),
+                    lease_length_seconds,
+                )
+                .expect("failed to create lease record"),
+            ),
+            None
+        );
+
+        // Renew halfway through the lease.
+        time_source.move_forward(Duration::from_secs(u64::from(lease_length_seconds) / 2));
+        let renewal_time = time_source.now();
+        let (ack, _dest) = assert_matches!(
+            server.dispatch(req),
+            Ok(ServerAction::SendResponse(ack, dest)) => (ack, dest)
+        );
+        assert_eq!(ack.get_dhcp_type().expect("ack missing message type"), MessageType::DHCPACK);
+
+        // Advance past the original expiration but within the renewed lease.
+        time_source.move_forward(Duration::from_secs(u64::from(lease_length_seconds) / 2 + 1));
+        let now =
+            time_source.now().duration_since(std::time::UNIX_EPOCH).expect("time went backwards");
+        let record = server.records.get(&client_id).expect("missing lease record");
+        assert!(!record.expired(now), "renewed lease must not have expired: {:?}", record);
+        assert_eq!(
+            record.lease_start_epoch_seconds,
+            renewal_time
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("time went backwards")
+                .as_secs()
+        );
+
+        // The renewed lease must survive expired lease reclamation.
+        server.release_expired_leases().expect("failed to release expired leases");
+        assert!(server.pool.addr_is_allocated(bound_client_ip));
+        assert_eq!(
+            server.records.get(&client_id).expect("missing lease record").current,
+            Some(bound_client_ip)
+        );
+
+        // The renewed lease must be persisted to the data store.
+        assert_matches::assert_matches!(
+            server.store.expect("missing store").actions().as_slice(),
+            [DataStoreAction::StoreClientRecord { client_id: id, record }]
+                if *id == client_id && record.current == Some(bound_client_ip)
+        );
+    }
+
+    #[test]
+    fn dispatch_with_renewing_request_data_store_failure_does_not_refresh_lease() {
+        let (mut server, mut time_source) = new_test_minimal_server_with_store(FailingDataStore);
+        let mut req = new_test_request();
+
+        let bound_client_ip = random_ipv4_generator();
+        let client_id = ClientIdentifier::from(&req);
+        let lease_length_seconds = server.params.lease_length.default_seconds;
+
+        assert!(server.pool.universe.insert(bound_client_ip));
+        assert!(server.pool.allocated.insert(bound_client_ip));
+        req.ciaddr = bound_client_ip;
+
+        let lease_start = time_source.now();
+        assert_matches::assert_matches!(
+            server.records.insert(
+                client_id.clone(),
+                LeaseRecord::new(
+                    Some(bound_client_ip),
+                    vec![DhcpOption::IpAddressLeaseTime(lease_length_seconds)],
+                    lease_start,
+                    lease_length_seconds,
+                )
+                .expect("failed to create lease record"),
+            ),
+            None
+        );
+
+        time_source.move_forward(Duration::from_secs(u64::from(lease_length_seconds) / 2));
+        assert_matches!(server.dispatch(req), Err(ServerError::DataStoreUpdateFailure(_)));
+
+        // The in-memory record must not reflect a lease extension that was
+        // never persisted nor acknowledged to the client.
+        let record = server.records.get(&client_id).expect("missing lease record");
+        assert_eq!(record.current, Some(bound_client_ip));
+        assert_eq!(
+            record.lease_start_epoch_seconds,
+            lease_start
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("time went backwards")
+                .as_secs()
+        );
+        assert!(server.pool.addr_is_allocated(bound_client_ip));
     }
 
     #[test]
