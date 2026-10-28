@@ -179,6 +179,16 @@ bool cpu_suspend_one_wakes_another() {
   active_cpus &= ~cpu_num_to_mask(BOOT_CPU_ID);
   const cpu_num_t cpu_a = remove_cpu_from_mask(active_cpus);
 
+  // Run this thread on CPU B for the duration of the test.  Otherwise, this thread may be running
+  // on CPU A when it resumes thread A.  If thread A then preempts it, this thread is stuck in CPU
+  // A's run queue and cannot start thread B until CPU A wakes for some other reason (e.g. the
+  // preemption timer), at which point thread A has already returned and the attempt is wasted.
+  auto restore_affinity = fit::defer(
+      [previous_affinity = Thread::Current::Get()->SetCpuAffinity(cpu_num_to_mask(cpu_b))] {
+        Thread::Current::Get()->SetCpuAffinity(previous_affinity);
+      });
+  ASSERT_EQ(cpu_b, arch_curr_cpu_num());
+
   const auto deadline = Deadline::after_boot(kTimeout);
   for (size_t attempt = 0; current_boot_time() < deadline.when(); ++attempt) {
     printf("attempt %zu\n", attempt);
