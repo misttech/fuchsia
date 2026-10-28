@@ -565,19 +565,19 @@ void CfiParser::AsyncStep(AsyncMemory* stack, RegisterID return_address_register
   }
 
   std::vector<std::pair<uint64_t, uint32_t>> ranges;
-  // At this level all of the fetches will be for exactly one machine register sized integer.
-  constexpr uint32_t kSize = 8;
+  // At this level all of the fetches will be for one machine-register-sized integer.
+  const uint32_t kSize = address_size_ == Module::AddressSize::k32Bit ? 4 : 8;
 
   for (auto& [reg, location] : register_locations_) {
     if (location.type == RegisterLocation::Type::kOffset) {
       ranges.emplace_back(cfa + location.offset, kSize);
-    } else if (location.type == RegisterLocation::Type::kExpression ||
-               location.type == RegisterLocation::Type::kValExpression) {
-      uint64_t addr;
+    } else if (location.type == RegisterLocation::Type::kExpression) {
+      uint64_t addr = 0;
       // Create a copy so we don't invalidate the location's expr.
       auto expr = location.expression;
-      expr.Eval(stack, current, {cfa}, addr);
-      ranges.emplace_back(addr, kSize);
+      if (expr.Eval(stack, current, {cfa}, addr).ok()) {
+        ranges.emplace_back(addr, kSize);
+      }
     }
   }
 

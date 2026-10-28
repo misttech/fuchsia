@@ -123,12 +123,21 @@ TEST(Unwinder, Scs) {
 }
 #endif
 
-// Provides a fake implementation of AsyncMemory::Delegate where |FetchMemoryRanges| does nothing
-// and |ReadBytes| reads from local process memory.
+// Provides a fake implementation of AsyncMemory::Delegate that tracks fetched ranges and enforces
+// that |ReadBytes| only reads memory previously requested via |FetchMemoryRanges|.
 class FakeAsyncMemory : public AsyncMemory::Delegate {
  public:
   void FetchMemoryRanges(std::vector<std::pair<uint64_t, uint32_t>> ranges,
                          fit::callback<void()> done) override {
+    fetch_calls_++;
+    total_ranges_requested_ += ranges.size();
+    for (const auto& [addr, size] : ranges) {
+      if (size == 0) {
+        continue;
+      }
+      total_bytes_requested_ += size;
+      AddFetchedRange(addr, addr + size);
+    }
     // Note that we cannot actually post tasks to the message loop because we're running in the same
     // process as the stack we're trying to unwind. If we post a task to the loop, then the stack
     // will get modified out from under us while we're unwinding.
@@ -136,6 +145,11 @@ class FakeAsyncMemory : public AsyncMemory::Delegate {
   }
 
   Error ReadBytes(uint64_t addr, uint64_t size, void* dst) override {
+    read_calls_++;
+    if (!IsRangeFetched(addr, addr + size)) {
+      unfetched_read_calls_++;
+      return Error("ReadBytes for unfetched range [%#" PRIx64 ", %#" PRIx64 ")", addr, addr + size);
+    }
     return memory_.ReadBytes(addr, size, dst);
   }
 
@@ -148,8 +162,50 @@ class FakeAsyncMemory : public AsyncMemory::Delegate {
 
   Memory* GetLocalMemory() { return &memory_; }
 
+  void ResetMetrics() {
+    fetched_ranges_.clear();
+    fetch_calls_ = 0;
+    total_ranges_requested_ = 0;
+    total_bytes_requested_ = 0;
+    read_calls_ = 0;
+    unfetched_read_calls_ = 0;
+  }
+
+  size_t fetch_calls() const { return fetch_calls_; }
+  size_t total_ranges_requested() const { return total_ranges_requested_; }
+  uint64_t total_bytes_requested() const { return total_bytes_requested_; }
+  size_t read_calls() const { return read_calls_; }
+  size_t unfetched_read_calls() const { return unfetched_read_calls_; }
+
  private:
+  void AddFetchedRange(uint64_t begin, uint64_t end) {
+    fetched_ranges_.emplace_back(begin, end);
+    std::sort(fetched_ranges_.begin(), fetched_ranges_.end());
+    std::vector<std::pair<uint64_t, uint64_t>> merged;
+    for (const auto& range : fetched_ranges_) {
+      if (merged.empty() || merged.back().second < range.first) {
+        merged.push_back(range);
+      } else {
+        merged.back().second = std::max(merged.back().second, range.second);
+      }
+    }
+    fetched_ranges_ = std::move(merged);
+  }
+
+  bool IsRangeFetched(uint64_t begin, uint64_t end) const {
+    return std::ranges::any_of(fetched_ranges_, [begin, end](const auto& range) {
+      const auto& [r_begin, r_end] = range;
+      return begin >= r_begin && end <= r_end;
+    });
+  }
+
   LocalMemory memory_;
+  std::vector<std::pair<uint64_t, uint64_t>> fetched_ranges_;
+  size_t fetch_calls_ = 0;
+  size_t total_ranges_requested_ = 0;
+  uint64_t total_bytes_requested_ = 0;
+  size_t read_calls_ = 0;
+  size_t unfetched_read_calls_ = 0;
 };
 
 // This class helps manage the lifetime of the |on_done| callback which is fed through to the
@@ -182,12 +238,14 @@ class AsyncUnwind : public debug::TestWithLoop {
     frames.clear();
     expected_pcs.clear();
     test_start_pc = 0;
+    memory_.ResetMetrics();
 
     on_done_ = [=](std::vector<Frame> result) mutable {
       frames = std::move(result);
 
       ASSERT_GE(GetTestStartFrameIndex(), expected_frames);
       check_stack();
+      EXPECT_EQ(memory_.unfetched_read_calls(), 0ul);
 
       loop().QuitNow();
     };
@@ -198,6 +256,8 @@ class AsyncUnwind : public debug::TestWithLoop {
     expected_pcs.push_back(test_start_pc);
     return res;
   }
+
+  const FakeAsyncMemory& memory() const { return memory_; }
 
  private:
   FakeAsyncMemory memory_;
@@ -216,18 +276,17 @@ TEST_F(AsyncUnwind, CanUnwindCfi) {
   loop().Run();
 }
 
-// TEST_F(AsyncUnwind, CanUnwindCfiMany) {
-//   int res =
-//       AsyncTestStart(7, CfiOnly, CfiOnly, CfiOnly, CfiOnly, CfiOnly, CfiOnly, CfiOnly);
+TEST_F(AsyncUnwind, CanUnwindCfiMany) {
+  int res = AsyncTestStart(7, CfiOnly, CfiOnly, CfiOnly, CfiOnly, CfiOnly, CfiOnly, CfiOnly);
 
-//   // At this point the call stack should be set up for us, but nothing posted to the message loop
-//   // has been executed yet. Since we set up the call stack synchronously, we should be able to
-//   // assert that the functions specified above were called.
-//   ASSERT_EQ(res, 7);
+  // At this point the call stack should be set up for us, but nothing posted to the message loop
+  // has been executed yet. Since we set up the call stack synchronously, we should be able to
+  // assert that the functions specified above were called.
+  ASSERT_EQ(res, 7);
 
-//   // Now we run the message loop to consume the unwinder results.
-//   loop().Run();
-// }
+  // Now we run the message loop to consume the unwinder results.
+  loop().Run();
+}
 
 TEST_F(AsyncUnwind, UnwindFp) {
   int res = AsyncTestStart(4, FpOnly, FpOnly, FpOnly, FpOnly);
