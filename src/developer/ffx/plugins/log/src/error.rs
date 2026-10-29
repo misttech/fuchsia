@@ -40,10 +40,6 @@ pub enum LogError {
     NoSymbolizerConfig,
     #[error(transparent)]
     SymbolizerError(#[from] ReadError),
-    #[error(
-        "Daemon connection was lost and retries are disabled. Run 'ffx doctor' to diagnose and restore the daemon connection."
-    )]
-    DaemonRetriesDisabled,
     #[error("AI agent timed out waiting for device connection in dump mode")]
     AIAgentTimedOut,
     #[error(transparent)]
@@ -96,7 +92,6 @@ impl From<LogError> for fho::Error {
             IOError(err) => fho::Error::Unexpected(err.into()),
             ConfigError(err) => fho::Error::Unexpected(err.into()),
             SymbolizerError(err) => fho::Error::Unexpected(err.into()),
-            DaemonRetriesDisabled => fho::Error::Unexpected(value.into()),
             FormatterError(error) => fho::Error::Unexpected(error.into()),
             Internal(error) | LogCommand(error) => error,
         }
@@ -124,15 +119,5 @@ mod tests {
         let err = LogError::IdentifyHostError(IdentifyHostError::ProxyConnectionFailed);
         let msg = format!("{}", err);
         assert!(msg.contains("Please ensure the device is connected and powered on. Run 'ffx target list' to see available targets."));
-    }
-
-    #[test]
-    fn test_daemon_retries_disabled_message() {
-        let err = LogError::DaemonRetriesDisabled;
-        let msg = format!("{}", err);
-        assert_eq!(
-            msg,
-            "Daemon connection was lost and retries are disabled. Run 'ffx doctor' to diagnose and restore the daemon connection."
-        );
     }
 }

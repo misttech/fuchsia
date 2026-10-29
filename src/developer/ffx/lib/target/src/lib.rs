@@ -428,7 +428,7 @@ pub(crate) async fn knock_target_impl(
             ever_found.store(true, std::sync::atomic::Ordering::Relaxed);
         }
 
-        log::debug!("daemonless knock connecting to resolved target {:?}", res);
+        log::debug!("knock connecting to resolved target {:?}", res);
         if res.get_connection_if_already_established().is_none() {
             let conn = res.get_connection(context).await.map_err(|e| match e {
                 FfxTargetCrateError::Knock(ke) => ke,
@@ -436,7 +436,7 @@ pub(crate) async fn knock_target_impl(
                     KnockError::Critical(KnockCriticalError::TargetError(format!("{:?}", other)))
                 }
             })?;
-            log::debug!("daemonless knock connection established");
+            log::debug!("knock connection established");
             let _ = conn.rcs_proxy_fdomain().await.map_err(|e| {
                 KnockError::NonCritical(KnockNonCriticalError::Custom(format!("{:?}", e)))
             })?;
@@ -447,7 +447,7 @@ pub(crate) async fn knock_target_impl(
     futures_lite::pin!(res_future);
     timeout::timeout(knock_timeout, res_future).await.map_err(|_| {
         KnockError::NonCritical(KnockNonCriticalError::Timeout {
-            detail: "daemonless knock timeout".to_string(),
+            detail: "knock timeout".to_string(),
         })
     })?
 }

@@ -165,9 +165,7 @@ impl RegisterTool {
         if let Some(server_info) = pkg_server_info {
             self.register_standalone(&server_info, repository_target).await
         } else {
-            return_user_error!(
-                "{repo_name} is not a running repository, nor a daemon based repository."
-            )
+            return_user_error!("{repo_name} is not a running repository.")
         }
     }
 

@@ -1206,9 +1206,8 @@ https://fuchsia.dev/fuchsia-src/development/sdk/ffx/record-traces"
         RecordingError::RecordingStart => {
             let log_file: String = context.get("log.dir").unwrap();
             format!(
-                "Error starting Fuchsia trace. See {log_file}/ffx.daemon.log\n
-Search for lines tagged with `ffx_daemon_service_tracing`. A common issue is a
-peer closed error from `fuchsia.tracing.controller.Controller`. If this is the
+                "Error starting Fuchsia trace. See {log_file}/ffx.log\n
+A common issue is a peer closed error from `fuchsia.tracing.controller.Controller`. If this is the
 case either tracing is not supported in the product configuration or the tracing
 package is missing from the device's system image."
             )
@@ -1216,9 +1215,8 @@ package is missing from the device's system image."
         RecordingError::RecordingStop => {
             let log_file: String = context.get("log.dir").unwrap();
             format!(
-                "Error stopping Fuchsia trace. See {log_file}/ffx.daemon.log\n
-Search for lines tagged with `ffx_daemon_service_tracing`. A common issue is a
-peer closed error from `fuchsia.tracing.controller.Controller`. If this is the
+                "Error stopping Fuchsia trace. See {log_file}/ffx.log\n
+A common issue is a peer closed error from `fuchsia.tracing.controller.Controller`. If this is the
 case either tracing is not supported in the product configuration or the tracing
 package is missing from the device's system image."
             )

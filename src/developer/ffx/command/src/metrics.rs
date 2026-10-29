@@ -66,13 +66,7 @@ impl MetricsSession {
         if !enabled {
             opt_out_for_this_invocation().await.map_err(anyhow::Error::from)?
         }
-        let connection_mode = if context.is_strict() {
-            "strict"
-        } else if context.get_direct_connection_mode() {
-            "direct"
-        } else {
-            "daemon"
-        };
+        let connection_mode = if context.is_strict() { "strict" } else { "direct" };
         let session_start = Instant::now();
         Ok(Self { enabled, session_start, upload_timeout, connection_mode })
     }

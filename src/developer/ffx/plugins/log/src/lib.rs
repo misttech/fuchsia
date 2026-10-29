@@ -299,11 +299,6 @@ where
                 }
                 let err = format!("{:?}", err);
                 if matches!(&last_error, Some(value) if *value == err) {
-                    eprintln!("Error connecting to device, retrying in {backoff} seconds.");
-                } else {
-                    if err.contains("FFX Daemon was told not to autostart and no existing Daemon instance was found") {
-                        return Err(LogError::DaemonRetriesDisabled);
-                    }
                     eprintln!(
                         "Error connecting to device, retrying in {backoff} seconds. Error: {err}",
                     );

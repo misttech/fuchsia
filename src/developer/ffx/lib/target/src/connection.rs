@@ -135,7 +135,7 @@ impl Connection {
                     self.wrap_connection_errors(e)
                 )))
             })?;
-        emit_rcs_proxy_event("overnet", None, false).await;
+        emit_rcs_proxy_event("overnet", None).await;
         log::debug!("Overnet RCS Proxy established");
         Ok(remote_proxy)
     }
@@ -156,7 +156,7 @@ impl Connection {
         )
         .map_err(|e| ConnectionError::InternalError(e.into()))?;
 
-        emit_rcs_proxy_event("fdomain", Some(pass_thru), false).await;
+        emit_rcs_proxy_event("fdomain", Some(pass_thru)).await;
         log::debug!("FDomain RCS Proxy established (pass-thru: {pass_thru})");
         Ok(proxy)
     }
@@ -238,11 +238,11 @@ impl Connection {
     }
 }
 
-pub(crate) async fn emit_rcs_proxy_event(ty: &str, pass_thru: Option<bool>, daemon: bool) {
+pub(crate) async fn emit_rcs_proxy_event(ty: &str, pass_thru: Option<bool>) {
     let fields = if let Some(pass_thru) = pass_thru {
-        [("pass-thru", pass_thru.into()), ("daemon", daemon.into())].into_iter().collect()
+        [("pass-thru", pass_thru.into())].into_iter().collect()
     } else {
-        [("daemon", daemon.into())].into_iter().collect()
+        std::collections::BTreeMap::new()
     };
 
     let _ = analytics::add_custom_event(Some("ffx_rcs_proxy"), Some(ty), None, fields).await;
