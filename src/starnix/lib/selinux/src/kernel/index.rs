@@ -263,8 +263,7 @@ impl PolicyIndex {
         }
 
         let decision_allow = access_decision.allow;
-        let decision_audit = (access_decision.allow & access_decision.auditallow)
-            | (!access_decision.allow & access_decision.auditdeny);
+        let decision_audit = access_decision.audit();
         for (id, permission_id) in self.permissions[class as usize].iter().enumerate() {
             if let Some(permission_id) = permission_id {
                 // If the permission is known, set the corresponding bit according to

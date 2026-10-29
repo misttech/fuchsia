@@ -46,6 +46,12 @@ impl XpermsAccessDecision {
         auditallow: XpermsBitmap::NONE,
         auditdeny: XpermsBitmap::ALL,
     };
+
+    /// Returns the bitmap of extended permissions that should be audit-logged given
+    /// [`Self::allow`], [`Self::auditallow`], and [`Self::auditdeny`].
+    pub fn audit(&self) -> XpermsBitmap {
+        (self.allow & self.auditallow) | (!self.allow & self.auditdeny)
+    }
 }
 
 /// [`SecurityContext`] and [`FsUseType`] derived from an `fs_use_*` line of the policy.

@@ -456,6 +456,12 @@ impl AccessDecision {
             todo_bug: None,
         }
     }
+
+    /// Returns the [`AccessVector`] of permissions that should be audit-logged given
+    /// [`Self::allow`], [`Self::auditallow`], and [`Self::auditdeny`].
+    pub fn audit(&self) -> AccessVector {
+        (self.allow & self.auditallow) | (!self.allow & self.auditdeny)
+    }
 }
 
 /// Lookup table for SELinux rules, optimized for fast queries. It maps a [`RuleKey`]

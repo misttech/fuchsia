@@ -830,12 +830,7 @@ impl Query for SecurityServerBackend {
 
         // Combine the base and extended decisions.
         let allow = if !base_permit { XpermsBitmap::NONE } else { xperms_decision.allow };
-        let audit = if base_audit {
-            XpermsBitmap::ALL
-        } else {
-            (xperms_decision.allow & xperms_decision.auditallow)
-                | (!xperms_decision.allow & xperms_decision.auditdeny)
-        };
+        let audit = if base_audit { XpermsBitmap::ALL } else { xperms_decision.audit() };
         let permissive = (base_decision.flags & SELINUX_AVD_FLAGS_PERMISSIVE) != 0;
         let has_todo = base_decision.todo_bug.is_some();
         KernelXpermsAccessDecision { allow, audit, permissive, has_todo }
