@@ -1,0 +1,35 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules:zx_library.bzl", "cc_static_library_zx")
+
+package(default_applicable_licenses = ["//:license"])
+
+cc_static_library_zx(
+    name = "test-utils",
+    testonly = True,
+    srcs = ["test-utils.cc"],
+    hdrs = ["include/test-utils/test-utils.h"],
+    # TODO(https://fxbug.dev/42085293): delete the below and fix compiler warnings
+    copts = ["-Wno-vla-cxx-extension"],
+    implementation_deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+        "//sdk/fidl/fuchsia.process:fuchsia.process_cpp",
+        "//sdk/lib/component/incoming/cpp",
+        "//sdk/lib/fdio",
+        "//src/lib/debug:backtrace-request",
+        "//zircon/system/ulib/fbl",
+        "//zircon/system/ulib/zircon-internal",
+        "//zircon/system/ulib/zx",
+    ],
+    includes = ["include"],
+    visibility = [
+        "//sdk/lib/fdio/tests:__pkg__",
+        "//src/lib/elf-search/test:__pkg__",
+        "//src/zircon/tests/exception:__pkg__",
+        "//src/zircon/tests/thread-state:__pkg__",
+        "//zircon/system/ulib/test-utils/test:__pkg__",
+        "//zircon/system/utest:__subpackages__",
+    ],
+)

@@ -1,0 +1,31 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/cc:fx_cc_library_headers.bzl", "fx_cc_library_headers")
+
+package(default_applicable_licenses = ["//:license"])
+
+# <lib/test-exceptions/exception-catcher.h> includes <lib/zx/...>, so GN
+# consumers need //zircon/system/ulib/zx as a public dependency. Bazel
+# propagates the headers of `deps` transitively, while bazel2gn would translate
+# them to GN `deps`, so the GN `public_deps` are emitted with a raw attribute
+# and the Bazel `deps` entry is skipped.
+# @bazel2gn:raw_attribute:public_deps = [ "//zircon/system/ulib/zx" ]
+fx_cc_library_headers(
+    name = "headers",
+    hdrs = ["include/lib/test-exceptions/exception-catcher.h"],
+    deps = ["//zircon/system/ulib/zx"],  # @bazel2gn:skip
+)
+
+fx_cc_library(
+    name = "test-exceptions",
+    testonly = True,
+    srcs = ["exception-catcher.cc"],
+    visibility = [
+        "//src/zircon/tests/exception:__pkg__",
+        "//zircon/system/ulib/test-exceptions/test:__pkg__",
+    ],
+    deps = [":headers"],
+)
