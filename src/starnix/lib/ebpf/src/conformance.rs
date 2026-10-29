@@ -15,17 +15,18 @@ pub mod test {
         BPF_JSGE, BPF_JSGT, BPF_JSLE, BPF_JSLT, BPF_LD, BPF_LDX, BPF_LSH, BPF_MEM, BPF_MOD,
         BPF_MOV, BPF_MUL, BPF_NEG, BPF_OR, BPF_RSH, BPF_SRC_IMM, BPF_SRC_REG, BPF_ST, BPF_STX,
         BPF_SUB, BPF_TO_BE, BPF_TO_LE, BPF_W, BPF_XCHG, BPF_XOR, BpfValue, CallingContext,
-        DataWidth, EbpfHelperImpl, EbpfInstruction, EbpfProgramContext, FromBpfValue,
-        FunctionSignature, HelperDefinition, MapFlags, MapReference, MapSchema, MapTypeFilter,
-        MemoryId, MemoryParameterSize, NullVerifierLogger, Packet, PointerOrigin, ProgramArgument,
-        Type, link_program_dynamic, static_helper_set, verify_program,
+        DataWidth, EbpfHelperImpl, EbpfInstruction, EbpfProgramContext, FieldDescriptor, FieldType,
+        FromBpfValue, FunctionSignature, HelperDefinition, MapFlags, MapReference, MapSchema,
+        MapTypeFilter, MemoryId, MemoryParameterSize, NullVerifierLogger, Packet, PointerOrigin,
+        ProgramArgument, StructDescriptor, Type, link_program_dynamic, static_helper_set,
+        verify_program,
     };
     use pest::Parser;
     use pest::iterators::Pair;
     use pest_derive::Parser;
     use std::collections::HashMap;
     use std::str::FromStr;
-    use std::sync::LazyLock;
+    use std::sync::{Arc, LazyLock};
     use test_case::test_case;
     use zerocopy::IntoBytes;
 
@@ -442,11 +443,21 @@ pub mod test {
     /// Size of the value of the test map at index `TEST_MAP_INDEX_WITH_VALUE`.
     const TEST_MAP_VALUE_SIZE: usize = 16;
 
+    #[repr(C)]
+    #[derive(Default)]
+    struct TestStruct {
+        data: u64,
+        data_end: u64,
+        mutable_field: u32,
+        _padding: u32,
+    }
+
     struct TestEbpfRunContext {
         buffer_size: usize,
         /// Storage for the value returned by the `map_lookup_value` helper.
         /// Stored as `u64` to guarantee 8-byte alignment.
         map_value: [u64; TEST_MAP_VALUE_SIZE / std::mem::size_of::<u64>()],
+        test_struct: TestStruct,
     }
 
     const DATA_OFFSET: usize = 8;
@@ -564,6 +575,32 @@ pub mod test {
     );
 
     static MALLOC_ID: LazyLock<MemoryId> = LazyLock::new(|| MemoryId::new());
+    static TEST_STRUCT_ID: LazyLock<MemoryId> = LazyLock::new(MemoryId::new);
+    static TEST_ARRAY_ID: LazyLock<MemoryId> = LazyLock::new(MemoryId::new);
+    static TEST_STRUCT_DESCRIPTOR: LazyLock<Arc<StructDescriptor>> = LazyLock::new(|| {
+        Arc::new(StructDescriptor {
+            fields: vec![
+                FieldDescriptor {
+                    offset: std::mem::offset_of!(TestStruct, data),
+                    field_type: FieldType::PtrToArray {
+                        is_32_bit: false,
+                        id: TEST_ARRAY_ID.clone(),
+                    },
+                },
+                FieldDescriptor {
+                    offset: std::mem::offset_of!(TestStruct, data_end),
+                    field_type: FieldType::PtrToEndArray {
+                        is_32_bit: false,
+                        id: TEST_ARRAY_ID.clone(),
+                    },
+                },
+                FieldDescriptor {
+                    offset: std::mem::offset_of!(TestStruct, mutable_field),
+                    field_type: FieldType::MutableScalar { size: 4 },
+                },
+            ],
+        })
+    });
 
     static HELPER_DEFS: LazyLock<Vec<(HelperDefinition, EbpfHelperImpl<TestEbpfProgramContext>)>> =
         LazyLock::new(|| {
@@ -879,6 +916,22 @@ pub mod test {
                     },
                     EbpfHelperImpl::<TestEbpfProgramContext>(get_zero),
                 ),
+                (
+                    HelperDefinition {
+                        index: 202,
+                        name: "get_test_struct",
+                        signature: FunctionSignature {
+                            args: vec![],
+                            return_value: Type::PtrToStruct {
+                                id: TEST_STRUCT_ID.clone(),
+                                offset: 0.into(),
+                                descriptor: TEST_STRUCT_DESCRIPTOR.clone(),
+                            },
+                            invalidate_array_bounds: false,
+                        },
+                    },
+                    EbpfHelperImpl::<TestEbpfProgramContext>(get_test_struct),
+                ),
             ]
         });
 
@@ -1108,6 +1161,17 @@ pub mod test {
         (context.map_value.as_mut_ptr() as u64).into()
     }
 
+    fn get_test_struct(
+        context: &mut TestEbpfRunContext,
+        _: BpfValue,
+        _: BpfValue,
+        _: BpfValue,
+        _: BpfValue,
+        _: BpfValue,
+    ) -> BpfValue {
+        (std::ptr::from_mut(&mut context.test_struct) as u64).into()
+    }
+
     pub fn parse_asm(data: &str) -> Vec<EbpfInstruction> {
         let mut pairs =
             TestGrammar::parse(Rule::ASM_INSTRUCTIONS, data).expect("Parsing must be successful");
@@ -1304,6 +1368,7 @@ pub mod test {
     #[test_case(local_test_data!("err_prune_point_dependency_chain.data"))]
     #[test_case(local_test_data!("err_prune_stack_store_dst_reg.data"))]
     #[test_case(local_test_data!("err_prune_uninit_partial_stack_store.data"))]
+    #[test_case(local_test_data!("err_ptr_to_array_negative_offset.data"))]
     #[test_case(local_test_data!("err_ptr_wrap_jgt_dce.data"))]
     #[test_case(local_test_data!("err_read_only_helper.data"))]
     #[test_case(local_test_data!("err_signed_ptr_jsgt_fold.data"))]
@@ -1328,6 +1393,7 @@ pub mod test {
     #[test_case(local_test_data!("packet_access.data"))]
     #[test_case(local_test_data!("packet_load_prune.data"))]
     #[test_case(local_test_data!("ptr_sub_ptr_offset.data"))]
+    #[test_case(local_test_data!("ptr_to_end_array_eq_symmetric.data"))]
     #[test_case(local_test_data!("range_narrowing_with_conditional_jump.data"))]
     #[test_case(local_test_data!("read_only_helper.data"))]
     #[test_case(local_test_data!("releasable_compare.data"))]
@@ -1404,8 +1470,17 @@ pub mod test {
             let program = link_program_dynamic::<TestEbpfProgramContext>(&verified_program, maps)
                 .expect("failed to link a test program");
 
-            let mut context =
-                TestEbpfRunContext { buffer_size: test_memory.size, map_value: Default::default() };
+            let data = if test_memory.ptr.is_null() {
+                std::ptr::NonNull::<u8>::dangling().as_ptr() as u64
+            } else {
+                test_memory.ptr as u64
+            };
+            let data_end = data.wrapping_add(test_memory.size as u64);
+            let mut context = TestEbpfRunContext {
+                buffer_size: test_memory.size,
+                map_value: Default::default(),
+                test_struct: TestStruct { data, data_end, mutable_field: 0, _padding: 0 },
+            };
             let result = program.run_with_2_arguments(&mut context, test_memory, test_memory.size);
             assert_eq!(result, value);
         } else {

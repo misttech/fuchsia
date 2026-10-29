@@ -1,0 +1,14 @@
+# Verify adding a negative immediate to PtrToArray is rejected rather than
+# wrapping offset to u64::MAX and unlocking out-of-bounds packet reads.
+-- asm
+call 202
+ldxdw %r2, [%r0+8]
+ldxdw %r1, [%r0]
+mov %r3, %r1
+add %r1, -1
+jgt %r1, %r2, +1
+ldxdw %r0, [%r3]
+mov %r0, 0
+exit
+-- error
+pointer offset overflow

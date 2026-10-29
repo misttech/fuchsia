@@ -22,6 +22,13 @@ use std::sync::Arc;
 use zerocopy::IntoBytes;
 
 const U32_MAX: u64 = u32::MAX as u64;
+/// Maximum allowed offset for `PtrToArray` (packet) pointers.
+///
+/// Soundness only requires bounding offsets enough to prevent 64-bit pointer
+/// wraparound at runtime before comparing against `data_end`, so this limit
+/// could potentially be much larger; `0xffff` (64 KiB - 1) is chosen to match
+/// Linux's `MAX_PACKET_OFF`.
+const MAX_PACKET_OFFSET: u64 = 0xffff;
 
 /// A trait to receive the log from the verifier.
 pub trait VerifierLogger {
@@ -705,6 +712,12 @@ impl Type {
             )
             | (
                 JumpWidth::W64,
+                JumpType::Eq,
+                Type::PtrToEndArray { id: id1 },
+                Type::PtrToArray { id: id2, offset },
+            )
+            | (
+                JumpWidth::W64,
                 JumpType::Le,
                 Type::PtrToArray { id: id1, offset },
                 Type::PtrToEndArray { id: id2 },
@@ -730,7 +743,9 @@ impl Type {
                 Type::PtrToEndArray { id: id1 },
                 Type::PtrToArray { id: id2, offset },
             ) if id1 == id2 => {
-                context.update_array_bounds(id1.clone(), *offset + 1);
+                let bound =
+                    offset.checked_add(1u64).ok_or(VerifierErrorKind::PointerOffsetOverflow)?;
+                context.update_array_bounds(id1.clone(), bound);
                 (type1, type2)
             }
             (
@@ -2121,11 +2136,17 @@ impl ComputationContext {
             (AluType::Add, Type::PtrToArray { offset: x, .. }, Type::ScalarValue(data)) => {
                 let offset =
                     x.checked_add(*data).ok_or(VerifierErrorKind::PointerOffsetOverflow)?;
+                if offset.max() > MAX_PACKET_OFFSET {
+                    return Err(VerifierErrorKind::PointerOffsetOverflow);
+                }
                 op1.with_offset(offset)
             }
             (AluType::Sub, Type::PtrToArray { offset: x, .. }, Type::ScalarValue(data)) => {
                 let offset =
                     x.checked_sub(*data).ok_or(VerifierErrorKind::PointerOffsetOverflow)?;
+                if offset.max() > MAX_PACKET_OFFSET {
+                    return Err(VerifierErrorKind::PointerOffsetOverflow);
+                }
                 op1.with_offset(offset)
             }
             (
@@ -5054,7 +5075,7 @@ fn associate_orderings(o1: Ordering, o2: Ordering) -> Option<Ordering> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{BPF_ADD, BPF_ALU64, BPF_K, BPF_LDX, BPF_MEM, BPF_MOV, BPF_ST};
+    use crate::{BPF_ADD, BPF_ALU64, BPF_K, BPF_LDX, BPF_MEM, BPF_MOV, BPF_ST, BPF_SUB};
     use test_util::{assert_geq, assert_leq};
 
     #[test]
@@ -5953,6 +5974,91 @@ mod tests {
                     is_32_bit_ptr_load: true,
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn test_ptr_to_array_max_packet_offset() {
+        let make_context = || {
+            let id = MemoryId::new();
+            CallingContext {
+                args: vec![
+                    Type::PtrToArray { id: id.clone(), offset: 0.into() },
+                    Type::PtrToEndArray { id },
+                ],
+                ..CallingContext::default()
+            }
+        };
+
+        // `offset == MAX_PACKET_OFFSET` (`0xffff`) is accepted, as is subtracting back within
+        // `[0, MAX_PACKET_OFFSET]`.
+        let ok_at_max = vec![
+            EbpfInstruction::new(BPF_ALU64 | BPF_ADD | BPF_K, 1, 0, 0, MAX_PACKET_OFFSET as i32),
+            EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_K, 0, 0, 0, 0),
+            EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0),
+        ];
+        assert!(verify_program(ok_at_max, make_context(), &mut NullVerifierLogger).is_ok());
+
+        let ok_sub_from_max = vec![
+            EbpfInstruction::new(BPF_ALU64 | BPF_ADD | BPF_K, 1, 0, 0, MAX_PACKET_OFFSET as i32),
+            EbpfInstruction::new(BPF_ALU64 | BPF_SUB | BPF_K, 1, 0, 0, MAX_PACKET_OFFSET as i32),
+            EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_K, 0, 0, 0, 0),
+            EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0),
+        ];
+        assert!(verify_program(ok_sub_from_max, make_context(), &mut NullVerifierLogger).is_ok());
+
+        // `offset == MAX_PACKET_OFFSET + 1` (`0x10000`) directly via `add %r1, 0x10000` fails with
+        // `PointerOffsetOverflow`.
+        let err_direct_over_max = vec![
+            EbpfInstruction::new(
+                BPF_ALU64 | BPF_ADD | BPF_K,
+                1,
+                0,
+                0,
+                (MAX_PACKET_OFFSET + 1) as i32,
+            ),
+            EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_K, 0, 0, 0, 0),
+            EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0),
+        ];
+        assert_eq!(
+            verify_program(err_direct_over_max, make_context(), &mut NullVerifierLogger).err(),
+            Some(VerifierError { kind: VerifierErrorKind::PointerOffsetOverflow, pc: Some(0) })
+        );
+
+        // Reaching `0x10000` via `0xffff + 1` fails with `PointerOffsetOverflow` at the second
+        // `add`.
+        let err_step_over_max = vec![
+            EbpfInstruction::new(BPF_ALU64 | BPF_ADD | BPF_K, 1, 0, 0, MAX_PACKET_OFFSET as i32),
+            EbpfInstruction::new(BPF_ALU64 | BPF_ADD | BPF_K, 1, 0, 0, 1),
+            EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_K, 0, 0, 0, 0),
+            EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0),
+        ];
+        assert_eq!(
+            verify_program(err_step_over_max, make_context(), &mut NullVerifierLogger).err(),
+            Some(VerifierError { kind: VerifierErrorKind::PointerOffsetOverflow, pc: Some(1) })
+        );
+
+        // Negative immediate (`add %r1, -1`, sign-extended to `u64::MAX`) and `sub %r1, -1` at
+        // `0xffff` both fail with `PointerOffsetOverflow`.
+        let err_negative_add = vec![
+            EbpfInstruction::new(BPF_ALU64 | BPF_ADD | BPF_K, 1, 0, 0, -1),
+            EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_K, 0, 0, 0, 0),
+            EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0),
+        ];
+        assert_eq!(
+            verify_program(err_negative_add, make_context(), &mut NullVerifierLogger).err(),
+            Some(VerifierError { kind: VerifierErrorKind::PointerOffsetOverflow, pc: Some(0) })
+        );
+
+        let err_negative_sub = vec![
+            EbpfInstruction::new(BPF_ALU64 | BPF_ADD | BPF_K, 1, 0, 0, MAX_PACKET_OFFSET as i32),
+            EbpfInstruction::new(BPF_ALU64 | BPF_SUB | BPF_K, 1, 0, 0, -1),
+            EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_K, 0, 0, 0, 0),
+            EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0),
+        ];
+        assert_eq!(
+            verify_program(err_negative_sub, make_context(), &mut NullVerifierLogger).err(),
+            Some(VerifierError { kind: VerifierErrorKind::PointerOffsetOverflow, pc: Some(1) })
         );
     }
 }
