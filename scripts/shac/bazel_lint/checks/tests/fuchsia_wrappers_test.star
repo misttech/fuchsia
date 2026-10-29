@@ -17,23 +17,31 @@ _VIOLATION_CALL = 'cc_library(name = "unwrapped_cc_lib")\n'
 def _run_fuchsia_wrappers_test(files):
     return run_lint_test(_bazel_fuchsia_wrappers, "bazel_fuchsia_wrappers", files)
 
-def _load_msg(exported, module_label, wrapper, wrapper_module):
+def _load_msg(exported, module_label, wrapper, wrapper_module, alt_wrapper = None, alt_module = None):
+    alt = (
+        " (or `%s` from `%s` for Zircon libraries)" % (alt_wrapper, alt_module) if alt_wrapper and alt_module else ""
+    )
     return (
-        "Do not load `%s` from `%s`; load `%s` from `%s` instead. %s" % (
+        "Do not load `%s` from `%s`; load `%s` from `%s`%s instead. %s" % (
             exported,
             module_label,
             wrapper,
             wrapper_module,
+            alt,
             _DOCS_SUFFIX,
         )
     )
 
-def _call_msg(rule_name, wrapper, wrapper_module):
+def _call_msg(rule_name, wrapper, wrapper_module, alt_wrapper = None, alt_module = None):
+    alt = (
+        " (or `%s()` from `%s` for Zircon libraries)" % (alt_wrapper, alt_module) if alt_wrapper and alt_module else ""
+    )
     return (
-        "Do not use `%s()`; use `%s()` from `%s` instead. %s" % (
+        "Do not use `%s()`; use `%s()` from `%s`%s instead. %s" % (
             rule_name,
             wrapper,
             wrapper_module,
+            alt,
             _DOCS_SUFFIX,
         )
     )
@@ -68,7 +76,7 @@ def native_cc_test(): native.cc_test(name = "native_test")
         ),
         testing.finding(
             level = "error",
-            message = _load_msg("cc_library", "@rules_cc//cc:defs.bzl", "fx_cc_library", "//build/bazel/rules/cc:fx_cc_library.bzl"),
+            message = _load_msg("cc_library", "@rules_cc//cc:defs.bzl", "fx_cc_library", "//build/bazel/rules/cc:fx_cc_library.bzl", alt_wrapper = "cc_*_library_zx", alt_module = "//build/bazel/rules:zx_library.bzl"),
             filepath = "src/BUILD.bazel",
             line = 1,
             col = 45,
@@ -84,7 +92,7 @@ def native_cc_test(): native.cc_test(name = "native_test")
         ),
         testing.finding(
             level = "error",
-            message = _load_msg("cc_library", "@@rules_cc//cc:cc_library.bzl", "fx_cc_library", "//build/bazel/rules/cc:fx_cc_library.bzl"),
+            message = _load_msg("cc_library", "@@rules_cc//cc:cc_library.bzl", "fx_cc_library", "//build/bazel/rules/cc:fx_cc_library.bzl", alt_wrapper = "cc_*_library_zx", alt_module = "//build/bazel/rules:zx_library.bzl"),
             filepath = "src/BUILD.bazel",
             line = 2,
             col = 39,
@@ -100,7 +108,7 @@ def native_cc_test(): native.cc_test(name = "native_test")
         ),
         testing.finding(
             level = "error",
-            message = _call_msg("cc_library", "fx_cc_library", "//build/bazel/rules/cc:fx_cc_library.bzl"),
+            message = _call_msg("cc_library", "fx_cc_library", "//build/bazel/rules/cc:fx_cc_library.bzl", alt_wrapper = "cc_*_library_zx", alt_module = "//build/bazel/rules:zx_library.bzl"),
             filepath = "src/BUILD.bazel",
             line = 4,
             col = 1,
@@ -124,7 +132,7 @@ def native_cc_test(): native.cc_test(name = "native_test")
         ),
         testing.finding(
             level = "error",
-            message = _load_msg("cc_library", "@rules_cc//cc:defs.bzl", "fx_cc_library", "//build/bazel/rules/cc:fx_cc_library.bzl"),
+            message = _load_msg("cc_library", "@rules_cc//cc:defs.bzl", "fx_cc_library", "//build/bazel/rules/cc:fx_cc_library.bzl", alt_wrapper = "cc_*_library_zx", alt_module = "//build/bazel/rules:zx_library.bzl"),
             filepath = "src/defs.bzl",
             line = 2,
             col = 55,
@@ -148,7 +156,7 @@ def native_cc_test(): native.cc_test(name = "native_test")
         ),
         testing.finding(
             level = "error",
-            message = _call_msg("cc_library", "fx_cc_library", "//build/bazel/rules/cc:fx_cc_library.bzl"),
+            message = _call_msg("cc_library", "fx_cc_library", "//build/bazel/rules/cc:fx_cc_library.bzl", alt_wrapper = "cc_*_library_zx", alt_module = "//build/bazel/rules:zx_library.bzl"),
             filepath = "src/defs.bzl",
             line = 4,
             col = 23,
@@ -172,7 +180,7 @@ def native_cc_test(): native.cc_test(name = "native_test")
         ),
         testing.finding(
             level = "error",
-            message = _call_msg("cc_library", "fx_cc_library", "//build/bazel/rules/cc:fx_cc_library.bzl"),
+            message = _call_msg("cc_library", "fx_cc_library", "//build/bazel/rules/cc:fx_cc_library.bzl", alt_wrapper = "cc_*_library_zx", alt_module = "//build/bazel/rules:zx_library.bzl"),
             filepath = "src/defs.bzl",
             line = 7,
             col = 22,
@@ -185,6 +193,61 @@ def native_cc_test(): native.cc_test(name = "native_test")
             line = 8,
             col = 23,
             end_col = 59,
+        ),
+    ))
+
+def test_disallowed_cc_shared_library():
+    res = _run_fuchsia_wrappers_test({
+        "src/BUILD.bazel": """
+load("@rules_cc//cc:defs.bzl", "cc_shared_library")
+cc_shared_library(name = "unwrapped_cc_shared_lib")
+""",
+        "src/defs.bzl": """
+load("@@rules_cc//cc:cc_shared_library.bzl", _csl = "cc_shared_library")
+def aliased_cc_shared_lib(): _csl(name = "aliased_shared_lib")
+def native_cc_shared_lib(): native.cc_shared_library(name = "native_shared_lib")
+""",
+    })
+    asserts.eq(res.findings, (
+        testing.finding(
+            level = "error",
+            message = _load_msg("cc_shared_library", "@rules_cc//cc:defs.bzl", "fx_cc_shared_library", "//build/bazel/rules/cc:fx_cc_shared_library.bzl", alt_wrapper = "cc_shared_library_zx", alt_module = "//build/bazel/rules:zx_library.bzl"),
+            filepath = "src/BUILD.bazel",
+            line = 2,
+            col = 32,
+            end_col = 51,
+        ),
+        testing.finding(
+            level = "error",
+            message = _call_msg("cc_shared_library", "fx_cc_shared_library", "//build/bazel/rules/cc:fx_cc_shared_library.bzl", alt_wrapper = "cc_shared_library_zx", alt_module = "//build/bazel/rules:zx_library.bzl"),
+            filepath = "src/BUILD.bazel",
+            line = 3,
+            col = 1,
+            end_col = 52,
+        ),
+        testing.finding(
+            level = "error",
+            message = _load_msg("cc_shared_library", "@@rules_cc//cc:cc_shared_library.bzl", "fx_cc_shared_library", "//build/bazel/rules/cc:fx_cc_shared_library.bzl", alt_wrapper = "cc_shared_library_zx", alt_module = "//build/bazel/rules:zx_library.bzl"),
+            filepath = "src/defs.bzl",
+            line = 2,
+            col = 46,
+            end_col = 72,
+        ),
+        testing.finding(
+            level = "error",
+            message = _call_msg("cc_shared_library", "fx_cc_shared_library", "//build/bazel/rules/cc:fx_cc_shared_library.bzl", alt_wrapper = "cc_shared_library_zx", alt_module = "//build/bazel/rules:zx_library.bzl"),
+            filepath = "src/defs.bzl",
+            line = 3,
+            col = 30,
+            end_col = 63,
+        ),
+        testing.finding(
+            level = "error",
+            message = _call_msg("cc_shared_library", "fx_cc_shared_library", "//build/bazel/rules/cc:fx_cc_shared_library.bzl", alt_wrapper = "cc_shared_library_zx", alt_module = "//build/bazel/rules:zx_library.bzl"),
+            filepath = "src/defs.bzl",
+            line = 4,
+            col = 29,
+            end_col = 81,
         ),
     ))
 
@@ -382,26 +445,79 @@ def aliased_rust_dylib(): _rdl(name = "aliased_dylib")
         ),
     ))
 
+def test_disallowed_rust_library_group():
+    res = _run_fuchsia_wrappers_test({
+        "src/BUILD.bazel": """
+load("@rules_rust//rust:defs.bzl", "rust_library_group")
+rust_library_group(name = "unwrapped_rust_lib_group")
+""",
+        "src/defs.bzl": """
+load("@@rules_rust//rust:defs.bzl", _rlg = "rust_library_group")
+def aliased_rust_lib_group(): _rlg(name = "aliased_lib_group")
+""",
+    })
+    asserts.eq(res.findings, (
+        testing.finding(
+            level = "error",
+            message = _load_msg("rust_library_group", "@rules_rust//rust:defs.bzl", "rustc_library_group", "//build/bazel/rules/rust:rustc_library_group.bzl"),
+            filepath = "src/BUILD.bazel",
+            line = 2,
+            col = 36,
+            end_col = 56,
+        ),
+        testing.finding(
+            level = "error",
+            message = _call_msg("rust_library_group", "rustc_library_group", "//build/bazel/rules/rust:rustc_library_group.bzl"),
+            filepath = "src/BUILD.bazel",
+            line = 3,
+            col = 1,
+            end_col = 54,
+        ),
+        testing.finding(
+            level = "error",
+            message = _load_msg("rust_library_group", "@@rules_rust//rust:defs.bzl", "rustc_library_group", "//build/bazel/rules/rust:rustc_library_group.bzl"),
+            filepath = "src/defs.bzl",
+            line = 2,
+            col = 37,
+            end_col = 64,
+        ),
+        testing.finding(
+            level = "error",
+            message = _call_msg("rust_library_group", "rustc_library_group", "//build/bazel/rules/rust:rustc_library_group.bzl"),
+            filepath = "src/defs.bzl",
+            line = 3,
+            col = 31,
+            end_col = 63,
+        ),
+    ))
+
 def test_allowed_wrappers_and_unwrapped_symbols():
     res = _run_fuchsia_wrappers_test({
         "src/BUILD.bazel": """
-load("@rules_cc//cc:defs.bzl", "CcInfo", "cc_common", "cc_import", "cc_shared_library")
+load("@rules_cc//cc:defs.bzl", "CcInfo", "cc_common", "cc_import")
 load("@rules_rust//crate_universe:defs.bzl", "crates_vendor")
+load("//build/bazel/rules:zx_library.bzl", "cc_shared_library_zx", "cc_source_library_zx", "cc_static_library_zx")
 load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
 load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/cc:fx_cc_shared_library.bzl", "fx_cc_shared_library")
 load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
 load("//build/bazel/rules/rust:rustc_dylib.bzl", "rustc_dylib")
 load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_library_group.bzl", "rustc_library_group")
 load("//build/bazel/rules/rust:rustc_proc_macro.bzl", "rustc_proc_macro")
 load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
 
 fx_cc_binary(name = "cc_bin")
 fx_cc_library(name = "cc_lib")
+fx_cc_shared_library(name = "cc_shared_lib")
+cc_shared_library_zx(name = "zx_shared_lib")
+cc_source_library_zx(name = "zx_source_lib")
+cc_static_library_zx(name = "zx_static_lib")
 cc_import(name = "imported")
-cc_shared_library(name = "shared")
 rustc_binary(name = "rust_bin")
 rustc_dylib(name = "rust_dylib")
 rustc_library(name = "rust_lib")
+rustc_library_group(name = "rust_lib_group")
 rustc_proc_macro(name = "rust_macro")
 rustc_test(name = "rust_unit_test")
 crates_vendor(name = "vendor")
@@ -453,8 +569,10 @@ def test_ignored_file_types():
 def run_fuchsia_wrappers_tests():
     """Runs all fuchsia_wrappers tests."""
     test_disallowed_cc_wrappers()
+    test_disallowed_cc_shared_library()
     test_disallowed_rust_wrappers()
     test_disallowed_rust_dylib_library()
+    test_disallowed_rust_library_group()
     test_allowed_wrappers_and_unwrapped_symbols()
     test_sdk_files_skipped()
     test_policy_exempt_directories()

@@ -219,8 +219,9 @@ are applied consistently.
 
 Specifically, there are wrappers for the following languages:
 
-* C/C++: Use `fx_cc_...()` from `//build/bazel/rules/cc/...` rather than
-  `cc_...` from `@rules_cc//`.
+* C/C++: Use `fx_cc_...()` from `//build/bazel/rules/cc/...` (or
+  `cc_*_library_zx()` from `//build/bazel/rules:zx_library.bzl` for Zircon
+  libraries) rather than `cc_...` from `@rules_cc//`.
 
 * Rust: Use `rustc_...()` from `//build/bazel/rules/rust/...` rather than
   `rust_...` from `@rules_rust//`.

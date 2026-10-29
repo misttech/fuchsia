@@ -296,6 +296,11 @@ SDK][fuchsia-prefix-sdk].
 
 Note: `rustc_*` are an exception because these do not conflict with `rust_*`.
 
+When adding a new C/C++ or Rust wrapper macro or rule, see
+`//build/bazel/rules/cc/README.md` or `//build/bazel/rules/rust/README.md` for
+instructions on updating the `bazel_fuchsia_wrappers` SHAC check and related
+documentation.
+
 ## Avoid configuration transitions
 
 Fuchsia platform targets should already build in the right configuration. If

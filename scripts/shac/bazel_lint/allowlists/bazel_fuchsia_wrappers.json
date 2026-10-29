@@ -71,6 +71,7 @@
             "targets": [
                 "dynamic_test",
                 "foo",
+                "foo_shared",
                 "static_test",
                 "stdbool_c_test"
             ]
@@ -858,7 +859,9 @@
             "bug": "https://fxbug.dev/570203009",
             "targets": [
                 "_crypto_shared_cc",
+                "_crypto_shared_lib",
                 "_ssl_shared_cc",
+                "_ssl_shared_lib",
                 "boringssl",
                 "boringssl-shared",
                 "boringssl-static",

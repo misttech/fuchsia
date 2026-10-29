@@ -33,11 +33,10 @@ class _WrapperSpec:
     wrapper_name: str
     wrapper_module: str
     disallowed_module_prefix: str
+    alt_wrapper_name: str | None = None
+    alt_wrapper_module: str | None = None
 
 
-# TODO(https://fxbug.dev/570203009): Add `cc_shared_library`
-# (`fx_cc_shared_library` from `//build/bazel/rules/cc:fx_cc_shared_library.bzl`)
-# if https://fxrev.dev/1906761 lands before this change.
 _WRAPPED_RULES: dict[str, _WrapperSpec] = {
     "cc_binary": _WrapperSpec(
         wrapper_name="fx_cc_binary",
@@ -48,6 +47,16 @@ _WRAPPED_RULES: dict[str, _WrapperSpec] = {
         wrapper_name="fx_cc_library",
         wrapper_module="//build/bazel/rules/cc:fx_cc_library.bzl",
         disallowed_module_prefix=_CC_MODULE_PREFIX,
+        alt_wrapper_name="cc_*_library_zx",
+        alt_wrapper_module="//build/bazel/rules:zx_library.bzl",
+    ),
+    # `fx_cc_shared_library` is added proactively ahead of https://fxrev.dev/1906761.
+    "cc_shared_library": _WrapperSpec(
+        wrapper_name="fx_cc_shared_library",
+        wrapper_module="//build/bazel/rules/cc:fx_cc_shared_library.bzl",
+        disallowed_module_prefix=_CC_MODULE_PREFIX,
+        alt_wrapper_name="cc_shared_library_zx",
+        alt_wrapper_module="//build/bazel/rules:zx_library.bzl",
     ),
     # We don't run C++ tests directly, so there is no need to use cc_test().
     "cc_test": _WrapperSpec(
@@ -68,6 +77,11 @@ _WRAPPED_RULES: dict[str, _WrapperSpec] = {
     "rust_library": _WrapperSpec(
         wrapper_name="rustc_library",
         wrapper_module="//build/bazel/rules/rust:rustc_library.bzl",
+        disallowed_module_prefix=_RUST_MODULE_PREFIX,
+    ),
+    "rust_library_group": _WrapperSpec(
+        wrapper_name="rustc_library_group",
+        wrapper_module="//build/bazel/rules/rust:rustc_library_group.bzl",
         disallowed_module_prefix=_RUST_MODULE_PREFIX,
     ),
     "rust_proc_macro": _WrapperSpec(
@@ -134,9 +148,15 @@ class FuchsiaWrappersCheck(BazelCheck):
             if spec is not None and load.module_label.startswith(
                 spec.disallowed_module_prefix
             ):
+                alt = (
+                    f" (or `{spec.alt_wrapper_name}` from `{spec.alt_wrapper_module}`"
+                    " for Zircon libraries)"
+                    if spec.alt_wrapper_name and spec.alt_wrapper_module
+                    else ""
+                )
                 fc.report(
                     f"Do not load `{exported_name}` from `{load.raw_module_label}`; "
-                    f"load `{spec.wrapper_name}` from `{spec.wrapper_module}` instead.",
+                    f"load `{spec.wrapper_name}` from `{spec.wrapper_module}`{alt} instead.",
                     sym_node,
                     level="error",
                     url=_REFERENCE_URL,
@@ -149,9 +169,15 @@ class FuchsiaWrappersCheck(BazelCheck):
         if rule_name is None:
             return
         spec = _WRAPPED_RULES[rule_name]
+        alt = (
+            f" (or `{spec.alt_wrapper_name}()` from `{spec.alt_wrapper_module}`"
+            " for Zircon libraries)"
+            if spec.alt_wrapper_name and spec.alt_wrapper_module
+            else ""
+        )
         fc.report(
             f"Do not use `{rule_name}()`; "
-            f"use `{spec.wrapper_name}()` from `{spec.wrapper_module}` instead.",
+            f"use `{spec.wrapper_name}()` from `{spec.wrapper_module}`{alt} instead.",
             call.node,
             level="error",
             url=_REFERENCE_URL,
