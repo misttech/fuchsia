@@ -3659,12 +3659,6 @@
         "type": "fuchsia.sysmem2/BufferCollectionToken"
     },
     {
-        "kind": "table/member",
-        "name": "fuchsia.media/StreamBufferPartialSettings.sysmem_token",
-        "ordinal": "6",
-        "type": "fuchsia.sysmem/BufferCollectionToken"
-    },
-    {
         "kind": "table",
         "name": "fuchsia.media/StreamBufferPartialSettings",
         "resourceness": "resource"

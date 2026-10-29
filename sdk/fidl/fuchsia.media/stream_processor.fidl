@@ -456,7 +456,7 @@ type StreamBufferPartialSettings = resource table {
     /// BufferCollectionEvents.OnDuplicatedTokensKnownByServer()).
     @available(added=23)
     7: sysmem2_token client_end:fuchsia.sysmem2.BufferCollectionToken;
-    @available(deprecated=23, note="use sysmem2_token")
+    @available(deprecated=23, removed=NEXT, note="use sysmem2_token")
     6: sysmem_token client_end:fuchsia.sysmem.BufferCollectionToken;
 
     @available(deprecated=23, note="fuchsia.sysmem2.BufferCollection.SetConstraints")
