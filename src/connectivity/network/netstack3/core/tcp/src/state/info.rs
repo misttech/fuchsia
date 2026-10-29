@@ -369,7 +369,9 @@ mod tests {
     use crate::internal::buffer::Assembler;
     use crate::internal::congestion::CongestionControl;
     use crate::internal::rtt::{Estimator, SamplingStrategy};
-    use crate::internal::state::{Established, Listen, Recv, RecvBufferState, Send, State};
+    use crate::internal::state::{
+        Established, Listen, Recv, RecvBufferState, Send, SendInner, State,
+    };
     use crate::internal::timestamp::TimestampOptionState;
     use crate::testutil::RingBuffer;
 
@@ -469,7 +471,7 @@ mod tests {
             rtt_sampler.samples_per_round_trip(&effective_mss, congestion_control.flight_size()),
         );
 
-        let send = Send {
+        let send = Send(SendInner {
             nxt: SeqNum::new(200),
             max: SeqNum::new(200),
             una: SeqNum::new(100),
@@ -485,7 +487,7 @@ mod tests {
             congestion_control,
             last_data_sent: Some(now - Duration::from_secs(1)),
             buffer: RingBuffer::new(1000),
-        };
+        });
 
         let recv = Recv {
             buffer: RecvBufferState::Open {
@@ -545,7 +547,7 @@ mod tests {
         let _ = congestion_control.on_dup_ack(ack, nxt);
         let _ = congestion_control.on_dup_ack(ack, nxt);
 
-        let send = Send {
+        let send = Send(SendInner {
             nxt,
             max: nxt,
             una: ack,
@@ -561,7 +563,7 @@ mod tests {
             congestion_control,
             last_data_sent: None,
             buffer: RingBuffer::new(1000),
-        };
+        });
 
         let recv = Recv {
             buffer: RecvBufferState::Open {

@@ -550,7 +550,7 @@ impl<I: Instant + 'static, ActiveOpen> SynSent<I, ActiveOpen> {
                                 .unwrap_or_default();
                             let next = *iss + 1;
                             let established = Established {
-                                snd: Send {
+                                snd: Send(SendInner {
                                     nxt: next,
                                     max: next,
                                     una: seg_ack,
@@ -567,7 +567,7 @@ impl<I: Instant + 'static, ActiveOpen> SynSent<I, ActiveOpen> {
                                     wnd_scale: snd_wnd_scale,
                                     wnd_max: seg_wnd << WindowScale::default(),
                                     last_data_sent: None,
-                                }
+                                })
                                 .into(),
                                 rcv: Recv {
                                     buffer: RecvBufferState::Open {
@@ -773,10 +773,35 @@ impl FinQueued {
 }
 
 /// TCP control block variables that are responsible for sending.
+///
+/// `FIN_QUEUED` tracks in the type system whether a FIN has been queued. The
+/// bulk of the implementation lives in [`SendInner`], which is not generic over
+/// `FIN_QUEUED` to avoid monomorphizing it for each FIN state.
+#[derive(Debug)]
+#[cfg_attr(test, derive(PartialEq, Eq))]
+pub(crate) struct Send<I, S, const FIN_QUEUED: bool>(SendInner<I, S>);
+
+impl<I, S, const FIN_QUEUED: bool> Deref for Send<I, S, FIN_QUEUED> {
+    type Target = SendInner<I, S>;
+
+    fn deref(&self) -> &Self::Target {
+        let Self(inner) = self;
+        inner
+    }
+}
+
+impl<I, S, const FIN_QUEUED: bool> DerefMut for Send<I, S, FIN_QUEUED> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        let Self(inner) = self;
+        inner
+    }
+}
+
+/// The state of [`Send`] that is independent of whether a FIN is queued.
 #[derive(Derivative)]
 #[derivative(Debug)]
 #[cfg_attr(test, derivative(PartialEq, Eq))]
-pub(crate) struct Send<I, S, const FIN_QUEUED: bool> {
+pub(crate) struct SendInner<I, S> {
     nxt: SeqNum,
     pub(crate) max: SeqNum,
     una: SeqNum,
@@ -797,7 +822,7 @@ pub(crate) struct Send<I, S, const FIN_QUEUED: bool> {
 
 impl<I> Send<I, (), false> {
     fn with_buffer<S>(self, buffer: S) -> Send<I, S, false> {
-        let Self {
+        let Self(SendInner {
             nxt,
             max,
             una,
@@ -813,8 +838,8 @@ impl<I> Send<I, (), false> {
             congestion_control,
             last_data_sent,
             buffer: _,
-        } = self;
-        Send {
+        }) = self;
+        Send(SendInner {
             nxt,
             max,
             una,
@@ -830,7 +855,7 @@ impl<I> Send<I, (), false> {
             congestion_control,
             last_data_sent,
             buffer,
-        }
+        })
     }
 }
 
@@ -1527,6 +1552,57 @@ pub(crate) enum DataAcked {
 }
 
 impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
+    /// Polls for new segments with enabled options.
+    ///
+    /// See [`SendInner::poll_send`].
+    fn poll_send<'a>(
+        &mut self,
+        id: &impl StateMachineDebugId,
+        counters: &TcpCountersRefs<'_>,
+        rcv: impl RecvSegmentArgumentsProvider<'a, I>,
+        now: I,
+        socket_options: &SocketOptions,
+    ) -> Option<Segment<S::Payload<'_>>> {
+        let Self(inner) = self;
+        inner.poll_send(FIN_QUEUED, id, counters, rcv, now, socket_options)
+    }
+
+    /// Processes an incoming ACK.
+    ///
+    /// See [`SendInner::process_ack`].
+    fn process_ack<'a, R: RecvSegmentArgumentsProvider<'a, I>>(
+        &mut self,
+        id: &impl StateMachineDebugId,
+        counters: &TcpCountersRefs<'_>,
+        seg_seq: SeqNum,
+        seg_ack: SeqNum,
+        seg_wnd: UnscaledWindowSize,
+        seg_sack_blocks: &SackBlocks,
+        rx_ts_opt: Option<RxTimestampOption>,
+        pure_ack: bool,
+        rcv: R,
+        now: I,
+        socket_options: &SocketOptions,
+    ) -> (Option<Segment<()>>, DataAcked) {
+        let Self(inner) = self;
+        inner.process_ack(
+            FIN_QUEUED,
+            id,
+            counters,
+            seg_seq,
+            seg_ack,
+            seg_wnd,
+            seg_sack_blocks,
+            rx_ts_opt,
+            pure_ack,
+            rcv,
+            now,
+            socket_options,
+        )
+    }
+}
+
+impl<I: Instant, S: SendBuffer> SendInner<I, S> {
     /// Returns true if the connection should still be alive per the send state.
     fn timed_out(&mut self, now: I, keep_alive: &KeepAlive) -> bool {
         match self.timer {
@@ -1553,6 +1629,7 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
     /// limit or the calculated MSS for the connection.
     fn poll_send<'a>(
         &mut self,
+        fin_queued: bool,
         id: &impl StateMachineDebugId,
         counters: &TcpCountersRefs<'_>,
         rcv: impl RecvSegmentArgumentsProvider<'a, I>,
@@ -1613,7 +1690,7 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
                 }
             }
             Some(SendTimer::ZeroWindowProbe(retrans_timer)) => {
-                debug_assert!(readable_bytes > 0 || FIN_QUEUED);
+                debug_assert!(readable_bytes > 0 || fin_queued);
                 if retrans_timer.at <= now {
                     zero_window_probe = true;
                     *snd_nxt = *snd_una;
@@ -1628,7 +1705,7 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
                 //   Keep-alive packets MUST only be sent when no sent data is
                 //   outstanding, and no data or acknowledgment packets have
                 //   been received for the connection within an interval.
-                if keep_alive.enabled && !FIN_QUEUED && readable_bytes == 0 {
+                if keep_alive.enabled && !fin_queued && readable_bytes == 0 {
                     if keep_alive_timer.poll_send(now, keep_alive, user_timeout) {
                         // Per RFC 9293 Section 3.8.4:
                         //   Such a segment generally contains SEG.SEQ = SND.NXT-1
@@ -1694,7 +1771,7 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
             usize::try_from(next_seg - *snd_una).unwrap_or_else(|TryFromIntError { .. }| {
                 panic!("next_seg({:?}) should never fall behind snd.una({:?})", next_seg, *snd_una);
             });
-        let available = u32::try_from(readable_bytes + usize::from(FIN_QUEUED) - offset)
+        let available = u32::try_from(readable_bytes + usize::from(fin_queued) - offset)
             .unwrap_or_else(|_| WindowSize::MAX.into());
         // We can only send the minimum of the unused or congestion windows and
         // the bytes that are available, additionally, if in zero window probe
@@ -1713,7 +1790,7 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
             return None;
         }
 
-        let has_fin = FIN_QUEUED && can_send == available;
+        let has_fin = fin_queued && can_send == available;
         let seg = buffer.peek_with(offset, |readable| {
             let bytes_to_send = u32::min(
                 can_send - u32::from(has_fin),
@@ -1912,6 +1989,7 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
     /// along with whether at least one byte of data was ACKed.
     fn process_ack<'a, R: RecvSegmentArgumentsProvider<'a, I>>(
         &mut self,
+        fin_queued: bool,
         id: &impl StateMachineDebugId,
         counters: &TcpCountersRefs<'_>,
         seg_seq: SeqNum,
@@ -2005,7 +2083,7 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
             congestion_control.preprocess_ack(seg_ack, *snd_nxt, seg_sack_blocks);
         let (is_dup_ack, data_acked) = if let Some(acked) = bytes_acked {
             let BufferLimits { len, capacity: _ } = buffer.limits();
-            let fin_acked = FIN_QUEUED && seg_ack == *snd_una + len + 1;
+            let fin_acked = fin_queued && seg_ack == *snd_una + len + 1;
             // Remove the acked bytes from the send buffer. The following
             // operation should not panic because we are in this branch
             // means seg_ack is before snd.max, thus seg_ack - snd.una
@@ -2199,40 +2277,8 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
 
 impl<I: Instant, S: SendBuffer> Send<I, S, { FinQueued::NO }> {
     fn queue_fin(self) -> Send<I, S, { FinQueued::YES }> {
-        let Self {
-            nxt,
-            max,
-            una,
-            wnd,
-            wl1,
-            wl2,
-            last_push,
-            buffer,
-            rtt_sampler,
-            rtt_estimator,
-            timer,
-            congestion_control,
-            wnd_scale,
-            wnd_max,
-            last_data_sent,
-        } = self;
-        Send {
-            nxt,
-            max,
-            una,
-            wnd,
-            wl1,
-            wl2,
-            last_push,
-            buffer,
-            rtt_sampler,
-            rtt_estimator,
-            timer,
-            congestion_control,
-            wnd_scale,
-            wnd_max,
-            last_data_sent,
-        }
+        let Self(inner) = self;
+        Send(inner)
     }
 }
 
@@ -2943,7 +2989,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                                 .map(|snd_wnd_scale| (snd_wnd_scale, *rcv_wnd_scale))
                                 .unwrap_or_default();
                             let established = Established {
-                                snd: Send {
+                                snd: Send(SendInner {
                                     nxt: snd_next,
                                     max: snd_next,
                                     una: seg_ack,
@@ -2959,7 +3005,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                                     wnd_scale: snd_wnd_scale,
                                     wnd_max: seg_wnd << snd_wnd_scale,
                                     last_data_sent: None,
-                                }
+                                })
                                 .into(),
                                 rcv: Recv {
                                     buffer: RecvBufferState::Open {
@@ -3673,7 +3719,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                     .unwrap_or_default();
                 let next = *iss + 1;
                 let finwait1 = FinWait1 {
-                    snd: Send {
+                    snd: Send(SendInner {
                         nxt: next,
                         max: next,
                         una: next,
@@ -3689,7 +3735,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                         wnd_scale: snd_wnd_scale,
                         wnd_max: WindowSize::DEFAULT,
                         last_data_sent: None,
-                    }
+                    })
                     .into(),
                     rcv: Recv {
                         buffer: RecvBufferState::Open {
@@ -4368,7 +4414,7 @@ mod test {
         }
     }
 
-    impl<S, const FIN_QUEUED: bool> Send<FakeInstant, S, FIN_QUEUED> {
+    impl<S> SendInner<FakeInstant, S> {
         fn default_for_test_at(seq: SeqNum, buffer: S) -> Self {
             Self {
                 nxt: seq,
@@ -4391,6 +4437,16 @@ mod test {
 
         fn default_for_test(buffer: S) -> Self {
             Self::default_for_test_at(TEST_ISS + 1, buffer)
+        }
+    }
+
+    impl<S, const FIN_QUEUED: bool> Send<FakeInstant, S, FIN_QUEUED> {
+        fn default_for_test_at(seq: SeqNum, buffer: S) -> Self {
+            Self(SendInner::default_for_test_at(seq, buffer))
+        }
+
+        fn default_for_test(buffer: S) -> Self {
+            Self(SendInner::default_for_test(buffer))
         }
     }
 
@@ -4694,7 +4750,7 @@ mod test {
         ),
         Some(State::Established(
             Established {
-                snd: Send {
+                snd: Send(SendInner {
                     rtt_estimator: Estimator::Measured {
                         srtt: RTT,
                         rtt_var: RTT / 2,
@@ -4705,8 +4761,8 @@ mod test {
                             initialized_at: FakeInstant::default(),
                         },
                     }),
-                    ..Send::default_for_test(NullBuffer)
-                }.into(),
+                    ..SendInner::default_for_test(NullBuffer)
+                }).into(),
                 rcv: Recv {
                     remaining_quickacks: quickack_counter(BufferLimits {
                         capacity: WindowSize::DEFAULT.into(),
@@ -4749,7 +4805,7 @@ mod test {
             TEST_IRS + 1, TEST_ISS + 1, UnscaledWindowSize::from(u16::MAX), DEFAULT_SEGMENT_OPTIONS
         ),
         Some(State::CloseWait(CloseWait {
-            snd: Send {
+            snd: Send(SendInner {
                 rtt_estimator: Estimator::Measured {
                     srtt: RTT,
                     rtt_var: RTT / 2,
@@ -4760,8 +4816,8 @@ mod test {
                         initialized_at: FakeInstant::default(),
                     },
                 }),
-                ..Send::default_for_test(NullBuffer)
-            }.into(),
+                ..SendInner::default_for_test(NullBuffer)
+            }).into(),
             closed_rcv: RecvParams {
                 ack: TEST_IRS + 2,
                 wnd: WindowSize::from_u32(u32::from(u16::MAX - 1)).unwrap(),
@@ -4970,9 +5026,11 @@ mod test {
         let counters = FakeTcpCounters::default();
         // Tests the common behavior when ack segment arrives in states that
         // have a send state.
-        let new_snd = || Send {
-            congestion_control: CongestionControl::cubic_with_mss(TEST_MSS),
-            ..Send::default_for_test(RingBuffer::with_data(TEST_BYTES.len(), TEST_BYTES))
+        let new_snd = || {
+            Send(SendInner {
+                congestion_control: CongestionControl::cubic_with_mss(TEST_MSS),
+                ..SendInner::default_for_test(RingBuffer::with_data(TEST_BYTES.len(), TEST_BYTES))
+            })
         };
         let new_rcv = || Recv::default_for_test(NullBuffer);
         for mut state in [
@@ -5292,7 +5350,7 @@ mod test {
         assert_eq!(
             established,
             &Established {
-                snd: Send {
+                snd: Send(SendInner {
                     wl1: passive_iss,
                     rtt_estimator: Estimator::Measured { srtt: RTT, rtt_var: RTT / 2 },
                     rtt_sampler: SamplingStrategy::Timestamp(TimestampSampler {
@@ -5301,8 +5359,8 @@ mod test {
                             initialized_at: FakeInstant::default(),
                         }
                     }),
-                    ..Send::default_for_test_at(active_iss + 1, RingBuffer::default())
-                }
+                    ..SendInner::default_for_test_at(active_iss + 1, RingBuffer::default())
+                })
                 .into(),
                 rcv: Recv {
                     remaining_quickacks: default_quickack_counter(),
@@ -5325,14 +5383,14 @@ mod test {
         assert_eq!(
             established,
             &Established {
-                snd: Send {
+                snd: Send(SendInner {
                     wl1: active_iss + 1,
                     rtt_estimator: Estimator::Measured { srtt: RTT, rtt_var: RTT / 2 },
                     rtt_sampler: SamplingStrategy::Timestamp(TimestampSampler {
                         ts_state: TimestampValueState { offset: TIMESTAMP_OFFSET, initialized_at }
                     }),
-                    ..Send::default_for_test_at(passive_iss + 1, RingBuffer::default())
-                }
+                    ..SendInner::default_for_test_at(passive_iss + 1, RingBuffer::default())
+                })
                 .into(),
                 rcv: Recv {
                     remaining_quickacks: default_quickack_counter(),
@@ -5552,7 +5610,7 @@ mod test {
         assert_eq!(
             established,
             Established {
-                snd: Send {
+                snd: Send(SendInner {
                     wl1: ISS_2 + 1,
                     rtt_estimator: Estimator::Measured { srtt: RTT, rtt_var: RTT / 2 },
                     congestion_control: CongestionControl::cubic_with_mss(EffectiveMss::from_mss(
@@ -5565,8 +5623,8 @@ mod test {
                             initialized_at: FakeInstant::default(),
                         }
                     }),
-                    ..Send::default_for_test_at(ISS_1 + 1, RingBuffer::default())
-                }
+                    ..SendInner::default_for_test_at(ISS_1 + 1, RingBuffer::default())
+                })
                 .into(),
                 rcv: Recv {
                     remaining_quickacks: default_quickack_counter() - 1,
@@ -5589,7 +5647,7 @@ mod test {
         assert_eq!(
             established,
             Established {
-                snd: Send {
+                snd: Send(SendInner {
                     wl1: ISS_1 + 1,
                     rtt_estimator: Estimator::Measured { srtt: RTT, rtt_var: RTT / 2 },
                     congestion_control: CongestionControl::cubic_with_mss(EffectiveMss::from_mss(
@@ -5602,8 +5660,8 @@ mod test {
                             initialized_at: FakeInstant::default(),
                         }
                     }),
-                    ..Send::default_for_test_at(ISS_2 + 1, RingBuffer::default())
-                }
+                    ..SendInner::default_for_test_at(ISS_2 + 1, RingBuffer::default())
+                })
                 .into(),
                 rcv: Recv {
                     remaining_quickacks: default_quickack_counter() - 1,
@@ -5629,13 +5687,13 @@ mod test {
         let clock = FakeInstantCtx::default();
         let counters = FakeTcpCounters::default();
         let mut established = State::Established(Established {
-            snd: Send {
+            snd: Send(SendInner {
                 wnd: WindowSize::ZERO,
                 wnd_max: WindowSize::ZERO,
                 buffer: NullBuffer,
                 congestion_control: CongestionControl::cubic_with_mss(TEST_MSS),
-                ..Send::default_for_test(NullBuffer)
-            }
+                ..SendInner::default_for_test(NullBuffer)
+            })
             .into(),
             rcv: Recv {
                 mss: TEST_MSS,
@@ -5764,14 +5822,14 @@ mod test {
         const PARTIAL_LEN: usize = 10;
         assert_eq!(send_buffer.enqueue_data(&TEST_BYTES[..PARTIAL_LEN]), PARTIAL_LEN);
         let mut established = State::Established(Established {
-            snd: Send {
+            snd: Send(SendInner {
                 una: TEST_ISS,
                 wl2: TEST_ISS,
                 wnd: WindowSize::ZERO,
                 wnd_max: WindowSize::ZERO,
                 congestion_control: CongestionControl::cubic_with_mss(TEST_MSS),
-                ..Send::default_for_test_at(TEST_ISS + 1, send_buffer)
-            }
+                ..SendInner::default_for_test_at(TEST_ISS + 1, send_buffer)
+            })
             .into(),
             rcv: Recv::default_for_test(RingBuffer::new(BUFFER_SIZE)).into(),
         });
@@ -6145,10 +6203,10 @@ mod test {
         assert_eq!(send_buffer.enqueue_data(&TEST_BYTES[..PARTIAL_LEN]), PARTIAL_LEN);
         // Set up the state machine to start with Established.
         let mut state = State::Established(Established {
-            snd: Send {
+            snd: Send(SendInner {
                 congestion_control: CongestionControl::cubic_with_mss(TEST_MSS),
-                ..Send::default_for_test(send_buffer.clone())
-            }
+                ..SendInner::default_for_test(send_buffer.clone())
+            })
             .into(),
             rcv: Recv::default_for_test(RingBuffer::new(BUFFER_SIZE)).into(),
         });
@@ -6339,10 +6397,10 @@ mod test {
         assert_eq!(send_buffer.enqueue_data(&TEST_BYTES[..PARTIAL_LEN]), PARTIAL_LEN);
         // Set up the state machine to start with Established.
         let mut state = State::Established(Established {
-            snd: Send {
+            snd: Send(SendInner {
                 congestion_control: CongestionControl::cubic_with_mss(TEST_MSS),
-                ..Send::default_for_test(send_buffer.clone())
-            }
+                ..SendInner::default_for_test(send_buffer.clone())
+            })
             .into(),
             rcv: Recv { mss: TEST_MSS, ..Recv::default_for_test(RingBuffer::new(BUFFER_SIZE)) }
                 .into(),
@@ -6548,8 +6606,11 @@ mod test {
         // Test that we can transition from FIN-WAIT-2 to TIME-WAIT directly
         // with one FIN-ACK segment.
         let mut state = State::FinWait1(FinWait1 {
-            snd: Send { una: TEST_ISS + 1, ..Send::default_for_test_at(TEST_ISS + 2, NullBuffer) }
-                .into(),
+            snd: Send(SendInner {
+                una: TEST_ISS + 1,
+                ..SendInner::default_for_test_at(TEST_ISS + 2, NullBuffer)
+            })
+            .into(),
             rcv: Recv::default_for_test(RingBuffer::new(BUFFER_SIZE)).into(),
         });
         assert_eq!(
@@ -6812,13 +6873,13 @@ mod test {
             assert_eq!(send_buffer.enqueue_data(&vec![b; usize::from(mss)]), usize::from(mss));
         }
         let mut state: State<_, _, _, ()> = State::Established(Established {
-            snd: Send {
+            snd: Send(SendInner {
                 congestion_control: CongestionControl::cubic_with_mss(EffectiveMss::from_mss(
                     Mss::DEFAULT_IPV4,
                     MssSizeLimiters { timestamp_enabled: true },
                 )),
-                ..Send::default_for_test_at(TEST_ISS, send_buffer.clone())
-            }
+                ..SendInner::default_for_test_at(TEST_ISS, send_buffer.clone())
+            })
             .into(),
             rcv: Recv::default_for_test_at(TEST_IRS, RingBuffer::default()).into(),
         });
@@ -7151,11 +7212,11 @@ mod test {
         assert_eq!(send_buffer.enqueue_data(TEST_BYTES), TEST_BYTES.len());
         // Set up the state machine to start with Established.
         let mut state = State::Established(Established {
-            snd: Send {
+            snd: Send(SendInner {
                 wnd: WindowSize::ZERO,
                 wnd_max: WindowSize::ZERO,
-                ..Send::default_for_test(send_buffer.clone())
-            }
+                ..SendInner::default_for_test(send_buffer.clone())
+            })
             .into(),
             rcv: Recv::default_for_test(RingBuffer::new(BUFFER_SIZE)).into(),
         });
@@ -7253,10 +7314,10 @@ mod test {
         assert_eq!(send_buffer.enqueue_data(&TEST_BYTES[..PARTIAL_LEN]), PARTIAL_LEN);
         // Set up the state machine to start with Established.
         let mut state: State<_, _, _, ()> = State::Established(Established {
-            snd: Send {
+            snd: Send(SendInner {
                 congestion_control: CongestionControl::cubic_with_mss(TEST_MSS),
-                ..Send::default_for_test(send_buffer.clone())
-            }
+                ..SendInner::default_for_test(send_buffer.clone())
+            })
             .into(),
             rcv: Recv::default_for_test(RingBuffer::new(BUFFER_SIZE)).into(),
         });
@@ -7406,10 +7467,10 @@ mod test {
         assert_eq!(send_buffer.enqueue_data(TEST_BYTES), TEST_BYTES.len());
         // Set up the state machine to start with Established.
         let mut state: State<_, _, _, ()> = State::Established(Established {
-            snd: Send {
+            snd: Send(SendInner {
                 rtt_estimator: Estimator::Measured { srtt: rtt, rtt_var: Duration::ZERO },
-                ..Send::default_for_test(send_buffer.clone())
-            }
+                ..SendInner::default_for_test(send_buffer.clone())
+            })
             .into(),
             rcv: Recv::default_for_test(RingBuffer::new(BUFFER_SIZE)).into(),
         });
@@ -7510,26 +7571,26 @@ mod test {
 
     #[test_case(
         State::Established(Established {
-            snd: Send {
+            snd: Send(SendInner {
                 rtt_estimator: Estimator::Measured {
                     srtt: Rto::DEFAULT.get(),
                     rtt_var: Duration::ZERO,
                 },
-                ..Send::default_for_test(RingBuffer::new(BUFFER_SIZE))
-            }.into(),
+                ..SendInner::default_for_test(RingBuffer::new(BUFFER_SIZE))
+            }).into(),
             rcv: Recv::default_for_test(RingBuffer::new(
                 TEST_BYTES.len() + 2 * usize::from(DEVICE_EFFECTIVE_MSS),
             )).into(),
         }); "established")]
     #[test_case(
         State::FinWait1(FinWait1 {
-            snd: Send {
+            snd: Send(SendInner {
                 rtt_estimator: Estimator::Measured {
                     srtt: Rto::DEFAULT.get(),
                     rtt_var: Duration::ZERO,
                 },
-                ..Send::default_for_test(RingBuffer::new(BUFFER_SIZE))
-            }.into(),
+                ..SendInner::default_for_test(RingBuffer::new(BUFFER_SIZE))
+            }).into(),
             rcv: Recv::default_for_test(RingBuffer::new(
                 TEST_BYTES.len() + 2 * usize::from(DEVICE_EFFECTIVE_MSS),
             )).into(),
@@ -8188,11 +8249,13 @@ mod test {
         let counters = FakeTcpCounters::default();
         // Tests the common behavior when ack segment arrives in states that
         // have a send state.
-        let new_snd = || Send {
-            wnd: wnd_size,
-            wnd_scale: snd_wnd_scale,
-            congestion_control: CongestionControl::cubic_with_mss(TEST_MSS),
-            ..Send::default_for_test(RingBuffer::with_data(TEST_BYTES.len(), TEST_BYTES))
+        let new_snd = || {
+            Send(SendInner {
+                wnd: wnd_size,
+                wnd_scale: snd_wnd_scale,
+                congestion_control: CongestionControl::cubic_with_mss(TEST_MSS),
+                ..SendInner::default_for_test(RingBuffer::with_data(TEST_BYTES.len(), TEST_BYTES))
+            })
         };
         let new_rcv = || Recv {
             wnd_scale: rcv_wnd_scale,
@@ -8255,13 +8318,13 @@ mod test {
     #[test_case(false; "unprompted window update")]
     fn snd_silly_window_avoidance(prompted_window_update: bool) {
         const CAP: usize = TEST_BYTES.len() * 2;
-        let mut snd: Send<FakeInstant, RingBuffer, false> = Send {
+        let mut snd: Send<FakeInstant, RingBuffer, false> = Send(SendInner {
             wl1: TEST_IRS,
             wl2: TEST_ISS,
             wnd: WindowSize::new(CAP).unwrap(),
             congestion_control: CongestionControl::cubic_with_mss(TEST_MSS),
-            ..Send::default_for_test(RingBuffer::new(CAP))
-        };
+            ..SendInner::default_for_test(RingBuffer::new(CAP))
+        });
 
         let mut clock = FakeInstantCtx::default();
         let counters = FakeTcpCounters::default();
@@ -8500,13 +8563,13 @@ mod test {
     #[test]
     fn snd_enter_zwp_on_negative_window_update() {
         const CAP: usize = TEST_BYTES.len() * 2;
-        let mut snd: Send<FakeInstant, RingBuffer, false> = Send {
+        let mut snd: Send<FakeInstant, RingBuffer, false> = Send(SendInner {
             wnd: WindowSize::new(CAP).unwrap(),
             wl1: TEST_IRS,
             wl2: TEST_ISS,
             congestion_control: CongestionControl::cubic_with_mss(TEST_MSS),
-            ..Send::default_for_test(RingBuffer::new(CAP))
-        };
+            ..SendInner::default_for_test(RingBuffer::new(CAP))
+        });
 
         let clock = FakeInstantCtx::default();
         let counters = FakeTcpCounters::default();
@@ -8606,10 +8669,10 @@ mod test {
         // This connection has the same send and receive seqnum space.
         let iss = ISS_1 + 1;
         let mut state: State<_, _, _, ()> = State::Established(Established {
-            snd: Send {
+            snd: Send(SendInner {
                 congestion_control: CongestionControl::cubic_with_mss(TEST_MSS),
-                ..Send::default_for_test_at(iss, buffer)
-            }
+                ..SendInner::default_for_test_at(iss, buffer)
+            })
             .into(),
             rcv: Recv {
                 mss: TEST_MSS,
@@ -8778,9 +8841,11 @@ mod test {
         // TEST_MSS when full.
         const BUFFER_SIZE: usize = TEST_BYTES.len();
 
-        let new_snd = || Send {
-            congestion_control: CongestionControl::cubic_with_mss(TEST_MSS),
-            ..Send::default_for_test(NullBuffer)
+        let new_snd = || {
+            Send(SendInner {
+                congestion_control: CongestionControl::cubic_with_mss(TEST_MSS),
+                ..SendInner::default_for_test(NullBuffer)
+            })
         };
         let new_rcv =
             || Recv { mss: TEST_MSS, ..Recv::default_for_test(RingBuffer::new(BUFFER_SIZE)) };
@@ -9160,10 +9225,10 @@ mod test {
     #[test_case(RttTestScenario::AckPartial)]
     fn rtt(scenario: RttTestScenario) {
         let mut state = State::Established(Established::<FakeInstant, _, _> {
-            snd: Send {
+            snd: Send(SendInner {
                 congestion_control: CongestionControl::cubic_with_mss(TEST_MSS),
-                ..Send::default_for_test(RingBuffer::default())
-            }
+                ..SendInner::default_for_test(RingBuffer::default())
+            })
             .into(),
             rcv: Recv::default_for_test(RingBuffer::default()).into(),
         });
@@ -9371,15 +9436,15 @@ mod test {
         // Inflate the congestion window so we won't hit congestion during test.
         congestion_control.inflate_cwnd(20 * u32::from(mss));
         let mut state = State::<_, _, _, ()>::Established(Established {
-            snd: Send {
+            snd: Send(SendInner {
                 nxt,
                 max: nxt,
                 una,
                 wl1: TEST_IRS + 1,
                 wl2: una,
                 congestion_control,
-                ..Send::default_for_test(InfiniteSendBuffer::default())
-            }
+                ..SendInner::default_for_test(InfiniteSendBuffer::default())
+            })
             .into(),
             rcv: Recv::default_for_test(RingBuffer::default()).into(),
         });
@@ -9511,13 +9576,13 @@ mod test {
         let buffer = InfiniteSendBuffer::default();
 
         let mut state = State::<FakeInstant, _, _, ()>::Established(Established {
-            snd: Send {
+            snd: Send(SendInner {
                 wnd: snd_wnd,
                 wnd_max: snd_wnd,
                 wnd_scale,
                 congestion_control: CongestionControl::cubic_with_mss(mss),
-                ..Send::default_for_test(buffer)
-            }
+                ..SendInner::default_for_test(buffer)
+            })
             .into(),
             rcv: Recv { mss, ..Recv::default_for_test(RingBuffer::default()) }.into(),
         });
@@ -9713,16 +9778,16 @@ mod test {
         let start = TEST_ISS + 1;
 
         let mut state = State::<FakeInstant, _, _, ()>::Established(Established {
-            snd: Send {
+            snd: Send(SendInner {
                 congestion_control,
                 wnd_scale,
                 wnd: snd_wnd,
                 wnd_max: snd_wnd,
-                ..Send::default_for_test_at(
+                ..SendInner::default_for_test_at(
                     start,
                     RepeatingSendBuffer::new(usize::try_from(send_bytes).unwrap()),
                 )
-            }
+            })
             .into(),
             rcv: Recv::default_for_test(RingBuffer::default()).into(),
         });
@@ -9827,13 +9892,13 @@ mod test {
         let snd_wnd = WindowSize::from_u32(4 * u32::from(mss)).unwrap();
         let wnd_scale = snd_wnd.scale();
         let mut state = State::<FakeInstant, _, _, ()>::Established(Established {
-            snd: Send {
+            snd: Send(SendInner {
                 congestion_control: CongestionControl::cubic_with_mss(mss),
                 wnd_scale,
                 wnd: snd_wnd,
                 wnd_max: snd_wnd,
-                ..Send::default_for_test(RepeatingSendBuffer::new(send_bytes))
-            }
+                ..SendInner::default_for_test(RepeatingSendBuffer::new(send_bytes))
+            })
             .into(),
             rcv: Recv::default_for_test(RingBuffer::default()).into(),
         });
@@ -10092,7 +10157,7 @@ mod test {
         let (wl1, wl2, ts_opt, mss) = assert_matches!(
             &state,
             State::Established(Established {
-                snd: Takeable(Some(Send { wl1, wl2, .. })),
+                snd: Takeable(Some(Send(SendInner { wl1, wl2, .. }))),
                 rcv: Takeable(Some(Recv { ts_opt, mss, ..})),
             }) => (wl1, wl2, ts_opt, mss)
         );
@@ -10161,7 +10226,7 @@ mod test {
     fn last_data_sent_update() {
         let get_last_data_sent = |state: &State<_, _, _, _>| {
             assert_matches!(state, State::Established(Established {
-                snd: Takeable(Some(Send { last_data_sent, .. })),
+                snd: Takeable(Some(Send(SendInner { last_data_sent, .. }))),
                 ..
             }) => *last_data_sent)
         };
