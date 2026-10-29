@@ -88,6 +88,9 @@ FFI_ALWAYS_INLINE void cpp_scoped_thread_exception_context_init(
 FFI_ALWAYS_INLINE void cpp_scoped_thread_exception_context_destroy(
     ScopedThreadExceptionContext* context);
 
+FFI_ALWAYS_INLINE Thread* cpp_thread_create_empty();
+FFI_ALWAYS_INLINE void cpp_thread_delete(Thread* thread);
+
 __END_CDECLS
 
 #endif  // ZIRCON_KERNEL_INCLUDE_KERNEL_THREAD_FFI_H_

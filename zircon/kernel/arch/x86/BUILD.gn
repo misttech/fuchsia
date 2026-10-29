@@ -190,7 +190,6 @@ source_set("x86") {
   sources = [
     "arch.cc",
     "asm.S",
-    "bootstrap16.cc",
     "debugger.cc",
     "exceptions.S",
     "exceptions_c.cc",
@@ -202,8 +201,6 @@ source_set("x86") {
     "mp.cc",
     "ops.S",
     "registers.cc",
-    "restricted.cc",
-    "smp.cc",
     "spinlock.cc",
     "start.S",
     "start16.S",
@@ -261,7 +258,6 @@ library_headers("headers") {
     # <arch/x86/hypervisor.h> has #include <lib/id_allocator.h>.
     "//zircon/kernel/lib/id_allocator:headers",
 
-    # <arch/x86/bootstrap16.h> has #include <lib/page/size.h>
     # <arch/x86/pv.h> has #include <lib/page/size.h>
     # <arch/aspace.h> has #include <lib/page/size.h>
     "//zircon/kernel/lib/page:headers",
@@ -413,6 +409,7 @@ kernel_rust_mod("arch-x86-rs") {
     "src/arch.rs",
     "src/arch_ffi.rs",
     "src/bootstrap16.rs",
+    "src/bootstrap16_ffi.rs",
     "src/cache.rs",
     "src/cache_ffi.rs",
     "src/cpuid.rs",
@@ -444,6 +441,10 @@ kernel_rust_mod("arch-x86-rs") {
     "src/platform_access.rs",
     "src/pv.rs",
     "src/registers.rs",
+    "src/restricted.rs",
+    "src/restricted_ffi.rs",
+    "src/smp.rs",
+    "src/smp_ffi.rs",
     "src/spinlock.rs",
     "src/spinlock_ffi.rs",
     "src/system_topology.rs",

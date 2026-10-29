@@ -53,6 +53,11 @@ zx_status_t cpp_mp_unplug_cpu(cpu_num_t cpu);
 FFI_ALWAYS_INLINE void cpp_mp_unplug_event_signal(MpUnplugEvent* event) { event->Signal(); }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_mp_set_cpu_online(cpu_num_t cpu, bool online) {
+  mp_set_cpu_online(cpu, online);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_mp_set_curr_cpu_online(bool online) { mp_set_curr_cpu_online(online); }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.

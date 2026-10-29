@@ -596,4 +596,14 @@ void cpp_thread_signal_sample_stack(Timer* timer, zx_instant_mono_t now, void* s
   Thread::SignalSampleStack(timer, now, session_id);
 }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE Thread* cpp_thread_create_empty() {
+  fbl::AllocChecker ac;
+  Thread* t = new (&ac) Thread("");
+  return ac.check() ? t : nullptr;
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_delete(Thread* thread) { delete thread; }
+
 }  // extern "C"

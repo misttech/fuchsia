@@ -38,6 +38,7 @@ pub unsafe fn unplug_event_signal(event: *mut MpUnplugEvent) {
 }
 
 unsafe extern "C" {
+    fn cpp_mp_set_cpu_online(cpu: cpu_num_t, online: bool);
     fn cpp_mp_set_curr_cpu_online(online: bool);
     fn cpp_mp_get_online_mask() -> cpu_mask_t;
     fn cpp_mp_is_cpu_online(cpu: cpu_num_t) -> bool;
@@ -109,6 +110,22 @@ pub fn init() {}
 /// Converts a CPU ID to a CPU bitmask.
 pub const fn cpu_num_to_mask(cpu: cpu_num_t) -> cpu_mask_t {
     if cpu < cpu_mask_t::BITS { 1 << cpu } else { 0 }
+}
+
+/// Marks `cpu` as offline.
+///
+/// Any `sync_exec` tasks still queued for `cpu` are drained (i.e. removed and signaled as complete
+/// without being executed).
+///
+/// # Safety
+///
+/// `cpu` must be a valid CPU number, and either `cpu` must be the calling CPU with interrupts
+/// disabled and not in the middle of executing a dequeued `sync_exec` task, or `cpu` must not be
+/// active and must never have enabled interrupts (see `mp_set_cpu_online` in `kernel/mp.h`).
+pub unsafe fn set_cpu_offline(cpu: cpu_num_t) {
+    // SAFETY: The caller guarantees `cpu` is valid and satisfies the `mp_set_cpu_online` offline
+    // preconditions.
+    unsafe { cpp_mp_set_cpu_online(cpu, false) };
 }
 
 /// Marks the calling CPU as online and initialized.

@@ -17,6 +17,7 @@ unsafe extern "C" {
     fn cpp_mutex_acquire(lock: *mut c_void);
     fn cpp_mutex_release(lock: *mut c_void);
     fn cpp_mutex_is_contested(lock: *mut c_void) -> bool;
+    fn cpp_mutex_is_held(lock: *const c_void) -> bool;
 
     fn cpp_critical_mutex_acquire(lock: *mut c_void) -> bool;
     fn cpp_critical_mutex_release(lock: *mut c_void, should_clear: bool);
@@ -74,6 +75,13 @@ impl RawMutexStorage {
         unsafe { cpp_mutex_is_contested(self.as_mut_ptr()) }
     }
 
+    /// Returns whether the mutex is currently held by the calling thread.
+    #[inline]
+    pub fn is_held(&self) -> bool {
+        // SAFETY: The FFI call is safe because the lock is initialized.
+        unsafe { cpp_mutex_is_held(self.storage.get().cast::<c_void>()) }
+    }
+
     /// Returns a slice over the raw mutex storage bytes.
     #[cfg(any(test, ktest))]
     #[inline]
@@ -102,6 +110,10 @@ unsafe impl LockPolicy<RawMutexStorage> for RawMutexStorage {
     type AcquireArgs = ();
     type GuardState = ();
 
+    /// # Safety
+    ///
+    /// `lock` must be initialized, the calling thread must not already hold `lock`, and the
+    /// caller must be in a thread context where blocking on a kernel mutex is permitted.
     #[inline]
     unsafe fn acquire(lock: &RawMutexStorage, _state: &mut Self::GuardState, _args: ()) {
         // SAFETY: The FFI call is safe because the lock is initialized.
@@ -110,6 +122,11 @@ unsafe impl LockPolicy<RawMutexStorage> for RawMutexStorage {
         }
     }
 
+    /// # Safety
+    ///
+    /// `lock` must be initialized, `state` must have been previously populated by `acquire`, the
+    /// calling thread must not currently hold `lock`, and blocking on a kernel mutex must be
+    /// permitted.
     #[inline]
     unsafe fn reacquire(lock: &RawMutexStorage, state: &mut Self::GuardState) {
         // SAFETY: Caller upholds the `LockPolicy::reacquire` contract.
@@ -118,6 +135,10 @@ unsafe impl LockPolicy<RawMutexStorage> for RawMutexStorage {
         }
     }
 
+    /// # Safety
+    ///
+    /// `lock` must be initialized and currently held by the calling thread with `state` produced
+    /// by the corresponding `acquire` or `reacquire` call.
     #[inline]
     unsafe fn release(lock: &RawMutexStorage, _state: &mut Self::GuardState) {
         // SAFETY: The FFI call is safe because the lock is initialized and held by the current
@@ -136,6 +157,10 @@ unsafe impl ExclusiveLockPolicy<RawMutexStorage> for RawMutexStorage {}
 unsafe impl RawLock for RawMutexStorage {
     type DefaultPolicy = Self;
 
+    /// # Safety
+    ///
+    /// `_class_id` must be a valid lockdep lock class identifier or null; the returned `PinInit`
+    /// must be used to initialize pinned storage before the mutex is acquired.
     #[inline]
     unsafe fn init(_class_id: *const c_void) -> impl PinInit<Self, core::convert::Infallible> {
         // SAFETY: The closure initializes the provided slot in place before returning Ok(()).
@@ -166,12 +191,21 @@ unsafe impl LockPolicy<RawMutexStorage> for RawCriticalMutexPolicy {
     type AcquireArgs = ();
     type GuardState = bool;
 
+    /// # Safety
+    ///
+    /// `lock` must be initialized, the calling thread must not already hold `lock`, and the
+    /// caller must be in a thread context where blocking on a kernel critical mutex is permitted.
     #[inline]
     unsafe fn acquire(lock: &RawMutexStorage, state: &mut Self::GuardState, _args: ()) {
         // SAFETY: The FFI call is safe because the lock is initialized.
         *state = unsafe { cpp_critical_mutex_acquire(lock.as_mut_ptr()) };
     }
 
+    /// # Safety
+    ///
+    /// `lock` must be initialized, `state` must have been previously populated by `acquire`, the
+    /// calling thread must not currently hold `lock`, and blocking on a kernel critical mutex must
+    /// be permitted.
     #[inline]
     unsafe fn reacquire(lock: &RawMutexStorage, state: &mut Self::GuardState) {
         // SAFETY: Caller upholds the `LockPolicy::reacquire` contract.
@@ -180,6 +214,10 @@ unsafe impl LockPolicy<RawMutexStorage> for RawCriticalMutexPolicy {
         }
     }
 
+    /// # Safety
+    ///
+    /// `lock` must be initialized and currently held by the calling thread with `should_clear`
+    /// produced by the corresponding `acquire` or `reacquire` call.
     #[inline]
     unsafe fn release(lock: &RawMutexStorage, should_clear: &mut Self::GuardState) {
         // SAFETY: The FFI call is safe because the lock is initialized and held by the current

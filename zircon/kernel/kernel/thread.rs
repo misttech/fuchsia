@@ -156,6 +156,8 @@ unsafe extern "C" {
         context: *const crate::arch_rs::ArchExceptionContext,
     );
     fn cpp_scoped_thread_exception_context_destroy(context: *mut CppScopedThreadExceptionContext);
+    fn cpp_thread_create_empty() -> *mut Thread;
+    fn cpp_thread_delete(thread: *mut Thread);
 }
 
 /// Stall accounting state of a thread.
@@ -1405,8 +1407,9 @@ pub struct Thread {
     /// Architecture-specific stuff.
     arch: Opaque<layout::ThreadArchStorage>,
 
-    /// `KernelStack` storage. C++ constructs, `Init`s, tears down and destroys it; Rust reads it
-    /// through `stack`, whose callers exclude those mutations.
+    /// `KernelStack` storage. C++ constructs, `Init`s, tears down and destroys it; Rust also
+    /// initializes it via `stack_init` and reads it through `stack`, whose callers exclude
+    /// those mutations.
     stack: Opaque<layout::ThreadStackStorage>,
 
     /// This is used by dispatcher.cc:SafeDeleter.
@@ -1628,6 +1631,46 @@ impl Thread {
     #[inline]
     pub(crate) fn preemption_state(&self) -> &PreemptionState {
         &self.preemption_state
+    }
+
+    /// Allocates and constructs an empty `Thread("")` instance on the kernel heap without
+    /// initializing its kernel stack or placing it in the global thread list.
+    #[inline]
+    pub fn create_empty() -> Option<NonNull<Self>> {
+        // SAFETY: `cpp_thread_create_empty` allocates a `Thread("")` using `fbl::AllocChecker`
+        // and returns null on allocation failure.
+        NonNull::new(unsafe { cpp_thread_create_empty() })
+    }
+
+    /// Initializes the kernel stack of `thread`.
+    ///
+    /// # Safety
+    ///
+    /// `thread` must point to a valid, live `Thread` instance whose stack has not yet been
+    /// initialized, and nothing may concurrently access its `KernelStack` during this call.
+    #[inline]
+    pub unsafe fn stack_init(thread: *mut Self) -> Result<(), Status> {
+        debug_assert!(!thread.is_null());
+        // SAFETY: `thread` points to a valid `Thread` per the caller, and `&raw const` projects the
+        // `stack` field place without forming a reference to the whole `Thread`.
+        let stack = unsafe { &raw const (*thread).stack };
+        // SAFETY: `stack` holds the thread's `KernelStack`, constructed in place by C++, and its
+        // size and alignment are asserted above. The caller guarantees exclusive access to the
+        // uninitialized `KernelStack`.
+        unsafe { (*(*stack).get().cast::<KernelStack>()).init() }
+    }
+
+    /// Deletes a `Thread` instance previously allocated with [`Self::create_empty`].
+    ///
+    /// # Safety
+    ///
+    /// `thread` must be either null or a pointer returned by [`Self::create_empty`] that has not
+    /// been started or deleted yet.
+    #[inline]
+    pub unsafe fn delete(thread: *mut Self) {
+        // SAFETY: The caller guarantees `thread` is null or a valid unstarted `Thread` allocated
+        // by `create_empty`.
+        unsafe { cpp_thread_delete(thread) }
     }
 
     /// Domain-specific conversion: returns raw pointer for [`Thread`].

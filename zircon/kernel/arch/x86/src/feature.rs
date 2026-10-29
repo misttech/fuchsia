@@ -468,3 +468,11 @@ pub fn x86_feature_has_smap() -> bool {
     // SAFETY: Value is only written to during single threaded startup
     unsafe { core::ptr::addr_of!(G_X86_FEATURE_HAS_SMAP).read() }
 }
+
+/// Returns whether the CPU supports FSGSBASE instructions (`rdfsbase`, `rdgsbase`, `wrfsbase`,
+/// `wrgsbase`).
+#[inline]
+pub fn x86_feature_fsgsbase() -> bool {
+    // SAFETY: Value is only written to during single threaded startup
+    unsafe { core::ptr::addr_of!(G_X86_FEATURE_FSGSBASE).read() }
+}

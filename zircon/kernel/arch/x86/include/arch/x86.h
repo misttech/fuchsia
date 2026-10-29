@@ -20,6 +20,7 @@
 
 #include <arch/x86/msr_ffi.h>
 #include <arch/x86/registers.h>
+#include <arch/x86/smp_ffi.h>
 #include <kernel/cpu.h>
 
 struct iframe_t;
@@ -103,7 +104,9 @@ void x86_syscall_process_pending_signals(struct syscall_regs_t* gregs);
  *        the list.
  * @param num_cpus The number of entries in the apic_ids list.
  */
-void x86_init_smp(uint32_t* apic_ids, uint32_t num_cpus);
+inline void x86_init_smp(uint32_t* apic_ids, uint32_t num_cpus) {
+  rust_x86_init_smp(apic_ids, num_cpus);
+}
 
 /* @brief Bring all of the specified APs up and hand them over to the kernel
  *
@@ -120,7 +123,9 @@ void x86_init_smp(uint32_t* apic_ids, uint32_t num_cpus);
  * @return ZX_ERR_BAD_STATE if one of the targets is currently online
  * @return ZX_ERR_TIMED_OUT if one of the targets failed to launch
  */
-zx_status_t x86_bringup_aps(uint32_t* apic_ids, uint32_t count);
+inline zx_status_t x86_bringup_aps(uint32_t* apic_ids, uint32_t count) {
+  return rust_x86_bringup_aps(apic_ids, count);
+}
 
 #define IO_BITMAP_BITS 65536
 #define IO_BITMAP_BYTES (IO_BITMAP_BITS / 8)

@@ -104,6 +104,7 @@ void mp_signal_curr_cpu_ready();
 zx_status_t mp_wait_for_all_cpus_ready(Deadline deadline);
 
 extern "C" {
+void cpp_mp_set_cpu_online(cpu_num_t cpu, bool online);
 void cpp_mp_set_curr_cpu_online(bool online);
 cpu_mask_t cpp_mp_get_online_mask();
 bool cpp_mp_is_cpu_online(cpu_num_t cpu);

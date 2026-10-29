@@ -105,6 +105,7 @@ void cpp_mutex_destroy(Mutex* lock);
 void cpp_mutex_acquire(Mutex* lock);
 void cpp_mutex_release(Mutex* lock);
 bool cpp_mutex_is_contested(Mutex* lock);
+bool cpp_mutex_is_held(const Mutex* lock);
 bool cpp_critical_mutex_acquire(CriticalMutex* lock);
 void cpp_critical_mutex_release(CriticalMutex* lock, bool should_clear);
 void cpp_spinlock_init(SpinLock* lock, const void* class_id);
@@ -148,6 +149,9 @@ FFI_ALWAYS_INLINE void cpp_mutex_release(Mutex* lock) TA_NO_THREAD_SAFETY_ANALYS
 }
 
 FFI_ALWAYS_INLINE bool cpp_mutex_is_contested(Mutex* lock) { return lock->IsContested(); }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_mutex_is_held(const Mutex* lock) { return lock->IsHeld(); }
 
 FFI_ALWAYS_INLINE bool cpp_critical_mutex_acquire(CriticalMutex* lock)
     TA_NO_THREAD_SAFETY_ANALYSIS {

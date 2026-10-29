@@ -145,12 +145,12 @@ uint32_t cpp_x86_percpu_get_apic_id(cpu_num_t cpu_num);
 uint32_t cpp_x86_curr_percpu_get_apic_id();
 X86IdleStates* cpp_x86_mp_bp_idle_states();
 X86IdleStates* cpp_x86_mp_ap_idle_states(size_t idx);
-}
 
 int x86_apic_id_to_cpu_num(uint32_t apic_id);
 
 // Allocate all of the necessary structures for all of the APs to run.
 zx_status_t x86_allocate_ap_structures(uint32_t* apic_ids, uint8_t cpu_count);
+}
 
 template <typename T, size_t Offset>
 [[gnu::always_inline]] inline T x86_read_percpu_field() {
