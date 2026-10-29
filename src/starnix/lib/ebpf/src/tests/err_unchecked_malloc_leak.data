@@ -1,0 +1,9 @@
+# Verify overwriting the NullOr<Releasable> pointer returned by malloc (call 103)
+# without null-checking or freeing is rejected as a resource leak.
+-- asm
+mov %r1, 8
+call 103
+mov %r0, 0
+exit
+-- error
+some resources have not been released at exit time

@@ -623,10 +623,19 @@ impl Type {
                 ));
                 (v1, v2)
             }
-            (JumpWidth::W64, JumpType::Eq, Type::ScalarValue(data), Type::NullOr { id, .. })
-            | (JumpWidth::W64, JumpType::Eq, Type::NullOr { id, .. }, Type::ScalarValue(data))
-                if data.is_zero() =>
-            {
+            (
+                JumpWidth::W64,
+                JumpType::Eq | JumpType::Ge,
+                Type::ScalarValue(data),
+                Type::NullOr { id, inner },
+            )
+            | (
+                JumpWidth::W64,
+                JumpType::Eq | JumpType::Le,
+                Type::NullOr { id, inner },
+                Type::ScalarValue(data),
+            ) if data.is_zero() => {
+                inner.unregister_resource(context);
                 context.set_null(id, true);
                 let zero = Type::from(0);
                 (zero.clone(), zero)
@@ -636,7 +645,6 @@ impl Type {
             {
                 context.set_null(id, false);
                 let inner = (**inner).clone();
-                inner.register_resource(context);
                 (inner, type2)
             }
             (JumpWidth::W64, jump_type, Type::ScalarValue(data), Type::NullOr { id, inner })
@@ -644,7 +652,6 @@ impl Type {
             {
                 context.set_null(id, false);
                 let inner = (**inner).clone();
-                inner.register_resource(context);
                 (type1, inner)
             }
 
@@ -937,10 +944,14 @@ impl Type {
         }
     }
 
-    fn register_resource(&self, context: &mut ComputationContext) {
+    fn unregister_resource(&self, context: &mut ComputationContext) {
         match self {
-            Type::Releasable { id, .. } => {
-                context.resources.insert(id.clone());
+            Type::Releasable { id, inner } => {
+                context.resources.remove(id);
+                inner.unregister_resource(context);
+            }
+            Type::NullOr { inner, .. } => {
+                inner.unregister_resource(context);
             }
             _ => {}
         }
@@ -1713,6 +1724,7 @@ impl PartialEq for ComputationContext {
             && self.registers == other.registers
             && self.stack == other.stack
             && self.array_bounds == other.array_bounds
+            && self.resources == other.resources
     }
 }
 
@@ -1987,30 +1999,24 @@ impl ComputationContext {
     /**
      * Given the given `return_value` in a method signature, return the concrete type to use,
      * updating the `next` context is needed.
-     *
-     * `maybe_null` is true is the computed value will be a descendant of a `NullOr` type.
      */
     fn resolve_return_value(
         &self,
         verification_context: &mut VerificationContext<'_>,
         return_value: &Type,
         next: &mut ComputationContext,
-        maybe_null: bool,
     ) -> Result<Type, VerifierErrorKind> {
         match return_value {
             Type::AliasParameter { parameter_index } => self.reg(parameter_index + 1),
             Type::ReleasableParameter { id, inner } => {
                 let id = verification_context.next_id().prepended(id.clone());
-                if !maybe_null {
-                    next.resources.insert(id.clone());
-                }
+                next.resources.insert(id.clone());
                 Ok(Type::Releasable {
                     id,
                     inner: Arc::new(self.resolve_return_value(
                         verification_context,
                         inner,
                         next,
-                        maybe_null,
                     )?),
                 })
             }
@@ -2018,12 +2024,7 @@ impl ComputationContext {
                 let id = verification_context.next_id();
                 Ok(Type::NullOr {
                     id,
-                    inner: Arc::new(self.resolve_return_value(
-                        verification_context,
-                        t,
-                        next,
-                        true,
-                    )?),
+                    inner: Arc::new(self.resolve_return_value(verification_context, t, next)?),
                 })
             }
             Type::MapValueParameter { map_ptr_index } => {
@@ -3903,8 +3904,7 @@ impl BpfVisitor for &ComputationContext {
         if signature.invalidate_array_bounds {
             next.array_bounds.clear();
         }
-        let value =
-            self.resolve_return_value(context, &signature.return_value, &mut next, false)?;
+        let value = self.resolve_return_value(context, &signature.return_value, &mut next)?;
         next.set_reg(0, value)?;
         for i in 1..=5 {
             next.set_reg(i, Type::default())?;
@@ -5160,7 +5160,15 @@ mod tests {
         let mut c1 = ComputationContext::default();
         let mut c2 = ComputationContext::default();
 
+        assert_eq!(c1, c2);
         assert_eq!(c1.partial_cmp(&c2), Some(Ordering::Equal));
+
+        c1.resources.insert(1.into());
+        assert_ne!(c1, c2);
+        assert_eq!(c1.partial_cmp(&c2), None);
+        assert_eq!(c2.partial_cmp(&c1), None);
+        c1.resources.clear();
+        assert_eq!(c1, c2);
 
         c1.array_bounds.insert(1.into(), 5);
         assert_eq!(c1.partial_cmp(&c2), Some(Ordering::Less));
@@ -5533,11 +5541,11 @@ mod tests {
 
         let mut next1 = ComputationContext::default();
         let t1 = comp_ctx
-            .resolve_return_value(&mut verification_context, &ret_template, &mut next1, false)
+            .resolve_return_value(&mut verification_context, &ret_template, &mut next1)
             .unwrap();
         let mut next2 = ComputationContext::default();
         let t2 = comp_ctx
-            .resolve_return_value(&mut verification_context, &ret_template, &mut next2, false)
+            .resolve_return_value(&mut verification_context, &ret_template, &mut next2)
             .unwrap();
 
         assert_ne!(t1, t2);
@@ -5572,10 +5580,10 @@ mod tests {
 
         let mut next = ComputationContext::default();
         let t1 = comp_ctx
-            .resolve_return_value(&mut verification_context, &releasable_template, &mut next, false)
+            .resolve_return_value(&mut verification_context, &releasable_template, &mut next)
             .unwrap();
         let t2 = comp_ctx
-            .resolve_return_value(&mut verification_context, &releasable_template, &mut next, false)
+            .resolve_return_value(&mut verification_context, &releasable_template, &mut next)
             .unwrap();
 
         assert_eq!(next.resources.len(), 2);

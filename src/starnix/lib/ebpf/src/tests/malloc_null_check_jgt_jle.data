@@ -1,0 +1,26 @@
+# Verify jgt/jle/jge/jlt null-checks on NullOr<Releasable> unregister the
+# resource on the null (Le/Ge) branch and allow freeing on the non-null
+# (Gt/Lt) branch.
+-- asm
+mov %r1, 8
+call 103
+jgt %r0, 0, +2
+mov %r0, 0
+exit
+mov %r1, %r0
+call 104
+mov %r1, 8
+call 103
+jle %r0, 0, +2
+mov %r1, %r0
+call 104
+mov %r1, 8
+call 103
+mov %r6, 0
+jge %r6, %r0, +2
+mov %r1, %r0
+call 104
+mov %r0, 0
+exit
+-- result
+0
