@@ -1502,7 +1502,7 @@ mod tests {
             permission_check.has_permission(sid, sid, ProcessPermission::Fork),
             PermissionCheckResult {
                 granted: true,
-                audit: false,
+                audit: AccessVector::NONE,
                 permissive: false,
                 todo_bug: None
             }
@@ -1514,7 +1514,12 @@ mod tests {
         let result = permission_check.has_permission(sid, sid, ProcessPermission::GetRlimit);
         assert_eq!(
             result,
-            PermissionCheckResult { granted: false, audit: true, permissive: true, todo_bug: None }
+            PermissionCheckResult {
+                granted: false,
+                audit: ProcessPermission::GetRlimit.as_access_vector(),
+                permissive: true,
+                todo_bug: None
+            }
         );
         assert!(result.permit());
 
@@ -1528,7 +1533,14 @@ mod tests {
         );
         assert_eq!(
             result,
-            PermissionCheckResult { granted: false, audit: true, permissive: true, todo_bug: None }
+            PermissionCheckResult {
+                granted: false,
+                audit: CommonFsNodePermission::GetAttr
+                    .for_class(FileClass::BlkFile)
+                    .as_access_vector(),
+                permissive: true,
+                todo_bug: None
+            }
         );
         assert!(result.permit());
     }
@@ -1550,7 +1562,7 @@ mod tests {
             result,
             PermissionCheckResult {
                 granted: true,
-                audit: false,
+                audit: AccessVector::NONE,
                 permissive: false,
                 todo_bug: None
             }
@@ -1564,7 +1576,7 @@ mod tests {
             result,
             PermissionCheckResult {
                 granted: false,
-                audit: true,
+                audit: ProcessPermission::GetRlimit.as_access_vector(),
                 permissive: false,
                 todo_bug: None
             }
@@ -1582,7 +1594,9 @@ mod tests {
             result,
             PermissionCheckResult {
                 granted: false,
-                audit: true,
+                audit: CommonFsNodePermission::GetAttr
+                    .for_class(FileClass::BlkFile)
+                    .as_access_vector(),
                 permissive: false,
                 todo_bug: None
             }
@@ -1614,7 +1628,12 @@ mod tests {
         );
         assert_eq!(
             result,
-            PermissionCheckResult { granted: true, audit: false, permissive: true, todo_bug: None }
+            PermissionCheckResult {
+                granted: true,
+                audit: AccessVector::NONE,
+                permissive: true,
+                todo_bug: None
+            }
         );
         assert!(result.permit());
         let result = permission_check.has_permission(
@@ -1626,7 +1645,7 @@ mod tests {
             result,
             PermissionCheckResult {
                 granted: true,
-                audit: false,
+                audit: AccessVector::NONE,
                 permissive: false,
                 todo_bug: None
             }
@@ -1642,7 +1661,12 @@ mod tests {
         );
         assert_eq!(
             result,
-            PermissionCheckResult { granted: false, audit: true, permissive: true, todo_bug: None }
+            PermissionCheckResult {
+                granted: false,
+                audit: ProcessPermission::GetSched.as_access_vector(),
+                permissive: true,
+                todo_bug: None
+            }
         );
         assert!(result.permit());
         let result = permission_check.has_permission(
@@ -1654,7 +1678,7 @@ mod tests {
             result,
             PermissionCheckResult {
                 granted: false,
-                audit: true,
+                audit: ProcessPermission::GetSched.as_access_vector(),
                 permissive: false,
                 todo_bug: None
             }
@@ -1672,7 +1696,14 @@ mod tests {
         );
         assert_eq!(
             result,
-            PermissionCheckResult { granted: false, audit: true, permissive: true, todo_bug: None }
+            PermissionCheckResult {
+                granted: false,
+                audit: CommonFsNodePermission::GetAttr
+                    .for_class(FileClass::BlkFile)
+                    .as_access_vector(),
+                permissive: true,
+                todo_bug: None
+            }
         );
         assert!(result.permit());
         let result = permission_check.has_permission(
@@ -1684,7 +1715,9 @@ mod tests {
             result,
             PermissionCheckResult {
                 granted: false,
-                audit: true,
+                audit: CommonFsNodePermission::GetAttr
+                    .for_class(FileClass::BlkFile)
+                    .as_access_vector(),
                 permissive: false,
                 todo_bug: None
             }
@@ -1709,7 +1742,12 @@ mod tests {
         let result = permission_check.has_permission(audit_sid, audit_sid, ProcessPermission::Fork);
         assert_eq!(
             result,
-            PermissionCheckResult { granted: true, audit: true, permissive: false, todo_bug: None }
+            PermissionCheckResult {
+                granted: true,
+                audit: ProcessPermission::Fork.as_access_vector(),
+                permissive: false,
+                todo_bug: None
+            }
         );
         assert!(result.permit());
 
@@ -1720,7 +1758,7 @@ mod tests {
             result,
             PermissionCheckResult {
                 granted: true,
-                audit: false,
+                audit: AccessVector::NONE,
                 permissive: false,
                 todo_bug: None
             }
@@ -1734,7 +1772,7 @@ mod tests {
             result,
             PermissionCheckResult {
                 granted: false,
-                audit: false,
+                audit: AccessVector::NONE,
                 permissive: false,
                 todo_bug: None
             }
@@ -1748,7 +1786,91 @@ mod tests {
             result,
             PermissionCheckResult {
                 granted: false,
-                audit: true,
+                audit: ProcessPermission::GetPgid.as_access_vector(),
+                permissive: false,
+                todo_bug: None
+            }
+        );
+        assert!(!result.permit());
+    }
+
+    #[test]
+    fn auditallow_and_dontaudit_permission_sets() {
+        let security_server = security_server_with_tests_policy();
+        security_server.set_enforcing(true);
+        assert!(security_server.is_enforcing());
+
+        let audit_sid = security_server
+            .security_context_to_sid("user0:object_r:test_audit_t:s0".into())
+            .unwrap();
+
+        let local_cache = Default::default();
+        let permission_check = security_server.as_permission_check(&local_cache);
+
+        // Self-fork (audit-allow) and self-setsched (dont-audit) are granted, and only the
+        // audit-allow permission is audited.
+        let result = permission_check.has_permissions(
+            audit_sid,
+            audit_sid,
+            ProcessPermission::Fork | ProcessPermission::SetSched,
+        );
+        assert_eq!(
+            result,
+            PermissionCheckResult {
+                granted: true,
+                audit: ProcessPermission::Fork.as_access_vector(),
+                permissive: false,
+                todo_bug: None
+            }
+        );
+        assert!(result.permit());
+
+        // Self-getpgid is denied, so the set is denied, and only the denied permission is audited.
+        let result = permission_check.has_permissions(
+            audit_sid,
+            audit_sid,
+            ProcessPermission::Fork | ProcessPermission::GetPgid,
+        );
+        assert_eq!(
+            result,
+            PermissionCheckResult {
+                granted: false,
+                audit: ProcessPermission::GetPgid.as_access_vector(),
+                permissive: false,
+                todo_bug: None
+            }
+        );
+        assert!(!result.permit());
+
+        // Self-getsched and self-getpgid are both denied, but only the latter is audited, since
+        // self-getsched is dont-audit.
+        let result = permission_check.has_permissions(
+            audit_sid,
+            audit_sid,
+            ProcessPermission::GetSched | ProcessPermission::GetPgid,
+        );
+        assert_eq!(
+            result,
+            PermissionCheckResult {
+                granted: false,
+                audit: ProcessPermission::GetPgid.as_access_vector(),
+                permissive: false,
+                todo_bug: None
+            }
+        );
+        assert!(!result.permit());
+
+        // Self-getsched is denied, but dont-audit, so the denial of the set is not audited.
+        let result = permission_check.has_permissions(
+            audit_sid,
+            audit_sid,
+            ProcessPermission::SetSched | ProcessPermission::GetSched,
+        );
+        assert_eq!(
+            result,
+            PermissionCheckResult {
+                granted: false,
+                audit: AccessVector::NONE,
                 permissive: false,
                 todo_bug: None
             }
@@ -1813,7 +1935,7 @@ mod tests {
             result,
             PermissionCheckResult {
                 granted: false,
-                audit: true,
+                audit: ProcessPermission::GetPgid.as_access_vector(),
                 permissive: false,
                 todo_bug: None
             }
@@ -1827,7 +1949,7 @@ mod tests {
             result,
             PermissionCheckResult {
                 granted: true,
-                audit: true,
+                audit: FilePermission::Entrypoint.as_access_vector(),
                 permissive: false,
                 todo_bug: Some(NonZeroU32::new(1).unwrap())
             }
@@ -1841,9 +1963,27 @@ mod tests {
             result,
             PermissionCheckResult {
                 granted: true,
-                audit: false,
+                audit: AccessVector::NONE,
                 permissive: false,
                 todo_bug: None,
+            }
+        );
+        assert!(result.permit());
+
+        // Source SID has only one of the requested "file" permissions to target SID. The exception
+        // applies to the denied permission, which is the only one audited.
+        let result = permission_check.has_permissions(
+            source_sid,
+            target_sid,
+            FilePermission::Entrypoint | FilePermission::ExecuteNoTrans,
+        );
+        assert_eq!(
+            result,
+            PermissionCheckResult {
+                granted: true,
+                audit: FilePermission::Entrypoint.as_access_vector(),
+                permissive: false,
+                todo_bug: Some(NonZeroU32::new(1).unwrap())
             }
         );
         assert!(result.permit());
@@ -1855,7 +1995,7 @@ mod tests {
             result,
             PermissionCheckResult {
                 granted: false,
-                audit: true,
+                audit: FilePermission::Entrypoint.as_access_vector(),
                 permissive: false,
                 todo_bug: None
             }
@@ -1872,7 +2012,9 @@ mod tests {
             result,
             PermissionCheckResult {
                 granted: true,
-                audit: true,
+                audit: CommonFsNodePermission::Read
+                    .for_class(FileClass::ChrFile)
+                    .as_access_vector(),
                 permissive: false,
                 todo_bug: Some(NonZeroU32::new(2).unwrap())
             }
@@ -1886,7 +2028,7 @@ mod tests {
             result,
             PermissionCheckResult {
                 granted: false,
-                audit: true,
+                audit: FilePermission::Entrypoint.as_access_vector(),
                 permissive: false,
                 todo_bug: None
             }
@@ -1900,7 +2042,7 @@ mod tests {
             result,
             PermissionCheckResult {
                 granted: false,
-                audit: true,
+                audit: FilePermission::Entrypoint.as_access_vector(),
                 permissive: false,
                 todo_bug: None
             }
@@ -1914,7 +2056,7 @@ mod tests {
             result,
             PermissionCheckResult {
                 granted: true,
-                audit: true,
+                audit: FilePermission::Entrypoint.as_access_vector(),
                 permissive: true,
                 todo_bug: Some(NonZeroU32::new(4).unwrap())
             }
@@ -1932,7 +2074,7 @@ mod tests {
             result,
             PermissionCheckResult {
                 granted: true,
-                audit: true,
+                audit: FilePermission::Entrypoint.as_access_vector(),
                 permissive: false,
                 todo_bug: Some(NonZeroU32::new(5).unwrap())
             }
@@ -1947,7 +2089,7 @@ mod tests {
             result,
             PermissionCheckResult {
                 granted: true,
-                audit: true,
+                audit: FilePermission::Entrypoint.as_access_vector(),
                 permissive: false,
                 todo_bug: Some(NonZeroU32::new(5).unwrap())
             }
@@ -1962,7 +2104,7 @@ mod tests {
             result,
             PermissionCheckResult {
                 granted: true,
-                audit: true,
+                audit: FilePermission::Entrypoint.as_access_vector(),
                 permissive: false,
                 todo_bug: Some(NonZeroU32::new(5).unwrap())
             }
@@ -2000,7 +2142,7 @@ mod tests {
             result,
             PermissionCheckResult {
                 granted: false,
-                audit: true,
+                audit: ProcessPermission::GetSched.as_access_vector(),
                 permissive: false,
                 todo_bug: None
             }
@@ -2011,7 +2153,7 @@ mod tests {
             result,
             PermissionCheckResult {
                 granted: false,
-                audit: true,
+                audit: DirPermission::AddName.as_access_vector(),
                 permissive: false,
                 todo_bug: None
             }
@@ -2024,7 +2166,7 @@ mod tests {
             result,
             PermissionCheckResult {
                 granted: true,
-                audit: false,
+                audit: AccessVector::NONE,
                 permissive: false,
                 todo_bug: None
             }
@@ -2035,7 +2177,7 @@ mod tests {
             result,
             PermissionCheckResult {
                 granted: false,
-                audit: true,
+                audit: DirPermission::Reparent.as_access_vector(),
                 permissive: false,
                 todo_bug: None
             }
@@ -2055,7 +2197,7 @@ mod tests {
             result,
             PermissionCheckResult {
                 granted: true,
-                audit: false,
+                audit: AccessVector::NONE,
                 permissive: false,
                 todo_bug: None
             }
@@ -2066,7 +2208,7 @@ mod tests {
             result,
             PermissionCheckResult {
                 granted: true,
-                audit: false,
+                audit: AccessVector::NONE,
                 permissive: false,
                 todo_bug: None
             }
@@ -2079,7 +2221,7 @@ mod tests {
             result,
             PermissionCheckResult {
                 granted: true,
-                audit: false,
+                audit: AccessVector::NONE,
                 permissive: false,
                 todo_bug: None
             }
@@ -2091,7 +2233,7 @@ mod tests {
             result,
             PermissionCheckResult {
                 granted: false,
-                audit: true,
+                audit: DirPermission::Reparent.as_access_vector(),
                 permissive: false,
                 todo_bug: None
             }

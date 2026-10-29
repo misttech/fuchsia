@@ -33,8 +33,8 @@ use selinux::policy::{FsUseType, XpermsKind};
 use selinux::{
     ClassPermission, CommonFilePermission, CommonFsNodePermission, DirPermission, FdPermission,
     FileClass, FileSystemLabel, FileSystemLabelingScheme, FileSystemMountOptions, ForClass,
-    FsNodeClass, InitialSid, KernelPermission, PolicyCap, ProcessPermission, SecurityId,
-    SecurityServer, TaskAttrs,
+    FsNodeClass, InitialSid, KernelPermission, KernelPermissionSet, PolicyCap, ProcessPermission,
+    SecurityId, SecurityServer, TaskAttrs,
 };
 use smallvec;
 use starnix_logging::{BugRef, CATEGORY_STARNIX_SECURITY, bug_ref, track_stub};
@@ -200,7 +200,7 @@ fn check_permission_and_xperms(
         xperm,
     );
 
-    if result.audit {
+    if let Some(audit_permissions) = result.audit_permissions(permission.class()) {
         if !result.permit() {
             current_task
                 .kernel()
@@ -218,7 +218,7 @@ fn check_permission_and_xperms(
             result,
             subject_sid,
             target_sid,
-            permission.into(),
+            audit_permissions,
             audit_context.into(),
         );
     }
@@ -328,22 +328,45 @@ fn fs_node_effective_sid_and_class(fs_node: NonPrivateFsNode<'_>) -> FsNodeSidAn
 }
 
 /// Checks whether `source_sid` is allowed the specified `permission` on `target_sid`.
-fn check_permission<P: ClassPermission + Into<KernelPermission> + 'static>(
+fn check_permission(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
     source_sid: SecurityId,
     target_sid: SecurityId,
-    permission: P,
+    permission: impl ClassPermission,
     audit_context: Auditable<'_>,
 ) -> Result<(), Errno> {
-    fuchsia_trace::duration!(CATEGORY_STARNIX_SECURITY, "security.selinux.check_permission");
+    check_permissions(
+        permission_check,
+        current_task,
+        source_sid,
+        target_sid,
+        permission,
+        audit_context,
+    )
+}
+
+/// Checks whether `source_sid` is allowed all of the specified `permissions` on `target_sid`.
+///
+/// The `permissions` are checked against a single access decision, and audited, if necessary, in a
+/// single audit log entry, listing the permissions to be audited.
+fn check_permissions(
+    permission_check: &PermissionCheck<'_>,
+    current_task: &CurrentTask,
+    source_sid: SecurityId,
+    target_sid: SecurityId,
+    permissions: impl Into<KernelPermissionSet>,
+    audit_context: Auditable<'_>,
+) -> Result<(), Errno> {
+    fuchsia_trace::duration!(CATEGORY_STARNIX_SECURITY, "security.selinux.check_permissions");
 
     if is_internal_operation(current_task) {
         return Ok(());
     }
-    let result = permission_check.has_permission(source_sid, target_sid, permission);
+    let permissions = permissions.into();
+    let result = permission_check.has_permissions(source_sid, target_sid, permissions);
 
-    if result.audit {
+    if let Some(audit_permissions) = result.audit_permissions(permissions.class()) {
         if !result.permit() {
             current_task
                 .kernel()
@@ -361,20 +384,20 @@ fn check_permission<P: ClassPermission + Into<KernelPermission> + 'static>(
             result,
             source_sid,
             target_sid,
-            permission.into(),
+            audit_permissions,
             audit_context,
         );
-    };
+    }
 
     result.permit().then_some(()).ok_or_else(|| errno!(EACCES))
 }
 
-/// Checks that `subject_sid` has the specified process `permission` on `self`.
-fn check_self_permission<P: ClassPermission + Into<KernelPermission> + 'static>(
+/// Checks that `subject_sid` has the specified `permission` on `self`.
+fn check_self_permission(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
     subject_sid: SecurityId,
-    permission: P,
+    permission: impl ClassPermission,
     audit_context: Auditable<'_>,
 ) -> Result<(), Errno> {
     check_permission(

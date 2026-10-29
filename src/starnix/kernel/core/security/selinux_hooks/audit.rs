@@ -12,7 +12,7 @@ use fuchsia_rcu::RcuReadScope;
 use hex;
 use linux_uapi::AUDIT_AVC;
 use selinux::permission_check::{PermissionCheck, PermissionCheckResult};
-use selinux::{ClassPermission, KernelClass, KernelPermission, SecurityId};
+use selinux::{KernelClass, KernelPermissionSet, SecurityId};
 use starnix_logging::CATEGORY_STARNIX_SECURITY;
 use starnix_sync::{AuditDenyCountsLock, LockDepMutex};
 use std::collections::HashMap;
@@ -178,6 +178,10 @@ impl<'a, const N: usize> From<&'a [Auditable<'a>; N]> for Auditable<'a> {
 /// The supplied `permission_check` is used to serialize the `source_sid` and `target_sid` into
 /// their string forms.
 ///
+/// `permissions` must be the non-empty subset of permissions to be audited (see
+/// [`PermissionCheckResult::audit_permissions`]). They are logged in kernel permission-Id order,
+/// which may differ from policy declaration order.
+///
 /// If the `result` has a `todo_bug` then the audit entry's decision will be "todo_deny", instead of
 /// the standard "granted" or "denied" decisions, to indicate that the check failed, but was granted
 /// nonetheless, via the todo-deny exceptions configuration.
@@ -190,9 +194,10 @@ pub(super) fn audit_decision(
     result: PermissionCheckResult,
     source_sid: SecurityId,
     target_sid: SecurityId,
-    permission: KernelPermission,
+    permissions: KernelPermissionSet,
     audit_data: Auditable<'_>,
 ) {
+    debug_assert!(!permissions.is_empty());
     fuchsia_trace::instant!(
         CATEGORY_STARNIX_SECURITY,
         match (result.granted, result.todo_bug) {
@@ -209,7 +214,7 @@ pub(super) fn audit_decision(
 
         // Re-using the `track_stub!()` internals to track the denial, and determine whether
         // too many denial audit logs have already been emit for this case.
-        if !should_audit(source_sid, target_sid, permission.class(), todo_bug) {
+        if !should_audit(source_sid, target_sid, permissions.class(), todo_bug) {
             return;
         }
 
@@ -229,8 +234,9 @@ pub(super) fn audit_decision(
     audit_logger.audit_log(
         AUDIT_AVC as u16,
         || {
-            let tclass = permission.class().name();
-            let permission_name = permission.name();
+            let tclass = permissions.class().name();
+            let permission_names =
+                itertools::join(permissions.iter().map(|permission| permission.name()), " ");
 
             // The source and target SIDs are by definition allocated to Security Contexts, so there is no
             // need to handle `sid_to_security_context()` failure.
@@ -246,7 +252,7 @@ pub(super) fn audit_decision(
 
             let is_permissive = result.permissive as u8;
 
-            format!("avc: {decision} {{ {permission_name} }} for pid={pid} comm=\"{command}\"{audit_data} scontext={scontext} tcontext={tcontext} tclass={tclass} permissive={is_permissive}")
+            format!("avc: {decision} {{ {permission_names} }} for pid={pid} comm=\"{command}\"{audit_data} scontext={scontext} tcontext={tcontext} tclass={tclass} permissive={is_permissive}")
         }
     );
 }

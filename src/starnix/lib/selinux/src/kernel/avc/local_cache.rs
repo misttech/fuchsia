@@ -10,8 +10,12 @@ use std::cell::Cell;
 use std::sync::atomic::{Ordering, fence};
 
 /// Simple allow decision (allowed, not audited, not permissive, no TODO bug).
-const SIMPLE_ALLOW: PermissionCheckResult =
-    PermissionCheckResult { granted: true, audit: false, permissive: false, todo_bug: None };
+const SIMPLE_ALLOW: PermissionCheckResult = PermissionCheckResult {
+    granted: true,
+    audit: AccessVector::NONE,
+    permissive: false,
+    todo_bug: None,
+};
 
 /// Sizes for the different caches. These have been experimentally determined.
 ///
@@ -397,7 +401,12 @@ mod tests {
         let mut compute_called = false;
         let result = cache.lookup_fd_use(PolicySeqNo::INITIAL, sid1, sid2, || {
             compute_called = true;
-            PermissionCheckResult { granted: true, audit: false, permissive: false, todo_bug: None }
+            PermissionCheckResult {
+                granted: true,
+                audit: AccessVector::NONE,
+                permissive: false,
+                todo_bug: None,
+            }
         });
         assert!(compute_called);
         assert!(result.granted);
@@ -408,7 +417,7 @@ mod tests {
             compute_called = true;
             PermissionCheckResult {
                 granted: false,
-                audit: false,
+                audit: AccessVector::NONE,
                 permissive: false,
                 todo_bug: None,
             }
@@ -426,7 +435,7 @@ mod tests {
         // Cache a result with policy change count 0.
         cache.lookup_fd_use(PolicySeqNo::INITIAL, sid1, sid2, || PermissionCheckResult {
             granted: true,
-            audit: false,
+            audit: AccessVector::NONE,
             permissive: false,
             todo_bug: None,
         });
@@ -437,7 +446,7 @@ mod tests {
             compute_called = true;
             PermissionCheckResult {
                 granted: false,
-                audit: false,
+                audit: AccessVector::NONE,
                 permissive: false,
                 todo_bug: None,
             }
@@ -557,7 +566,7 @@ mod tests {
                 compute_called = true;
                 PermissionCheckResult {
                     granted: true,
-                    audit: false,
+                    audit: AccessVector::NONE,
                     permissive: false,
                     todo_bug: None,
                 }
@@ -578,7 +587,7 @@ mod tests {
                 compute_called = true;
                 PermissionCheckResult {
                     granted: false,
-                    audit: false,
+                    audit: AccessVector::NONE,
                     permissive: false,
                     todo_bug: None,
                 }
@@ -634,7 +643,7 @@ mod tests {
             1,
             || PermissionCheckResult {
                 granted: true,
-                audit: false,
+                audit: AccessVector::NONE,
                 permissive: false,
                 todo_bug: None,
             },
@@ -652,7 +661,7 @@ mod tests {
                 compute_called = true;
                 PermissionCheckResult {
                     granted: false,
-                    audit: false,
+                    audit: AccessVector::NONE,
                     permissive: false,
                     todo_bug: None,
                 }

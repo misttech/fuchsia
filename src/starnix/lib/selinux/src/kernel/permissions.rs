@@ -6,6 +6,7 @@
 use crate::policy::AccessVector;
 use fuchsia_rcu::RcuDroppable;
 use paste::paste;
+use std::ops::{BitOr, BitOrAssign};
 use strum_macros::VariantArray;
 
 /// Declares an `enum` with a `name()` method that returns the name for the given variant.
@@ -53,6 +54,14 @@ macro_rules! subset_enum {
                 fn for_class(&self, class: $name) -> KernelPermission {
                     match class {
                         $($name::$variant => [<$variant Permission>]::from(*self).into(),)*
+                    }
+                }
+            }
+
+            impl PermissionSet<$common_permission> {
+                pub fn for_class(&self, class: $name) -> KernelPermissionSet {
+                    match class {
+                        $($name::$variant => PermissionSet::<[<$variant Permission>]>::from(*self).into(),)*
                     }
                 }
             }
@@ -391,12 +400,157 @@ impl<T: Into<KernelClass>> ForClass<T> for KernelPermission {
     }
 }
 
+/// Set of permissions of a single permission type `P` (such as [`DirPermission`] or
+/// [`CommonFsNodePermission`]).
+///
+/// Sets are created from a single permission via `into()`, or by combining permissions of the
+/// same type with `|`, e.g. `DirPermission::Search | DirPermission::AddName`, and converted to
+/// [`KernelPermissionSet`] via `into()` (for class permissions) or `for_class()` (for common
+/// permissions).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct PermissionSet<P> {
+    access_vector: AccessVector,
+    _marker: std::marker::PhantomData<P>,
+}
+
+impl<P> PermissionSet<P> {
+    /// Returns an empty set of permissions.
+    #[inline]
+    pub const fn empty() -> Self {
+        Self { access_vector: AccessVector::NONE, _marker: std::marker::PhantomData }
+    }
+
+    /// Returns the permissions in this set, as permission-Id bits.
+    #[cfg(test)]
+    pub(crate) fn access_vector(&self) -> AccessVector {
+        self.access_vector
+    }
+
+    /// Returns true if this set contains no permissions.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.access_vector == AccessVector::NONE
+    }
+
+    /// Adds `permission` to this set.
+    #[inline]
+    pub fn insert(&mut self, permission: impl Into<Self>) {
+        *self |= permission;
+    }
+}
+
+impl<P> Default for PermissionSet<P> {
+    #[inline]
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
+impl<P, T: Into<Self>> BitOr<T> for PermissionSet<P> {
+    type Output = Self;
+
+    #[inline]
+    fn bitor(mut self, other: T) -> Self {
+        self |= other;
+        self
+    }
+}
+
+impl<P, T: Into<Self>> BitOrAssign<T> for PermissionSet<P> {
+    #[inline]
+    fn bitor_assign(&mut self, other: T) {
+        self.access_vector |= other.into().access_vector;
+    }
+}
+
+impl<P, T: Into<Self>> Extend<T> for PermissionSet<P> {
+    fn extend<I: IntoIterator<Item = T>>(&mut self, permissions: I) {
+        for permission in permissions {
+            self.insert(permission);
+        }
+    }
+}
+
+impl<P, T: Into<Self>> FromIterator<T> for PermissionSet<P> {
+    fn from_iter<I: IntoIterator<Item = T>>(permissions: I) -> Self {
+        let mut set = Self::empty();
+        set.extend(permissions);
+        set
+    }
+}
+
+/// Set of permissions of a single [`KernelClass`], to be checked together.
+///
+/// Sets are created from a single [`ClassPermission`], [`KernelPermission`], or typed
+/// [`PermissionSet`] via `into()`, or from a common [`PermissionSet`] via `for_class()`.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct KernelPermissionSet {
+    class: KernelClass,
+    /// Permissions in the set, with bits at the kernel permission-Id positions for `class`
+    /// (see [`ClassPermission::id()`]).
+    access_vector: AccessVector,
+}
+
+impl KernelPermissionSet {
+    /// Returns the set of `class` permissions whose kernel permission-Id bits are set in
+    /// `access_vector`.
+    ///
+    /// `access_vector` must only have bits set at the kernel permission-Id positions of `class`'s
+    /// permissions.
+    #[inline]
+    pub(crate) fn new(class: KernelClass, access_vector: AccessVector) -> Self {
+        debug_assert_eq!(
+            access_vector.value().checked_shr(class.permissions().len() as u32).unwrap_or(0),
+            0,
+            "access_vector contains bits outside class permissions",
+        );
+        Self { class, access_vector }
+    }
+
+    /// Returns the class of the permissions in this set.
+    #[inline]
+    pub fn class(&self) -> KernelClass {
+        self.class
+    }
+
+    /// Returns the permissions in this set, as kernel permission-Id bits.
+    #[inline]
+    pub(crate) fn access_vector(&self) -> AccessVector {
+        self.access_vector
+    }
+
+    /// Returns true if this set contains no permissions.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.access_vector == AccessVector::NONE
+    }
+
+    /// Returns the permissions in this set, in kernel permission-Id order.
+    pub fn iter(&self) -> impl Iterator<Item = KernelPermission> + use<> {
+        let access_vector = self.access_vector;
+        self.class.permissions().iter().copied().filter(move |permission| {
+            access_vector & permission.as_access_vector() != AccessVector::NONE
+        })
+    }
+}
+
+impl<P: ClassPermission> From<P> for KernelPermissionSet {
+    #[inline]
+    fn from(permission: P) -> Self {
+        Self { class: permission.class(), access_vector: permission.as_access_vector() }
+    }
+}
+
 /// Declares the set of named permissions associated with an SELinux class.
 ///
+/// Also defines a `<Name>Set` alias for [`PermissionSet`], enabling permissions of the declared
+/// `enum` to be combined with `|`.
+///
 /// When `for $kernel_class` is specified, [`ClassPermission`] is implemented on the declared
-/// `enum`, enabling values to be wrapped into the generic [`KernelPermission`] container.
+/// `enum`, enabling values and sets to be converted into [`KernelPermission`] and
+/// [`KernelPermissionSet`].
 /// Otherwise the `enum` represents a common permission subset, and an `impl_from_<snake_name>!`
-/// macro is generated to implement [`From`] on derived permission enums.
+/// macro is generated to implement [`From`] on derived permission enums and sets.
 macro_rules! class_permission_enum {
     ($(#[$meta:meta])* $name:ident for $kernel_class:ident {
         $($(#[$variant_meta:meta])* $variant:ident ($variant_name:literal),)*
@@ -409,6 +563,7 @@ macro_rules! class_permission_enum {
             }
         }
 
+        class_permission_enum!(@declare_permission_set $name);
 
         impl ClassPermission for $name {
             #[inline]
@@ -418,6 +573,13 @@ macro_rules! class_permission_enum {
             #[inline]
             fn id(&self) -> u8 {
                 *self as u8
+            }
+        }
+
+        impl From<PermissionSet<$name>> for KernelPermissionSet {
+            #[inline]
+            fn from(permissions: PermissionSet<$name>) -> Self {
+                Self::new(KernelClass::$kernel_class, permissions.access_vector)
             }
         }
 
@@ -436,17 +598,66 @@ macro_rules! class_permission_enum {
             }
         }
 
+        class_permission_enum!(@declare_permission_set $name);
         class_permission_enum!(@declare_from_macro ($) $name { $($variant),* });
+    };
+    (@declare_permission_set $name:ident) => {
+        paste! {
+            pub type [<$name Set>] = PermissionSet<$name>;
+        }
+
+        impl From<$name> for PermissionSet<$name> {
+            #[inline]
+            fn from(permission: $name) -> Self {
+                Self {
+                    access_vector: AccessVector::from(1u32 << (permission as u8)),
+                    _marker: std::marker::PhantomData,
+                }
+            }
+        }
+
+        impl<T: Into<PermissionSet<$name>>> BitOr<T> for $name {
+            type Output = PermissionSet<$name>;
+
+            #[inline]
+            fn bitor(self, other: T) -> PermissionSet<$name> {
+                PermissionSet::from(self) | other
+            }
+        }
     };
     (@declare_from_macro ($d:tt) $name:ident { $($variant:ident),* }) => {
         paste! {
             macro_rules! [<impl_from_ $name:snake>] {
                 ($d target:ident $d (for $d _kernel_class:ident)?) => {
                     impl From<$name> for $d target {
+                        #[inline]
                         fn from(other: $name) -> Self {
                             match other {
                                 $($name::$variant => Self::$variant,)*
                             }
+                        }
+                    }
+
+                    impl From<$name> for PermissionSet<$d target> {
+                        #[inline]
+                        fn from(other: $name) -> Self {
+                            $d target::from(other).into()
+                        }
+                    }
+
+                    impl From<PermissionSet<$name>> for PermissionSet<$d target> {
+                        #[inline]
+                        fn from(other: PermissionSet<$name>) -> Self {
+                            let mut result = Self::empty();
+                            $(
+                                if other.access_vector
+                                    & PermissionSet::<$name>::from($name::$variant).access_vector
+                                    != AccessVector::NONE
+                                {
+                                    result |= $d target::$variant;
+                                }
+                            )*
+                            result
                         }
                     }
                 };
@@ -605,6 +816,8 @@ macro_rules! fs_node_class_permission_enum {
                 $($(#[$variant_meta])* $variant ($variant_name),)*
             }
         }
+
+        $(impl_from_common_fs_node_permission!($name for $kernel_class);)?
     }
 }
 
@@ -620,6 +833,19 @@ impl<T: Into<FsNodeClass>> ForClass<T> for CommonFsNodePermission {
             }
             FsNodeClass::Socket(sock_class) => {
                 CommonSocketPermission::from(*self).for_class(sock_class)
+            }
+        }
+    }
+}
+
+impl PermissionSet<CommonFsNodePermission> {
+    pub fn for_class(&self, class: impl Into<FsNodeClass>) -> KernelPermissionSet {
+        match class.into() {
+            FsNodeClass::File(file_class) => {
+                PermissionSet::<CommonFilePermission>::from(*self).for_class(file_class)
+            }
+            FsNodeClass::Socket(sock_class) => {
+                PermissionSet::<CommonSocketPermission>::from(*self).for_class(sock_class)
             }
         }
     }
@@ -1193,4 +1419,119 @@ class_permission_enum! {
         SyslogRead("syslog_read"),
         // keep-sorted end
      }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn permission_set_from_permission() {
+        let typed = ProcessPermissionSet::from(ProcessPermission::Fork);
+        assert_eq!(typed.access_vector(), ProcessPermission::Fork.as_access_vector());
+        assert!(!typed.is_empty());
+
+        let permissions = KernelPermissionSet::from(typed);
+        assert_eq!(permissions, KernelPermissionSet::from(ProcessPermission::Fork));
+        assert_eq!(permissions.class(), KernelClass::Process);
+        assert_eq!(permissions.access_vector(), ProcessPermission::Fork.as_access_vector());
+        assert!(!permissions.is_empty());
+        assert_eq!(
+            permissions.iter().collect::<Vec<_>>(),
+            [KernelPermission::from(ProcessPermission::Fork)]
+        );
+    }
+
+    #[test]
+    fn empty_permission_set() {
+        let typed = DirPermissionSet::empty();
+        assert_eq!(typed.access_vector(), AccessVector::NONE);
+        assert!(typed.is_empty());
+
+        let permissions = KernelPermissionSet::from(typed);
+        assert_eq!(permissions.class(), KernelClass::Dir);
+        assert_eq!(permissions.access_vector(), AccessVector::NONE);
+        assert!(permissions.is_empty());
+        assert_eq!(permissions.iter().count(), 0);
+    }
+
+    #[test]
+    fn permission_set_combines_permissions_of_class() {
+        let typed: DirPermissionSet = DirPermission::Search | DirPermission::AddName;
+        let permissions = KernelPermissionSet::from(typed);
+        assert_eq!(permissions.class(), KernelClass::Dir);
+        assert_eq!(
+            permissions.access_vector(),
+            DirPermission::Search.as_access_vector() | DirPermission::AddName.as_access_vector()
+        );
+
+        // Permissions are listed in kernel permission-Id order, regardless of insertion order.
+        assert_eq!(
+            permissions.iter().collect::<Vec<_>>(),
+            [KernelPermission::from(DirPermission::AddName), DirPermission::Search.into()]
+        );
+
+        // Common permissions and sets convert into derived permission sets, and sets can be
+        // combined with permissions or other sets in either order.
+        let read_and_open: CommonFilePermissionSet =
+            CommonFilePermission::Open | CommonFsNodePermission::Read;
+        let combined: DirPermissionSet = DirPermission::RemoveName | (typed | read_and_open);
+        let permissions = KernelPermissionSet::from(combined);
+        assert_eq!(
+            permissions.iter().collect::<Vec<_>>(),
+            [
+                KernelPermission::from(DirPermission::Read),
+                DirPermission::Open.into(),
+                DirPermission::AddName.into(),
+                DirPermission::RemoveName.into(),
+                DirPermission::Search.into(),
+            ]
+        );
+    }
+
+    #[test]
+    fn common_permission_set_for_class() {
+        let fs_node_permissions: CommonFsNodePermissionSet =
+            CommonFsNodePermission::Read | CommonFsNodePermission::Write;
+        assert_eq!(
+            fs_node_permissions.for_class(FileClass::File),
+            KernelPermissionSet::from(FilePermission::Read | FilePermission::Write)
+        );
+        assert_eq!(
+            fs_node_permissions.for_class(SocketClass::TcpSocket),
+            KernelPermissionSet::from(TcpSocketPermission::Read | TcpSocketPermission::Write)
+        );
+
+        let file_permissions: CommonFilePermissionSet =
+            CommonFilePermissionSet::from(fs_node_permissions) | CommonFilePermission::Open;
+        assert_eq!(
+            file_permissions.for_class(FileClass::Dir),
+            KernelPermissionSet::from(
+                DirPermission::Read | DirPermission::Write | DirPermission::Open
+            )
+        );
+    }
+
+    #[test]
+    fn permission_set_extend() {
+        let mut permissions = BpfPermissionSet::empty();
+        permissions.extend([BpfPermission::MapWrite, BpfPermission::MapRead]);
+        assert_eq!(permissions, BpfPermission::MapRead | BpfPermission::MapWrite);
+
+        // Adding a permission that is already in the set has no effect.
+        permissions.insert(BpfPermission::MapRead);
+        assert_eq!(permissions, BpfPermission::MapRead | BpfPermission::MapWrite);
+    }
+
+    #[test]
+    fn permission_set_new_from_access_vector() {
+        let permissions = KernelPermissionSet::new(
+            KernelClass::Dir,
+            DirPermission::Search.as_access_vector() | DirPermission::AddName.as_access_vector(),
+        );
+        assert_eq!(
+            permissions,
+            KernelPermissionSet::from(DirPermission::Search | DirPermission::AddName)
+        );
+    }
 }
