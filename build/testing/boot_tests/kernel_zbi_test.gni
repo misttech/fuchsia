@@ -18,11 +18,22 @@ declare_args() {
   # exfiltrating instrumentation data from a target system.
   generate_cuckoo_tests = false
 
+  # Run tests against the common set of kernel images that are useful for
+  # testing outside of eng. This controls the default value of
+  # extra_kernel_test_images.
+  use_common_extra_kernel_test_images = false
+}
+
+declare_args() {
   # Each kernel_zbi_test() will stamp out a zbi_test() per entry in the provided
   # list of kernel images; this list unconditionally extends that selection.
   # This enables devs and builders to introduce more kinds of tests in the GN
   # graph without affecting gen times by default.
   extra_kernel_test_images = []
+
+  if (use_common_extra_kernel_test_images) {
+    extra_kernel_test_images = [ "eng.lk_debug_level_0" ]
+  }
 }
 
 # The kernel switchset with the most development options enabled.
