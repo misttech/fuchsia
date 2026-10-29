@@ -1,0 +1,23 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/python/python_mobly_test.gni")
+import("//build/testing/environments.gni")
+
+if (is_host) {
+  python_mobly_test("odpm_power_test") {
+    main_source = "odpm_power_test.py"
+    libraries = [
+      "//src/testing/end_to_end/honeydew",
+      "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
+      "//src/connectivity/wlan/tests/wlanix/wlanix_testing",
+      "//src/connectivity/wlan/tests/utils:wlan_test_utils",
+    ]
+  }
+}
+
+group("tests") {
+  testonly = true
+  public_deps = [ ":odpm_power_test($host_toolchain)" ]
+}
