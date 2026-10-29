@@ -6,7 +6,7 @@ Each **migration group** is migrated by one Planter task and uploaded as one CL.
 
 The `<planter>` below is the `planter` binary resolved with `"$(command -v planter || echo "$HOME/.local/bin/planter")"`, because `~/.local/bin` may not be on `PATH`.
 
-Follow the [Planter Rules](../SKILL.md#planter-rules) in every step below: keep the **Planter tag** verbatim and never invent one.
+Follow the [Planter Rules](../SKILL.md#planter-rules) in every step below: keep the **Planter tag** verbatim and never invent one, and relay the **Planter warnings** that Planter prints (including the ones `planter fleet` prints while it runs).
 
 ## Planter Task Parameters
 

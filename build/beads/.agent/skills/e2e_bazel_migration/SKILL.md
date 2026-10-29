@@ -113,6 +113,15 @@ description: >
   `TAG: planter planter-20261008-633b8b4b94a`). `<freshness>` identifies the
   Planter machinery that generated the CL. Only Planter knows it.
 
+* **Planter warnings** : The environment, checkout, and machinery staleness
+  lines Planter prints that start with `⚠️` (e.g., "This planter binary is out
+  of date", "Fuchsia checkout ... is out of date", "Shared machinery ... has N
+  uncommitted learning/machinery file(s)"), together with any indented command
+  line that follows them, and `[machinery] warning:` lines. Exclude per-task
+  retry or halt progress lines (such as `Attempt ... failed (will retry)` or
+  `Task ... failed`). `planter version`, `planter run`, `planter status`, and
+  `planter fleet` print them.
+
 ## Planter Rules
 
 These rules apply to every step of this skill, and to any later work on a
@@ -134,6 +143,17 @@ or re-uploading).
      migration CL has no **Planter tag**, leave it without one and tell the user
      that the CL has no **Planter tag** and was probably not generated or
      uploaded by Planter.
+
+2. **Relay the Planter warnings to the user.**
+   * Whenever Planter prints **Planter warnings**, relay them to the user
+     verbatim, with the command Planter suggests (if any), in your next message
+     to the user. Also list them in the "Planter Warnings" section of the
+     notifications (see the [Notification
+     Templates](assets/notification_templates.md)). Relay each distinct warning
+     once; do not drop a warning because it looks unimportant.
+   * Do not run the suggested commands yourself unless this skill or the user
+     tells you to: they rewrite the user's checkouts (e.g., `jiri update`,
+     `git rebase`) or upload machinery for review (`planter upload-machinery`).
 
 ## End-to-End Bazel Migration
 

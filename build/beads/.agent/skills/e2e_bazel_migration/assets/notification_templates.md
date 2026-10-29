@@ -16,6 +16,9 @@ In the templates below:
 * `<failed_migration_groups>`: One line for each failed **migration group**, in
   the form `<paths of its packages>: <reason>`. If no **migration group**
   failed, `None`.
+* `<planter_warnings>`: The distinct **Planter warnings** Planter printed during
+  this migration, one per line, verbatim, each followed by the command Planter
+  suggests (if any). If Planter printed no warnings, `None`.
 
 ## Start Notification Template
 
@@ -43,6 +46,8 @@ Fuchsia Gerrit CLs:
 <Fuchsia_Gerrit_CLs>
 Failed Migration Groups:
 <failed_migration_groups>
+Planter Warnings:
+<planter_warnings>
 ```
 
 ## Interrupted Notification Template
@@ -57,4 +62,6 @@ because of <reason>.
 Migrated Targets: <paths_of_the_migrating_targets>
 Buganizer Tickets: <Buganizer_ticket_numbers>
 Control Table: <the_go_link_of_fuchsia-bazel-migration-control-table>
+Planter Warnings:
+<planter_warnings>
 ```
