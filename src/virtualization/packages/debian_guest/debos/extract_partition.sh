@@ -8,6 +8,8 @@
 #
 # "ARTIFACTDIR": the debos artifact directory.
 
+set -e
+
 # Create a qcow2 file from the partition.
 #
 # The raw disk image debos provides begins with a (GPT-based) partition table,
@@ -31,7 +33,13 @@ umount ${BLOCK_DEVICE}
 zerofree  ${BLOCK_DEVICE}
 
 # Create an image from the partition.
-qemu-img convert -f raw -O qcow2 ${BLOCK_DEVICE} "${ARTIFACTDIR}/rootfs.qcow2"
+#
+# Write to a local path inside the VM first before moving to ARTIFACTDIR, as
+# creating a qcow2 image directly on fakemachine's 9p mount can fail when
+# qemu-img immediately re-reads the header.
+LOCAL_QCOW2=$(mktemp --suffix=.qcow2)
+qemu-img convert -f raw -O qcow2 ${BLOCK_DEVICE} "${LOCAL_QCOW2}"
+mv --force "${LOCAL_QCOW2}" "${ARTIFACTDIR}/rootfs.qcow2"
 
 # Remount the disk.
 mount ${BLOCK_DEVICE} ${IMAGEMNTDIR}

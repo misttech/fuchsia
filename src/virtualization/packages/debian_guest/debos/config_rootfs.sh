@@ -94,6 +94,12 @@ nls_base
 unicode
 nls_ascii
 dm_mod
+usb-common
+usbcore
+udc-core
+dummy_hcd
+libcomposite
+usb_f_fs
 EOF
 
 # Explicitly disable resume from swap. This is to ensure we never try to to
