@@ -922,6 +922,25 @@ impl Type {
         }
     }
 
+    fn stack_input_size(
+        &self,
+        comp: &ComputationContext,
+    ) -> Result<Option<u64>, VerifierErrorKind> {
+        match self {
+            Type::MemoryParameter { size, input: true, .. } => Ok(Some(size.size(comp)?)),
+            Type::MapKeyParameter { map_ptr_index } => {
+                Ok(Some(comp.get_map_schema(*map_ptr_index)?.key_size as u64))
+            }
+            Type::MapValueParameter { map_ptr_index } => {
+                Ok(Some(comp.get_map_schema(*map_ptr_index)?.value_size as u64))
+            }
+            Type::NullOrParameter(inner) | Type::ReleasableParameter { inner, .. } => {
+                inner.stack_input_size(comp)
+            }
+            _ => Ok(None),
+        }
+    }
+
     /// Partially Compares two iterators of comparable items.
     ///
     /// This function iterates through both input iterators simultaneously and compares the corresponding elements.
@@ -2896,14 +2915,19 @@ impl BpfVisitor for DataDependencies {
         let Some(helper) = context.calling_context.helpers.get(&index).cloned() else {
             return Err(VerifierErrorKind::UnknownHelper(index));
         };
-        // A helper reads the stack region each `input` memory-parameter argument
+        // A helper reads the stack region each stack-input parameter argument
         // points at, so those stack slots are data dependencies, like load/store.
         let comp = &context.computation_context;
         for (arg_index, arg) in helper.signature.args.iter().enumerate() {
-            if let Type::MemoryParameter { size, input: true, .. } = arg {
-                if let Type::PtrToStack { offset } = comp.reg((arg_index + 1) as Register)? {
-                    let end = offset.add(size.size(comp)?);
-                    if offset.check_valid_offset().is_ok() && end.is_within_stack() {
+            let reg = comp.reg((arg_index + 1) as Register)?;
+            if let Type::PtrToStack { offset } = *reg.inner(comp)? {
+                if let Some(input_size) = arg.stack_input_size(comp)? {
+                    if input_size > 0 {
+                        offset.check_valid_offset()?;
+                        let end = offset.add(input_size);
+                        if input_size > BPF_STACK_SIZE as u64 || !end.is_within_stack() {
+                            return Err(VerifierErrorKind::StackAccessOutOfBounds);
+                        }
                         let start_idx = offset.array_index();
                         let end_idx = end.array_index();
                         self.add_stack_range(start_idx, end_idx);

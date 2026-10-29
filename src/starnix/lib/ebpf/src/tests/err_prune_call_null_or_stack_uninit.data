@@ -1,0 +1,16 @@
+# Verify NullOrParameter-wrapped stack-input parameters mark their stack slots
+# live during state pruning so uninitialized stack reads are rejected.
+-- asm
+call 2
+mov %r6, %r0
+stdw [%r10-8], 0
+lddw %r1, map[2]
+mov %r2, %r10
+add %r2, -16
+jne %r6, 0, +1
+stdw [%r10-16], 0
+call 111
+mov %r0, 0
+exit
+-- error
+reading unwritten value from the stack

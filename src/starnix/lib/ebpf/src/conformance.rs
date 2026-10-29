@@ -798,6 +798,49 @@ pub mod test {
                 ),
                 (
                     HelperDefinition {
+                        index: 110,
+                        name: "map_update_elem",
+                        signature: FunctionSignature {
+                            args: vec![
+                                Type::ConstPtrToMapParameter {
+                                    filter: MapTypeFilter::DenyList(&[
+                                        linux_uapi::bpf_map_type_BPF_MAP_TYPE_SK_STORAGE,
+                                    ]),
+                                    must_be_writable: true,
+                                },
+                                Type::MapKeyParameter { map_ptr_index: 0 },
+                                Type::MapValueParameter { map_ptr_index: 0 },
+                            ],
+                            return_value: Type::UNKNOWN_SCALAR,
+                            invalidate_array_bounds: false,
+                        },
+                    },
+                    EbpfHelperImpl::<TestEbpfProgramContext>(get_zero),
+                ),
+                (
+                    HelperDefinition {
+                        index: 111,
+                        name: "map_null_or_value",
+                        signature: FunctionSignature {
+                            args: vec![
+                                Type::ConstPtrToMapParameter {
+                                    filter: MapTypeFilter::DenyList(&[
+                                        linux_uapi::bpf_map_type_BPF_MAP_TYPE_SK_STORAGE,
+                                    ]),
+                                    must_be_writable: true,
+                                },
+                                Type::NullOrParameter(Box::new(Type::MapValueParameter {
+                                    map_ptr_index: 0,
+                                })),
+                            ],
+                            return_value: Type::UNKNOWN_SCALAR,
+                            invalidate_array_bounds: false,
+                        },
+                    },
+                    EbpfHelperImpl::<TestEbpfProgramContext>(get_zero),
+                ),
+                (
+                    HelperDefinition {
                         index: 107,
                         name: "with_context",
                         signature: FunctionSignature {
@@ -1249,6 +1292,8 @@ pub mod test {
     #[test_case(local_test_data!("err_packet_load_scalar_src.data"))]
     #[test_case(local_test_data!("err_packet_oob.data"))]
     #[test_case(local_test_data!("err_prune_atomic_map_ptr_leak.data"))]
+    #[test_case(local_test_data!("err_prune_call_map_value_ptr_leak.data"))]
+    #[test_case(local_test_data!("err_prune_call_null_or_stack_uninit.data"))]
     #[test_case(local_test_data!("err_prune_dead_stack_atomic.data"))]
     #[test_case(local_test_data!("err_prune_point_dependency_chain.data"))]
     #[test_case(local_test_data!("err_read_only_helper.data"))]
