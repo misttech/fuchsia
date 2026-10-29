@@ -86,7 +86,7 @@ rust_library(
         "//third_party/rust_crates/vendor/futures-channel-0.3.34:futures_channel",
         "//third_party/rust_crates/vendor/futures-io-0.3.34:futures_io",
         "//third_party/rust_crates/vendor/futures-util-0.3.34:futures_util",
-        "//third_party/rust_crates/vendor/idna-0.2.3:idna",
+        "//third_party/rust_crates/vendor/idna-1.1.0:idna",
         "//third_party/rust_crates/vendor/ipnet-2.12.2:ipnet",
         "//third_party/rust_crates/vendor/lazy_static-1.5.1:lazy_static",
         "//third_party/rust_crates/vendor/rand-0.10.3:rand",

@@ -56,7 +56,18 @@ rust_library(
         "alloc",
         "compiled_data",
         "std",
-    ],
+    ] + select({
+        "@rules_rust//rust/platform:aarch64-unknown-fuchsia": [
+            "default",  # aarch64-unknown-fuchsia
+        ],
+        "@rules_rust//rust/platform:riscv64gc-unknown-fuchsia": [
+            "default",  # riscv64gc-unknown-fuchsia
+        ],
+        "@rules_rust//rust/platform:x86_64-unknown-fuchsia": [
+            "default",  # x86_64-unknown-fuchsia
+        ],
+        "//conditions:default": [],
+    }),
     crate_root = "src/lib.rs",
     edition = "2018",
     rustc_flags = [

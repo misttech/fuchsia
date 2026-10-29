@@ -92,7 +92,7 @@ version = "0.2"
 optional = true
 
 [dependencies.idna]
-version = "0.2.3"
+version = "1.1.0"
 
 [dependencies.ipnet]
 version = "2.3.0"

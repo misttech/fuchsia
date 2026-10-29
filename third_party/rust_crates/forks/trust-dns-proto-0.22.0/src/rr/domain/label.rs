@@ -19,7 +19,7 @@ use std::fmt::{self, Debug, Display, Formatter, Write};
 use std::hash::{Hash, Hasher};
 use tinyvec::TinyVec;
 
-use idna;
+use idna::uts46::{AsciiDenyList, DnsLength, Hyphens, Uts46};
 use tracing::debug;
 
 use crate::error::*;
@@ -60,12 +60,12 @@ impl Label {
             return Self::from_ascii(s);
         }
 
-        match idna::Config::default()
-            .use_std3_ascii_rules(true)
-            .transitional_processing(true)
-            .verify_dns_length(true)
-            .to_ascii(s)
-        {
+        match Uts46::new().to_ascii(
+            s.as_bytes(),
+            AsciiDenyList::STD3,
+            Hyphens::Allow,
+            DnsLength::Ignore,
+        ) {
             Ok(puny) => Self::from_ascii(&puny),
             e => Err(format!("Label contains invalid characters: {:?}", e).into()),
         }
@@ -238,11 +238,8 @@ impl Display for Label {
         if self.as_bytes().starts_with(IDNA_PREFIX) {
             // this should never be outside the ascii codes...
             let label = String::from_utf8_lossy(self.borrow());
-            let (label, e) = idna::Config::default()
-                .use_std3_ascii_rules(false)
-                .transitional_processing(false)
-                .verify_dns_length(false)
-                .to_unicode(&label);
+            let (label, e) =
+                Uts46::new().to_unicode(label.as_bytes(), AsciiDenyList::EMPTY, Hyphens::Allow);
 
             if e.is_ok() {
                 return f.write_str(&label);

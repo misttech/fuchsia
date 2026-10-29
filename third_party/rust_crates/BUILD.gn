@@ -12441,41 +12441,6 @@ rustc_library("ident_case-v1_0_1") {
   applicable_licenses = [ ":ident_case-v1_0_1.license" ]
 }
 
-license("idna-v0_2_3.license") {
-  public_package_name = "idna"
-  license_files = [
-    "//third_party/rust_crates/vendor/idna-0.2.3/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/idna-0.2.3/LICENSE-MIT",
-  ]
-}
-
-rustc_library("idna-v0_2_3") {
-  crate_name = "idna"
-  source_root = "//third_party/rust_crates/vendor/idna-0.2.3/src/lib.rs"
-  output_name = "idna-22cfd0b478d3e8bd"
-  edition = "2018"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":matches-v0_1_10" ]
-  deps += [ ":unicode-bidi-v0_3_18" ]
-  deps += [ ":unicode-normalization-v0_1_25" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=22cfd0b478d3e8bd",
-    "-Cextra-filename=-22cfd0b478d3e8bd",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":idna-v0_2_3.license" ]
-}
-
 license("idna-v1_1_0.license") {
   public_package_name = "idna"
   license_files = [
@@ -12506,6 +12471,7 @@ rustc_library("idna-v1_1_0") {
     "-Cextra-filename=-e5a8a328fba5175d",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"compiled_data\"",
+    "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
   ]
 
@@ -13631,35 +13597,6 @@ rustc_library("matchers-v0_2_0") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":matchers-v0_2_0.license" ]
-}
-
-license("matches-v0_1_10.license") {
-  public_package_name = "matches"
-  license_files = [ "//third_party/rust_crates/vendor/matches-0.1.10/LICENSE" ]
-}
-
-rustc_library("matches-v0_1_10") {
-  crate_name = "matches"
-  source_root = "//third_party/rust_crates/vendor/matches-0.1.10/lib.rs"
-  output_name = "matches-1f83c1bb0f281fa9"
-  edition = "2015"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=1f83c1bb0f281fa9",
-    "-Cextra-filename=-1f83c1bb0f281fa9",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":matches-v0_1_10.license" ]
 }
 
 license("maybe-owned-v0_3_4.license") {
@@ -24679,7 +24616,7 @@ rustc_library("trust-dns-proto-v0_22_0") {
   deps += [ ":futures-channel-v0_3_34" ]
   deps += [ ":futures-io-v0_3_34" ]
   deps += [ ":futures-util-v0_3_34" ]
-  deps += [ ":idna-v0_2_3" ]
+  deps += [ ":idna-v1_1_0" ]
   deps += [ ":ipnet-v2_12_2" ]
   deps += [ ":lazy_static-v1_5_1" ]
   deps += [ ":rand-v0_10_3" ]
@@ -25403,40 +25340,6 @@ rustc_library("unicase-v2_10_0") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":unicase-v2_10_0.license" ]
-}
-
-license("unicode-bidi-v0_3_18.license") {
-  public_package_name = "unicode_bidi"
-  license_files =
-      [ "//third_party/rust_crates/vendor/unicode-bidi-0.3.18/LICENSE-APACHE" ]
-}
-
-rustc_library("unicode-bidi-v0_3_18") {
-  crate_name = "unicode_bidi"
-  source_root =
-      "//third_party/rust_crates/vendor/unicode-bidi-0.3.18/src/lib.rs"
-  output_name = "unicode_bidi-e12d17bb81d32560"
-  edition = "2018"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=e12d17bb81d32560",
-    "-Cextra-filename=-e12d17bb81d32560",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"hardcoded-data\"",
-    "--cfg=feature=\"std\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":unicode-bidi-v0_3_18.license" ]
 }
 
 license("unicode-ident-v1_0_26.license") {
