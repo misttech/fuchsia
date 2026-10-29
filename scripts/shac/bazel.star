@@ -504,6 +504,15 @@ _bazel_package_default_visibility = _make_bazel_lint_check(
     enforcement = "unchanged_lines_warning_only",
 )
 
+# Reports an error when Fuchsia Bazel SDK repository paths or `bazel_sdk`
+# label paths are used in platform code.
+# TODO(https://fxbug.dev/570203009): Switch to "all" once rolled out.
+_bazel_repository_paths = _make_bazel_lint_check(
+    "bazel_repository_paths",
+    applies_to_globs = _BUILD_AND_BZL_FILES,
+    enforcement = "unchanged_lines_warning_only",
+)
+
 # Reports an error when "//visibility:public" is used on targets outside
 # exempted directories.
 # TODO(https://fxbug.dev/570203009): Switch to "all" once rolled out.
@@ -547,6 +556,7 @@ def register_bazel_checks():
     shac.register_check(_bazel_host_constraints)
     shac.register_check(_bazel_load_visibility)
     shac.register_check(_bazel_package_default_visibility)
+    shac.register_check(_bazel_repository_paths)
     shac.register_check(_bazel_target_visibility)
     shac.register_check(_bazel_vendor_paths)
     shac.register_check(_bazel_visibility_for_public_by_default_types)

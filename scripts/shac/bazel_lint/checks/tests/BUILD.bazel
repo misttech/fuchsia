@@ -19,6 +19,7 @@ filegroup(
         "host_constraints_test.star",
         "load_visibility_test.star",
         "package_default_visibility_test.star",
+        "repository_paths_test.star",
         "root_package_labels_test.star",
         "target_visibility_test.star",
         "vendor_paths_test.star",

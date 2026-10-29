@@ -19,6 +19,7 @@ filegroup(
         "host_constraints.py",
         "load_visibility.py",
         "package_default_visibility.py",
+        "repository_paths.py",
         "root_package_labels.py",
         "target_visibility.py",
         "vendor_paths.py",

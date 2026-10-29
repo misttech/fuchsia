@@ -13,6 +13,7 @@ from . import (
     host_constraints,
     load_visibility,
     package_default_visibility,
+    repository_paths,
     root_package_labels,
     target_visibility,
     vendor_paths,

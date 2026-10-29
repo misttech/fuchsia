@@ -120,7 +120,8 @@ depend on platform targets or load symbols from platform `.bzl` files.
 ### Do not use Fuchsia Bazel SDK paths {:#do-not-use-fuchsia-bazel-sdk-paths}
 
 Platform code should never access file paths containing `bazel_sdk` or Fuchsia
-Bazel SDK repository paths such as:
+Bazel SDK repository paths _\[<span style="color:red">SHAC error</span>\]_ such
+as:
 
 * `@fuchsia_sdk//`
 
