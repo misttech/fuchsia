@@ -1,0 +1,44 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules:zx_library.bzl", "cc_source_library_zx")
+
+package(default_applicable_licenses = ["//:license"])
+
+cc_source_library_zx(
+    name = "audio-utils",
+    srcs = [
+        "audio-device-stream.cc",
+        "audio-input.cc",
+        "audio-output.cc",
+    ],
+    hdrs = [
+        "include/audio-utils/audio-device-stream.h",
+        "include/audio-utils/audio-input.h",
+        "include/audio-utils/audio-output.h",
+        "include/audio-utils/audio-stream.h",
+        "include/audio-utils/duration.h",
+    ],
+    # TODO(https://fxbug.dev/42176699): This target uses mutable tables which are deprecated,
+    # rather than builders.
+    copts = [
+        "-DFIDL_WIRE_ALLOW_DEPRECATED_MUTABLE_TABLES",
+    ],  # @bazel2gn:raw_overwrite:[ "//build/cpp:fidl-wire-deprecated-mutable-tables" ]
+    implementation_deps = [
+        "//sdk/lib/component/incoming/cpp",
+        "//sdk/lib/fdio",
+        "//src/media/audio/drivers/lib/audio-proto-utils",
+        "//zircon/system/ulib/affine",
+        "//zircon/system/ulib/fbl",
+        "//zircon/system/ulib/fzl",
+        "//zircon/system/ulib/zx",
+    ],
+    includes = ["include"],
+    visibility = [
+        "//src/media/audio/drivers/intel-hda/test:__pkg__",
+        "//src/media/audio/lib/simple-audio-stream/tests:__pkg__",
+        "//src/media/audio/tools/audio-driver-ctl:__pkg__",
+    ],
+    deps = ["//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_cpp"],
+)
