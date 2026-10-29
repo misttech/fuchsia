@@ -39,10 +39,6 @@ class AuditChecker : public testing::EmptyTestEventListener {
 
     bool operator==(const AuditLogEntry& other) const;
 
-    // Returns true if `other` matches scontext/tcontext/tclass, and the permission is one of those
-    // described by this entry.
-    bool contains(const AuditLogEntry& other) const;
-
     std::string ToString() const;
   };
 

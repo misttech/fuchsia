@@ -268,17 +268,6 @@ bool AuditChecker::ParseExpectationsFile(const std::string& file_path) {
 bool AuditChecker::AuditLogEntry::operator==(const AuditChecker::AuditLogEntry& other) const =
     default;
 
-bool AuditChecker::AuditLogEntry::contains(const AuditLogEntry& other) const {
-  if (other.denied != denied || other.permissive != permissive || other.scontext != scontext ||
-      other.tcontext != tcontext || other.tclass != tclass) {
-    return false;
-  }
-  if (other.permission == permission) {
-    return true;
-  }
-  return std::ranges::includes(permission, other.permission);
-}
-
 std::string AuditChecker::AuditLogEntry::ToString() const {
   auto perms_str = fxl::JoinStrings(permission, " ");
   auto permissive_str = permissive ? "1" : "0";
@@ -454,51 +443,21 @@ bool AuditChecker::CheckAuditExpectations(const std::string& test_name) {
   bool audit_logs_match = true;
 
   while (actual_it != actual_logs.end() && expected_it != expected_logs.end()) {
-    if (test_helper::IsStarnix()) {
-      // Account for Starnix only checking, and audit logging, one permission
-      // at at time, where Linux may check several in a single operation.
-      if (expected_it->contains(*actual_it)) {
-        // Observed audit log matches at least one permission in the next expectation, so emit it
-        // with no prefix.
-        if (expected_it->permission == actual_it->permission) {
-          // Move to next expectation in case of exact match.
-          expected_it++;
-        } else if (actual_it->denied && !actual_it->permissive) {
-          // Move to next expectation, if any, in case of partial match denied access, since the
-          // first denial will prevent the subsequent checks being made.
-          expected_it++;
-        } else {
-          // If the expectation is granted (whether permissive or denied) then we expect the other
-          // permissions to also be checked, so just remove the matched permission.
-          std::string found_perm = *actual_it->permission.begin();
-          if (expected_it->permission.erase(found_perm) != 1u) {
-            ADD_FAILURE() << "Expected to erase exactly 1 permission, but failed.";
-            return false;
-          }
-        }
-        audit_diff += "\n " + actual_it->ToString();
-        actual_it++;
-        continue;
-      }
-    } else {
-      // Linux is the baseline, so expect audit logs to match line for line.
-      if (*expected_it == *actual_it) {
-        audit_diff += "\n " + actual_it->ToString();
-        actual_it++;
-        expected_it++;
-        continue;
-      }
+    // Expect observed and expected audit log entries to match one-for-one.
+    if (*expected_it == *actual_it) {
+      audit_diff += "\n " + actual_it->ToString();
+      actual_it++;
+      expected_it++;
+      continue;
     }
 
     audit_logs_match = false;
 
-    if (auto it = std::find_if(
-            expected_it, expected_logs.end(),
-            [actual_it](const AuditLogEntry& expected) { return expected.contains(*actual_it); });
+    if (auto it = std::ranges::find(expected_it, expected_logs.end(), *actual_it);
         it != expected_logs.end()) {
       // Items don't match, but the observed audit log matches an expectation that appears later.
       // Emit all the intervening expected logs with a prefix indicating they're missing.
-      for (; !expected_it->contains(*actual_it); expected_it++) {
+      for (; expected_it != it; expected_it++) {
         audit_diff += "\n-" + expected_it->ToString();
       }
     } else {
