@@ -107,6 +107,7 @@ GN_HOST_TOOL_TEMPLATES = {
     "sdk_host_tool",
     "executable",
     "install_host_tools",
+    "ffx_tool",
 }
 GN_BAZEL_INPUT_TEMPLATES = {
     "bazel_input_file",
@@ -634,7 +635,9 @@ for pkg in sorted(candidate_dirs):
     bazel_names = set(BAZEL_NAME.findall(blank_comments(bazel_text))) if bazel_text else set()
     bazel_lines = bazel_target_lines(bazel_text)
     cc_libs = bazel_cc_libraries(bazel_text) if bazel_text else {}
-    has_bazel_host_tool = any("bazel_host_tool" in t for t, _ in new.values())
+    has_bazel_host_tool = any(
+        bool(t & {"bazel_host_tool", "bazel_ffx_tool"}) for t, _ in new.values()
+    )
     had_bazel_input = any(t & GN_BAZEL_INPUT_TEMPLATES for t, _ in old.values())
     folded_from_group, folded_into_group = find_folded_forwarding_groups(
         before, old, new, bazel_names, pkg
@@ -686,7 +689,7 @@ for pkg in sorted(candidate_dirs):
             )
             is_host_tool_conversion = (
                 has_bazel_host_tool
-                and new_types <= {"bazel_host_tool", "group"}
+                and new_types <= {"bazel_host_tool", "bazel_ffx_tool", "group"}
                 and old_types <= GN_HOST_TOOL_TEMPLATES | GN_BAZEL_INPUT_TEMPLATES | {"group"}
             )
             is_bazel_input_transition = (

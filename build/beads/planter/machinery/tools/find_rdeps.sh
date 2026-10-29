@@ -621,8 +621,22 @@ for fpath in sorted(set(files)):
         visibility_only_packages.add(pkg)
         continue
 
+    # Expand GN foreach interpolated labels ("$var:<target>") when a bare path item is in a list.
+    interp_gn_subs = (
+        re.findall(r'"\$\{?[A-Za-z_]\w*\}?:([A-Za-z0-9_.-]+)(?:\([^)]*\))?"', stripped)
+        if rel.endswith((".gn", ".gni"))
+        else []
+    )
+    expanded_subs = []
     for m in dep_matches:
-        sub = m.group(1) or default_target
+        if m.group(1):
+            expanded_subs.append(m.group(1))
+        elif interp_gn_subs:
+            expanded_subs.extend(interp_gn_subs)
+        else:
+            expanded_subs.append(default_target)
+
+    for sub in expanded_subs:
         if sub in gn_forwarding_groups:
             caller_pkg = (
                 "bundles/assembly"

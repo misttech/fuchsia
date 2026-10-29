@@ -145,10 +145,37 @@ def git(args):
         return None
 
 
+# Extract same-file GN `template("<name>")` inner target bodies so invocations of local
+# wrapper templates inherit their attributes (`test_deps`, `deps`, `sources`, `rustenv`, etc.).
+def _extract_local_gn_templates(text):
+    templates = {}
+    if not text:
+        return templates
+    for m in GN_TARGET.finditer(text):
+        if m.group(1) != "template":
+            continue
+        depth, i = 1, m.end()
+        while i < len(text) and depth:
+            depth += {"{": 1, "}": -1}.get(text[i], 0)
+            i += 1
+        tmpl_body = text[m.end() : i - 1]
+        inner_m = re.search(r"\b([A-Za-z_]\w*)\(\s*target_name\s*\)\s*\{", tmpl_body)
+        if inner_m:
+            idepth, ii = 1, inner_m.end()
+            while ii < len(tmpl_body) and idepth:
+                idepth += {"{": 1, "}": -1}.get(tmpl_body[ii], 0)
+                ii += 1
+            templates[m.group(2)] = tmpl_body[inner_m.end() : ii - 1]
+        else:
+            templates[m.group(2)] = tmpl_body
+    return templates
+
+
 def targets(text):
     out = {}
     if not text:
         return out
+    local_templates = _extract_local_gn_templates(text)
     for m in GN_TARGET.finditer(text):
         if m.group(1) in NOT_TARGETS:
             continue
@@ -157,6 +184,8 @@ def targets(text):
             depth += {"{": 1, "}": -1}.get(text[i], 0)
             i += 1
         body = text[m.end():i - 1]
+        if m.group(1) in local_templates:
+            body = local_templates[m.group(1)] + "\n" + body
         line = text.count("\n", 0, m.start()) + 1
         out.setdefault(m.group(2), (m.group(1), line, body))
     return out
@@ -391,7 +420,7 @@ def parse_gn_top_list_vars(text):
         return {}
     spans = []
     for m in GN_TARGET.finditer(text):
-        if m.group(1) in NOT_TARGETS:
+        if m.group(1) in NOT_TARGETS and m.group(1) != "template":
             continue
         depth, i = 1, m.end()
         while i < len(text) and depth:
@@ -2186,6 +2215,24 @@ def collect_local_template_and_sentinel_targets():
     return expanded_tmpl_targets, sentinel_targets
 
 
+# Locate the planter binary on PATH or standard install locations for diffengine checks.
+def find_planter_bin():
+    env_bin = os.environ.get("PLANTER_BIN", "").strip()
+    if env_bin and os.path.isfile(env_bin) and os.access(env_bin, os.X_OK):
+        return env_bin
+    which_bin = shutil.which("planter")
+    if which_bin:
+        return which_bin
+    for cand in (
+        os.path.expanduser("~/.local/bin/planter"),
+        os.path.expanduser("~/go/bin/planter"),
+        "/tmp/planter",
+    ):
+        if os.path.isfile(cand) and os.access(cand, os.X_OK):
+            return cand
+    return None
+
+
 # Reconcile diffengine attribute_alignment permutations for mapped rules and
 # file-local GN template expansions / sentinel target pairings / forwarding groups.
 def collect_diffengine_alignment_findings(allowed_targets, crate_test_targets=()):
@@ -2378,6 +2425,8 @@ PACKAGE_RULE_MAPPINGS = {
     ("host_test", "host_rustc_test"),
     ("host_test", "wrap_host_rust_test"),
     ("executable", "cc_binary_host_tool"),
+    ("ffx_tool", "idk_ffx_tool"),
+    ("ffx_tool", "ffx_tool"),
 }
 
 
@@ -2501,7 +2550,7 @@ GN_TO_BAZEL_MAPPED_ATTRS = {
     "args_source_root": ("args_crate_root", "args_source_root"),
     "sdk_category": ("sdk_category", "category"),
     "sdk_area": ("sdk_area", "api_area"),
-    "sdk_target_name": ("sdk_target_name",),
+    "sdk_target_name": ("sdk_target_name", "idk_name", "category"),
     "sdk_deps": ("sdk_deps",),
     "plugin_deps": ("plugin_deps",),
     "config_data": ("config_data",),
@@ -2667,6 +2716,36 @@ def record_verified_alignment_info(pkg, bazel_rel, bazel_path, before_targets, n
                     f"Unusual rule mapping from {tmpl} to {bt_rule}"
                 ),
             })
+        # Record non-blocking INFO attribute_alignment when idk_ffx_tool or idk_* sets
+        # idk_name to GN's explicit output_name/sdk_name/idk_name (which differs from the
+        # target name that diffengine assumes as the default sdk_name).
+        idk_node = bt_kws.get("idk_name")
+        if isinstance(idk_node, ast.Constant) and isinstance(idk_node.value, str):
+            idk_val = idk_node.value
+            if idk_val != bt_name and (
+                idk_val in gn_top.get("output_name", [])
+                or idk_val in gn_top.get("sdk_name", [])
+                or idk_val in gn_top.get("idk_name", [])
+                or re.search(
+                    r'(?<![\w.])(?:output_name|sdk_name|idk_name)\s*=\s*"'
+                    + re.escape(idk_val)
+                    + r'"',
+                    body,
+                )
+            ):
+                for idk_ln in sorted({bt_line, getattr(idk_node, "lineno", bt_line)}):
+                    findings.append({
+                        "source": "gn_attr_parity",
+                        "category": "attribute_alignment",
+                        "severity": "info",
+                        "file": bazel_rel,
+                        "line": idk_ln,
+                        "message": (
+                            f'Target "{bt_name}" (Target Attributes): '
+                            f'idk_name={idk_val} differs from GN\'s default sdk_name '
+                            f'"{bt_name}" (the target name); the IDK atom is renamed'
+                        ),
+                    })
         if (tmpl, bt_rule) in (
             ("fuchsia_package", "fx_package"),
             ("fuchsia_package_with_single_component", "fx_package"),

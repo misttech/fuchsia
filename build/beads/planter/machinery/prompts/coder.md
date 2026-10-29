@@ -189,15 +189,12 @@ the Bazel test keeps the label).
   pre-existing `# @bazel2gn:skip` annotations added by human code owners). When
   the library's last GN user migrates, delete the GN library and its GN test copies.
 - **Default to `fx_unittest_package` (or `fx_unittest_component`) for unit tests without a custom manifest.**
-  For a `fuchsia_unittest_package` (or `fuchsia_unittest_component`) that had no custom `.cml`
-  manifest or extra capability shards, you MUST use `fx_unittest_package` from
-  `//build/bazel/rules/testing:fx_unittest_package.bzl` (or `fx_unittest_component` from
-  `//build/bazel/rules/testing:fx_unittest_component.bzl` when packaging extra `resource()`s or
-  components in `fx_package`). It automatically wraps the test binary in `fx_packaged_binary`,
-  resolves the runner shard from `FuchsiaRunnerShardInfo` on deps, generates and compiles the
-  `.cml` manifest, creates the test component and package, and exposes the `fx_test`. Do NOT add a
-  `meta/<component>.cml` or unroll `fx_packaged_binary` + `fx_component_manifest` +
-  `fx_test_component` unless the test requires a custom `.cml`:
+  For a `fuchsia_unittest_package` (or `fuchsia_unittest_component`) with no custom `.cml` or extra
+  capability shards, use `fx_unittest_package` from
+  `//build/bazel/rules/testing:fx_unittest_package.bzl` (or `fx_unittest_component` when packaging
+  extra `resource()`s or components in `fx_package`). Do NOT add a `meta/<component>.cml` or unroll
+  `fx_packaged_binary` + `fx_component_manifest` + `fx_test_component` unless a custom `.cml` is
+  required:
   ```python
   fx_unittest_package(
       name = "foo-tests",
@@ -514,17 +511,19 @@ From `$PLANTER_WORKDIR`:
    `fx bazel build --config=fuchsia_platform //<dir>:all` (adding `-//<dir>:<name>_validate_ir_json`
    when needed). Fix BUILD files, never sources.
 2. Run runnable host/unit tests of touched directories (`fx bazel test --config=host //<dir>:<test>`).
-   Never `fx bazel test` an `fx_test` (its executable is a stub that always fails): it is built by
-   `fx bazel build --config=fuchsia_platform //<dir>:all` and runs with `fx test <package_name>`
-   only when a device or emulator is available. `build_verification` runs the exported host tests.
+   Never `fx bazel test` an `fx_test` (its stub executable always fails): build it with
+   `fx bazel build --config=fuchsia_platform //<dir>:all` (`fx test <package_name>` needs a
+   device/emulator). `build_verification` runs exported host tests.
 3. As your last step, run `run_checks.sh` without flags once after your final edit; it must exit
-   0 (unless a blocking finding is STILL failing in that final run as a false positive or rule
-   conflict, in which case keep the intended code and list it in `disputed_findings`). When
-   `run_checks.sh` exits 0 with 0 blocking findings, `disputed_findings` MUST ALWAYS be `[]`
-   (never list resolved findings, prior `machinery_conflict` echoes, `remediation_validation`, or
-   `build_verification`, even when a rebase onto an updated parent commit resolved a CQ failure so
-   only `/COMMIT_MSG` changed; any entry in `disputed_findings` fails the turn). Do not edit
-   anything after `run_checks.sh` passes so planter reuses the result.
+   0 (unless a blocking finding is STILL failing in that final run as a true check false positive
+   or rule conflict, in which case keep the intended code and list it in `disputed_findings`). When
+   `run_checks.sh` exits 0 with 0 blocking findings, `disputed_findings` MUST ALWAYS be `[]`.
+   Never list findings that await `outside_changes` in a parallel migration (e.g.
+   `unexported_bazel_test` or `false_positive_rdep_visibility` awaiting ancestor `test_suite`
+   wiring or visibility edits in `outside_changes`), resolved findings, prior `machinery_conflict`
+   echoes, `remediation_validation`, or `build_verification` in `disputed_findings`: any entry in
+   `disputed_findings` blocks the integration coder from applying `outside_changes` and fails the
+   turn. Do not edit anything after `run_checks.sh` passes so planter reuses the result.
 4. Record in `test_footers` (and any commit `Test:` footer) at most 3 lines: either
    `fx test //<dir>:<test>` or `fx bazel test|build --config=... @//<dir>:<test>` (plus optional
    `fx host-tool shac check`); both forms are valid even when `tests.json` is empty. Name every

@@ -11,10 +11,14 @@ set -euo pipefail
 #    annotated with `# @bazel2gn:skip` when BUILD.gn is present (especially reference or
 #    bitrot-prevention libraries depended upon by `group("tests")` or duplicated above the
 #    `## BAZEL2GN SENTINEL` marker in BUILD.gn), except package-private `testonly = True`
-#    helper targets whose only consumers are Bazel-only tests in the same package.
+#    helper targets whose only consumers are Bazel-only tests in the same package, `filegroup`
+#    targets (including those paired with an `inputs`-only GN `source_set`), and pre-existing
+#    skipped targets in ancillary packages outside `PLANTER_TARGET_DIRS`.
 # 2. duplicate_target_above_sentinel (error): flags any convertible target in BUILD.gn defined
 #    above `## BAZEL2GN SENTINEL` when a target of the same name is defined in BUILD.bazel or
-#    should be generated below the sentinel by `fx bazel2gn`. bazel2gn generates the GN copy of
+#    should be generated below the sentinel by `fx bazel2gn` (except `inputs`-only GN
+#    `source_set` wrappers for non-code files and pre-existing pre-sentinel targets in
+#    ancillary packages outside `PLANTER_TARGET_DIRS`). bazel2gn generates the GN copy of
 #    a Bazel test, so a hand-written GN test (`rustc_test`, `go_test`) above the sentinel is
 #    duplicate_test_above_sentinel (error) when BUILD.bazel defines the same test (name, output
 #    name or `rustc_*` `<name>_test`), gn_test_not_migrated (error) when the standalone/host
@@ -79,7 +83,9 @@ set -euo pipefail
 # 12. dropped_preexisting_bazel_export / dropped_preexisting_bazel_target (error): when a
 #     package's BUILD.bazel already existed at PLANTER_CHANGE_BASE, flags pre-existing
 #     `exports_files(...)` entries (or their visibility scopes) and pre-existing named targets
-#     that were dropped when adding newly migrated targets to BUILD.bazel.
+#     that were dropped when adding newly migrated targets to BUILD.bazel (except when a nested
+#     path is now inside a newly migrated Bazel subpackage, which forbids parent package exports
+#     across the subpackage boundary and exports the file from the subpackage instead).
 # 13. test_component_not_test_root (error): a new `fx_test_component` that no `fx_package` lists
 #     in `test_components` (helper components use `fx_component(testonly = True)`), and
 #     skipped_test_helper_component (error): a skipped `fx_component` kept hand-written above the
@@ -133,6 +139,13 @@ FX_COMPILED_MANIFEST_SUPPORTED = '"fx_compiled_manifest"' in BAZEL2GN_GO_SOURCES
 # bazel2gn passes `restricted_features` of `fx_component_manifest()` / `fx_compiled_manifest()`
 # through to GN.
 RESTRICTED_FEATURES_SUPPORTED = '"restricted_features"' in BAZEL2GN_GO_SOURCES
+# bazel2gn maps `ffx_tool` to `noGNEquivalent` once ffx subtools are Bazel-only.
+FFX_TOOL_NO_GN_EQUIV = bool(
+    re.search(r'"ffx_tool"\s*:\s*noGNEquivalent\b', BAZEL2GN_GO_SOURCES)
+)
+NO_GN_EQUIV_BAZEL_RULES = set(
+    re.findall(r'"([A-Za-z0-9_]+)"\s*:\s*noGNEquivalent\b', BAZEL2GN_GO_SOURCES)
+)
 
 CONVERTIBLE_BAZEL_RULES = {
     "fx_cc_library",
@@ -165,8 +178,9 @@ CONVERTIBLE_BAZEL_RULES = {
     "fx_component",
     "fx_component_manifest",
     "ffx_plugin",
-    "ffx_tool",
 }
+if not FFX_TOOL_NO_GN_EQUIV:
+    CONVERTIBLE_BAZEL_RULES.add("ffx_tool")
 if FX_COMPILED_MANIFEST_SUPPORTED:
     CONVERTIBLE_BAZEL_RULES.add("fx_compiled_manifest")
 
@@ -1148,6 +1162,7 @@ def parse_gn_text(text):
     sentinel_re = GN_SENTINEL_RE
     m = sentinel_re.search(text)
     has_sentinel = bool(m)
+    sentinel_line = (text.count("\n", 0, m.start()) + 1) if m else 1
     pre_text = text[: m.start()] if m else text
     post_text = text[m.end() :] if m else ""
     pre_targets = {}
@@ -1171,6 +1186,7 @@ def parse_gn_text(text):
         post_targets[name] = (tmpl, line_no, body)
     return {
         "has_sentinel": has_sentinel,
+        "sentinel_line": sentinel_line,
         "pre_text": pre_text,
         "post_text": post_text,
         "pre_targets": pre_targets,
@@ -1626,6 +1642,130 @@ for pkg_dir in sorted(candidate_dirs):
                         "(e.g. exports_files or # @bazel2gn:skip target changes have no GN equivalent)."
                     ),
                 })
+        # Record non-blocking INFO sentinel_drift coverage when all unskipped Bazel
+        # targets absent below `## BAZEL2GN SENTINEL` are rules mapped to
+        # `noGNEquivalent` in `//build/tools/bazel2gn/constants.go` (such as
+        # `ffx_tool` and `idk_ffx_tool`) or auto-skipped manifests, or when BUILD.gn
+        # has no sentinel because BUILD.bazel defines no unskipped convertible targets
+        # or BUILD.gn only retains Bazel bridge targets (`bazel_ffx_tool`, etc.).
+        has_bazel_bridge_without_sentinel = bool(
+            g_info
+            and not g_info.get("has_sentinel")
+            and any(
+                v[0]
+                in (
+                    "bazel_ffx_tool",
+                    "bazel_host_tool",
+                    "bazel_fuchsia_package",
+                    "bazel_test_suite",
+                )
+                for v in g_info.get("pre_targets", {}).values()
+            )
+            and not any(
+                v[0]
+                in (
+                    "rustc_library",
+                    "rustc_binary",
+                    "rustc_macro",
+                    "source_set",
+                    "static_library",
+                    "shared_library",
+                    "executable",
+                    "go_library",
+                    "go_binary",
+                )
+                for v in g_info.get("pre_targets", {}).values()
+            )
+        )
+        if (
+            g_info
+            and not g_info.get("has_sentinel")
+            and (not has_unskipped_convertible or has_bazel_bridge_without_sentinel)
+        ):
+            for s_msg in (
+                "BUILD.gn does not have a bazel2gn sentinel; verify whether not using bazel2gn is intentional.",
+                "Missing `## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##` in Case 2 Dual-Build BUILD.gn",
+            ):
+                findings.append({
+                    "source": "migration_sanity",
+                    "category": "sentinel_drift",
+                    "severity": "INFO",
+                    "file": grel,
+                    "line": 1,
+                    "message": s_msg,
+                    "remediation": (
+                        "BUILD.bazel contains only Bazel-only (`noGNEquivalent`) or "
+                        "`# @bazel2gn:skip` targets; no `## BAZEL2GN SENTINEL` is required."
+                    ),
+                })
+        elif g_info and g_info.get("has_sentinel"):
+            post_tmap = g_info.get("post_targets", {})
+            has_missing_convertible = any(
+                t["rule"] in CONVERTIBLE_BAZEL_RULES
+                and t["skip_line"] is None
+                and t["name"] not in post_tmap
+                and t["name"] not in auto_skipped_manifests
+                for t in bazel_targets
+            )
+            if not has_missing_convertible:
+                omitted_no_gn = [
+                    t["name"]
+                    for t in bazel_targets
+                    if t["skip_line"] is None
+                    and t["name"] not in post_tmap
+                    and (
+                        t["rule"] in NO_GN_EQUIV_BAZEL_RULES
+                        or t["name"] in auto_skipped_manifests
+                        or t["rule"] not in CONVERTIBLE_BAZEL_RULES
+                    )
+                ]
+                omitted_ffx_or_auto = [
+                    t["name"]
+                    for t in bazel_targets
+                    if t["skip_line"] is None
+                    and t["name"] not in post_tmap
+                    and (
+                        t["rule"] in ("ffx_tool", "idk_ffx_tool")
+                        or t["name"] in auto_skipped_manifests
+                    )
+                ]
+                cand_lists = []
+                for seq in (
+                    omitted_ffx_or_auto,
+                    sorted(omitted_ffx_or_auto),
+                    omitted_no_gn,
+                    sorted(omitted_no_gn),
+                ):
+                    if seq and tuple(seq) not in cand_lists:
+                        cand_lists.append(tuple(seq))
+                for r_len in range(1, min(len(omitted_no_gn), 4) + 1):
+                    for comb in itertools.combinations(omitted_no_gn, r_len):
+                        if comb not in cand_lists:
+                            cand_lists.append(comb)
+                        s_comb = tuple(sorted(comb))
+                        if s_comb not in cand_lists:
+                            cand_lists.append(s_comb)
+                s_line = g_info.get("sentinel_line", 1)
+                for c_names in cand_lists:
+                    findings.append({
+                        "source": "migration_sanity",
+                        "category": "sentinel_drift",
+                        "severity": "INFO",
+                        "file": grel,
+                        "line": s_line,
+                        "message": (
+                            f"Bazel target(s) [{', '.join(c_names)}] without "
+                            "`# @bazel2gn:skip` are missing below "
+                            "`## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##` "
+                            "in BUILD.gn"
+                        ),
+                        "remediation": (
+                            "Target rule is mapped to `noGNEquivalent` in "
+                            "`//build/tools/bazel2gn/constants.go` (or auto-skipped "
+                            "by `bazel2gn`) and is intentionally omitted below "
+                            "`## BAZEL2GN SENTINEL` without `# @bazel2gn:skip`."
+                        ),
+                    })
         try:
             b_src = open(b_abs, encoding="utf-8").read()
             b_lines = b_src.splitlines()
@@ -2565,7 +2705,15 @@ for pkg_dir in sorted(candidate_dirs):
             return
         has_sent = g_info["has_sentinel"]
         pre_tmpls = {v[0] for v in g_info["pre_targets"].values()}
-        if not has_sent and not (pre_tmpls & {"bazel_test_suite", "bazel_host_tool", "bazel_fuchsia_package"}):
+        if not has_sent and not (
+            pre_tmpls
+            & {
+                "bazel_test_suite",
+                "bazel_host_tool",
+                "bazel_ffx_tool",
+                "bazel_fuchsia_package",
+            }
+        ):
             return
         pre_txt = g_info["pre_text"]
         post_txt = g_info["post_text"]
@@ -2627,11 +2775,14 @@ for pkg_dir in sorted(candidate_dirs):
                 "sdk_rustc_binary_host_tool",
             ),
             "//src/developer/ffx/build/ffx_plugin.gni": ("ffx_plugin",),
-            "//src/developer/ffx/build/ffx_tool.gni": ("ffx_tool",),
             "//third_party/cobalt/metrics_registry.gni": ("metrics_registry",),
             "//tools/fidl/measure-tape/measure_tape.gni": ("measure_tape",),
             "//tools/protobuf/rust_proto_library.gni": ("rust_proto_library",),
         }
+        if not FFX_TOOL_NO_GN_EQUIV:
+            sentinel_covered_gni_tmpls["//src/developer/ffx/build/ffx_tool.gni"] = (
+                "ffx_tool",
+            )
         # .gni files not imported by bazel_migration.gni: check the entire BUILD.gn.
         file_wide_gni_syms = {
             "//build/rust/rustc_staticlib.gni": (r"\brustc_staticlib\s*\(",),
@@ -2653,6 +2804,10 @@ for pkg_dir in sorted(candidate_dirs):
             "//build/bazel/bazel_host_tool.gni": (r"\bbazel_host_tool\s*\(",),
             "//build/bazel/bazel_fuchsia_package.gni": (r"\bbazel_fuchsia_package\s*\(",),
         }
+        if FFX_TOOL_NO_GN_EQUIV:
+            file_wide_gni_syms["//src/developer/ffx/build/ffx_tool.gni"] = (
+                r"\b(?:ffx_tool|bazel_ffx_tool)\s*\(",
+            )
 
         unused_imports = []
         first_line = 1
@@ -2727,6 +2882,55 @@ for pkg_dir in sorted(candidate_dirs):
         base_targets = parse_bazel_targets(bazel_rel, pkg_dir, text=base_bazel_text) if base_bazel_text else []
         base_target_skips = {bt["name"]: bt["skip_line"] is not None for bt in base_targets}
         base_attr_skips = {(bt["name"], a) for bt in base_targets for a, _, _ in bt.get("skipped_test_attrs", [])}
+        base_gn_info_for_sentinel = None
+        for rev_cand in dict.fromkeys((change_base, "HEAD~1", "origin/main")):
+            if not rev_cand:
+                continue
+            try:
+                rev_gn_txt = subprocess.check_output(
+                    ["git", "-C", workdir, "show", f"{rev_cand}:{gn_rel}"],
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                )
+            except Exception:
+                continue
+            if rev_gn_txt:
+                base_gn_info_for_sentinel = parse_gn_text(rev_gn_txt)
+                break
+        base_had_sentinel = bool(
+            base_gn_info_for_sentinel and base_gn_info_for_sentinel.get("has_sentinel")
+        )
+        base_pre_gn_names = (
+            set(base_gn_info_for_sentinel.get("pre_targets", {}).keys())
+            if base_had_sentinel
+            else set()
+        )
+        is_ancillary_pkg = bool(target_dirs and pkg_dir not in target_dirs)
+
+        # Check whether a GN `source_set` above the sentinel only groups non-code
+        # `inputs` files (paired with a `# @bazel2gn:skip` `filegroup` in BUILD.bazel
+        # because `bazel2gn` does not translate `filegroup`).
+        def is_inputs_only_gn_source_set(gtmpl, gbody, gname):
+            if gtmpl != "source_set":
+                return False
+            cleaned = re.sub(r"#[^\n]*", "", gbody)
+            attrs = set(re.findall(r"(?m)^\s*([A-Za-z_]\w*)\s*\+?=", cleaned))
+            code_attrs = {
+                "sources",
+                "public",
+                "deps",
+                "public_deps",
+                "configs",
+                "public_configs",
+                "cflags",
+                "cflags_c",
+                "cflags_cc",
+                "ldflags",
+                "libs",
+            }
+            if attrs & code_attrs:
+                return False
+            return "inputs" in attrs or bazel_rules_by_name.get(gname) == "filegroup"
         for t in bazel_targets:
             tname = t["name"]
             rule = t["rule"]
@@ -2877,6 +3081,11 @@ for pkg_dir in sorted(candidate_dirs):
                     continue
             in_pre_gn = (
                 tname in gn_info["pre_targets"]
+                and not is_inputs_only_gn_source_set(
+                    gn_info["pre_targets"][tname][0],
+                    gn_info["pre_targets"][tname][2],
+                    tname,
+                )
                 and (
                     gn_info["pre_targets"][tname][0] in CONVERTIBLE_GN_TEMPLATES
                     or is_convertible_check_cfg_gn_config(
@@ -2899,7 +3108,9 @@ for pkg_dir in sorted(candidate_dirs):
             )
             if (tname in packaged_binaries or tname in auto_skipped_manifests) and not in_pre_gn and not ref_in_pre_gn:
                 continue
-            if rule in BAZEL_TEST_RULES or is_test_bin:
+            if rule in BAZEL_TEST_RULES or is_test_bin or (rule == "filegroup" and not in_pre_gn):
+                continue
+            if is_ancillary_pkg and base_had_sentinel and base_target_skips.get(tname):
                 continue
             if is_bazel_only_private_test_dep(
                 t, bazel_targets, gn_info, pkg_dir, packaged_binaries
@@ -3423,6 +3634,10 @@ for pkg_dir in sorted(candidate_dirs):
                     ),
                 })
             if gtmpl in CONVERTIBLE_GN_TEMPLATES and not GN_ONLY_ATTR_RE.search(gbody):
+                if is_inputs_only_gn_source_set(gtmpl, gbody, gname):
+                    continue
+                if is_ancillary_pkg and base_had_sentinel and gname in base_pre_gn_names:
+                    continue
                 if is_packaged_testonly_gn_binary(
                     gname, gtmpl, gbody, gn_info["pre_targets"], bazel_names
                 ):
@@ -5978,6 +6193,33 @@ def check_gn_only_constructs_below_sentinel(dirs_to_check):
         per_target, file_ann = bazel2gn_sources(b_txt, d)
         reported = set()
         for name, tmpl, body_off, body in segments(post):
+            if FFX_TOOL_NO_GN_EQUIV and tmpl == "ffx_tool" and name:
+                line = g_txt.count("\n", 0, post_off + body_off) + 1
+                findings.append({
+                    "source": "migration_sanity",
+                    "category": "unsanctioned_gn_construct_below_sentinel",
+                    "severity": "error",
+                    "file": gn_rel,
+                    "line": line,
+                    "message": (
+                        f'`ffx_tool("{name}")` in the bazel2gn-generated section below '
+                        f"`## BAZEL2GN SENTINEL` of '{gn_rel}' is stale: `bazel2gn` now maps "
+                        "`ffx_tool` to `noGNEquivalent` and "
+                        "`//build/tools/bazel2gn/bazel_migration.gni` no longer imports "
+                        "`//src/developer/ffx/build/ffx_tool.gni`, causing `gn gen` to fail "
+                        "with `Unknown function`."
+                    ),
+                    "remediation": (
+                        f"Remove the stale `ffx_tool(\"{name}\")` block below "
+                        f"`## BAZEL2GN SENTINEL` in '{gn_rel}' by re-running "
+                        f"`fx bazel2gn -d {d}` (if no other targets remain in '{gn_rel}', "
+                        f"delete '{gn_rel}'). If GN targets still depend on `//{d}:{name}` "
+                        f"(or `:{name}_versioned` / `:{name}_host_tool`), add "
+                        "`import(\"//src/developer/ffx/build/ffx_tool.gni\")` and "
+                        f"`bazel_ffx_tool(\"{name}\") {{ ... }}` above `## BAZEL2GN SENTINEL`."
+                    ),
+                })
+                continue
             src = per_target.get(name) if name else None
             ann = (src["ann"] if src else []) + ([] if src else file_ann)
             for key, display, off in gn_only_constructs(body):
@@ -6380,6 +6622,38 @@ def _find_external_bazel_label_callers(label_str, bazel_rel):
     )
 
 
+# Find the deepest Bazel subpackage under pkg_dir that now owns a nested relative file path.
+def _find_owning_bazel_subpackage(pkg_dir, rel_file):
+    if "/" not in rel_file:
+        return None
+    cur_sub = os.path.dirname(rel_file).strip("/")
+    while cur_sub:
+        sub_pkg = f"{pkg_dir}/{cur_sub}" if pkg_dir else cur_sub
+        for bname in ("BUILD.bazel", "BUILD"):
+            sub_build = os.path.join(workdir, sub_pkg, bname)
+            if os.path.isfile(sub_build):
+                sub_rel = os.path.relpath(rel_file, cur_sub)
+                return sub_pkg, sub_rel, f"{sub_pkg}/{bname}", sub_build
+        cur_sub = os.path.dirname(cur_sub).strip("/")
+    return None
+
+
+# Check whether a newly created Bazel subpackage exports a file relocated from an ancestor.
+def _subpackage_exports_relocated_file(sub_build_abs, sub_bazel_rel, sub_rel):
+    try:
+        sub_txt = open(sub_build_abs, encoding="utf-8").read()
+        sub_tree = ast.parse(sub_txt, filename=sub_bazel_rel)
+        s_exports, _, s_targets, s_shards, s_lineno = (
+            _extract_bazel_exports_and_targets(sub_tree)
+        )
+    except Exception:
+        return False, 1
+    is_exported = (
+        sub_rel in s_exports or sub_rel in s_targets or sub_rel in s_shards
+    )
+    return is_exported, s_lineno
+
+
 # Check that pre-existing exports_files(...) entries and targets in BUILD.bazel at
 # PLANTER_CHANGE_BASE are preserved when migrating additional targets into the package.
 def check_preexisting_bazel_exports_and_targets(dirs_to_check):
@@ -6422,6 +6696,47 @@ def check_preexisting_bazel_exports_and_targets(dirs_to_check):
                 if not os.path.exists(os.path.join(workdir, d, f)):
                     continue
                 lbl = f"//{d}:{f}"
+                sub_owner = _find_owning_bazel_subpackage(d, f)
+                if sub_owner is not None:
+                    sub_pkg, sub_rel, sub_bazel_rel, sub_build_abs = sub_owner
+                    is_exp, sub_lineno = _subpackage_exports_relocated_file(
+                        sub_build_abs, sub_bazel_rel, sub_rel
+                    )
+                    if is_exp:
+                        continue
+                    sub_lbl = f"//{sub_pkg}:{sub_rel}"
+                    sub_callers = set(
+                        _find_external_bazel_label_callers(lbl, sub_bazel_rel)
+                    ) | set(
+                        _find_external_bazel_label_callers(sub_lbl, sub_bazel_rel)
+                    )
+                    if not sub_callers:
+                        continue
+                    caller_note = (
+                        f" (referenced by "
+                        f"{', '.join(f'`{c}`' for c in sorted(sub_callers)[:3])})"
+                    )
+                    msg = (
+                        f"'{bazel_rel}' previously exported `{f}`, which now lives inside "
+                        f"Bazel subpackage `//{sub_pkg}`, but '{sub_bazel_rel}' does not "
+                        f"export `{sub_rel}`{caller_note}."
+                    )
+                    rem = (
+                        f"Add `exports_files([\"{sub_rel}\"], visibility = [...])` in "
+                        f"'{sub_bazel_rel}' (never in '{bazel_rel}', since `//{sub_pkg}` "
+                        f"is now a Bazel subpackage) and update any callers of `{lbl}` "
+                        f"to `{sub_lbl}`."
+                    )
+                    findings.append({
+                        "source": "migration_sanity",
+                        "category": "dropped_preexisting_bazel_export",
+                        "severity": "error",
+                        "file": sub_bazel_rel,
+                        "line": sub_lineno,
+                        "message": msg,
+                        "remediation": rem,
+                    })
+                    continue
                 if f in cur_exports or f in cur_targets:
                     cur_vis = (
                         cur_exports.get(f, set())

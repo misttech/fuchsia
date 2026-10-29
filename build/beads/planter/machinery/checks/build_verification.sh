@@ -516,10 +516,10 @@ def bazel_tests_export_notes():
         return []
     return [
         "Not in <build dir>/tests.json after `fx build`: " + " ".join(missing) + " (normal when "
-        "`args.gn` is configured without `--with-test //<dir>:tests`). Both "
-        "`Test: fx test //<dir>:<test>` and `Test: fx bazel test --config=host @//<dir>:<test>` "
-        "(or `fx bazel build --config=fuchsia_platform @//<dir>:<test>`) are accepted in commit "
-        "`Test:` footers and `CoderReport.test_footers`."
+        "`args.gn` is configured without `--with-test //<dir>:tests`). Use "
+        "`Test: fx bazel test --config=host @//<dir>:<test>` (or "
+        "`fx bazel build --config=fuchsia_platform @//<dir>:<test>`) in "
+        "`CoderReport.test_footers` and commit `Test:` footers when not in `<build dir>/tests.json`."
     ]
 
 

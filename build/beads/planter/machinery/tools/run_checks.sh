@@ -1456,6 +1456,7 @@ GN_TO_BAZEL_ATTR_EQUIVALENTS = {
     "sdk_area": ("sdk_area", "api_area"),
     "api": ("api_file_path", "api"),
     "sdk_name": ("idk_name", "sdk_name"),
+    "sdk_target_name": ("sdk_target_name", "idk_name", "category"),
     "sdk_headers_for_internal_use": ("hdrs_for_internal_use", "sdk_headers_for_internal_use"),
     "outputs": ("outs", "tool_output_names", "dest_dir", "files_map", "outputs"),
     "main_source": ("main", "main_source"),
@@ -1500,7 +1501,8 @@ def is_verified_target_attributes_alignment(f):
     if not m or not workdir:
         return False
     target_name = m.group(1)
-    notes = [n.strip() for n in m.group(2).split(";") if n.strip()]
+    raw_clauses = m.group(2).replace("; the IDK atom is renamed", "")
+    notes = [n.strip() for n in raw_clauses.split(";") if n.strip()]
     if not notes:
         return False
     pkg_dir = os.path.dirname(str(f.get("file", ""))).strip("/")
@@ -1553,6 +1555,14 @@ def is_verified_target_attributes_alignment(f):
                 return False
             continue
         if note == "GN Rust configs handled by toolchain defaults / lint_config":
+            continue
+        if (
+            re.match(
+                r'^idk_name=\S+ differs from GN\'s default sdk_name "[^"]+" \(the target name\)$',
+                note,
+            )
+            and "idk_name" in bt_kws
+        ):
             continue
         am = re.match(r"^([A-Za-z_]\w*) in GN not carried over to Bazel$", note)
         if not am:
@@ -1662,15 +1672,90 @@ def is_verified_cross_package_sources(f):
     return True
 
 
+# Verify whether a review_diff sentinel_drift finding only flags Bazel targets
+# whose rules map to `noGNEquivalent` in `//build/tools/bazel2gn/constants.go`.
+def is_verified_no_gn_equiv_sentinel_drift(f):
+    import ast
+    import re
+
+    msg = f.get("message", "")
+    if (
+        msg.strip()
+        == "BUILD.gn does not have a bazel2gn sentinel; verify whether not using bazel2gn is intentional."
+        and workdir
+    ):
+        gn_path = os.path.join(workdir, str(f.get("file", "")))
+        if os.path.isfile(gn_path):
+            try:
+                gn_txt = open(gn_path, encoding="utf-8", errors="ignore").read()
+                if "BAZEL2GN SENTINEL" not in gn_txt and any(
+                    tok in gn_txt
+                    for tok in (
+                        "bazel_ffx_tool(",
+                        "bazel_host_tool(",
+                        "bazel_fuchsia_package(",
+                        "bazel_test_suite(",
+                    )
+                ):
+                    return True
+            except OSError:
+                pass
+    m = re.match(
+        r"^Bazel target\(s\) \[([^\]]+)\] without `# @bazel2gn:skip` are missing below ",
+        msg.strip(),
+    )
+    if not m or not workdir:
+        return False
+    missing_names = [x.strip() for x in m.group(1).split(",") if x.strip()]
+    if not missing_names:
+        return False
+    const_path = os.path.join(workdir, "build", "tools", "bazel2gn", "constants.go")
+    no_gn_rules = {"ffx_tool", "idk_ffx_tool"}
+    if os.path.isfile(const_path):
+        try:
+            c_txt = open(const_path, encoding="utf-8", errors="ignore").read()
+            no_gn_rules.update(
+                re.findall(r'"([A-Za-z0-9_]+)"\s*:\s*noGNEquivalent\b', c_txt)
+            )
+        except OSError:
+            pass
+    pkg_dir = os.path.dirname(str(f.get("file", ""))).strip("/")
+    bazel_path = os.path.join(workdir, pkg_dir, "BUILD.bazel")
+    if not os.path.isfile(bazel_path):
+        return False
+    try:
+        tree = ast.parse(open(bazel_path, encoding="utf-8").read(), filename=bazel_path)
+    except Exception:
+        return False
+    rules_by_name = {}
+    for stmt in tree.body:
+        if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
+            call = stmt.value
+            rule = call.func.id if isinstance(call.func, ast.Name) else None
+            if not rule:
+                continue
+            for kw in call.keywords:
+                if (
+                    kw.arg == "name"
+                    and isinstance(kw.value, ast.Constant)
+                    and isinstance(kw.value.value, str)
+                ):
+                    rules_by_name[kw.value.value] = rule
+    return all(rules_by_name.get(n) in no_gn_rules for n in missing_names)
+
+
 # Check whether a review_diff finding is a verified false positive for mapped/decomposed
 # target attributes, cross-package source labels, unit_test_parity aspect_hints,
-# bazel_fuchsia_package wrappers, or unmigrated ancestor registration packages.
+# bazel_fuchsia_package wrappers, noGNEquivalent sentinel omissions, or unmigrated
+# ancestor registration packages.
 def is_benign_review_diff_finding(f):
     f_pkg = os.path.dirname(str(f.get("file", ""))).strip("/")
     if f_pkg and is_registration_only_bazel_pkg(f_pkg):
         return True
     cat = f.get("category", "")
     msg = f.get("message", "")
+    if cat == "sentinel_drift" and is_verified_no_gn_equiv_sentinel_drift(f):
+        return True
     if cat == "missing_sources" and is_verified_cross_package_sources(f):
         return True
     if cat == "unit_test_parity" and is_verified_unit_test_parity(f):
@@ -1681,6 +1766,7 @@ def is_benign_review_diff_finding(f):
         if (
             "Unusual rule mapping from fuchsia_package" in msg
             or "Unusual rule mapping from bazel_fuchsia_package" in msg
+            or "Unusual rule mapping from ffx_tool to idk_ffx_tool" in msg
         ):
             return True
     return False

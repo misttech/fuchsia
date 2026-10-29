@@ -1402,6 +1402,7 @@ def check_landed_ancestor_commits(merge_base, origin_main, parent_sha, head_sha)
             [
                 "log",
                 "-1",
+                "--since=90.days.ago",
                 "--format=%H",
                 f"--grep=Reviewed-on: .*/+/{cl_num}\\b",
                 origin_main,
@@ -1417,7 +1418,14 @@ def check_landed_ancestor_commits(merge_base, origin_main, parent_sha, head_sha)
         if cid in head_cids:
             continue
         landed_sha = git_out(
-            ["log", "-1", "--format=%H", f"--grep=^Change-Id: {cid}$", origin_main]
+            [
+                "log",
+                "-1",
+                "--since=90.days.ago",
+                "--format=%H",
+                f"--grep=^Change-Id: {cid}$",
+                origin_main,
+            ]
         )
         if landed_sha:
             if cid not in stale_depends_on:
@@ -1972,13 +1980,14 @@ def check_missing_bazel_dep_packages(bazel_rel, td, tree):
                     f"Keep the stacked parent commit that provides '{dep_pkg}/BUILD.bazel' "
                     "in the git ancestry between `origin/main` and `HEAD` (when rebasing, "
                     "rebase the full stack rather than dropping parent commits with "
-                    "`git rebase --onto origin/main HEAD~1`, and if a prior CQ run failed "
-                    f"with `no such package '{dep_pkg}'` before the stack was re-cherry-picked, "
-                    f"do not duplicate '{dep_pkg}/BUILD.bazel' into `HEAD` or add entries to "
-                    "`disputed_findings`), or include "
-                    f"'{dep_pkg}/BUILD.bazel' in this change if the parent CL is not "
-                    "stacked in Gerrit, so CQ `tests.json` (`bazel query`) resolves "
-                    f"`//{dep_pkg}`."
+                    "`git rebase --onto origin/main HEAD~1`; if a prior CQ run failed "
+                    f"with `no such package '{dep_pkg}'` on a pre-rebase or unstacked "
+                    f"patchset before the parent commit was re-cherry-picked into "
+                    "`origin/main..HEAD`, do not duplicate or fold "
+                    f"'{dep_pkg}/BUILD.bazel' into `HEAD` or add entries to "
+                    "`disputed_findings`—instead, fix any remaining check findings on "
+                    "`HEAD`, run `run_checks.sh`, and report with `disputed_findings: []` "
+                    "so the properly stacked patchset is uploaded)."
                 )
                 findings.append({
                     "source": "cq_reachability",
