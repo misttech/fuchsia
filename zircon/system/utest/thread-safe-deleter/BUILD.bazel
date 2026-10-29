@@ -1,0 +1,31 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_binary(
+    name = "thread-safe-deleter",
+    testonly = True,
+    srcs = ["thread-safe-deleter-test.cc"],
+    tags = ["manual"],
+    deps = [
+        "//sdk/lib/async:async-cpp",
+        "//sdk/lib/async-loop:async-loop-cpp",
+        "//sdk/lib/async-loop:async-loop-default",
+        "//sdk/lib/fdio",
+        "//sdk/lib/fit",
+        "//zircon/system/ulib/sync:sync-cpp",
+        "//zircon/system/ulib/thread-safe-deleter",
+        "//zircon/system/ulib/zxtest",
+    ],
+)
+
+fx_unittest_package(
+    name = "thread-safe-deleter-test-pkg",
+    package_name = "thread-safe-deleter-test",
+    unit_tests = [":thread-safe-deleter"],
+)

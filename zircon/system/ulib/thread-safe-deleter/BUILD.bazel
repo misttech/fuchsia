@@ -1,0 +1,23 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules:zx_library.bzl", "cc_source_library_zx")
+
+package(default_applicable_licenses = ["//:license"])
+
+# Note: The appearance of "sdk" does not mean this will or is intended to be
+# in the sdk. It's just the way we export from zircon for use elsewhere.
+cc_source_library_zx(
+    name = "thread-safe-deleter",
+    srcs = ["thread_safe_deleter.cc"],
+    hdrs = ["include/lib/thread-safe-deleter/thread_safe_deleter.h"],
+    includes = ["include"],
+    visibility = [
+        "//src/media/lib/codec_impl:__pkg__",
+        "//zircon/system/utest/thread-safe-deleter:__pkg__",
+    ],
+    deps = [
+        "//zircon/system/ulib/closure-queue",
+    ],
+)
