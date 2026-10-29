@@ -1,0 +1,17 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# Sample driver protocol using the Driver transport
+fidl_library(
+    name = "fuchsia.examples.gizmo",
+    srcs = ["gizmo.test.fidl"],
+    contains_drivers = True,
+    enable_rust = False,
+    visibility = ["//examples/drivers/transport/driver/v1:__pkg__"],
+    deps = ["//zircon/vdso/zx"],
+)
