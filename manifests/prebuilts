@@ -607,15 +607,6 @@
              version="git_revision:18082c71069910e4517d82cbae3e61faea01cd8b"
              internal="true"/>
 
-    <!-- Bazel SDK sample packages built OOT -->
-    <package name="fuchsia/sdk-samples/fortune-teller/x64"
-             path="prebuilt/sdk-samples/fortune-teller"
-             version="git_revision:3e2ac06090d4bc2393a1e36894e572aa98ae0183"/>
-    <package name="fuchsia/sdk-samples/fortune-teller/debug-symbols-x64"
-             path="prebuilt/.build-id"
-             version="git_revision:3e2ac06090d4bc2393a1e36894e572aa98ae0183"
-             attributes="debug-symbols,debug-symbols-x64"/>
-
      <!-- Components built OOT -->
     <package name="fuchsia/prebuilt/bt-host/arm64"
              path="prebuilt/connectivity/bluetooth/bt-host/arm64"

@@ -415,8 +415,6 @@ group("non_hermetic_deps") {
   # needs `hermetic_action_ignored_prefixes`. Remove these entries when
   # `prebuilt_package` is hermetic.
   visibility += [
-    "//examples/fortune:fortune_teller",
-    "//examples/fortune:fortune_teller.package",
     "//sdk/ctf:*",
     "//sdk/ctf/release:*",
     "//sdk/ctf/release/packages:*",

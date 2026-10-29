@@ -108,7 +108,6 @@
     "build/tracer/fsatrace_test.sh": 1,
     "build/tui/build-tui-wrap.sh": 4,
     "bundles/assembly/BUILD.bazel": 3,
-    "examples/fortune/BUILD.gn": 1,
     "scripts/autoconf/regen.sh": 2,
     "scripts/clang/ToolChain.cmake": 3,
     "scripts/debug/zxdb_cli/cli/BUILD.gn": 1,

@@ -175,16 +175,6 @@
         "instance_id": "Y7fqLeVimDK9H_1-TqHd7IaWTGXPJ7gHfqn5e3vXL58C"
     },
     {
-        "package": "fuchsia/sdk-samples/fortune-teller/debug-symbols-x64",
-        "version": "git_revision:3e2ac06090d4bc2393a1e36894e572aa98ae0183",
-        "instance_id": "_dLheFVBJTLUFeAZbzxlK1KkcI6EuInUxGDO7xytPWkC"
-    },
-    {
-        "package": "fuchsia/sdk-samples/fortune-teller/x64",
-        "version": "git_revision:3e2ac06090d4bc2393a1e36894e572aa98ae0183",
-        "instance_id": "URXKlTWEl03cXkZ9X9S6ScXo_2ZJgmn-eubHwSp4FjoC"
-    },
-    {
         "package": "fuchsia/shac/linux-amd64",
         "version": "git_revision:92af0a38dae55c5c99f80a5296e4ea75904041c4",
         "instance_id": "Pvb0QeBgMe00P0TWTrmQlvlpxK3--f68sqKdyw6jqjMC"

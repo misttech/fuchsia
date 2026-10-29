@@ -115,7 +115,7 @@ package because the runner of the Starnix container mounts the namespace for
 the `hello_starnix` component as a directory of the root file system inside
 the Starnix container's Linux environment. (However, the `program` block
 can also specify that the Starnix container runs a binary from the Linux
-environment's own file system using an absolute path, such as `/bin/fortune`.)
+environment's own file system using an absolute path, such as `/bin/sh`.)
 
 This machinery of running Linux binaries from a Fuchsia package is most often
 used for tests. Tests often come with test fixtures and other data that need

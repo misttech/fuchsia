@@ -547,7 +547,7 @@ tree, such as `/hub` and `/dev`. It is also useful for invoking programs such
 as `/bin/run` that provides facilities for launching Fuchsia components. If
 the `tools` bundle is available in the build configuration, many tools common
 to unix shell environments have been ported and are available, such as `ps`,
-`ls`, `cat`, `curl`, `vim`, `fortune` and so on.
+`ls`, `cat`, `curl`, `vim` and so on.
 
 ## Performing other common tasks {#performing-other-common-tasks}
 
