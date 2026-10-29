@@ -31,11 +31,63 @@ impl PressState {
     }
 }
 
+/// A mouse button, as named by the QMP `InputButton` enum.
+///
+/// QEMU models each wheel tick as a press of a wheel button.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MouseInputButton {
+    Left,
+    Middle,
+    Right,
+    Side,
+    Extra,
+    WheelUp,
+    WheelDown,
+    WheelLeft,
+    WheelRight,
+}
+
+impl MouseInputButton {
+    fn qmp_name(self) -> &'static str {
+        match self {
+            MouseInputButton::Left => "left",
+            MouseInputButton::Middle => "middle",
+            MouseInputButton::Right => "right",
+            MouseInputButton::Side => "side",
+            MouseInputButton::Extra => "extra",
+            MouseInputButton::WheelUp => "wheel-up",
+            MouseInputButton::WheelDown => "wheel-down",
+            MouseInputButton::WheelLeft => "wheel-left",
+            MouseInputButton::WheelRight => "wheel-right",
+        }
+    }
+}
+
+/// An axis of relative pointer motion, as named by the QMP `InputAxis` enum.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InputAxis {
+    X,
+    Y,
+}
+
+impl InputAxis {
+    fn qmp_name(self) -> &'static str {
+        match self {
+            InputAxis::X => "x",
+            InputAxis::Y => "y",
+        }
+    }
+}
+
 /// One QMP `InputEvent`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum InputEvent {
     /// A key, identified by its QMP `QKeyCode` name.
     Key { qcode: &'static str, state: PressState },
+    /// A mouse button.
+    Button { button: MouseInputButton, state: PressState },
+    /// Relative pointer motion along one axis.
+    Relative { axis: InputAxis, value: i64 },
     /// A QMP `InputEvent` object, sent unchanged.
     Raw(serde_json::Value),
 }
@@ -47,6 +99,14 @@ impl InputEvent {
             InputEvent::Key { qcode, state } => serde_json::json!({
                 "type": "key",
                 "data": { "key": { "type": "qcode", "data": qcode }, "down": state.is_down() }
+            }),
+            InputEvent::Button { button, state } => serde_json::json!({
+                "type": "btn",
+                "data": { "button": button.qmp_name(), "down": state.is_down() }
+            }),
+            InputEvent::Relative { axis, value } => serde_json::json!({
+                "type": "rel",
+                "data": { "axis": axis.qmp_name(), "value": value }
             }),
             InputEvent::Raw(value) => value.clone(),
         }
@@ -94,6 +154,43 @@ mod tests {
                 "type": "key",
                 "data": { "key": { "type": "qcode", "data": "ctrl" }, "down": false }
             })
+        );
+    }
+
+    #[test]
+    fn test_button_to_qmp() {
+        let cases = [
+            (MouseInputButton::Left, "left"),
+            (MouseInputButton::Middle, "middle"),
+            (MouseInputButton::Right, "right"),
+            (MouseInputButton::Side, "side"),
+            (MouseInputButton::Extra, "extra"),
+            (MouseInputButton::WheelUp, "wheel-up"),
+            (MouseInputButton::WheelDown, "wheel-down"),
+            (MouseInputButton::WheelLeft, "wheel-left"),
+            (MouseInputButton::WheelRight, "wheel-right"),
+        ];
+        for (button, name) in cases {
+            assert_eq!(
+                InputEvent::Button { button, state: PressState::Down }.to_qmp(),
+                serde_json::json!({ "type": "btn", "data": { "button": name, "down": true } })
+            );
+            assert_eq!(
+                InputEvent::Button { button, state: PressState::Up }.to_qmp(),
+                serde_json::json!({ "type": "btn", "data": { "button": name, "down": false } })
+            );
+        }
+    }
+
+    #[test]
+    fn test_relative_to_qmp() {
+        assert_eq!(
+            InputEvent::Relative { axis: InputAxis::X, value: 10 }.to_qmp(),
+            serde_json::json!({ "type": "rel", "data": { "axis": "x", "value": 10 } })
+        );
+        assert_eq!(
+            InputEvent::Relative { axis: InputAxis::Y, value: -5 }.to_qmp(),
+            serde_json::json!({ "type": "rel", "data": { "axis": "y", "value": -5 } })
         );
     }
 

@@ -7,9 +7,14 @@
 use emulator_instance::EmulatorInstances;
 use ffx_config::EnvironmentContext;
 use ffx_config::keys::EMU_INSTANCE_ROOT_DIR;
-use ffx_emulator_config::{EmulatorEngine, InputEvent, InputStep, PressState};
+use ffx_emulator_config::{
+    EmulatorEngine, InputAxis, InputEvent, InputStep, MouseInputButton, PressState,
+};
 use ffx_emulator_engines::EngineBuilder;
-use ffx_emulator_input_args::{InputCommand, InputSubCommand, KeyCommand, RawCommand, TextCommand};
+use ffx_emulator_input_args::{
+    InputCommand, InputSubCommand, KeyCommand, MouseButton, MouseSubCommand, RawCommand,
+    TextCommand,
+};
 use ffx_writer::VerifiedMachineWriter;
 use fho::{FfxMain, FfxTool, Result as FhoResult, bug, return_user_error, user_error};
 use schemars::JsonSchema;
@@ -18,6 +23,9 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 mod keymap;
+
+/// Maximum number of scroll ticks in one command.
+const MAX_SCROLL_TICKS: u64 = 10_000;
 
 #[derive(Debug, PartialEq, Serialize, JsonSchema)]
 pub struct InputResult {
@@ -109,6 +117,7 @@ fn build_steps(cmd: &InputCommand) -> FhoResult<Vec<InputStep>> {
     match &cmd.subcommand {
         InputSubCommand::Key(key) => key_steps(key, interval),
         InputSubCommand::Text(text) => text_steps(text, interval),
+        InputSubCommand::Mouse(mouse) => mouse_steps(&mouse.subcommand, interval),
         InputSubCommand::Raw(raw) => raw_steps(raw),
     }
 }
@@ -188,6 +197,76 @@ fn text_steps(cmd: &TextCommand, interval: Duration) -> FhoResult<Vec<InputStep>
     Ok(steps)
 }
 
+/// Converts a command-line button to a QMP button.
+///
+/// This is not a `From` impl because the orphan rule forbids implementing a foreign trait for
+/// two foreign types.
+fn mouse_input_button(button: MouseButton) -> MouseInputButton {
+    match button {
+        MouseButton::Left => MouseInputButton::Left,
+        MouseButton::Right => MouseInputButton::Right,
+        MouseButton::Middle => MouseInputButton::Middle,
+        MouseButton::Side => MouseInputButton::Side,
+        MouseButton::Extra => MouseInputButton::Extra,
+    }
+}
+
+fn mouse_steps(cmd: &MouseSubCommand, interval: Duration) -> FhoResult<Vec<InputStep>> {
+    let button_step = |button, state, delay_after| InputStep {
+        events: vec![InputEvent::Button { button: mouse_input_button(button), state }],
+        delay_after,
+    };
+    match cmd {
+        MouseSubCommand::Move(motion) => {
+            if motion.dx == 0 && motion.dy == 0 {
+                return_user_error!("Specify a non-zero --dx or --dy to move the mouse.");
+            }
+            // Both axes go in one step, so the guest sees the motion as one report.
+            Ok(vec![InputStep {
+                events: vec![
+                    InputEvent::Relative { axis: InputAxis::X, value: motion.dx },
+                    InputEvent::Relative { axis: InputAxis::Y, value: motion.dy },
+                ],
+                delay_after: Duration::ZERO,
+            }])
+        }
+        MouseSubCommand::Click(click) => Ok(vec![
+            button_step(
+                click.button,
+                PressState::Down,
+                Duration::from_millis(click.button_duration),
+            ),
+            button_step(click.button, PressState::Up, Duration::ZERO),
+        ]),
+        MouseSubCommand::Down(down) => {
+            Ok(vec![button_step(down.button, PressState::Down, Duration::ZERO)])
+        }
+        MouseSubCommand::Up(up) => Ok(vec![button_step(up.button, PressState::Up, Duration::ZERO)]),
+        MouseSubCommand::Scroll(scroll) => {
+            let (ticks, button) = match (scroll.dy, scroll.dx) {
+                (Some(dy), None) if dy.get() > 0 => (dy, MouseInputButton::WheelUp),
+                (Some(dy), None) => (dy, MouseInputButton::WheelDown),
+                (None, Some(dx)) if dx.get() > 0 => (dx, MouseInputButton::WheelRight),
+                (None, Some(dx)) => (dx, MouseInputButton::WheelLeft),
+                _ => return_user_error!("Specify exactly one of --dy and --dx."),
+            };
+            let tick_count = ticks.get().unsigned_abs();
+            if tick_count > MAX_SCROLL_TICKS {
+                return_user_error!("At most {MAX_SCROLL_TICKS} scroll ticks are allowed.");
+            }
+            // QEMU turns a wheel button press into one wheel tick in the guest.
+            let tick = InputStep {
+                events: vec![
+                    InputEvent::Button { button, state: PressState::Down },
+                    InputEvent::Button { button, state: PressState::Up },
+                ],
+                delay_after: interval,
+            };
+            Ok(vec![tick; tick_count as usize])
+        }
+    }
+}
+
 fn raw_steps(cmd: &RawCommand) -> FhoResult<Vec<InputStep>> {
     let value: serde_json::Value =
         serde_json::from_str(&cmd.json).map_err(|e| user_error!("Invalid JSON for `raw`: {e}"))?;
@@ -211,7 +290,12 @@ mod tests {
     use super::*;
     use emulator_instance::EmulatorConfiguration;
     use ffx_emulator_config::BoxFuture;
+    use ffx_emulator_input_args::{
+        MouseClickCommand, MouseCommand, MouseDownCommand, MouseMoveCommand, MouseScrollCommand,
+        MouseUpCommand,
+    };
     use ffx_writer::{Format, TestBuffers};
+    use std::num::NonZero;
 
     const INTERVAL: Duration = Duration::from_millis(20);
     const ZERO: Duration = Duration::ZERO;
@@ -237,8 +321,16 @@ mod tests {
         cmd(InputSubCommand::Text(TextCommand { text: text.into(), key_duration }))
     }
 
+    fn mouse_cmd(subcommand: MouseSubCommand) -> InputCommand {
+        cmd(InputSubCommand::Mouse(MouseCommand { subcommand }))
+    }
+
     fn key(qcode: &'static str, state: PressState, delay_after: Duration) -> InputStep {
         InputStep { events: vec![InputEvent::Key { qcode, state }], delay_after }
+    }
+
+    fn button(button: MouseInputButton, state: PressState, delay_after: Duration) -> InputStep {
+        InputStep { events: vec![InputEvent::Button { button, state }], delay_after }
     }
 
     fn err_string(result: FhoResult<Vec<InputStep>>) -> String {
@@ -398,6 +490,86 @@ mod tests {
             let err = err_string(build_steps(&text_cmd(text, 20)));
             assert!(err.contains("printable ASCII"), "{text:?}: {err}");
         }
+    }
+
+    #[test]
+    fn test_mouse_move() {
+        let relative = |dx, dy| InputStep {
+            events: vec![
+                InputEvent::Relative { axis: InputAxis::X, value: dx },
+                InputEvent::Relative { axis: InputAxis::Y, value: dy },
+            ],
+            delay_after: ZERO,
+        };
+        for (dx, dy) in [(10, -5), (3, 0), (0, -1)] {
+            let command = mouse_cmd(MouseSubCommand::Move(MouseMoveCommand { dx, dy }));
+            assert_eq!(build_steps(&command).unwrap(), vec![relative(dx, dy)]);
+        }
+        let command = mouse_cmd(MouseSubCommand::Move(MouseMoveCommand { dx: 0, dy: 0 }));
+        assert!(err_string(build_steps(&command)).contains("non-zero"));
+    }
+
+    #[test]
+    fn test_mouse_click() {
+        let command = mouse_cmd(MouseSubCommand::Click(MouseClickCommand {
+            button: MouseButton::Left,
+            button_duration: 40,
+        }));
+        assert_eq!(
+            build_steps(&command).unwrap(),
+            vec![
+                button(MouseInputButton::Left, PressState::Down, Duration::from_millis(40)),
+                button(MouseInputButton::Left, PressState::Up, ZERO),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_mouse_down_up() {
+        for (arg, input_button) in [
+            (MouseButton::Left, MouseInputButton::Left),
+            (MouseButton::Right, MouseInputButton::Right),
+            (MouseButton::Middle, MouseInputButton::Middle),
+            (MouseButton::Side, MouseInputButton::Side),
+            (MouseButton::Extra, MouseInputButton::Extra),
+        ] {
+            let command = mouse_cmd(MouseSubCommand::Down(MouseDownCommand { button: arg }));
+            assert_eq!(
+                build_steps(&command).unwrap(),
+                vec![button(input_button, PressState::Down, ZERO)]
+            );
+            let command = mouse_cmd(MouseSubCommand::Up(MouseUpCommand { button: arg }));
+            assert_eq!(
+                build_steps(&command).unwrap(),
+                vec![button(input_button, PressState::Up, ZERO)]
+            );
+        }
+    }
+
+    #[test]
+    fn test_mouse_scroll() {
+        let scroll = |dy: i64, dx: i64| {
+            build_steps(&mouse_cmd(MouseSubCommand::Scroll(MouseScrollCommand {
+                dy: NonZero::new(dy),
+                dx: NonZero::new(dx),
+            })))
+        };
+        let tick = |button| InputStep {
+            events: vec![
+                InputEvent::Button { button, state: PressState::Down },
+                InputEvent::Button { button, state: PressState::Up },
+            ],
+            delay_after: INTERVAL,
+        };
+        assert_eq!(scroll(2, 0).unwrap(), vec![tick(MouseInputButton::WheelUp); 2]);
+        assert_eq!(scroll(-1, 0).unwrap(), vec![tick(MouseInputButton::WheelDown)]);
+        assert_eq!(scroll(0, 1).unwrap(), vec![tick(MouseInputButton::WheelRight)]);
+        assert_eq!(scroll(0, -2).unwrap(), vec![tick(MouseInputButton::WheelLeft); 2]);
+        assert!(err_string(scroll(0, 0)).contains("exactly one"));
+        assert!(err_string(scroll(1, 1)).contains("exactly one"));
+        assert_eq!(scroll(10_000, 0).unwrap().len(), 10_000);
+        assert!(err_string(scroll(10_001, 0)).contains("At most"));
+        assert!(err_string(scroll(i64::MIN, 0)).contains("At most"));
     }
 
     struct StubEngine {

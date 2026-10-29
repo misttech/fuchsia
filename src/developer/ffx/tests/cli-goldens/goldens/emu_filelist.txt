@@ -2,6 +2,12 @@ ffx/emu.golden
 ffx/emu/console.golden
 ffx/emu/input.golden
 ffx/emu/input/key.golden
+ffx/emu/input/mouse.golden
+ffx/emu/input/mouse/click.golden
+ffx/emu/input/mouse/down.golden
+ffx/emu/input/mouse/move.golden
+ffx/emu/input/mouse/scroll.golden
+ffx/emu/input/mouse/up.golden
 ffx/emu/input/raw.golden
 ffx/emu/input/text.golden
 ffx/emu/list.golden

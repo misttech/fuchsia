@@ -1,0 +1,28 @@
+{
+  "name": "up",
+  "description": "Release a mouse button.",
+  "examples": [
+    "  $ ffx emu input mouse up left"
+  ],
+  "flags": [
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--help",
+      "short": null,
+      "description": "display usage information",
+      "hidden": false
+    }
+  ],
+  "notes": [],
+  "commands": [],
+  "positionals": [
+    {
+      "name": "button",
+      "description": "the button: left, right, middle, side or extra.",
+      "optionality": "required",
+      "hidden": false
+    }
+  ],
+  "error_codes": []
+}

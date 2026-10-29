@@ -1,0 +1,21 @@
+{
+  "name": "mouse",
+  "description": "Send relative mouse events.",
+  "examples": [],
+  "flags": [
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--help",
+      "short": null,
+      "description": "display usage information",
+      "hidden": false
+    }
+  ],
+  "notes": [
+    "The mouse commands need the virtual device's pointing device to be 'mouse'.\nCheck it with `ffx emu show`."
+  ],
+  "commands": [],
+  "positionals": [],
+  "error_codes": []
+}

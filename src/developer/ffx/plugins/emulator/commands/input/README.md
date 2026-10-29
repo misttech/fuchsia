@@ -15,6 +15,13 @@ ffx emu input key --up shift
 # Text: printable ASCII, US QWERTY layout
 ffx emu input text 'Hello, world!'
 
+# Mouse: relative motion, buttons and wheel (needs pointing_device=mouse)
+ffx emu input mouse move --dx 10 --dy -5
+ffx emu input mouse click left
+ffx emu input mouse down left
+ffx emu input mouse up left
+ffx emu input mouse scroll --dy 3
+
 # Raw: QMP InputEvent objects, sent unchanged in one input-send-event command
 ffx emu input raw '[{"type":"rel","data":{"axis":"x","value":7}}]'
 
@@ -48,16 +55,20 @@ Unit tests:
 fx test --host ffx_emulator_input_lib_test ffx_emulator_input_args_lib_test
 ```
 
-End-to-end with `print-input-report`:
+End-to-end with `print-input-report`: the mouse subcommands need a virtual device whose pointing
+device is `mouse`, and many products default to `touch`. To get a mouse, copy the product bundle's
+virtual device file (`<product bundle>/virtual_devices/<device>.json`), set
+`"pointing_device": "mouse"` under `hardware.inputs`, and pass its path to `--device`.
 
 ```bash
-ffx emu start --engine qemu --headless
+ffx emu start --engine qemu --headless --device /tmp/mouse_device.json
 ffx target ssh -- print-input-report list   # lists the virtio input devices
 
 # Read reports in the background, from all devices, as JSON:
-ffx target ssh -- print-input-report read --num-reads 2 --output json > /tmp/pir.json &
+ffx target ssh -- print-input-report read --num-reads 3 --output json > /tmp/pir.json &
 sleep 3   # give the reader time to connect
 
-ffx emu input key a   # a report with KEY_A pressed, then an empty one
+ffx emu input key a                        # a report with KEY_A pressed, then an empty one
+ffx emu input mouse move --dx 10 --dy -5   # movement_x=10, movement_y=-5
 wait; cat /tmp/pir.json
 ```

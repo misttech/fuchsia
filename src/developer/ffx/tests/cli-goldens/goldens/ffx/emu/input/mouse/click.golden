@@ -1,0 +1,40 @@
+{
+  "name": "click",
+  "description": "Press and release a mouse button.",
+  "examples": [
+    "  $ ffx emu input mouse click left\n  $ ffx emu input mouse click right --button-duration 50"
+  ],
+  "flags": [
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--help",
+      "short": null,
+      "description": "display usage information",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "button-duration"
+        }
+      },
+      "optionality": "optional",
+      "long": "--button-duration",
+      "short": null,
+      "description": "time in milliseconds the button is held down. Defaults to 20.",
+      "hidden": false
+    }
+  ],
+  "notes": [],
+  "commands": [],
+  "positionals": [
+    {
+      "name": "button",
+      "description": "the button: left, right, middle, side or extra.",
+      "optionality": "required",
+      "hidden": false
+    }
+  ],
+  "error_codes": []
+}

@@ -1,0 +1,47 @@
+{
+  "name": "scroll",
+  "description": "Scroll the mouse wheel along one axis.",
+  "examples": [
+    "  $ ffx emu input mouse scroll --dy 3\n  $ ffx emu input mouse scroll --dx -1"
+  ],
+  "flags": [
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--help",
+      "short": null,
+      "description": "display usage information",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "dy"
+        }
+      },
+      "optionality": "optional",
+      "long": "--dy",
+      "short": null,
+      "description": "vertical wheel ticks. Positive scrolls up.",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "dx"
+        }
+      },
+      "optionality": "optional",
+      "long": "--dx",
+      "short": null,
+      "description": "horizontal wheel ticks. Positive scrolls right.",
+      "hidden": false
+    }
+  ],
+  "notes": [
+    "Specify exactly one of --dy and --dx. Each tick is one report."
+  ],
+  "commands": [],
+  "positionals": [],
+  "error_codes": []
+}

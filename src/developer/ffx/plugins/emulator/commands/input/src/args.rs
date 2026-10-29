@@ -4,6 +4,8 @@
 
 use argh::{ArgsInfo, FromArgs};
 use ffx_core::ffx_command;
+use std::num::NonZero;
+use std::str::FromStr;
 
 #[ffx_command()]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
@@ -16,6 +18,10 @@ use ffx_core::ffx_command;
 
 Type text:
   $ ffx emu input text 'Hello, world!'
+
+Move the mouse and click:
+  $ ffx emu input mouse move --dx 10 --dy -5
+  $ ffx emu input mouse click left
 
 Send raw QMP input events:
   $ ffx emu input raw '[{{\"type\":\"rel\",\"data\":{{\"axis\":\"x\",\"value\":7}}}}]'
@@ -37,7 +43,8 @@ pub struct InputCommand {
     #[argh(option)]
     pub name: Option<String>,
 
-    /// time in milliseconds between consecutive key combos and characters. Defaults to 20.
+    /// time in milliseconds between consecutive key combos, characters and scroll ticks.
+    /// Defaults to 20.
     #[argh(option, default = "20")]
     pub interval: u64,
 
@@ -50,6 +57,7 @@ pub struct InputCommand {
 pub enum InputSubCommand {
     Key(KeyCommand),
     Text(TextCommand),
+    Mouse(MouseCommand),
     Raw(RawCommand),
 }
 
@@ -117,6 +125,109 @@ pub struct TextCommand {
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
 #[argh(
     subcommand,
+    name = "mouse",
+    description = "Send relative mouse events.",
+    note = "The mouse commands need the virtual device's pointing device to be 'mouse'.
+Check it with `ffx emu show`."
+)]
+pub struct MouseCommand {
+    #[argh(subcommand)]
+    pub subcommand: MouseSubCommand,
+}
+
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
+#[argh(subcommand)]
+pub enum MouseSubCommand {
+    Move(MouseMoveCommand),
+    Click(MouseClickCommand),
+    Down(MouseDownCommand),
+    Up(MouseUpCommand),
+    Scroll(MouseScrollCommand),
+}
+
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
+#[argh(
+    subcommand,
+    name = "move",
+    description = "Move the mouse by a relative amount, in one report.",
+    example = "  $ ffx emu input mouse move --dx 10 --dy -5"
+)]
+pub struct MouseMoveCommand {
+    /// horizontal motion. Positive moves right. Defaults to 0.
+    #[argh(option, default = "0")]
+    pub dx: i64,
+
+    /// vertical motion. Positive moves down. Defaults to 0.
+    #[argh(option, default = "0")]
+    pub dy: i64,
+}
+
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
+#[argh(
+    subcommand,
+    name = "click",
+    description = "Press and release a mouse button.",
+    example = "  $ ffx emu input mouse click left
+  $ ffx emu input mouse click right --button-duration 50"
+)]
+pub struct MouseClickCommand {
+    /// the button: left, right, middle, side or extra.
+    #[argh(positional)]
+    pub button: MouseButton,
+
+    /// time in milliseconds the button is held down. Defaults to 20.
+    #[argh(option, default = "20")]
+    pub button_duration: u64,
+}
+
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
+#[argh(
+    subcommand,
+    name = "down",
+    description = "Press a mouse button without releasing it.",
+    example = "  $ ffx emu input mouse down left"
+)]
+pub struct MouseDownCommand {
+    /// the button: left, right, middle, side or extra.
+    #[argh(positional)]
+    pub button: MouseButton,
+}
+
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
+#[argh(
+    subcommand,
+    name = "up",
+    description = "Release a mouse button.",
+    example = "  $ ffx emu input mouse up left"
+)]
+pub struct MouseUpCommand {
+    /// the button: left, right, middle, side or extra.
+    #[argh(positional)]
+    pub button: MouseButton,
+}
+
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
+#[argh(
+    subcommand,
+    name = "scroll",
+    description = "Scroll the mouse wheel along one axis.",
+    example = "  $ ffx emu input mouse scroll --dy 3
+  $ ffx emu input mouse scroll --dx -1",
+    note = "Specify exactly one of --dy and --dx. Each tick is one report."
+)]
+pub struct MouseScrollCommand {
+    /// vertical wheel ticks. Positive scrolls up.
+    #[argh(option)]
+    pub dy: Option<NonZero<i64>>,
+
+    /// horizontal wheel ticks. Positive scrolls right.
+    #[argh(option)]
+    pub dx: Option<NonZero<i64>>,
+}
+
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
+#[argh(
+    subcommand,
     name = "raw",
     description = "Send raw QMP input events, unchanged, in one QMP command.",
     example = "  $ ffx emu input raw '[{{\"type\":\"rel\",\"data\":{{\"axis\":\"x\",\"value\":7}}}}]'",
@@ -133,12 +244,48 @@ pub struct RawCommand {
     pub json: String,
 }
 
+/// A mouse button that can be named on the command line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MouseButton {
+    Left,
+    Right,
+    Middle,
+    Side,
+    Extra,
+}
+
+impl FromStr for MouseButton {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "left" => Ok(MouseButton::Left),
+            "right" => Ok(MouseButton::Right),
+            "middle" => Ok(MouseButton::Middle),
+            "side" => Ok(MouseButton::Side),
+            "extra" => Ok(MouseButton::Extra),
+            _ => Err(format!(
+                "unknown mouse button '{s}'. Expected one of: left, right, middle, side, extra"
+            )),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn parse(args: &[&str]) -> Result<InputCommand, argh::EarlyExit> {
         InputCommand::from_args(&["input"], args)
+    }
+
+    fn parse_mouse(args: &[&str]) -> MouseSubCommand {
+        let mut all_args = vec!["mouse"];
+        all_args.extend_from_slice(args);
+        let InputSubCommand::Mouse(mouse) = parse(&all_args).unwrap().subcommand else {
+            panic!("not a mouse command");
+        };
+        mouse.subcommand
     }
 
     #[test]
@@ -223,5 +370,77 @@ mod tests {
             InputSubCommand::Text(TextCommand { text: "hi".into(), key_duration: 5 })
         );
         assert!(parse(&["text"]).is_err());
+    }
+
+    #[test]
+    fn test_mouse_move_negative() {
+        assert_eq!(
+            parse_mouse(&["move", "--dx", "-10", "--dy", "5"]),
+            MouseSubCommand::Move(MouseMoveCommand { dx: -10, dy: 5 })
+        );
+        assert_eq!(
+            parse_mouse(&["move", "--dy", "-7"]),
+            MouseSubCommand::Move(MouseMoveCommand { dx: 0, dy: -7 })
+        );
+    }
+
+    #[test]
+    fn test_mouse_click() {
+        assert_eq!(
+            parse_mouse(&["click", "right", "--button-duration", "5"]),
+            MouseSubCommand::Click(MouseClickCommand {
+                button: MouseButton::Right,
+                button_duration: 5
+            })
+        );
+        assert_eq!(
+            parse_mouse(&["click", "middle"]),
+            MouseSubCommand::Click(MouseClickCommand {
+                button: MouseButton::Middle,
+                button_duration: 20
+            })
+        );
+        assert!(parse(&["mouse", "click", "left", "--count", "2"]).is_err());
+    }
+
+    #[test]
+    fn test_mouse_down_up() {
+        assert_eq!(
+            parse_mouse(&["down", "side"]),
+            MouseSubCommand::Down(MouseDownCommand { button: MouseButton::Side })
+        );
+        assert_eq!(
+            parse_mouse(&["up", "extra"]),
+            MouseSubCommand::Up(MouseUpCommand { button: MouseButton::Extra })
+        );
+    }
+
+    #[test]
+    fn test_mouse_scroll() {
+        assert_eq!(
+            parse_mouse(&["scroll", "--dy", "-3"]),
+            MouseSubCommand::Scroll(MouseScrollCommand { dy: NonZero::new(-3), dx: None })
+        );
+        assert_eq!(
+            parse_mouse(&["scroll", "--dx", "2"]),
+            MouseSubCommand::Scroll(MouseScrollCommand { dy: None, dx: NonZero::new(2) })
+        );
+        assert!(parse(&["mouse", "scroll", "--dy", "0"]).is_err());
+    }
+
+    #[test]
+    fn test_mouse_buttons() {
+        for (name, button) in [
+            ("left", MouseButton::Left),
+            ("right", MouseButton::Right),
+            ("middle", MouseButton::Middle),
+            ("side", MouseButton::Side),
+            ("extra", MouseButton::Extra),
+        ] {
+            assert_eq!(name.parse::<MouseButton>(), Ok(button));
+        }
+        assert!(parse(&["mouse", "click", "wheel-up"]).is_err());
+        assert!(parse(&["mouse", "click", "LEFT"]).is_err());
+        assert!(parse(&["mouse"]).is_err());
     }
 }
