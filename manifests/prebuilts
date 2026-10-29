@@ -616,15 +616,6 @@
              version="git_revision:3e2ac06090d4bc2393a1e36894e572aa98ae0183"
              attributes="debug-symbols,debug-symbols-x64"/>
 
-    <!-- Drivers built OOT -->
-    <package name="fuchsia/drivers/backlight/x64"
-             path="prebuilt/drivers/backlight"
-             version="git_revision:25091161bc0a5750540ff2c4b73862e746d8c225"/>
-    <package name="fuchsia/drivers/backlight/debug-symbols-x64"
-             path="prebuilt/.build-id"
-             version="git_revision:25091161bc0a5750540ff2c4b73862e746d8c225"
-             attributes="debug-symbols,debug-symbols-x64"/>
-
      <!-- Components built OOT -->
     <package name="fuchsia/prebuilt/bt-host/arm64"
              path="prebuilt/connectivity/bluetooth/bt-host/arm64"

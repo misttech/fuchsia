@@ -448,8 +448,6 @@ group("non_hermetic_deps") {
     "//src/connectivity/wlan/tools/third_party/broadcom:wl_pkg.package",
     "//src/graphics/drivers/arm-mali/icd:libvulkan_arm_g52_r0p0",
     "//src/graphics/drivers/arm-mali/icd:libvulkan_arm_g52_r0p0.package",
-    "//src/ui/backlight/drivers:chromebook-keyboard-backlight",
-    "//src/ui/backlight/drivers:chromebook-keyboard-backlight.package",
   ]
 
   # TODO(https://fxbug.dev/42165766): License analysis uses the output of 'fx gn gen', which

@@ -55,16 +55,6 @@
         "instance_id": "cIzniRJ6cOPukCCmeeGGHYY9zKbWjJWfo79-hF_CvloC"
     },
     {
-        "package": "fuchsia/drivers/backlight/debug-symbols-x64",
-        "version": "git_revision:25091161bc0a5750540ff2c4b73862e746d8c225",
-        "instance_id": "YOP9781kkip-kcVAVc652wCVebx99esWg7ZO0tFEV6sC"
-    },
-    {
-        "package": "fuchsia/drivers/backlight/x64",
-        "version": "git_revision:25091161bc0a5750540ff2c4b73862e746d8c225",
-        "instance_id": "xszoY6jKK24tdluHaPguCQ2NEiuFno7Gcfvk32vKuJ8C"
-    },
-    {
         "package": "fuchsia/firmware/arm-trusted-firmware-qemu-bios",
         "version": "version:arm-trusted-firmware=da738d5eae93af342fdc4995dd3c05acb4c9d757;u-boot=127a42c7257a6ffbbd1575ed1cbaa8f5408a44b3,1",
         "instance_id": "8kHGDbyUEhVbpAIFfkWqoAi1s-GWWxEBuwyej_WwozUC"

@@ -218,7 +218,6 @@
     "src/testing/end_to_end/honeydew/BUILD.gn": 1,
     "src/testing/host-target-testing/cli/archive.go": 2,
     "src/tests/benchmarks/fidl/fidlc/regen.sh": 1,
-    "src/ui/backlight/drivers/BUILD.gn": 1,
     "src/ui/bin/devscreen/BUILD.gn": 2,
     "src/ui/bin/terminal/terminal_args.gni": 4,
     "src/ui/input/drivers/focaltech/cpp/ft_firmware_sherlock.cc": 3,
