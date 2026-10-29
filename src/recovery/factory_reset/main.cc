@@ -12,7 +12,6 @@
 #include <iostream>
 
 #include "src/recovery/factory_reset/factory_reset.h"
-#include "src/recovery/factory_reset/factory_reset_config.h"
 
 int main(int argc, const char** argv) {
   zx::result dev = component::OpenDirectory("/dev");
@@ -39,8 +38,7 @@ int main(int argc, const char** argv) {
   component::OutgoingDirectory outgoing(loop.dispatcher());
 
   factory_reset::FactoryReset factory_reset(loop.dispatcher(), std::move(*dev),
-                                            std::move(admin.value()), std::move(fshost.value()),
-                                            factory_reset_config::Config::TakeFromStartupHandle());
+                                            std::move(admin.value()), std::move(fshost.value()));
   fidl::ServerBindingGroup<fuchsia_recovery::FactoryReset> bindings;
   if (zx::result<> result = outgoing.AddUnmanagedProtocol<fuchsia_recovery::FactoryReset>(
           bindings.CreateHandler(&factory_reset, loop.dispatcher(), fidl::kIgnoreBindingClosure));

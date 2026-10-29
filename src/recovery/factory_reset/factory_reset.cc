@@ -9,19 +9,16 @@
 #include <zircon/errors.h>
 #include <zircon/status.h>
 
-#include "src/recovery/factory_reset/factory_reset_config.h"
 #include "src/security/lib/kms-stateless/kms-stateless.h"
 namespace factory_reset {
 
 FactoryReset::FactoryReset(async_dispatcher_t* dispatcher,
                            fidl::ClientEnd<fuchsia_io::Directory> dev,
                            fidl::ClientEnd<fuchsia_hardware_power_statecontrol::Admin> admin,
-                           fidl::ClientEnd<fuchsia_fshost::Admin> fshost_admin,
-                           factory_reset_config::Config config)
+                           fidl::ClientEnd<fuchsia_fshost::Admin> fshost_admin)
     : dev_(std::move(dev)),
       admin_(std::move(admin), dispatcher),
-      fshost_admin_(std::move(fshost_admin), dispatcher),
-      config_(config) {}
+      fshost_admin_(std::move(fshost_admin), dispatcher) {}
 
 void FactoryReset::Shred(fit::callback<void(zx_status_t)> callback) const {
   // First try and shred the data volume using fshost.

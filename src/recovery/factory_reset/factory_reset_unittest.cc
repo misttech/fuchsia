@@ -98,7 +98,7 @@ class FactoryResetTest : public gtest::RealLoopFixture {
                                         &mock_fshost.value().get(), fidl::kIgnoreBindingClosure);
 
     factory_reset::FactoryReset reset(dispatcher(), std::move(dev), std::move(admin),
-                                      std::move(fshost_admin), {});
+                                      std::move(fshost_admin));
 
     std::optional<zx_status_t> status;
     reset.Reset([&status](zx_status_t s) { status = s; });

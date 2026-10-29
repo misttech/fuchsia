@@ -21,7 +21,6 @@ source_set("lib") {
     "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_cpp",
 
     # <factory_reset.h> has #include <fidl/fuchsia.recovery/cpp/wire.h>
-    ":factory_reset_config",
     "//sdk/fidl/fuchsia.recovery:fuchsia.recovery_cpp",
   ]
 
@@ -42,7 +41,6 @@ executable("bin") {
   sources = [ "main.cc" ]
 
   deps = [
-    ":factory_reset_config",
     "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//sdk/lib/fdio",
   ]
@@ -67,11 +65,6 @@ executable("fdr") {
 fuchsia_component_manifest("manifest") {
   component_name = "factory_reset"
   manifest = "meta/factory_reset.cml"
-}
-
-fuchsia_structured_config_cpp_elf_lib("factory_reset_config") {
-  cm_label = ":manifest"
-  visibility = [ ":*" ]
 }
 
 fuchsia_package_with_single_component("factory_reset_pkg") {

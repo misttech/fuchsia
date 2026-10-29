@@ -10,8 +10,6 @@
 #include <fidl/fuchsia.recovery/cpp/wire.h>
 #include <zircon/types.h>
 
-#include "src/recovery/factory_reset/factory_reset_config.h"
-
 namespace factory_reset {
 
 // Implements a simple version of Factory Reset that shreds zxcrypt and then
@@ -20,8 +18,7 @@ class FactoryReset : public fidl::WireServer<fuchsia_recovery::FactoryReset> {
  public:
   FactoryReset(async_dispatcher_t* dispatcher, fidl::ClientEnd<fuchsia_io::Directory> dev,
                fidl::ClientEnd<fuchsia_hardware_power_statecontrol::Admin> admin,
-               fidl::ClientEnd<fuchsia_fshost::Admin> fshost_admin,
-               factory_reset_config::Config config);
+               fidl::ClientEnd<fuchsia_fshost::Admin> fshost_admin);
   // Performs the factory reset.
   void Reset(fit::callback<void(zx_status_t)> callback);
   void Reset(ResetCompleter::Sync& completer) override;
@@ -34,7 +31,6 @@ class FactoryReset : public fidl::WireServer<fuchsia_recovery::FactoryReset> {
   fidl::ClientEnd<fuchsia_io::Directory> dev_;
   fidl::WireClient<fuchsia_hardware_power_statecontrol::Admin> admin_;
   fidl::WireClient<fuchsia_fshost::Admin> fshost_admin_;
-  factory_reset_config::Config config_;
 };
 
 }  // namespace factory_reset
