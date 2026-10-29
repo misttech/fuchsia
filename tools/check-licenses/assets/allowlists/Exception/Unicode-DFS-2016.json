@@ -51,10 +51,6 @@
                     },
                     {
                         "projects": [
-                            "prebuilt/third_party/web_engine_shell/arch/arm64",
-                            "prebuilt/third_party/web_engine_shell/arch/x64",
-                            "prebuilt/third_party/web_engine_shell_latest/arch/arm64",
-                            "prebuilt/third_party/web_engine_shell_latest/arch/x64",
                             "prebuilt/third_party/web_engine/arch/arm64",
                             "prebuilt/third_party/web_engine/arch/x64",
                             "prebuilt/third_party/web_engine_latest/arch/arm64",

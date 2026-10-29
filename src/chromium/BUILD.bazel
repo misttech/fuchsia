@@ -2,7 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@rules_fuchsia//fuchsia:assembly.bzl", "fuchsia_prebuilt_package")
+load("//build/bazel/rules:cipd_prebuilt.bzl", "cipd_prebuilt_file")
+load("//build/bazel/rules/packages:prebuilt_package.bzl", "prebuilt_package")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -11,9 +12,29 @@ package(
     ],
 )
 
-# Uses the `.far` file from
-# GN's target `//src/fonts/asset_providers:open-fonts-collection-bazel`.
-fuchsia_prebuilt_package(
+# The 'canary' flavor of WebEngine, taken directly from the CIPD prebuilt.
+# See //manifests/third_party/chromium/chromium.
+cipd_prebuilt_file(
+    name = "web_engine_canary_archive_arm64",
+    path = "//prebuilt/third_party/web_engine_latest/arch/arm64/web_engine.far",
+    visibility = ["//visibility:private"],
+)
+
+cipd_prebuilt_file(
+    name = "web_engine_canary_archive_x64",
+    path = "//prebuilt/third_party/web_engine_latest/arch/x64/web_engine.far",
+    visibility = ["//visibility:private"],
+)
+
+prebuilt_package(
+    name = "web_engine_canary",
+    archive = select({
+        "//build/bazel/platforms:is_fuchsia_arm64": ":web_engine_canary_archive_arm64",
+        "//build/bazel/platforms:is_fuchsia_x64": ":web_engine_canary_archive_x64",
+    }),
+)
+
+alias(
     name = "web_engine",
-    archive = "@gn_targets//src/chromium:web_engine_pkg",
+    actual = ":web_engine_canary",
 )

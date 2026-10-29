@@ -11,11 +11,9 @@ $ fx set <product>.<arch> --with //src/chromium/web_runner_tests:tests
 $ fx build
 ```
 
-If `<product>` does not include WebEngine by default, you will need to add it:
-```shell
-$ fx set <product>.<arch> --with //src/chromium/web_runner_tests:tests --with //src/chromium:web_engine
-$ fx build
-```
+These tests require WebEngine to be available on the device. The `core`
+product includes WebEngine in its cache packages; other products must include
+it in their product configuration.
 
 ## Run the test
 

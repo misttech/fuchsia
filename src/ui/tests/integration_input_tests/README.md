@@ -11,11 +11,8 @@ To build and run the tests for core-based products (e.g. core, astro, or
 sherlock), include the `integration_input_tests` test package in your build
 args either directly:
 
-<!-- TODO(https://fxbug.dev/42070261): Remove the web_engine lines when resolved. -->
-
 ```
 fx set ... \
-  --with //src/chromium:web_engine \
   --with //src/ui/tests/integration_input_tests
 ```
 
@@ -23,7 +20,6 @@ or transitively:
 
 ```
 fx set ... \
-  --with //src/chromium:web_engine \
   --with //bundles/tests
 ```
 

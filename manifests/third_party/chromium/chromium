@@ -9,14 +9,6 @@
     <package name="chromium/fuchsia/web_engine/arm64/web_engine"
              version="version:158.0.8112.0"
              path="prebuilt/third_party/web_engine_latest/arch/arm64"/>
-    <!-- web_engine_shell amd64 / x64 implementation -->
-    <package name="chromium/fuchsia/web_engine/amd64/web_engine_shell"
-             version="version:158.0.8112.0"
-             path="prebuilt/third_party/web_engine_shell_latest/arch/x64"/>
-    <!-- web_engine_shell arm64 / aarch64 implementation -->
-    <package name="chromium/fuchsia/web_engine/arm64/web_engine_shell"
-             version="version:158.0.8112.0"
-             path="prebuilt/third_party/web_engine_shell_latest/arch/arm64"/>
     <!-- Chromium amd64 / x64 tests -->
     <package name="chromium/fuchsia/web_engine/amd64/tests"
              version="version:158.0.8112.0"

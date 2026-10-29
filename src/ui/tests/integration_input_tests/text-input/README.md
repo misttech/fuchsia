@@ -1,17 +1,16 @@
 ## Setting up for running the tests
 
-The following is the command line to use if you want to run an integration
-input test on a product that is not natively graphical.  You must include
-both the test and `web_engine`.  If you do not, the tests may fail in ways
-that don't obviously point at the absence of `web_engine`.
+The Chromium variants of these tests require WebEngine to be available on the
+device. The `core` product includes WebEngine in its cache packages. If you use
+a product that does not, the tests may fail in ways that don't obviously point
+at the absence of WebEngine.
 
 The `fx set` command for running the test under the QEMU emulator
 is as follows below:
 
 ```
 fx set core.x64 \
-  --with=//src/ui/tests/integration_input_tests \
-  --with=//src/chromium:web_engine
+  --with=//src/ui/tests/integration_input_tests
 ```
 
 From here, you can compile and run the test as usual.

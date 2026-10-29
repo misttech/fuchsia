@@ -45,7 +45,6 @@ few additional packages to each dependency set:
 import("//products/core.gni")
 
 legacy_base_package_labels += [
-  "//src/chromium:web_engine",
   "//src/fonts",
 ]
 
@@ -58,8 +57,8 @@ discoverable_package_labels += [
 ]
 ```
 
-In this example the build system would package the runtimes, resources, and
-services into the disk image for the target device. The examples would only be
+In this example the build system would package the resources and services
+into the disk image for the target device. The examples would only be
 available on demand from a package server.
 
 Note: For more details on product configurations and dependencies, see

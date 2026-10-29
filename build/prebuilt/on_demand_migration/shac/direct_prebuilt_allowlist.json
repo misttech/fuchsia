@@ -135,7 +135,7 @@
     "src/bringup/bin/virtcon/BUILD.gn": 4,
     "src/camera/bin/camera-gym/BUILD.gn": 1,
     "src/camera/drivers/controller/camera_controller_driver.gni": 2,
-    "src/chromium/generate_chromium_targets.gni": 1,
+    "src/chromium/BUILD.gn": 1,
     "src/connectivity/bluetooth/core/bt-host/BUILD.gn": 1,
     "src/connectivity/bluetooth/hci/vendor/broadcom/BUILD.gn": 2,
     "src/connectivity/bluetooth/hci/vendor/intel/BUILD.gn": 7,
