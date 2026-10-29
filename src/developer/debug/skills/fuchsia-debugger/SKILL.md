@@ -49,6 +49,7 @@ fx debug cli --json '{"command": "wait-for-event", "last_seen_seq": 0, "timeout"
 > initial command fails with `Daemon socket not found`, wait briefly and retry.
 
 #### Example `wait-for-event` Response (Test Failure / Breakpoint):
+
 ```json
 {
   "success": true,
@@ -86,10 +87,13 @@ breakpoint hit. Perform diagnostics:
 
 1.  **Query Session State:** Retrieve all threads and processes active in the
     session to identify the failing thread:
+
     ```bash
     fx debug cli --json '{"command": "get-state"}'
     ```
+
     Example Response:
+
     ```json
     {
       "success": true,
@@ -101,11 +105,13 @@ breakpoint hit. Perform diagnostics:
       }
     }
     ```
+
     *Note: In the `get-state` thread list representation, the key is `"id"`. Map
     this value to the `"thread_id"` parameter in subsequent requests.*
 
 2.  **Retrieve Stack Trace:** Get the stack trace for a suspended thread
     (`thread_id`) or across all threads in a process (`pid`):
+
     ```bash
     # Thread-level stack trace
     fx debug cli --json '{"command": "stack-trace", "thread_id": 1}'
@@ -113,7 +119,9 @@ breakpoint hit. Perform diagnostics:
     # Process-level stack trace (all threads in "pid")
     fx debug cli --json '{"command": "stack-trace", "pid": 12345}'
     ```
+
     Example Thread Response:
+
     ```json
     {
       "success": true,
@@ -135,7 +143,9 @@ breakpoint hit. Perform diagnostics:
       }
     }
     ```
+
     Example Process Response:
+
     ```json
     {
       "success": true,
@@ -181,27 +191,26 @@ breakpoint hit. Perform diagnostics:
 
 3.  **Inspect Local Variables:** Retrieve variables and arguments within a
     specific stack frame:
+
     ```bash
     fx debug cli --json '{"command": "variables", "thread_id": 1, "frame_index": 0}'
     ```
 
-4.  **Evaluate Dynamic Expressions / Commands:** Run dynamic expression
-    evaluation or debugger commands within a stack frame. The underlying
-    debugger handles `evaluate` requests in the `"repl"` context, executing the
-    expression directly as a zxdb console command line.
+4.  **Evaluate Dynamic Expressions:** Evaluate expressions directly within a
+    stack frame via `evaluate`.
 
     Note that `evaluate` requires the target thread to be stopped prior to
-    invocation. If the thread is running, the request immediately returns an
-    error (`success: false`). Ensure the thread is suspended via a breakpoint or
-    `pause` command before evaluating.
+    invocation. Ensure the thread is suspended via a breakpoint or `pause`
+    command before evaluating.
 
-    To evaluate an expression or print a variable, prefix the expression with
-    the debugger's print command:
+    Pass the expression directly (do not prefix with `print`):
+
     ```bash
-    fx debug cli --json '{"command": "evaluate", "thread_id": 1, "frame_index": 0, "expression": "print my_var"}'
+    fx debug cli --json '{"command": "evaluate", "thread_id": 1, "frame_index": 0, "expression": "my_var"}'
     ```
 
     Example Response:
+
     ```json
     {
       "success": true,
@@ -212,15 +221,18 @@ breakpoint hit. Perform diagnostics:
     }
     ```
 
-    You can also execute arbitrary zxdb console commands such as symbol
-    inspection:
+    To execute raw `zxdb` console commands that do not have a dedicated CLI
+    subcommand (such as symbol inspection or disassembly), use the `console`
+    command (optionally scoped to a `thread_id` and `frame_index`):
+
     ```bash
-    fx debug cli --json '{"command": "evaluate", "thread_id": 1, "frame_index": 0, "expression": "sym-info my_var"}'
+    fx debug cli --json '{"command": "console", "thread_id": 1, "frame_index": 0, "input": "sym-info my_var"}'
     ```
 
 5.  **Teardown Session:** Once diagnostics are complete, terminate the debugging
     session. This detaches from targets and lets the background test runner exit
     cleanly:
+
     ```bash
     fx debug cli --json '{"command": "stop"}'
     ```
@@ -249,9 +261,11 @@ To debug a passing path or install breakpoints before test execution begins:
 1.  Start the test with the `--breakpoint` option to force a normal attach with
     immediate symbol loading (paths must be fully qualified from the workspace
     root):
+
     ```bash
     fx test <test_name> --agent-debugging-mode --breakpoint <source_file>:<line>
     ```
+
 2.  Poll for the breakpoint hit stopped event via `wait-for-event`.
 3.  Once suspended, perform diagnostics and resume execution using `continue`.
 
@@ -273,6 +287,7 @@ All commands are sent as serialized JSON payloads to `fx debug cli --json
 | **Get Stack Trace** | `{"command": "stack-trace", "thread_id": <thread_id>}` or `{"command": "stack-trace", "pid": <pid>, "raw": <optional_bool>}` *(CLI: `stack-trace -t <id>` or `stack-trace -p <pid>`)* |
 | **List Variables** | `{"command": "variables", "thread_id": <thread_id>, "frame_index": <frame_index>}` *(CLI: `variables -t <id> --frame-index <idx>`)* |
 | **Evaluate Expression** | `{"command": "evaluate", "thread_id": <thread_id>, "frame_index": <frame_index>, "expression": "<expr>", "start": <start>, "count": <count>}` *(CLI: `evaluate -t <id> --frame-index <idx> <expr>`)* |
+| **Run Console Command** | `{"command": "console", "input": "<cmd>", "thread_id": <optional_thread_id>, "frame_index": <frame_index>}` *(CLI: `console [-t <id>] [--frame-index <idx>] <cmd>`)* |
 | **Step In** | `{"command": "step-in", "thread_id": <thread_id>}` *(CLI: `step-in <id>`)* |
 | **Step Over (Next)** | `{"command": "next", "thread_id": <thread_id>}` *(CLI: `next <id>`)* |
 | **Step Out (Finish)** | `{"command": "finish", "thread_id": <thread_id>}` *(CLI: `finish <id>`)* |
@@ -281,12 +296,14 @@ All commands are sent as serialized JSON payloads to `fx debug cli --json
 | **Stop Session** | `{"command": "stop"}` |
 
 ### Global Parameters
+
 * **Event History Pruning (`ack_seq`)**: Any command payload can include
   `"ack_seq": <seq>` (e.g., `{"command": "get-state", "ack_seq": 5}`). The
   daemon will prune all event history up to the acknowledged sequence to
   optimize memory.
 
 ### Performance & Blocking
+
 * **Smart Blocking**: Commands like `pause`, `stack-trace`, and `wait-for-event`
   are blocking operations and may take up to 10 seconds depending on the
   target's execution state. Unlike those commands, `evaluate` is non-blocking

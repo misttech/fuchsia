@@ -5,13 +5,14 @@
 #ifndef SRC_DEVELOPER_DEBUG_ZXDB_DEBUG_ADAPTER_HANDLERS_REQUEST_EVALUATE_H_
 #define SRC_DEVELOPER_DEBUG_ZXDB_DEBUG_ADAPTER_HANDLERS_REQUEST_EVALUATE_H_
 
+#include <lib/fit/function.h>
+
 #include "src/developer/debug/zxdb/debug_adapter/context.h"
 
 namespace zxdb {
 
-void OnRequestEvaluate(
-    DebugAdapterContext* ctx, const dap::EvaluateRequest& req,
-    const std::function<void(dap::ResponseOrError<dap::EvaluateResponse>)>& callback);
+void OnRequestEvaluate(DebugAdapterContext* ctx, const dap::EvaluateRequest& req,
+                       fit::function<void(dap::ResponseOrError<dap::EvaluateResponse>)> callback);
 
 }  // namespace zxdb
 

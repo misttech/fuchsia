@@ -272,7 +272,7 @@ void DebugAdapterContext::Init() {
       [this](const dap::EvaluateRequest& req,
              std::function<void(dap::ResponseOrError<dap::EvaluateResponse>)> callback) {
         DEBUG_LOG(DebugAdapter) << "EvaluateRequest received";
-        OnRequestEvaluate(this, req, callback);
+        OnRequestEvaluate(this, req, std::move(callback));
       });
 
   dap_->registerHandler(

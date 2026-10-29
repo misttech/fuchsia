@@ -70,9 +70,9 @@ Handler implementations must preserve these invariants:
   `BreakpointSettings::ValidateSize`. Access must be `write` or `readWrite`, and
   `hitCondition` must be empty.
 - Stepping (`OnRequestNext`, `OnRequestStepIn`, `OnRequestStepOut`), variable
-  queries (`OnRequestScopes`, `OnRequestVariables`), and
-  `OnRequestDataBreakpointInfo` require a stopped thread via
-  `DebugAdapterContext::CheckStoppedThread`.
+  queries (`OnRequestScopes`, `OnRequestVariables`), expression evaluation
+  (`OnRequestEvaluate`), and `OnRequestDataBreakpointInfo` require a stopped
+  thread via `DebugAdapterContext::CheckStoppedThread`.
 - `OnRequestVariables` requires `VariableResponseContext` to finish all pending
   evaluations (`FX_CHECK(!pending_evals)`) before calling the response callback,
   and requires a non-null `Frame` for every valid `VariablesRecord`.
@@ -84,7 +84,9 @@ Handler implementations must preserve these invariants:
 - `OnRequestZxdbConsoleCommand` validates `req.frameId` via
   `DebugAdapterContext::FrameforId` when present, and returns a DAP error if
   `OfflineCommandContext` reports any command errors.
-- `OnRequestEvaluate` accepts only requests where `req.context` equals `repl`.
+- `OnRequestEvaluate` requires `req.frameId`, rejects `"hover"` requests, and
+  evaluates `req.expression` directly via `EvalExpression` without mutating
+  `ConsoleContext` selections or running console verbs.
 - `OnRequestZxdbSetTracepoints` reconciles tracepoints installed by the active
   DAP connection, updating existing tracepoints in-place and deleting removed
   ones while preserving user console tracepoints.
@@ -116,8 +118,7 @@ Executing DAP request handlers produces these session and IPC side effects:
 - Sends `RemoteAPI::RunComponent` IPC requests when launching components without
   `RunInTerminal` support.
 - Updates `ConsoleContext` active selections and runs console commands via
-  `Console::ProcessInputLine` during `OnRequestZxdbConsoleCommand` and `repl`
-  `OnRequestEvaluate` calls.
+  `Console::ProcessInputLine` during `OnRequestZxdbConsoleCommand` calls.
 - Triggers asynchronous stack syncing (`Stack::EnsureFrames`), async task tree
   syncing (`AsyncTaskTree::Sync`), and expression evaluation (`EvalExpression`,
   `FillFormatNodeValue`, `FillFormatNodeDescription`).

@@ -127,16 +127,16 @@ details:
       '{"command": "variables", "thread_id": 1, "frame_index": 0}'
     ```
 
-3.  **Run `zxdb` console verbs or expressions via `evaluate`** (requires a
-    stopped target thread):
+3.  **Evaluate expressions via `evaluate` or run raw `zxdb` console verbs via
+    `console`**:
 
     ```bash
     fx debug cli --json \
       '{"command": "evaluate", "thread_id": 1, "frame_index": 0,
-        "expression": "sym-info my_var"}'
+        "expression": "my_var"}'
     fx debug cli --json \
-      '{"command": "evaluate", "thread_id": 1, "frame_index": 0,
-        "expression": "print my_var"}'
+      '{"command": "console", "thread_id": 1, "frame_index": 0,
+        "input": "sym-info my_var"}'
     ```
 
 4.  **Stop the daemon when finished**:

@@ -56,8 +56,6 @@ class Command(BaseCommand):
 
     @staticmethod
     async def execute(args: argparse.Namespace) -> int | None:
-        # TODO(https://fxbug.dev/527992704): Handle expression evaluation vs generic console commands
-        # appropriately once zxdb evaluate handler is restricted to expressions only.
         if isinstance(args.expression, list):
             args.expression = " ".join(args.expression)
         return None
