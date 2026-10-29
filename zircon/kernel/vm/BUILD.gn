@@ -49,6 +49,7 @@ source_set("vm") {
     "vm_object_paged.cc",
     "vm_object_paged_ffi.cc",
     "vm_object_physical.cc",
+    "vm_object_physical_ffi.cc",
     "vm_page_list.cc",
     "vm_page_list_ffi.cc",
     "vmm.cc",
@@ -1103,6 +1104,7 @@ kernel_bindgen_crate("vm-object-bindings") {
     "cpp_vm_object_num_children",
     "cpp_vm_object_lookup",
     "cpp_vm_object_lookup_contiguous",
+    "cpp_vm_object_lookup_fn_invoke",
     "cpp_vm_object_get_page",
     "cpp_vm_object_get_attributed_memory",
     "cpp_vm_object_get_attributed_memory_in_reference_owner",
@@ -1145,6 +1147,7 @@ kernel_bindgen_crate("vm-object-bindings") {
     "VmObject",
     "VmObject_CacheOpType",
     "VmObject_ChildType",
+    "VmObject_LookupFunction",
     "VmObjectChildObserver",
     "VmObjectReadWriteOptions",
     "arch_mmu_flags_t",
@@ -1166,7 +1169,6 @@ kernel_bindgen_crate("vm-object-bindings") {
     "VmObject_ChildObserverLock",
     "VmObject_DirtyRangeEnumerateFunction",
     "VmObject_GlobalList",
-    "VmObject_LookupFunction",
     "VmObject_MappingKey",
     "VmObject_MappingTree",
     "VmObject_OnWriteBytesTransferredCallback",
@@ -1175,6 +1177,7 @@ kernel_bindgen_crate("vm-object-bindings") {
   opaque_types = [
     "StreamSizeManager",
     "VmObject",
+    "VmObject_LookupFunction",
     "VmObjectChildObserver",
   ]
   rustified_enum = [
@@ -1288,6 +1291,49 @@ kernel_bindgen_crate("vm-object-paged-bindings") {
     "use page_source_bindings::PageSource;",
     "use vm_cow_pages_bindings::VmCowPages;",
     "use vm_object_bindings::VmObject;",
+    "use zx_types::zx_status_t;",
+  ]
+}
+
+kernel_bindgen_crate("vm-object-physical-bindings") {
+  visibility = [ ":*" ]
+  headers = [ "include/vm/vm_object_physical_ffi.h" ]
+  non_rust_deps = [ ":vm" ]
+  output_name = "vm_object_physical_bindings.rs"
+  cpp = true
+
+  edition = "2024"
+  notice_year = 2026
+  function_allowlist = [
+    "cpp_vm_object_physical_as_vm_object",
+    "cpp_vm_object_physical_child_list_lock_acquire",
+    "cpp_vm_object_physical_child_list_lock_release",
+    "cpp_vm_object_physical_create",
+    "cpp_vm_object_physical_get_mapping_cache_policy_locked",
+    "cpp_vm_object_physical_has_children_locked",
+    "cpp_vm_object_physical_num_mappings_locked",
+    "cpp_vm_object_physical_set_cache_policy_locked",
+  ]
+  type_allowlist = [ "VmObjectPhysical" ]
+  type_blocklist = [
+    "VmObject",
+    "arch_mmu_flags_t",
+    "paddr_t",
+    "zx_status_t",
+  ]
+  opaque_types = [ "VmObjectPhysical" ]
+  function_blocklist = [ "VmObjectPhysical_.*" ]
+  additional_bindgen_flags = [ "--no-recursive-allowlist" ]
+  deps = [
+    ":vm-object-bindings",
+    "//sdk/rust/zx-types",
+  ]
+
+  raw_lines = [
+    "#![no_std]",
+    "use vm_object_bindings::VmObject;",
+    "use vm_object_bindings::arch_mmu_flags_t;",
+    "use zx_types::zx_paddr_t as paddr_t;",
     "use zx_types::zx_status_t;",
   ]
 }
@@ -1579,6 +1625,7 @@ kernel_rust_mod("vm-rs") {
     ":vm-fault-bindings",
     ":vm-object-bindings",
     ":vm-object-paged-bindings",
+    ":vm-object-physical-bindings",
     ":vm-page-list-bindings",
     ":vmm-bindings",
     "//sdk/rust/zx-status",

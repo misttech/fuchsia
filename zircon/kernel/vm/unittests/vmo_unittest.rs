@@ -81,9 +81,9 @@ mod vmo_rs {
                 let page = paddr_to_vm_page(pa).expect("paddr must map to vm_page");
                 if !pred(page) {
                     **pred_matches = false;
-                    Err(Status::STOP)
+                    Status::STOP
                 } else {
-                    Err(Status::NEXT)
+                    Status::NEXT
                 }
             },
         );
@@ -338,10 +338,10 @@ mod vmo_rs {
         let mut last_pa = PAddr(0);
         let lookup_func = |offset, pa: PAddr, last_pa: &mut PAddr| {
             if offset != 0 && PAddr(last_pa.0 + PAGE_SIZE as usize) != pa {
-                return Err(Status::BAD_STATE);
+                return Status::BAD_STATE;
             }
             *last_pa = pa;
-            Err(Status::NEXT)
+            Status::NEXT
         };
         let status = vmo.lookup(0, alloc_size, &mut last_pa, lookup_func);
         expect_ok!(status, "vmo lookup\n");
@@ -1113,7 +1113,7 @@ mod vmo_rs {
         let mut pages_seen = 0;
         let lookup_fn = |_offset: u64, _pa: PAddr, pages_seen: &mut usize| {
             *pages_seen += 1;
-            Err(Status::NEXT)
+            Status::NEXT
         };
         expect_ok!(vmo.lookup(0, alloc_size, &mut pages_seen, lookup_fn));
         expect_eq!(0, pages_seen, "lookup on uncommitted pages\n");
@@ -1201,7 +1201,7 @@ mod vmo_rs {
         let lookup_fn = |offset, _pa: PAddr, offset_seen: &mut u64| {
             assert!(*offset_seen == u64::MAX);
             *offset_seen = offset;
-            Err(Status::NEXT)
+            Status::NEXT
         };
         expect_ok!(slice.lookup(0, slice_size, &mut offset_seen, lookup_fn));
 
@@ -1245,11 +1245,11 @@ mod vmo_rs {
         let mut clone_lookup = [0u64; PAGE_COUNT];
         let vmo_lookup_func = |offset, pa: PAddr, vmo_lookup: &mut [u64; PAGE_COUNT]| {
             vmo_lookup[(offset / PAGE_SIZE) as usize] = pa.into();
-            Err(Status::NEXT)
+            Status::NEXT
         };
         let clone_lookup_func = |offset, pa: PAddr, clone_lookup: &mut [u64; PAGE_COUNT]| {
             clone_lookup[(offset / PAGE_SIZE) as usize] = pa.into();
-            Err(Status::NEXT)
+            Status::NEXT
         };
         // vmo lookup
         expect_ok!(vmo.lookup(0, alloc_size, &mut vmo_lookup, vmo_lookup_func));
@@ -2750,7 +2750,7 @@ mod vmo_rs {
             assert!(*base_pa == PAddr(usize::MAX));
             assert!(offset == 0);
             *base_pa = pa;
-            Err(Status::NEXT)
+            Status::NEXT
         });
         assert_ok!(status, "stash base pa works\n");
         assert_true!(base_pa != PAddr(usize::MAX));
@@ -2780,9 +2780,9 @@ mod vmo_rs {
                 assert!(!ctx.page_seen[index]);
                 ctx.page_seen[index] = true;
                 if pa.0.wrapping_sub(ctx.base_pa.0) != offset as usize {
-                    return Err(Status::BAD_STATE);
+                    return Status::BAD_STATE;
                 }
-                Err(Status::NEXT)
+                Status::NEXT
             });
             assert!(
                 status.is_ok(),
@@ -3070,7 +3070,7 @@ mod vmo_rs {
         assert_ok!(vmo.lookup(0, PAGE_SIZE, &mut base_pa, |offset, pa, base_pa| {
             debug_assert_eq!(offset, 0);
             *base_pa = pa;
-            Err(Status::NEXT)
+            Status::NEXT
         }));
         assert_true!(base_pa != PAddr::from(!0));
 
@@ -3093,7 +3093,7 @@ mod vmo_rs {
                     **page_absent = false;
                     debug_assert_eq!(*offset, lookup_offset);
                     debug_assert_eq!(base_pa.0 + *offset as usize, pa.0);
-                    Err(Status::NEXT)
+                    Status::NEXT
                 },
             );
             let absent_expected = (offset < 5 * PAGE_SIZE) || (offset == alloc_size - PAGE_SIZE);
@@ -4556,7 +4556,7 @@ mod vmo_rs {
         let mut pages_seen = 0;
         let lookup_fn = |_offset: u64, _pa: PAddr, pages_seen: &mut u64| {
             *pages_seen += 1;
-            Err(Status::NEXT)
+            Status::NEXT
         };
 
         let vmo_cow = vmo.debug_get_cow_pages().expect("vmo has cow pages");
@@ -4609,7 +4609,7 @@ mod vmo_rs {
         let mut pages_seen = 0;
         let lookup_fn = |_offset: u64, _pa: PAddr, pages_seen: &mut u64| {
             *pages_seen += 1;
-            Err(Status::NEXT)
+            Status::NEXT
         };
 
         let clone_cow = clone.debug_get_cow_pages().unwrap();

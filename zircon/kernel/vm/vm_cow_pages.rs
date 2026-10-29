@@ -1147,13 +1147,16 @@ impl VmCowPages {
         }
     }
 
-    /// Similar to LookupLocked, but enumerate all readable pages in the hierarchy within the
-    /// requested range. The offset passed to the `lookup_fn` is the offset this page is visible at
+    /// Similar to `LookupLocked`, but enumerates all readable pages in the hierarchy within the
+    /// requested range. The offset passed to `lookup_fn` is the offset this page is visible at
     /// in this object, even if the page itself is committed in a parent object. The physical
-    /// addresses given to the `lookup_fn` should not be retained in any way unless the range has
+    /// addresses given to `lookup_fn` should not be retained in any way unless the range has
     /// also been pinned by the caller.
-    /// Ranges of length zero are considered invalid and will return `ZX_ERR_INVALID_ARGS`. The
-    /// `lookup_fn` can terminate iteration early by returning `ZX_ERR_STOP`.
+    ///
+    /// Ranges of length zero are considered invalid and will return `Err(Status::INVALID_ARGS)`.
+    /// Returning `Status::NEXT` from `lookup_fn` continues enumeration, `Status::STOP` stops
+    /// iteration early and returns `Ok(())`, and any other `Status` aborts early with
+    /// `Err(status)`.
     ///
     /// # Warning
     ///
@@ -1163,27 +1166,28 @@ impl VmCowPages {
         &self,
         range: VmCowRange,
         ctx: &mut T,
-        lookup_fn: fn(u64, PAddr, &mut T) -> Result<(), Status>,
+        lookup_fn: fn(u64, PAddr, &mut T) -> Status,
     ) -> Result<(), Status> {
         struct LookupState<'a, T> {
             ctx: &'a mut T,
-            lookup_fn: fn(u64, PAddr, &mut T) -> Result<(), Status>,
+            lookup_fn: fn(u64, PAddr, &mut T) -> Status,
         }
 
         /// # Safety
         ///
-        /// `ctx` must point to a valid `LookupState<'_, T>` created on the stack in `lookup`
-        /// that remains valid for the duration of the C++ FFI lookup callback.
+        /// `ctx` must point to a valid `LookupState<'_, T>` created on the stack in
+        /// `debug_lookup_readable` that remains valid for the duration of the C++ FFI lookup
+        /// callback.
         unsafe extern "C" fn lookup_callback_shim<T>(
             ctx: *mut core::ffi::c_void,
             offset: u64,
             paddr: u64,
         ) -> zx_status_t {
-            // SAFETY: `ctx` is guaranteed by `cpp_vm_object_lookup` to be the non-null `ctx_ptr`
-            // passed from `lookup`, which points to a live `LookupState<'_, T>` on the caller's
-            // stack.
+            // SAFETY: `ctx` is guaranteed by `cpp_vm_cow_pages_debug_lookup_readable` to be the
+            // non-null `ctx_ptr` passed from `debug_lookup_readable`, which points to a live
+            // `LookupState<'_, T>` on the caller's stack.
             let state = unsafe { ctx.cast::<LookupState<'_, T>>().as_mut_unchecked() };
-            Status::result_into_raw((state.lookup_fn)(offset, paddr.into(), state.ctx))
+            (state.lookup_fn)(offset, paddr.into(), state.ctx).into_raw()
         }
 
         let mut state = LookupState { ctx, lookup_fn };

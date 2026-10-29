@@ -560,24 +560,27 @@ impl VmObject {
         }
     }
 
-    /// execute lookup_fn on a given range of physical addresses within the vmo. Only pages that are
-    /// present and writable in this VMO will be enumerated. Any copy-on-write pages in our parent
-    /// will not be enumerated. The physical addresses given to the lookup_fn should not be retained
-    /// in any way unless the range has also been pinned by the caller. Offsets provided will be in
-    /// relation to the object being queried, even if pages are actually from a parent object where
-    /// this is a slice.
-    /// Ranges of length zero are considered invalid and will return
-    /// ZX_ERR_INVALID_ARGS. The lookup_fn can terminate iteration early by returning ZX_ERR_STOP.
+    /// Executes `lookup_fn` on a given range of physical addresses within the VMO. Only pages that
+    /// are present and writable in this VMO will be enumerated. Any copy-on-write pages in our
+    /// parent will not be enumerated. The physical addresses given to `lookup_fn` should not be
+    /// retained in any way unless the range has also been pinned by the caller. Offsets provided
+    /// will be in relation to the object being queried, even if pages are actually from a parent
+    /// object where this is a slice.
+    ///
+    /// Ranges of length zero are considered invalid and will return `Err(Status::INVALID_ARGS)`.
+    /// Returning `Status::NEXT` from `lookup_fn` continues enumeration, `Status::STOP` stops
+    /// iteration early and returns `Ok(())`, and any other `Status` aborts early with
+    /// `Err(status)`.
     pub fn lookup<T: Sized>(
         &self,
         offset: u64,
         len: u64,
         ctx: &mut T,
-        lookup_fn: fn(u64, PAddr, &mut T) -> Result<(), Status>,
+        lookup_fn: fn(u64, PAddr, &mut T) -> Status,
     ) -> Result<(), Status> {
         struct LookupState<'a, T> {
             ctx: &'a mut T,
-            lookup_fn: fn(u64, PAddr, &mut T) -> Result<(), Status>,
+            lookup_fn: fn(u64, PAddr, &mut T) -> Status,
         }
 
         /// # Safety
@@ -593,7 +596,7 @@ impl VmObject {
             // passed from `lookup`, which points to a live `LookupState<'_, T>` on the caller's
             // stack.
             let state = unsafe { ctx.cast::<LookupState<'_, T>>().as_mut_unchecked() };
-            Status::result_into_raw((state.lookup_fn)(offset, paddr.into(), state.ctx))
+            (state.lookup_fn)(offset, paddr.into(), state.ctx).into_raw()
         }
 
         let mut state = LookupState { ctx, lookup_fn };

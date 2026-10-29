@@ -17,7 +17,6 @@
 #include <zircon/types.h>
 
 #include <fbl/alloc_checker.h>
-#include <kernel/ffi.h>
 #include <ktl/utility.h>
 #include <vm/physmap.h>
 #include <vm/vm.h>
@@ -268,64 +267,4 @@ zx_status_t VmObjectPhysical::LookupContiguousLocked(uint64_t offset, uint64_t l
 
 zx_status_t VmObjectPhysical::SetMappingCachePolicy(arch_mmu_flags_t cache_policy) {
   return rust_vm_object_physical_set_mapping_cache_policy(this, state(), cache_policy);
-}
-
-extern "C" {
-VmObjectPhysical* cpp_vm_object_physical_create(paddr_t base, size_t size, zx_status_t* out_status);
-VmObject* cpp_vm_object_physical_as_vm_object(VmObjectPhysical* vmo);
-zx_status_t cpp_vm_object_lookup_fn_invoke(const VmObject::LookupFunction* lookup_fn,
-                                           uint64_t offset, paddr_t pa);
-arch_mmu_flags_t cpp_vm_object_physical_get_mapping_cache_policy_locked(
-    const VmObjectPhysical* vmo);
-size_t cpp_vm_object_num_mappings_locked(const VmObjectPhysical* vmo);
-bool cpp_child_list_lock_acquire();
-void cpp_child_list_lock_release(bool should_clear);
-bool cpp_vm_object_has_children_locked(const VmObjectPhysical* vmo);
-void cpp_vm_object_set_cache_policy_locked(VmObjectPhysical* vmo, arch_mmu_flags_t cache_policy);
-VmObjectPhysical* cpp_vm_object_physical_create(paddr_t base, size_t size,
-                                                zx_status_t* out_status) {
-  fbl::RefPtr<VmObjectPhysical> vmo;
-  *out_status = VmObjectPhysical::Create(base, size, &vmo);
-  return fbl::ExportToRawPtr(&vmo);
-}
-
-VmObject* cpp_vm_object_physical_as_vm_object(VmObjectPhysical* vmo) {
-  return static_cast<VmObject*>(vmo);
-}
-
-zx_status_t cpp_vm_object_lookup_fn_invoke(const VmObject::LookupFunction* lookup_fn,
-                                           uint64_t offset, paddr_t pa) {
-  return (*lookup_fn)(offset, pa);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotation once cross-language inlining works.
-FFI_ALWAYS_INLINE arch_mmu_flags_t cpp_vm_object_physical_get_mapping_cache_policy_locked(
-    const VmObjectPhysical* vmo) TA_NO_THREAD_SAFETY_ANALYSIS {
-  return vmo->GetMappingCachePolicyLocked();
-}
-
-size_t cpp_vm_object_num_mappings_locked(const VmObjectPhysical* vmo) TA_NO_THREAD_SAFETY_ANALYSIS {
-  return vmo->num_mappings_locked();
-}
-
-// Note: We return the `ShouldClear` timeslice extension state as a boolean back to Rust,
-// and receive it back on release. This avoids using a `thread_local` variable to store the
-// token, which would trigger page faults during early boot before TLS is initialized.
-bool cpp_child_list_lock_acquire() TA_NO_THREAD_SAFETY_ANALYSIS {
-  return VmObjectPhysical::ChildListLockAcquire() == CriticalMutex::ShouldClear::Yes;
-}
-
-void cpp_child_list_lock_release(bool should_clear) TA_NO_THREAD_SAFETY_ANALYSIS {
-  VmObjectPhysical::ChildListLockRelease(should_clear ? CriticalMutex::ShouldClear::Yes
-                                                      : CriticalMutex::ShouldClear::No);
-}
-
-bool cpp_vm_object_has_children_locked(const VmObjectPhysical* vmo) TA_NO_THREAD_SAFETY_ANALYSIS {
-  return vmo->has_children_locked();
-}
-
-void cpp_vm_object_set_cache_policy_locked(VmObjectPhysical* vmo, arch_mmu_flags_t cache_policy)
-    TA_NO_THREAD_SAFETY_ANALYSIS {
-  vmo->set_cache_policy_locked(cache_policy);
-}
 }
