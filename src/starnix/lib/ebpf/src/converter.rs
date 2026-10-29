@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use linux_uapi::sock_filter;
+use linux_uapi::{BPF_MAXINSNS, sock_filter};
 use std::collections::HashMap;
 
 use crate::EbpfError;
@@ -97,6 +97,10 @@ fn cbpf_to_ebpf(
     bpf_code: &[sock_filter],
     config: &CbpfConfig,
 ) -> Result<Vec<EbpfInstruction>, EbpfError> {
+    if bpf_code.len() > BPF_MAXINSNS as usize {
+        return Err(EbpfError::CbpfProgramTooLarge(bpf_code.len()));
+    }
+
     // There are only two BPF registers, A and X. There are 10
     // EBPF registers, numbered 0-9.  We map between the two as
     // follows:
@@ -141,7 +145,9 @@ fn cbpf_to_ebpf(
         // Update instructions processed previously that jump to the current one.
         if let Some((_, entries)) = to_be_patched.remove_entry(&i) {
             for index in entries {
-                let offset = (ebpf_code.len() - index - 1) as i16;
+                // `bpf_code.len() <= BPF_MAXINSNS` (4096) and each cBPF instruction expands to at
+                // most 6 eBPF instructions (`BPF_MSH`), so the forward jump delta fits in `i16`.
+                let offset = i16::try_from(ebpf_code.len() - index - 1).unwrap();
                 ebpf_code[index].set_offset(offset);
             }
         }
@@ -899,5 +905,34 @@ mod tests {
             .expect("Error parsing program");
         let data = VariableLengthPacket { len: 42, ..VariableLengthPacket::default() };
         assert_eq!(prg.run(&mut (), &data), data.len as u64);
+    }
+
+    #[test]
+    fn test_cbpf_max_insns_limit() {
+        let max_insns = BPF_MAXINSNS as usize;
+        let too_large = vec![sock_filter { code: BPF_RET_K, jt: 0, jf: 0, k: 0 }; max_insns + 1];
+        assert_eq!(
+            cbpf_to_ebpf(&too_large, &VARIABLE_LENGTH_CBPF_CONFIG),
+            Err(EbpfError::CbpfProgramTooLarge(max_insns + 1))
+        );
+
+        // At `BPF_MAXINSNS` (4096), jumping over 4094 6-instruction `BPF_MSH` expansions produces
+        // a 24564-instruction delta, which fits within `i16::MAX` (32767).
+        let msh_count = max_insns - 2;
+        let mut max_prg = Vec::with_capacity(max_insns);
+        max_prg.push(sock_filter {
+            code: (BPF_JMP | BPF_JA) as u16,
+            jt: 0,
+            jf: 0,
+            k: msh_count as u32,
+        });
+        max_prg.extend(std::iter::repeat_n(
+            sock_filter { code: (BPF_LDX | BPF_MSH | BPF_B) as u16, jt: 0, jf: 0, k: 0 },
+            msh_count,
+        ));
+        max_prg.push(sock_filter { code: BPF_RET_K, jt: 0, jf: 0, k: 1 });
+        let ebpf = cbpf_to_ebpf(&max_prg, &VARIABLE_LENGTH_CBPF_CONFIG)
+            .expect("BPF_MAXINSNS program should convert");
+        assert_eq!(ebpf[3].offset(), (msh_count * 6) as i16);
     }
 }

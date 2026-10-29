@@ -266,6 +266,9 @@ pub enum EbpfError {
     #[error("Failed to link program: {0}")]
     ProgramLinkError(String),
 
+    #[error("cBPF program too large: {0} instructions")]
+    CbpfProgramTooLarge(usize),
+
     #[error("Invalid cBPF instruction code: 0x{0:x}")]
     InvalidCbpfInstruction(u16),
 
