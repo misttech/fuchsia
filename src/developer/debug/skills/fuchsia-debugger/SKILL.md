@@ -1,6 +1,6 @@
 ---
 name: fuchsia-debugger
-description: Use fx debug cli to debug test failures.
+description: Use fx debug cli to debug test failures, processes, and live device drivers.
 ---
 
 # Overview
@@ -281,12 +281,18 @@ All commands are sent as serialized JSON payloads to `fx debug cli --json
 | **Wait for Event** | `{"command": "wait-for-event", "last_seen_seq": <seq>, "timeout": <secs>}` |
 | **Get State** | `{"command": "get-state"}` *(Returns active threads, processes, and breakpoints)* |
 | **List Threads** | `{"command": "threads"}` |
-| **Set/Delete Breakpoint** | `{"command": "break", "file": "<workspace_root_path>", "line": <line_num>, "delete": <optional_bool>}` *(To delete, specify matching file and line)* |
-| **Attach Process** | `{"command": "attach", "filter": "<name_or_pid>"}` |
-| **Detach Process** | `{"command": "detach", "pid": <pid>}` or `{"command": "detach", "all": true}` |
-| **Get Stack Trace** | `{"command": "stack-trace", "thread_id": <thread_id>}` or `{"command": "stack-trace", "pid": <pid>, "raw": <optional_bool>}` *(CLI: `stack-trace -t <id>` or `stack-trace -p <pid>`)* |
+| **Set/Delete Breakpoint** | `{"command": "break", "file": "<workspace_root_path>", "line": <line_num>, "condition": "<optional_expr>", "delete": <optional_bool>}` or `{"command": "break", "function": "<symbol>", "condition": "<optional_expr>", "delete": <optional_bool>}` *(CLI: `break <file>:<line>` or `break --file <file> --line <line>` or `break -f <symbol> [-c <expr>]`)* |
+| **Attach Process / Driver** | `{"command": "attach", "filter": "<name_or_pid>", "weak": <optional_bool>, "exact": <optional_bool>, "recursive": <optional_bool>, "job_only": <optional_bool>}` or `{"command": "attach", "driver": "<driver_name_or_url>", "weak": <optional_bool>, "wait": <optional_bool>}` or `{"command": "attach", "node": "<moniker>", "weak": <optional_bool>, "wait": <optional_bool>}` *(CLI: `attach (<filter> | --driver <drv> | --node <moniker>)`)* |
+| **List Driver Hosts** | `{"command": "driver-list", "filter": "<optional_substr>"}` *(CLI: `driver-list [<filter>]` or `driver-list -f <filter>`)* |
+| **List Modules** | `{"command": "modules", "pid": <optional_pid>, "filter": "<optional_substr>", "force_reload": <optional_bool>}` *(CLI: `modules [-p <pid>] [-f <filter>] [-r]`)* |
+| **Inspect Address Space** | `{"command": "aspace", "pid": <optional_pid>, "address": "<optional_addr>", "filter": "<optional_substr>"}` *(CLI: `aspace [addr] [-p <pid>] [-f <filter>]`)* |
+| **Inspect Handles** | `{"command": "handles", "pid": <optional_pid>, "type": "<optional_type>", "koid": <optional_koid>, "detail": <optional_bool>}` *(CLI: `handles [-p <pid>] [--type <type>] [-k <koid>] [--detail]`)* |
+| **Read Memory** | `{"command": "mem-read", "address": "<addr_or_expr>", "size": <bytes>, "pid": <optional_pid>, "thread_id": <optional_thread_id>, "frame_index": <frame_index>}` *(CLI: `mem-read <addr_or_expr> [-s <size>] [-p <pid>] [-t <id> [--frame-index <idx>]]`)* |
+| **Async Backtrace** | `{"command": "async-backtrace", "pid": <optional_pid>}` *(CLI: `async-backtrace [-p <pid>]`)* |
+| **Detach Process** | `{"command": "detach", "pid": <pid>}` or `{"command": "detach", "all": true}` *(CLI: `detach [<pid>] [--all]`)* |
+| **Get Stack Trace** | `{"command": "stack-trace", "thread_id": <thread_id>}` or `{"command": "stack-trace", "pid": <pid>, "raw": <optional_bool>}`; optional `"force_remote_unwind": <bool>`, `"unwinder": "cfi" \| "fp" \| "scs" \| "plt" \| "armehabi" \| "sigreturn"` *(CLI: `stack-trace (-t <id> \| -p <pid>) [-r] [--force-remote-unwind] [--unwinder <name>]`)* |
 | **List Variables** | `{"command": "variables", "thread_id": <thread_id>, "frame_index": <frame_index>}` *(CLI: `variables -t <id> --frame-index <idx>`)* |
-| **Evaluate Expression** | `{"command": "evaluate", "thread_id": <thread_id>, "frame_index": <frame_index>, "expression": "<expr>", "start": <start>, "count": <count>}` *(CLI: `evaluate -t <id> --frame-index <idx> <expr>`)* |
+| **Evaluate Expression** | `{"command": "evaluate", "thread_id": <thread_id>, "frame_index": <frame_index>, "expression": "<expr>"}` *(CLI: `evaluate -t <id> [--frame-index <idx>] <expr>`)* |
 | **Run Console Command** | `{"command": "console", "input": "<cmd>", "thread_id": <optional_thread_id>, "frame_index": <frame_index>}` *(CLI: `console [-t <id>] [--frame-index <idx>] <cmd>`)* |
 | **Step In** | `{"command": "step-in", "thread_id": <thread_id>}` *(CLI: `step-in <id>`)* |
 | **Step Over (Next)** | `{"command": "next", "thread_id": <thread_id>}` *(CLI: `next <id>`)* |
@@ -308,3 +314,84 @@ All commands are sent as serialized JSON payloads to `fx debug cli --json
   are blocking operations and may take up to 10 seconds depending on the
   target's execution state. Unlike those commands, `evaluate` is non-blocking
   and fails immediately if the target thread is not already stopped.
+
+---
+
+## Live Process & Driver Debugging (`fx debug cli`)
+
+`fx debug cli` also provides workflows for live process inspection and DFv2
+driver bring-up on running targets.
+
+### 1. Discover & Safely Attach to a Driver Host
+
+Because pausing a `driver_host` freezes all colocated drivers in that process
+(which can sever USB/CDC-NCM/ADB transport if transport or watchdog drivers are
+colocated), inspect driver host topology with `driver-list` before attaching:
+
+```bash
+# List running driver_hosts, colocated drivers, and transport hazards
+fx debug cli driver-list --filter xhci
+
+# Attach by driver name/URL or device node moniker (warns on transport hazards)
+fx debug cli attach --driver xhci
+fx debug cli attach --node dev.sys.platform.xhci
+```
+
+#### Driver Host Transport Hazards & Guidance
+
+When a `driver_host` colocates transport or watchdog drivers (such as USB,
+CDC-NCM, ethernet, serial, or watchdog), avoid stopping breakpoints or manual
+pause commands to prevent severing host `ffx` communication. Instead:
+
+* Prefer weak attach (`--weak`) to catch crashes without stopping threads.
+* Use non-stopping inspection commands (`modules`, `aspace`, `handles`,
+  `mem-read`) to examine process state safely.
+
+```bash
+# Attach weakly for crash-only catch on transport-sensitive driver hosts
+fx debug cli attach --driver xhci --weak
+```
+
+#### Pending or Unbound Drivers (`--wait`)
+
+When attaching to a driver that has not yet started or bound, pass `--wait`. If
+no running `driver_host` matches, `fx debug cli` installs a zxdb process filter
+on `"driver_host"` that attaches to every newly started driver host (since zxdb
+matches process names rather than driver URLs or device monikers).
+
+Attach flags (`--weak`, `--recursive`, `--job-only`) are forwarded to this
+filter, and the response includes `requested_target` and `filter_warning`
+alerting the user that all new driver hosts will be attached.
+
+```bash
+# Pre-arm a filter before a driver binds or starts
+fx debug cli attach --driver my_driver --wait
+```
+
+### 2. Inspect a Live Process
+
+These commands return structured JSON and do not stop the target. When more than
+one process is attached, pass `--pid` (`-p`) to choose one.
+
+```bash
+# Inspect loaded modules/DSOs, virtual memory mappings, and Zircon handles
+fx debug cli modules --filter xhci
+fx debug cli aspace --filter mmio
+fx debug cli handles --type interrupt --detail
+
+# Read memory at an address (or at a frame-relative expression with -t)
+fx debug cli mem-read 0x7ffee1234000 -s 32
+```
+
+`modules` requests the module list from `debug_agent`, which ends a weak attach.
+
+### 3. Breakpoints and Stack Traces
+
+```bash
+# Set function or conditional breakpoints
+fx debug cli break --function usb_xhci::UsbXhci::Init --condition "status != 0"
+
+# If an unwind stops early, retry on the target or force a specific unwinder
+fx debug cli stack-trace -p <pid> --force-remote-unwind
+fx debug cli stack-trace -t <tid> --unwinder fp
+```

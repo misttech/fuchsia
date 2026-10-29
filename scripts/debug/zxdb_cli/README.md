@@ -98,7 +98,75 @@ stopping the daemon.
    {"success": true, "body": {"thread_id": 1, "stack_frames": [{"frame_index": 0, "name": "main", "line": 42}], "total_frames": 1}}
    ```
 
-7. **Stop the daemon**:
+7. **Discover driver hosts** (`driver-list`, alias `driver-hosts`):
+   ```bash
+   fx debug cli driver-list --filter xhci
+   ```
+   Output:
+   ```
+   {"success": true, "body": {"driver_hosts": [{"host_koid": 12345, "host_name": "driver_host:12345", "drivers": ["fuchsia-pkg://fuchsia.com/xhci#meta/xhci.cm"], "devices": ["dev.sys.platform.xhci"], "colocated": false, "attached": false, "transport_hazard": false, "transport_sensitive": []}]}}
+   ```
+
+8. **Attach to a driver or node** (`attach` with flags):
+   Attach supports mutually exclusive selectors (`<filter>`, `--driver`/`-d`, `--node`/`-n`) and flags (`--wait`, `--weak`, `--recursive`/`-r`, `--job-only`; `--exact` with `<filter>`):
+   ```bash
+   fx debug cli attach --driver xhci --weak
+   fx debug cli attach -n dev.sys.platform.xhci
+   fx debug cli attach -d my_driver --wait
+   ```
+   Output:
+   ```
+   {"success": true, "message": "", "body": {"driver_host_koid": 12345, "driver_host_name": "driver_host:12345", "matched_driver": "fuchsia-pkg://fuchsia.com/xhci#meta/xhci.cm", "colocated_drivers": ["fuchsia-pkg://fuchsia.com/xhci#meta/xhci.cm"], "devices": ["dev.sys.platform.xhci"], "attach_mode": "weak", "transport_hazard": false, "hazard_warning": null, "colocated_warning": null, "filter_pattern": null}}
+   ```
+
+9. **Set breakpoints** (`break`):
+   Set function (`--function`/`-f`, `--condition`/`-c`) or source (`--file`, `--line`, `<file>:<line>`) breakpoints:
+   ```bash
+   fx debug cli break -f UsbXhci::Init -c "status != 0"
+   fx debug cli break --file src/main.cc --line 42
+   ```
+   Output:
+   ```
+   {"success": true, "body": {"breakpoints": [{"id": 1, "verified": true, "line": 42}]}}
+   ```
+
+10. **Inspect loaded modules** (`modules`):
+   ```bash
+   fx debug cli modules -p 12345 --filter libfoo
+   ```
+   Output:
+   ```
+   {"success": true, "body": {"pid": 12345, "modules": [{"name": "libfoo.so", "base": "0x1000", "build_id": "abc123", "symbols_loaded": true, "symbol_file": "/pkg/lib/libfoo.so", "files_indexed": 10, "functions_indexed": 100}]}}
+   ```
+
+11. **Inspect address space** (`aspace`):
+   ```bash
+   fx debug cli aspace -p 12345 --filter code
+   ```
+   Output:
+   ```
+   {"success": true, "body": {"pid": 12345, "regions": [{"start": "0x1000", "end": "0x2000", "prot": "r--", "size": "0x1000", "vmo_koid": null, "vmo_offset": null, "committed_pages": 1, "name": "code", "depth": 0}], "page_size": 4096, "total_mapped_bytes": 4096, "total_committed_pages": 1, "total_committed_bytes": 4096}}
+   ```
+
+12. **Inspect Zircon handles** (`handles`):
+   ```bash
+   fx debug cli handles -p 12345 --type channel --detail
+   ```
+   Output:
+   ```
+   {"success": true, "body": {"pid": 12345, "handles": [{"handle_value": "0x10", "type": "channel", "koid": 100, "related_koid": 101, "peer_owner_koid": 200, "rights": ["transfer", "read", "write"], "vmo_name": null, "vmo_size_bytes": null, "cache_policy": null}]}}
+   ```
+
+13. **Read memory** (`mem-read`):
+   ```bash
+   fx debug cli mem-read 0x1000 -s 16 -p 12345
+   ```
+   Output:
+   ```
+   {"success": true, "body": {"address": "0x1000", "size": 16, "hex_bytes": "000102030405060708090a0b0c0d0e0f", "u32_le": ["0x03020100"], "u64_le": ["0x0706050403020100"], "rows": [{"address": "0x1000", "bytes_hex": "00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f", "ascii": "................"}]}}
+   ```
+
+14. **Stop the daemon**:
    ```bash
    fx debug cli stop
    ```
@@ -166,7 +234,70 @@ For programmatic environments or agents, the same operations can be invoked via 
    {"success": true, "body": {"thread_id": 1, "stack_frames": [{"frame_index": 0, "name": "main", "line": 42}], "total_frames": 1}}
    ```
 
-7. **Stop the daemon**:
+7. **Discover driver hosts**:
+   ```bash
+   fx debug cli --json '{"command": "driver-list", "filter": "xhci"}'
+   ```
+   Output:
+   ```
+   {"success": true, "body": {"driver_hosts": [{"host_koid": 12345, "host_name": "driver_host:12345", "drivers": ["fuchsia-pkg://fuchsia.com/xhci#meta/xhci.cm"], "devices": ["dev.sys.platform.xhci"], "colocated": false, "attached": false, "transport_hazard": false, "transport_sensitive": []}]}}
+   ```
+
+8. **Attach to a process or driver**:
+   ```bash
+   fx debug cli --json '{"command": "attach", "driver": "xhci", "weak": true}'
+   ```
+   Output:
+   ```
+   {"success": true, "message": "", "body": {"driver_host_koid": 12345, "driver_host_name": "driver_host:12345", "matched_driver": "fuchsia-pkg://fuchsia.com/xhci#meta/xhci.cm", "colocated_drivers": ["fuchsia-pkg://fuchsia.com/xhci#meta/xhci.cm"], "devices": ["dev.sys.platform.xhci"], "attach_mode": "weak", "transport_hazard": false, "hazard_warning": null, "colocated_warning": null, "filter_pattern": null}}
+   ```
+
+9. **Set breakpoints**:
+   ```bash
+   fx debug cli --json '{"command": "break", "function": "UsbXhci::Init", "condition": "status != 0"}'
+   ```
+   Output:
+   ```
+   {"success": true, "body": {"breakpoints": [{"id": 1, "verified": true, "line": 42}]}}
+   ```
+
+10. **Inspect loaded modules**:
+   ```bash
+   fx debug cli --json '{"command": "modules", "pid": 12345, "filter": "libfoo"}'
+   ```
+   Output:
+   ```
+   {"success": true, "body": {"pid": 12345, "modules": [{"name": "libfoo.so", "base": "0x1000", "build_id": "abc123", "symbols_loaded": true, "symbol_file": "/pkg/lib/libfoo.so", "files_indexed": 10, "functions_indexed": 100}]}}
+   ```
+
+11. **Inspect address space**:
+   ```bash
+   fx debug cli --json '{"command": "aspace", "pid": 12345, "filter": "code"}'
+   ```
+   Output:
+   ```
+   {"success": true, "body": {"pid": 12345, "regions": [{"start": "0x1000", "end": "0x2000", "prot": "r--", "size": "0x1000", "vmo_koid": null, "vmo_offset": null, "committed_pages": 1, "name": "code", "depth": 0}], "page_size": 4096, "total_mapped_bytes": 4096, "total_committed_pages": 1, "total_committed_bytes": 4096}}
+   ```
+
+12. **Inspect Zircon handles**:
+   ```bash
+   fx debug cli --json '{"command": "handles", "pid": 12345, "type": "channel", "detail": true}'
+   ```
+   Output:
+   ```
+   {"success": true, "body": {"pid": 12345, "handles": [{"handle_value": "0x10", "type": "channel", "koid": 100, "related_koid": 101, "peer_owner_koid": 200, "rights": ["transfer", "read", "write"], "vmo_name": null, "vmo_size_bytes": null, "cache_policy": null}]}}
+   ```
+
+13. **Read memory**:
+   ```bash
+   fx debug cli --json '{"command": "mem-read", "address": "0x1000", "size": 16, "pid": 12345}'
+   ```
+   Output:
+   ```
+   {"success": true, "body": {"address": "0x1000", "size": 16, "hex_bytes": "000102030405060708090a0b0c0d0e0f", "u32_le": ["0x03020100"], "u64_le": ["0x0706050403020100"], "rows": [{"address": "0x1000", "bytes_hex": "00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f", "ascii": "................"}]}}
+   ```
+
+14. **Stop the daemon**:
    ```bash
    fx debug cli --json '{"command": "stop"}'
    ```
@@ -174,6 +305,25 @@ For programmatic environments or agents, the same operations can be invoked via 
    ```
    {"success": true, "message": "Daemon stopping", "body": null}
    ```
+
+
+### Command Summary
+
+| Command | CLI Syntax | JSON Command |
+|---|---|---|
+| `start` | `start [--port <p>]` | `start` |
+| `stop` | `stop` | `stop` |
+| `driver-list` | `driver-list [<filter>]` or `driver-list -f <filter>` | `driver-list` |
+| `attach` | `attach (<filter> \| --driver <d> \| --node <n>)` | `attach` |
+| `break` | `break (<file>:<line> \| -f <sym>) [-c <expr>]` | `break` |
+| `threads` | `threads` | `threads` |
+| `pause` | `pause [-t <id>] [-p <pid>]` | `pause` |
+| `continue` | `continue <thread_id>` | `continue` |
+| `stack-trace` | `stack-trace (-t <id> \| -p <pid>) [-r] [--force-remote-unwind] [--unwinder <name>]` | `stack-trace` |
+| `modules` | `modules [-p <pid>] [-f <filter>] [-r]` | `modules` |
+| `aspace` | `aspace [addr] [-p <pid>] [-f <filter>]` | `aspace` |
+| `handles` | `handles [-p <pid>] [--type <t>] [-k <koid>] [--detail]` | `handles` |
+| `mem-read` | `mem-read <addr> [-s <size>] [-p <pid>] [-t <id>]` | `mem-read` |
 
 
 ## Technical Architecture
