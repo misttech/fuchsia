@@ -13,6 +13,7 @@ of device states, including Wi-Fi chip off, idle disconnected, active connection
 with different levels of traffic, suspend mode, scanning, and firmware power saving modes.
 """
 
+import asyncio
 import logging
 from typing import Any, List
 
@@ -38,6 +39,7 @@ from openwrt_access_point.lib.access_point_config import (
 from openwrt_access_point.lib.access_point_config_mapper import (
     AccessPointConfigMapper as ConfigMapper,
 )
+from wlan_test_utils import odpm_utils
 from wlanix_testing import SupplicantStaIfaceCallbackServer
 
 _LOGGER = logging.getLogger(__name__)
@@ -45,7 +47,6 @@ _LOGGER = logging.getLogger(__name__)
 # ==============================================================================
 # TEST CONFIGURATION & CONSTANTS
 # ==============================================================================
-
 # Power thresholds for various tested states
 # TODO(b/576709859): These are currently overly safe thresholds to be adjusted in the future.
 BUDGET_ACTIVE_IDLE_W = 50.0
@@ -70,7 +71,6 @@ class OdpmPowerTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     wifi_chip_proxy: fidl_wlanix.WifiChipClient
     wlanix_proxy: fidl_wlanix.WlanixClient
     nl80211_proxy: fidl_wlanix.Nl80211Client
-
     iface_name: str
     wlanix: "wlanix_testing.Wlanix"
     chip: "wlanix_testing.WifiChip"
@@ -227,6 +227,52 @@ class OdpmPowerTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         else:
             raise signals.TestSkip("Unknown AP type.")
         return ssid, password
+
+    async def test_wifi_off_power(self) -> None:
+        """Measure power impact when Wi-Fi is completely powered down.
+
+        This tests the absolute minimum power state when the device is awake,
+        but the WLAN chip is completely powered off via the Wlanix HAL.
+        """
+        self._set_display_power(power_on=False)
+
+        # Power down the Wi-Fi chip completely
+        try:
+            (
+                await self.wifi_chip_proxy.remove_sta_iface(
+                    iface_name=self.iface_name
+                )
+            ).unwrap()
+        except Exception:
+            pass
+
+        proxy, server = self.dut.fuchsia_controller.channel_create()
+        self.wlanix_proxy.get_wifi(wifi=server.take())
+        wifi_proxy = fidl_wlanix.WifiClient(proxy)
+        (await wifi_proxy.stop()).unwrap()
+
+        try:
+            # Start tracing
+            await odpm_utils.start_trace(self.dut.tracing)
+            _LOGGER.info(
+                "ODPM trace started, waiting for steady state power measurement..."
+            )
+
+            # Spend enough time in the state to get power ODPM data
+            await asyncio.sleep(DURATION_ACTIVE_IDLE_SEC)
+
+            # Stop ODPM trace and process metrics
+            results = await odpm_utils.stop_trace_and_save_metrics(
+                tracing=self.dut.tracing,
+                test_case_path=self.log_path,
+                test_name=self.current_test_info.name,
+                rail=odpm_utils.ODPM_WLAN_RAIL,
+            )
+
+            self._assert_power_budget(results, BUDGET_ACTIVE_IDLE_W)
+        finally:
+            # Restart for teardown
+            (await wifi_proxy.start()).unwrap()
 
 
 if __name__ == "__main__":
