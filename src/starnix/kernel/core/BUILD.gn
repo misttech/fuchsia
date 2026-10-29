@@ -2,18 +2,31 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/bazel_test_suite.gni")
 import("//build/components.gni")
 import("//build/dist/resource.gni")
 import("//src/starnix/build/args.gni")
 
+bazel_test_suite("bazel_tests") {
+  target_tests = [ "//src/starnix/kernel/core:starnix_core_tests" ]
+}
+
 group("tests") {
   testonly = true
   deps = [
-    ":starnix_core_tests",
+    ":starnix_core_tests-package",
     "fs/fuchsia:tests",
   ]
+
+  # TODO(https://fxbug.dev/42059075): Re-enable starnix in these environments.
+  # The GN copy's test binary is excluded from asan/hwasan variants with
+  # exclude_toolchain_tags, which Bazel ignores.
+  if (!is_asan) {
+    deps += [ ":bazel_tests" ]
+  }
 }
 
+# LINT.IfChange
 resource("test_files") {
   sources = [
     "test_data/testfile.txt",
@@ -22,25 +35,7 @@ resource("test_files") {
   outputs = [ "data/{{source_file_part}}" ]
 }
 
-# starnix_core_tests cannot be migrated to Bazel yet because it depends on
-# //src/starnix/examples/hello_starnix:hello_starnix_bin and the vDSO resource
-# (data/libvdso.so from //src/starnix/kernel/vdso, built with the GN-only
-# bionic toolchain), which do not have Bazel targets yet.
-fuchsia_unittest_package("starnix_core_tests") {
-  manifest = "meta/starnix_core_tests.cml"
-  deps = [
-    ":starnix_core_test",
-    ":test_files",
-    "//src/starnix/examples/hello_starnix:hello_starnix_bin",
-  ]
-  test_specs = {
-    log_settings = {
-      # Tests exercise failure cases, so ERROR logs are expected.
-      max_severity = "ERROR"
-    }
-  }
-  test_type = "starnix"
-}
+# LINT.ThenChange(BUILD.bazel)
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
@@ -70,6 +65,15 @@ import("//build/tools/bazel2gn/bazel_migration.gni")
 rustc_library("core") {
   sources = []
   sources += [
+    "//src/starnix/kernel/core/fs/fuchsia/mod.rs",
+    "//src/starnix/kernel/core/fs/fuchsia/remote.rs",
+    "//src/starnix/kernel/core/fs/fuchsia/remote_bundle.rs",
+    "//src/starnix/kernel/core/fs/fuchsia/remote_unix_domain_socket.rs",
+    "//src/starnix/kernel/core/fs/fuchsia/remote_volume.rs",
+    "//src/starnix/kernel/core/fs/fuchsia/sync_file.rs",
+    "//src/starnix/kernel/core/fs/fuchsia/syslog.rs",
+    "//src/starnix/kernel/core/fs/fuchsia/timer.rs",
+    "//src/starnix/kernel/core/fs/fuchsia/zxio.rs",
     "arch/mod.rs",
     "bpf/attachments.rs",
     "bpf/context.rs",
@@ -94,15 +98,6 @@ rustc_library("core") {
     "execution/mod.rs",
     "execution/task_creation.rs",
     "fs/devtmpfs.rs",
-    "fs/fuchsia/mod.rs",
-    "fs/fuchsia/remote.rs",
-    "fs/fuchsia/remote_bundle.rs",
-    "fs/fuchsia/remote_unix_domain_socket.rs",
-    "fs/fuchsia/remote_volume.rs",
-    "fs/fuchsia/sync_file.rs",
-    "fs/fuchsia/syslog.rs",
-    "fs/fuchsia/timer.rs",
-    "fs/fuchsia/zxio.rs",
     "fs/mod.rs",
     "fs/sysfs/cpu_class_directory.rs",
     "fs/sysfs/device_directory.rs",
@@ -487,6 +482,15 @@ rustc_library("core") {
 rustc_test("starnix_core_test") {
   sources = []
   sources += [
+    "//src/starnix/kernel/core/fs/fuchsia/mod.rs",
+    "//src/starnix/kernel/core/fs/fuchsia/remote.rs",
+    "//src/starnix/kernel/core/fs/fuchsia/remote_bundle.rs",
+    "//src/starnix/kernel/core/fs/fuchsia/remote_unix_domain_socket.rs",
+    "//src/starnix/kernel/core/fs/fuchsia/remote_volume.rs",
+    "//src/starnix/kernel/core/fs/fuchsia/sync_file.rs",
+    "//src/starnix/kernel/core/fs/fuchsia/syslog.rs",
+    "//src/starnix/kernel/core/fs/fuchsia/timer.rs",
+    "//src/starnix/kernel/core/fs/fuchsia/zxio.rs",
     "arch/mod.rs",
     "bpf/attachments.rs",
     "bpf/context.rs",
@@ -511,15 +515,6 @@ rustc_test("starnix_core_test") {
     "execution/mod.rs",
     "execution/task_creation.rs",
     "fs/devtmpfs.rs",
-    "fs/fuchsia/mod.rs",
-    "fs/fuchsia/remote.rs",
-    "fs/fuchsia/remote_bundle.rs",
-    "fs/fuchsia/remote_unix_domain_socket.rs",
-    "fs/fuchsia/remote_volume.rs",
-    "fs/fuchsia/sync_file.rs",
-    "fs/fuchsia/syslog.rs",
-    "fs/fuchsia/timer.rs",
-    "fs/fuchsia/zxio.rs",
     "fs/mod.rs",
     "fs/sysfs/cpu_class_directory.rs",
     "fs/sysfs/device_directory.rs",
@@ -914,4 +909,30 @@ rustc_test("starnix_core_test") {
     "//src/starnix/kernel/vdso",
     "//src/storage/ext4/tests:test_img",
   ]
+}
+fuchsia_component_manifest("starnix_core_tests-manifest") {
+  testonly = true
+  component_name = "starnix_core_tests"
+  manifest = "meta/starnix_core_tests.cml"
+}
+fuchsia_test_component("starnix_core_tests-component") {
+  cm_label = ":starnix_core_tests-manifest"
+  component_name = "starnix_core_tests"
+  test_type = "starnix"
+  deps = [
+    ":starnix_core_test",
+    ":test_files",
+    "//src/starnix/examples/hello_starnix:hello_starnix_bin",
+    "//src/starnix/kernel/vdso",
+    "//src/storage/ext4/tests:test_img",
+  ]
+}
+fuchsia_test_package("starnix_core_tests-package") {
+  package_name = "starnix_core_tests-gn"
+  test_components = [ ":starnix_core_tests-component" ]
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
 }

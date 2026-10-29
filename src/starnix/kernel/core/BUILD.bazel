@@ -7,9 +7,24 @@ load(
     "compilation_mode",
     "starnix_enable_trace_and_debug_logs_in_release",
 )
+load(
+    "@fuchsia_rules_common//packages:resources.bzl",
+    "fuchsia_package_resource_group",
+)
 load("//build/bazel/rbe:rbe.bzl", "RBE_USE_LARGE_WORKER")
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
 load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
 load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -47,15 +62,6 @@ rustc_library(
         "execution/mod.rs",
         "execution/task_creation.rs",
         "fs/devtmpfs.rs",
-        "fs/fuchsia/mod.rs",
-        "fs/fuchsia/remote.rs",
-        "fs/fuchsia/remote_bundle.rs",
-        "fs/fuchsia/remote_unix_domain_socket.rs",
-        "fs/fuchsia/remote_volume.rs",
-        "fs/fuchsia/sync_file.rs",
-        "fs/fuchsia/syslog.rs",
-        "fs/fuchsia/timer.rs",
-        "fs/fuchsia/zxio.rs",
         "fs/mod.rs",
         "fs/sysfs/cpu_class_directory.rs",
         "fs/sysfs/device_directory.rs",
@@ -230,6 +236,15 @@ rustc_library(
         "vfs/timer.rs",
         "vfs/wd_number.rs",
         "vfs/xattr.rs",
+        "//src/starnix/kernel/core/fs/fuchsia:mod.rs",
+        "//src/starnix/kernel/core/fs/fuchsia:remote.rs",
+        "//src/starnix/kernel/core/fs/fuchsia:remote_bundle.rs",
+        "//src/starnix/kernel/core/fs/fuchsia:remote_unix_domain_socket.rs",
+        "//src/starnix/kernel/core/fs/fuchsia:remote_volume.rs",
+        "//src/starnix/kernel/core/fs/fuchsia:sync_file.rs",
+        "//src/starnix/kernel/core/fs/fuchsia:syslog.rs",
+        "//src/starnix/kernel/core/fs/fuchsia:timer.rs",
+        "//src/starnix/kernel/core/fs/fuchsia:zxio.rs",
     ] + select({
         "@platforms//cpu:arm64": [
             "arch/arm64/execution.rs",
@@ -433,8 +448,8 @@ rustc_library(
     ],
 )
 
-# Bazel test packaging blocked: starnix_core_tests depends on //src/starnix/examples/hello_starnix:hello_starnix_bin and the vDSO resource from //src/starnix/kernel/vdso (built with the GN-only bionic toolchain), which have no Bazel targets yet.
-# In GN, //src/starnix/kernel/vdso and //src/storage/ext4/tests:test_img are resource() targets propagated to starnix_core_tests through deps.
+# In GN, //src/starnix/kernel/vdso and //src/storage/ext4/tests:test_img are
+# resource() targets propagated to starnix_core_tests through deps.
 # @bazel2gn:raw_attribute:deps += [ "//src/starnix/kernel/vdso", "//src/storage/ext4/tests:test_img" ]
 rustc_test(
     name = "starnix_core_test",
@@ -472,3 +487,64 @@ rustc_test(
         "//third_party/rust_crates/vendor:test-case",
     ],
 )
+
+# LINT.IfChange
+# Hand-maintained in BUILD.gn above the sentinel while GN consumers remain.
+# @bazel2gn:skip
+fuchsia_package_resource_group(
+    name = "test_files",
+    testonly = True,
+    srcs = [
+        "test_data/testfile.txt",
+        "test_data/testfile2.txt",
+    ],
+    basename_only = True,
+    dest = "data",
+)
+
+fx_packaged_binary(
+    name = "starnix_core_test_packaged_bin",
+    testonly = True,
+    binary = ":starnix_core_test",
+    binary_name = "starnix_core_lib_test",
+)
+
+fx_component_manifest(
+    name = "starnix_core_tests-manifest",
+    testonly = True,
+    component_name = "starnix_core_tests",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/starnix:unit_test.shard.cml",
+    ],
+    manifest = "meta/starnix_core_tests.cml",
+)
+
+fx_test_component(
+    name = "starnix_core_tests-component",
+    compiled_manifest = ":starnix_core_tests-manifest",
+    component_name = "starnix_core_tests",
+    test_type = "starnix",
+    deps = [
+        ":starnix_core_test_packaged_bin",
+        ":test_files",
+        "//src/starnix/examples/hello_starnix:hello_starnix_bin",
+        "//src/starnix/kernel/vdso",
+        "//src/storage/ext4/tests:test_img",
+    ],
+)
+
+fx_package(
+    name = "starnix_core_tests-package",
+    package_name = "starnix_core_tests",
+    test_components = [":starnix_core_tests-component"],
+)
+
+fx_test(
+    name = "starnix_core_tests",
+    # Tests exercise failure cases, so ERROR logs are expected.
+    max_log_severity = "ERROR",
+    package = ":starnix_core_tests-package",
+)
+# LINT.ThenChange(BUILD.gn)

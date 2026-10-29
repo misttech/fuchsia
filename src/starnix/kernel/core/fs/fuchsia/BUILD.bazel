@@ -1,0 +1,104 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+exports_files(
+    [
+        "mod.rs",
+        "remote.rs",
+        "remote_bundle.rs",
+        "remote_unix_domain_socket.rs",
+        "remote_volume.rs",
+        "sync_file.rs",
+        "syslog.rs",
+        "timer.rs",
+        "zxio.rs",
+    ],
+    visibility = ["//src/starnix/kernel/core:__pkg__"],
+)
+
+# This is separate from the starnix core tests because it requires unified
+# address spaces.
+rustc_test(
+    name = "remote_unified_aspace_tests",
+    srcs = ["remote_unified_aspace_tests.rs"],
+    crate_root = "remote_unified_aspace_tests.rs",
+    edition = "2024",
+    # TODO(https://fxbug.dev/42059075): Re-enable starnix in these environments.
+    tags = [
+        "exclude_toolchain_tags=asan",
+        "exclude_toolchain_tags=hwasan",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/fidl/fuchsia.unknown:fuchsia.unknown_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/starnix/kernel/core",
+        "//src/starnix/lib/starnix_types",
+        "//src/starnix/lib/starnix_uapi",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:smallvec",
+    ],
+)
+
+fx_packaged_binary(
+    name = "remote_unified_aspace_tests_packaged_bin",
+    testonly = True,
+    binary = ":remote_unified_aspace_tests",
+    binary_name = "remote_unified_aspace_tests",
+)
+
+fx_component_manifest(
+    name = "remote_unified_aspace_tests-manifest",
+    testonly = True,
+    component_name = "remote_unified_aspace_tests",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/starnix:unit_test.shard.cml",
+    ],
+    manifest = "meta/remote_unified_aspace_tests.cml",
+)
+
+fx_test_component(
+    name = "remote_unified_aspace_tests-component",
+    compiled_manifest = ":remote_unified_aspace_tests-manifest",
+    component_name = "remote_unified_aspace_tests",
+    test_type = "starnix",
+    deps = [
+        ":remote_unified_aspace_tests_packaged_bin",
+        # In GN, //src/starnix/kernel/vdso is a resource() propagated through
+        # //src/starnix/kernel/core's deps.
+        "//src/starnix/kernel/vdso",
+    ],
+)
+
+fx_package(
+    name = "remote_unified_aspace_tests-package",
+    package_name = "remote_unified_aspace_tests",
+    test_components = [":remote_unified_aspace_tests-component"],
+)
+
+fx_test(
+    name = "remote_unified_aspace_tests_package",
+    max_log_severity = "ERROR",
+    package = ":remote_unified_aspace_tests-package",
+)
