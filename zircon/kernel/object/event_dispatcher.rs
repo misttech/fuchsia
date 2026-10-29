@@ -45,6 +45,7 @@ pub struct EventDispatcherState {
 }
 
 impl EventDispatcherState {
+    #[inline]
     pub fn init(
         _dispatcher: *const EventDispatcher,
     ) -> impl PinInit<Self, core::convert::Infallible> {
