@@ -59,10 +59,14 @@ mod test {
     async fn test_create_pipe_from_handle() {
         spawn_kernel_and_run(async |current_task| {
             let (left_handle, right_handle) = zx::Socket::create_stream();
-            create_file_from_handle(current_task, left_handle.into_handle())
+            let left_file = create_file_from_handle(current_task, left_handle.into_handle())
                 .expect("failed to create left FileHandle");
             create_file_from_handle(current_task, right_handle.into_handle())
                 .expect("failed to create right FileHandle");
+            left_file
+                .name
+                .open(current_task, OpenFlags::RDWR)
+                .expect("failed to reopen socket FileHandle");
         })
         .await;
     }

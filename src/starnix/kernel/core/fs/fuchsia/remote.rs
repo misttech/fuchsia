@@ -1066,7 +1066,7 @@ pub fn create_fuchsia_pipe(
     flags: OpenFlags,
 ) -> Result<FileHandle, Errno> {
     let zxio = Zxio::create(socket.into()).map_err(|status| from_status_like_fdio!(status))?;
-    new_pipe_file(current_task, Box::new(RemotePipeObject::new(zxio)), flags)
+    new_pipe_file(current_task, RemotePipeObject::new(zxio), flags)
 }
 
 // This only needs to include attributes that can be out of date.  There are other attributes that
@@ -2222,13 +2222,14 @@ pub fn is_remote_file(file: &FileObject) -> bool {
 }
 
 /// [`FileOps`] implementation for Fuchsia stream/datagram pipes backed by [`Zxio`].
+#[derive(Clone)]
 struct RemotePipeObject {
-    zxio: Zxio,
+    zxio: Arc<Zxio>,
 }
 
 impl RemotePipeObject {
     fn new(zxio: Zxio) -> Self {
-        Self { zxio }
+        Self { zxio: Arc::new(zxio) }
     }
 }
 
@@ -2779,6 +2780,13 @@ mod test {
             );
             let mut server_buf = [0u8; 64];
             assert_eq!(server.read(&mut server_buf).unwrap(), bytes.len());
+
+            let reopened = pipe.name.open(&current_task, OpenFlags::RDONLY).unwrap();
+            assert_eq!(bytes.len(), server.write(&bytes).unwrap());
+            assert_eq!(
+                reopened.read(&current_task, &mut VecOutputBuffer::new(64)).unwrap(),
+                bytes.len()
+            );
 
             std::mem::drop(server);
             assert_eq!(pipe.read(&current_task, &mut VecOutputBuffer::new(64)).unwrap(), 0);

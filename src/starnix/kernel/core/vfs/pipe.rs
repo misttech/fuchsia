@@ -14,8 +14,8 @@ use crate::vfs::buffers::{
 use crate::vfs::fs_registry::FsRegistry;
 use crate::vfs::{
     CacheMode, FileHandle, FileObject, FileObjectState, FileOps, FileSystem, FileSystemHandle,
-    FileSystemOps, FileSystemOptions, FsNodeInfo, FsStr, SpecialNode, default_fcntl,
-    fileops_impl_nonseekable, fileops_impl_noop_sync,
+    FileSystemOps, FileSystemOptions, FsNode, FsNodeInfo, FsNodeOps, FsStr, SpecialNode,
+    default_fcntl, fileops_impl_nonseekable, fileops_impl_noop_sync, fs_node_impl_not_dir,
 };
 use starnix_sync::{LockDepGuard, LockDepMutex, PipeLock, ordered_lock};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
@@ -23,7 +23,7 @@ use starnix_types::user_buffer::{UserBuffer, UserBuffers};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::CAP_SYS_RESOURCE;
 use starnix_uapi::errors::{EAGAIN, EPIPE, Errno};
-use starnix_uapi::file_mode::mode;
+use starnix_uapi::file_mode::{Access, FileMode, mode};
 use starnix_uapi::fs_type::FileSystemTypeFlags;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::resource_limits::Resource;
@@ -432,18 +432,36 @@ pub fn new_pipe(current_task: &CurrentTask) -> Result<(FileHandle, FileHandle), 
     Ok((read_file, write_file))
 }
 
+struct PipeFileNode<F> {
+    ops: F,
+}
+
+impl<F: FileOps + Clone + 'static> FsNodeOps for PipeFileNode<F> {
+    fs_node_impl_not_dir!();
+
+    fn create_file_ops(
+        &self,
+        _node: &FsNode,
+        _current_task: &CurrentTask,
+        _flags: OpenFlags,
+    ) -> Result<Box<dyn FileOps>, Errno> {
+        Ok(Box::new(self.ops.clone()))
+    }
+}
+
 /// Creates a new anonymous [`FileObject`] backed by a `pipefs` [`crate::vfs::FsNode`]
 /// (`S_IFIFO`) with the specified `ops`.
 pub(crate) fn new_pipe_file(
     current_task: &CurrentTask,
-    ops: Box<dyn FileOps>,
+    ops: impl FileOps + Clone + 'static,
     flags: OpenFlags,
 ) -> Result<FileHandle, Errno> {
     let fs = pipe_fs(current_task, FileSystemOptions::default())?;
-    let mut info = FsNodeInfo::new(mode!(IFIFO, 0o600), current_task.current_fscred());
+    let mode = FileMode::IFIFO | Access::from_open_flags(flags).user_mode();
+    let mut info = FsNodeInfo::new(mode, current_task.current_fscred());
     info.blksize = ATOMIC_IO_BYTES.into();
-    let node = fs.create_node_and_allocate_node_id(SpecialNode, info);
-    Ok(FileObject::new_anonymous(current_task, ops, node, flags))
+    let node = fs.create_node_and_allocate_node_id(PipeFileNode { ops: ops.clone() }, info);
+    Ok(FileObject::new_anonymous(current_task, Box::new(ops), node, flags))
 }
 
 struct PipeFs;
