@@ -28,7 +28,7 @@ FUNCTION(arm64_context_switch)
     clrex
 
     /* save old frame */
-    /* This layout should match struct context_switch_frame */
+    /* This layout should match Arm64ContextSwitchFrame in src/thread.rs */
     sub_from_sp (6 * 16)
     str  x19, [sp] // don't save x20, it is the percpu pointer
     stp  x21, x22, [sp, (1 * 16)]

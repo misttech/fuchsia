@@ -106,7 +106,6 @@ if (toolchain_environment == "kernel.phys" ||
       "secondary.cc",
       "smccc.S",
       "spinlock.cc",
-      "thread.cc",
       "uspace_entry.S",
     ]
     deps = [
@@ -320,6 +319,7 @@ if (toolchain_environment == "kernel.phys" ||
       "FPSTATE_FPSR_OFFSET",
       "FPSTATE_P_REGS_OFFSET",
       "FPSTATE_REGS_OFFSET",
+      "MSDCR_EL1_INITIAL_VALUE",
     ]
     explicit_padding = false
     expect_lints = [ "non_camel_case_types" ]

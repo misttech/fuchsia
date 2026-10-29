@@ -53,8 +53,7 @@ unsafe extern "C" {
 /// # Safety
 ///
 /// `t` points to a live `Thread` whose lock the caller holds.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn arm64_fpu_restore_state(t: *const Thread) {
+pub(super) unsafe fn arm64_fpu_restore_state(t: *const Thread) {
     // SAFETY: `t` points to a live `Thread`, per the caller's contract.
     let arch = unsafe { thread_arch_const(t) };
     // SAFETY: `arch` is the thread's live `arch_thread`, and taking the field's address reads
@@ -81,8 +80,7 @@ pub unsafe extern "C" fn arm64_fpu_restore_state(t: *const Thread) {
 /// # Safety
 ///
 /// `t` points to a live `Thread` whose lock the caller holds.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn arm64_fpu_save_state(t: *mut Thread) {
+pub(super) unsafe fn arm64_fpu_save_state(t: *mut Thread) {
     // SAFETY: `t` points to a live `Thread`, per the caller's contract.
     let arch = unsafe { thread_arch(t) };
     // SAFETY: `arch` is the thread's live `arch_thread`, and taking the field's address reads
@@ -117,8 +115,7 @@ pub unsafe extern "C" fn arm64_fpu_save_state(t: *mut Thread) {
 /// # Safety
 ///
 /// `oldthread` and `newthread` point to live `Thread`s whose locks the caller holds.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn arm64_fpu_context_switch(oldthread: *mut Thread, newthread: *mut Thread) {
+pub(super) unsafe fn arm64_fpu_context_switch(oldthread: *mut Thread, newthread: *mut Thread) {
     // The kernel itself does not use the FPU outside of managing state for user space threads.
     // Thus the only threads that can have relevant FPU state to save or restore are those that
     // have user space threads. This code only saves the FPU state when switching away from a user

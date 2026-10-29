@@ -69,6 +69,25 @@ unsafe fn arm64_write_percpu_ptr(percpu: *mut Arm64Percpu) {
     }
 }
 
+/// Returns x20, the calling CPU's `arm64_percpu` once `arm64_init_percpu_early()` has run on it.
+#[inline(always)]
+pub(super) fn arm64_read_percpu_ptr() -> *mut Arm64Percpu {
+    let percpu: *mut Arm64Percpu;
+    // SAFETY: Copying the reserved x20 into an output register reads no memory and clobbers
+    // nothing. The block is not `pure`, so each call reads x20 afresh.
+    unsafe {
+        asm!("mov {percpu}, x20", percpu = lateout(reg) percpu, options(nostack, preserves_flags));
+    }
+    percpu
+}
+
+/// [`arm64_read_percpu_ptr`] as the pointer type that `arch_thread::current_percpu_ptr` has.
+#[inline(always)]
+pub(super) fn arm64_read_percpu_ptr_for_thread() -> *mut arm64_thread_bindings::arm64_percpu {
+    // Both bindings crates' `arm64_percpu` name the same C++ `struct arm64_percpu`.
+    arm64_read_percpu_ptr().cast()
+}
+
 /// A type that an `arm64_percpu` field has, with the load and store instruction of its width.
 ///
 /// # Safety
@@ -132,6 +151,57 @@ unsafe impl PercpuField for u32 {
             asm!(
                 "str {value:w}, [x20, #{offset}]",
                 value = in(reg) value,
+                offset = const OFFSET,
+                options(nostack, preserves_flags),
+            );
+        }
+    }
+}
+
+// The `ldr` instruction is 64 bits or 32 bits depending on the register name
+// used.  All the load instructions for sizes smaller than 64 bits use the
+// 32-bit register form, but sizes smaller than 32 bits have their own load
+// instructions: `ldrh` for 16 bits, `ldrb` for 8 bits.  These still write a
+// full 32-bit register, so the output operand is u32.  Narrow the result to
+// the actual value type.
+//
+// The `str` instruction is 64 bits or 32 bits depending on the register name
+// used.  All the store instructions for sizes smaller than 64 bits use the
+// 32-bit register form, but sizes smaller than 32 bits have their own store
+// instructions: `strh` for 16 bits, `strb` for 8 bits.  In all cases the
+// "unused" bits of the register are ignored.  But just in case, zero-extend
+// the value from its actual bit width up to u32 since the asm operand
+// uses u32 to reflect that the 32-bit operand register appears in asm.
+
+// SAFETY: Each method is one `ldrb`/`strb` at `x20 + OFFSET`, and its `asm!` options are only
+// `nostack` and `preserves_flags`, so it is neither `pure`, `nomem` nor `readonly`.
+unsafe impl PercpuField for bool {
+    #[inline(always)]
+    unsafe fn read<const OFFSET: usize>() -> Self {
+        let value: u32;
+        // SAFETY: As in the `u32` impl, x20 points at the calling CPU's `arm64_percpu`, and the
+        // caller guarantees that a `bool` field is at `OFFSET`.
+        unsafe {
+            asm!(
+                "ldrb {value:w}, [x20, #{offset}]",
+                value = lateout(reg) value,
+                offset = const OFFSET,
+                options(nostack, preserves_flags),
+            );
+        }
+        // Comparing rather than reinterpreting the byte yields a valid `bool` whatever the field
+        // holds.
+        value != 0
+    }
+
+    #[inline(always)]
+    unsafe fn write<const OFFSET: usize>(value: Self) {
+        // SAFETY: As in `read`, the store hits the calling CPU's `bool` field at `OFFSET`. The
+        // caller guarantees that no Rust reference to it is live; 0 and 1 are both valid for it.
+        unsafe {
+            asm!(
+                "strb {value:w}, [x20, #{offset}]",
+                value = in(reg) u32::from(value),
                 offset = const OFFSET,
                 options(nostack, preserves_flags),
             );
@@ -215,6 +285,18 @@ pub(super) use write_percpu_field;
 #[inline(always)]
 pub(super) fn arch_curr_cpu_num() -> cpu_num_t {
     read_percpu_field!(cpu_num)
+}
+
+/// Sets the calling CPU's flag that tracks whether it is in restricted mode.
+///
+/// x20 points at the calling CPU's `arm64_percpu` from that CPU's first
+/// `arm64_init_percpu_early()` on, which runs before any thread does.
+#[inline(always)]
+pub(super) fn arch_set_restricted_flag(restricted: bool) {
+    // SAFETY: x20 points at the calling CPU's `arm64_percpu`, the same assumption C++'s
+    // WRITE_PERCPU_FIELD makes. `exceptions.S` reads `in_restricted_mode` as zero or nonzero, and
+    // the value is 0 or 1. Rust forms no reference to the field.
+    unsafe { write_percpu_field!(in_restricted_mode, u32::from(restricted)) };
 }
 
 /// Mask the MPIDR register to only leave the AFFx ids.

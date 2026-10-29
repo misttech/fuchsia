@@ -98,16 +98,7 @@ extern uint arm_num_cpus;
 // x20 is the first available callee-saved register that clang will allow to be marked
 // as fixed (via -ffixed-x20 command line). Since it's callee saved when making firmware
 // calls to PSCI or SMCC the register will be naturally saved and restored.
-inline void arm64_write_percpu_ptr(struct arm64_percpu* percpu) {
-  __asm__ volatile("mov x20, %0" ::"r"(percpu));
-}
-
-inline struct arm64_percpu* arm64_read_percpu_ptr() {
-  struct arm64_percpu* p;
-  __asm__ volatile("mov %0, x20" : "=r"(p));
-  return p;
-}
-
+//
 // Mark as volatile to force a read of the field to make sure the compiler
 // always emits a read when asked and does not cache a copy between.  For the
 // same reason, this can't by done via the arm64_percpu_ptr variable, since
