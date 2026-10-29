@@ -278,8 +278,10 @@ if (current_toolchain == default_toolchain) {
       # sysroot (and when -fuzzer variants redirect to their base variant).
       enable_variants = [
         "asan",
+        "asan-sancov",
         "asan-ubsan",
         "ubsan",
+        "ubsan-sancov",
         "coverage",
       ]
 

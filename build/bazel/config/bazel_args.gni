@@ -105,6 +105,7 @@ _has_ubsan = _tags + [ "ubsan" ] - [ "ubsan" ] != _tags
 _has_lsan = _tags + [ "lsan" ] - [ "lsan" ] != _tags
 _has_tsan = _tags + [ "tsan" ] - [ "tsan" ] != _tags
 _has_msan = _tags + [ "msan" ] - [ "msan" ] != _tags
+_has_sancov = _tags + [ "sancov" ] - [ "sancov" ] != _tags
 
 _has_coverage_clang =
     _tags + [ "coverage_clang" ] - [ "coverage_clang" ] != _tags
@@ -138,6 +139,9 @@ if (_has_tsan) {
 }
 if (_has_ubsan) {
   _enabled_features += [ "ubsan" ]
+}
+if (_has_sancov) {
+  _enabled_features += [ "sancov" ]
 }
 if (_has_coverage_clang) {
   _enabled_features += [ "coverage" ]

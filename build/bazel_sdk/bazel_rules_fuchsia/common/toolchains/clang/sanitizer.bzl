@@ -162,11 +162,13 @@ def get_sanitizer_features(
     # Dynamic-linker path configuration per variant:
     # On Fuchsia, each single and composite variant specifies a dedicated
     # dynamic linker path corresponding to its lib/<variant>/ directory:
-    # - asan: asan/ld.so.1 (when not ubsan)
-    # - asan-ubsan: asan-ubsan/ld.so.1 (when ubsan)
+    # - asan: asan/ld.so.1 (when not ubsan/sancov)
+    # - asan-ubsan: asan-ubsan/ld.so.1 (when ubsan and not sancov)
+    # - asan-sancov: asan-sancov/ld.so.1 (when sancov and not ubsan)
     # - hwasan: hwasan/ld.so.1 (when not ubsan)
     # - hwasan-ubsan: hwasan-ubsan/ld.so.1 (when ubsan)
-    # - ubsan: ubsan/ld.so.1 (when not asan/hwasan)
+    # - ubsan: ubsan/ld.so.1 (when not asan/hwasan/sancov)
+    # - ubsan-sancov: ubsan-sancov/ld.so.1 (when sancov and not asan/hwasan)
 
     # LINT.IfChange(asan)
     asan_flag_sets = []
@@ -175,12 +177,17 @@ def get_sanitizer_features(
             flag_set(
                 actions = ALL_CC_LINK_ACTION_NAMES,
                 flag_groups = [flag_group(flags = ["-Wl,-dynamic-linker=asan/ld.so.1"])],
-                with_features = [with_feature_set(not_features = ["ubsan"])],
+                with_features = [with_feature_set(not_features = ["ubsan", "sancov"])],
             ),
             flag_set(
                 actions = ALL_CC_LINK_ACTION_NAMES,
                 flag_groups = [flag_group(flags = ["-Wl,-dynamic-linker=asan-ubsan/ld.so.1"])],
-                with_features = [with_feature_set(features = ["ubsan"])],
+                with_features = [with_feature_set(features = ["ubsan"], not_features = ["sancov"])],
+            ),
+            flag_set(
+                actions = ALL_CC_LINK_ACTION_NAMES,
+                flag_groups = [flag_group(flags = ["-Wl,-dynamic-linker=asan-sancov/ld.so.1"])],
+                with_features = [with_feature_set(features = ["sancov"], not_features = ["ubsan"])],
             ),
         ])
     asan_feature = _sanitizer_mode_feature(
@@ -275,17 +282,27 @@ def get_sanitizer_features(
     ]
     if is_fuchsia:
         # Pass ubsan/ld.so.1 when standalone ubsan is active.
-        ubsan_flag_sets.append(
+        ubsan_flag_sets.extend([
             flag_set(
                 actions = ALL_CC_LINK_ACTION_NAMES,
                 flag_groups = [flag_group(flags = ["-Wl,-dynamic-linker=ubsan/ld.so.1"])],
                 with_features = [
                     with_feature_set(
+                        not_features = ["asan", "hwasan", "sancov"],
+                    ),
+                ],
+            ),
+            flag_set(
+                actions = ALL_CC_LINK_ACTION_NAMES,
+                flag_groups = [flag_group(flags = ["-Wl,-dynamic-linker=ubsan-sancov/ld.so.1"])],
+                with_features = [
+                    with_feature_set(
+                        features = ["sancov"],
                         not_features = ["asan", "hwasan"],
                     ),
                 ],
             ),
-        )
+        ])
 
     if is_fuchsia and use_default_build_flags:
         # In-tree (when use_default_build_flags is True), UBSan's vptr check
@@ -314,6 +331,26 @@ def get_sanitizer_features(
     #   //build/config/sanitizers/BUILD.gn:ubsan,
     # )
 
+    # LINT.IfChange(sancov)
+    sancov_feature = feature(
+        name = "sancov",
+        enabled = "sancov" in enabled_features,
+        flag_sets = [
+            flag_set(
+                actions = ALL_CC_COMPILE_ACTION_NAMES + ALL_CC_LINK_ACTION_NAMES,
+                flag_groups = [
+                    flag_group(
+                        flags = [
+                            "-fsanitize-coverage=trace-pc-guard",
+                        ],
+                    ),
+                ],
+            ),
+        ],
+        implies = ["clang_sanitizer"],
+    )
+    # LINT.ThenChange(//build/config/sanitizers/BUILD.gn:sancov)
+
     # LINT.IfChange(sanitizer_features)
     # Note: _INSTRUMENTATION_FEATURES in fx_cc_binary.bzl includes these sanitizer
     # features plus "coverage" (defined in toolchain_utils.bzl).
@@ -325,6 +362,7 @@ def get_sanitizer_features(
         tsan_feature,
         lsan_feature,
         ubsan_feature,
+        sancov_feature,
     ]
     # LINT.ThenChange(//build/bazel/rules/cc/fx_cc_binary.bzl:instrumentation_features)
 
@@ -366,48 +404,75 @@ def define_clang_sanitizer_config_settings():
         visibility = ["//visibility:private"],
     )
 
+    feature_flag(
+        name = "sancov_feature_flag",
+        feature_name = "sancov",
+        visibility = ["//visibility:private"],
+    )
+
     _ALL_VARIANTS = {
         "novariant": {
             ":asan_feature_flag": "False",
             ":hwasan_feature_flag": "False",
             ":ubsan_feature_flag": "False",
             ":coverage_feature_flag": "False",
+            ":sancov_feature_flag": "False",
         },
         "asan_variant": {
             ":asan_feature_flag": "True",
             ":hwasan_feature_flag": "False",
             ":ubsan_feature_flag": "False",
             ":coverage_feature_flag": "False",
+            ":sancov_feature_flag": "False",
         },
         "asan-ubsan_variant": {
             ":asan_feature_flag": "True",
             ":hwasan_feature_flag": "False",
             ":ubsan_feature_flag": "True",
             ":coverage_feature_flag": "False",
+            ":sancov_feature_flag": "False",
+        },
+        "asan-sancov_variant": {
+            ":asan_feature_flag": "True",
+            ":hwasan_feature_flag": "False",
+            ":ubsan_feature_flag": "False",
+            ":coverage_feature_flag": "False",
+            ":sancov_feature_flag": "True",
         },
         "hwasan_variant": {
             ":asan_feature_flag": "False",
             ":hwasan_feature_flag": "True",
             ":ubsan_feature_flag": "False",
             ":coverage_feature_flag": "False",
+            ":sancov_feature_flag": "False",
         },
         "hwasan-ubsan_variant": {
             ":asan_feature_flag": "False",
             ":hwasan_feature_flag": "True",
             ":ubsan_feature_flag": "True",
             ":coverage_feature_flag": "False",
+            ":sancov_feature_flag": "False",
         },
         "ubsan_variant": {
             ":asan_feature_flag": "False",
             ":hwasan_feature_flag": "False",
             ":ubsan_feature_flag": "True",
             ":coverage_feature_flag": "False",
+            ":sancov_feature_flag": "False",
+        },
+        "ubsan-sancov_variant": {
+            ":asan_feature_flag": "False",
+            ":hwasan_feature_flag": "False",
+            ":ubsan_feature_flag": "True",
+            ":coverage_feature_flag": "False",
+            ":sancov_feature_flag": "True",
         },
         "coverage_variant": {
             ":asan_feature_flag": "False",
             ":hwasan_feature_flag": "False",
             ":ubsan_feature_flag": "False",
             ":coverage_feature_flag": "True",
+            ":sancov_feature_flag": "False",
         },
     }
     for variant_name, flag_values in _ALL_VARIANTS.items():

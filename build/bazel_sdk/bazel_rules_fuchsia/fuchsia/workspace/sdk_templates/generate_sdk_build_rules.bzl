@@ -979,10 +979,12 @@ _FUCHSIA_CPU_CONSTRAINT_MAP = {
 _FUCHSIA_CLANG_VARIANT_MAP = {
     "": "@fuchsia_clang//:novariant",
     "asan": "@fuchsia_clang//:asan_variant",
+    "asan-sancov": "@fuchsia_clang//:asan-sancov_variant",
     "asan-ubsan": "@fuchsia_clang//:asan-ubsan_variant",
     "hwasan": "@fuchsia_clang//:hwasan_variant",
     "hwasan-ubsan": "@fuchsia_clang//:hwasan-ubsan_variant",
     "ubsan": "@fuchsia_clang//:ubsan_variant",
+    "ubsan-sancov": "@fuchsia_clang//:ubsan-sancov_variant",
     "coverage": "@fuchsia_clang//:coverage_variant",
 }
 # LINT.ThenChange(//build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/sanitizer.bzl:variant_config_settings)

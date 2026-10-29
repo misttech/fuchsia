@@ -163,8 +163,10 @@ sysroot_variants = [
 ]
 
 _optional_sysroot_variants = [
+  "asan-sancov",
   "asan-ubsan",
   "ubsan",
+  "ubsan-sancov",
   "coverage",
 ]
 

@@ -371,9 +371,12 @@ sanitizer_rustflags("ubsan.rustflags") {
 sanitizer_default_options("ubsan_default_options") {
 }
 
+# LINT.IfChange(sancov)
 variant("sancov") {
   c_family_flags = [ "-fsanitize-coverage=trace-pc-guard" ]
 }
+
+# LINT.ThenChange(//build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/sanitizer.bzl:sancov)
 
 # LINT.IfChange(tsan)
 variant("tsan") {

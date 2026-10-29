@@ -83,6 +83,12 @@ alias(
 )
 
 alias(
+    name = "asan-sancov_variant",
+    actual = "@prebuilt_clang//:asan-sancov_variant",
+    visibility = ["@fuchsia_platform_sysroot//:__pkg__"],
+)
+
+alias(
     name = "asan-ubsan_variant",
     actual = "@prebuilt_clang//:asan-ubsan_variant",
     visibility = ["@fuchsia_platform_sysroot//:__pkg__"],
@@ -97,6 +103,12 @@ alias(
 alias(
     name = "ubsan_variant",
     actual = "@prebuilt_clang//:ubsan_variant",
+    visibility = ["@fuchsia_platform_sysroot//:__pkg__"],
+)
+
+alias(
+    name = "ubsan-sancov_variant",
+    actual = "@prebuilt_clang//:ubsan-sancov_variant",
     visibility = ["@fuchsia_platform_sysroot//:__pkg__"],
 )
 

@@ -22,6 +22,7 @@ _INSTRUMENTATION_FEATURES = [
     "hwasan",
     "lsan",
     "msan",
+    "sancov",
     "tsan",
     "ubsan",
 ]
