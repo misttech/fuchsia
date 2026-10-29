@@ -1,0 +1,91 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "process",
+    srcs = ["process_builder.cc"],
+    hdrs = ["process_builder.h"],
+    implementation_deps = [
+        "//sdk/lib/component/incoming/cpp",
+        "//sdk/lib/fdio",
+        "//zircon/system/ulib/fbl",
+    ],
+    visibility = ["//src/developer/debug/debug_agent:__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+        "//sdk/fidl/fuchsia.process:fuchsia.process_cpp",
+        "//zircon/system/ulib/zx",
+    ],
+    alwayslink = True,
+)
+
+# @bazel2gn:raw_attribute:output_name = "process_unittests"
+fx_cc_binary(
+    name = "unittests",
+    testonly = True,
+    srcs = ["process_builder_unittest.cc"],
+    tags = ["manual"],
+    deps = [
+        ":process",
+        "//sdk/lib/component/incoming/cpp",
+        "//src/lib/fxl/test:gtest_main",
+        "//zircon/system/ulib/fbl",
+    ],
+)
+
+fx_packaged_binary(
+    name = "unittests_packaged_bin",
+    testonly = True,
+    binary = ":unittests",
+    binary_name = "process_unittests",
+)
+
+fx_component_manifest(
+    name = "process_unittests_manifest",
+    testonly = True,
+    component_name = "process_unittests",
+    includes = [
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/gtest:default.shard.cml",
+    ],
+    manifest = "meta/process_unittests.cml",
+)
+
+fx_test_component(
+    name = "process_unittests_component",
+    compiled_manifest = ":process_unittests_manifest",
+    component_name = "process_unittests",
+    deps = [
+        ":unittests_packaged_bin",
+        "//src/zircon/bin/zxsh:sh",
+    ],
+)
+
+fx_package(
+    name = "process_unittests_package",
+    package_name = "process_unittests",
+    test_components = [":process_unittests_component"],
+)
+
+fx_test(
+    name = "process_unittests",
+    package = ":process_unittests_package",
+    visibility = ["//src/lib:__pkg__"],
+)
