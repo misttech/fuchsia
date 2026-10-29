@@ -83,19 +83,23 @@ impl Policy {
         OBJECT_R_ROLE_ID
     }
 
+    /// Resolves the [`SecurityContext`] defined by this policy for the specified [`InitialSid`],
+    /// falling back to [`InitialSid::Kernel`] for [`InitialSid::Init`] when the
+    /// [`PolicyCap::UserspaceInitialContext`] capability is not enabled.
+    pub(super) fn resolve_initial_context(&self, mut id: InitialSid) -> Option<&SecurityContext> {
+        if id == InitialSid::Init && !self.has_policycap(PolicyCap::UserspaceInitialContext) {
+            id = InitialSid::Kernel;
+        }
+        self.initial_sids().get_by_id(id)
+    }
+
     /// Returns the [`SecurityContext`] defined by this policy for the specified [`InitialSid`].
     ///
     /// # Panics
     ///
     /// Panics if [`Self::validate`] has not verified that all required initial SIDs are present.
-    pub fn initial_context(&self, mut id: InitialSid) -> &SecurityContext {
-        let need_init_sid = self.has_policycap(PolicyCap::UserspaceInitialContext);
-        if id == InitialSid::Init && !need_init_sid {
-            id = InitialSid::Kernel;
-        }
-        self.initial_sids()
-            .get_by_id(id as u32)
-            .expect("initial SID must be present in validated policy")
+    pub fn initial_context(&self, id: InitialSid) -> &SecurityContext {
+        self.resolve_initial_context(id).expect("initial SID must be present in validated policy")
     }
 
     /// Returns the set of permissions for the given class, including both the explicitly owned

@@ -140,13 +140,8 @@ impl Policy {
         Validate::validate(self, self)?;
 
         // Validate that all kernel-required initial SIDs are present in the policy.
-        let need_init_sid = self.has_policycap(PolicyCap::UserspaceInitialContext);
         for initial_sid in InitialSid::all_variants() {
-            if *initial_sid == InitialSid::Init && !need_init_sid {
-                continue;
-            }
-            self.initial_sids()
-                .get_by_id(*initial_sid as u32)
+            self.resolve_initial_context(*initial_sid)
                 .ok_or(ValidateError::MissingInitialSid { initial_sid: *initial_sid })?;
         }
 
@@ -405,13 +400,12 @@ mod parse_tests {
         assert!(!policy.initial_sids().is_empty());
         assert!(policy.initial_sids().len() >= crate::InitialSid::all_variants().len() - 1);
 
-        let kernel_context =
-            policy.initial_sids().get_by_id(crate::InitialSid::Kernel as u32).unwrap();
+        let kernel_context = policy.initial_sids().get_by_id(crate::InitialSid::Kernel).unwrap();
         assert!(policy.users().get_by_id(kernel_context.user()).is_some());
         assert!(policy.roles().get_by_id(kernel_context.role()).is_some());
 
         let unlabeled_context =
-            policy.initial_sids().get_by_id(crate::InitialSid::Unlabeled as u32).unwrap();
+            policy.initial_sids().get_by_id(crate::InitialSid::Unlabeled).unwrap();
         assert!(policy.users().get_by_id(unlabeled_context.user()).is_some());
         assert!(policy.roles().get_by_id(unlabeled_context.role()).is_some());
     }

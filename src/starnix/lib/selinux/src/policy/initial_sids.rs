@@ -33,8 +33,9 @@ pub struct InitialSids {
 }
 
 impl InitialSids {
-    /// Returns the initial security context for the specified numeric ID, if present.
-    pub fn get_by_id(&self, id: u32) -> Option<&SecurityContext> {
+    /// Returns the initial security context for the specified [`crate::InitialSid`], if present.
+    pub fn get_by_id(&self, id: crate::InitialSid) -> Option<&SecurityContext> {
+        let id = id as u32;
         self.entries.iter().find(|initial| initial.id() == id).map(|initial| initial.context())
     }
 
