@@ -98,7 +98,7 @@ void Digester::Digest(const Capture& capture, class Digest* digest) {
   }
   digest->buckets_.emplace_back(kUndigested, undigested_size.integral);
   digest->buckets_.emplace_back(
-      kOrphaned, std::clamp(kmem.vmo_bytes - vmo_size.integral, 0ul, kmem.vmo_bytes));
+      kOrphaned, vmo_size.integral < kmem.vmo_bytes ? kmem.vmo_bytes - vmo_size.integral : 0ul);
   digest->buckets_.emplace_back(kKernel, kmem.wired_bytes + kmem.total_heap_bytes +
                                              kmem.mmu_overhead_bytes + kmem.ipc_bytes +
                                              kmem.other_bytes + kmem.slab_bytes + kmem.cache_bytes);

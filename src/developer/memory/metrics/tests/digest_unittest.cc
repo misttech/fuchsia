@@ -165,6 +165,31 @@ TEST_F(DigestUnitTest, Orphaned) {
   ConfirmNonEmptyBuckets(d, {{.name = "A", .size = 100U}, {.name = "Orphaned", .size = 200U}});
 }
 
+TEST_F(DigestUnitTest, OrphanedDoesNotUnderflow) {
+  Capture c;
+  TestUtils::CreateCapture(
+      &c,
+      {
+          .kmem =
+              {
+                  .total_bytes = 1000,
+                  .vmo_bytes = 50,
+              },
+          .vmos =
+              {
+                  {.koid = 1, .name = "a1", .committed_bytes = 100, .committed_scaled_bytes = 100},
+              },
+          .processes =
+              {
+                  {.koid = 1, .name = "p1", .vmos = {1}},
+              },
+      });
+  Digester digester({{"A", ".*", "a.*"}});
+  Digest d(c, &digester);
+  EXPECT_EQ(0U, d.undigested_vmos().size());
+  ConfirmNonEmptyBuckets(d, {{.name = "A", .size = 100U}});
+}
+
 TEST_F(DigestUnitTest, DefaultBuckets) {
   // Test kernel stats.
   Capture c;
