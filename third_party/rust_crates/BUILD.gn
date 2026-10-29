@@ -2404,16 +2404,12 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
-if (!(current_os == "fuchsia")) {
-  group("tar") {
-    public_deps = [ ":tar-v0_4_46" ]
-  }
+group("tar") {
+  public_deps = [ ":tar-v0_4_46" ]
 }
 
-if (!(current_os == "fuchsia")) {
-  group("tar-0.4.46") {
-    public_deps = [ ":tar-v0_4_46" ]
-  }
+group("tar-0.4.46") {
+  public_deps = [ ":tar-v0_4_46" ]
 }
 
 group("tempfile") {

@@ -248,6 +248,7 @@ static_assertions = "1.1.0"
 strsim = "0.11.1"
 strum = "0.28.0"
 strum_macros = "0.28.0"
+tar = "0.4.46"
 tempfile = "3.2"
 termcolor = "1.4.1"
 termion = "4.0.6"
@@ -378,7 +379,6 @@ shared_child = { version = "1.1.2", default-features = false }
 signal-hook = "0.4.5"
 syn = { version = "3.0.6", features = ["full", "visit", "visit-mut", "extra-traits"] }
 synstructure = "0.14.0"
-tar = "0.4.46"
 term_grid = "0.2.0"
 # TODO(https://fxbug.dev/106164) Enable the "rt" and "net" features here once gnaw
 # supports target-specific feature resolution
