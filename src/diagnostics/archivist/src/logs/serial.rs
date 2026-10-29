@@ -62,10 +62,9 @@ pub async fn launch_serial(
             }
             flush_request = flush_receiver.next() => {
                 if let Some(flush_request) = flush_request {
-                    // We have a background thread that polls sockets.  Ensure the background thread
-                    // is polled first before we write the remaining logs to serial to ensure we
-                    // capture all logs.
-                    logs_repo.flush().await;
+                    // Drain any remaining messages from the ring buffer before we write the
+                    // remaining logs to serial to ensure we capture all logs.
+                    logs_repo.flush();
 
                     // Write all pending logs to serial
                     while let Some(Some(log)) = log_stream.next().now_or_never() {
@@ -743,10 +742,9 @@ mod tests {
             )
             .unwrap();
             let (sender, receiver) = oneshot::channel();
-            // Send the log flush command
+
+            // Send the log flush command and wait for flush to complete.
             flush_sender.unbounded_send(sender).unwrap();
-            // Wait for flush to complete. Flush involves a background thread,
-            // so keep polling until the background thread handles the flush event.
             assert_eq!(receiver.await, Ok(()));
             let received = rcv.next().now_or_never().unwrap().unwrap();
             assert_eq!(received, "[00000.000] 00000:00000> [foo] INFO: a\n");

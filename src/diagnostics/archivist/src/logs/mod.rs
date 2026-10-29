@@ -85,8 +85,6 @@ mod tests {
                     "UNKNOWN": {
                         url: "fuchsia-pkg://UNKNOWN",
                         last_timestamp: AnyProperty,
-                        sockets_closed: 0u64,
-                        sockets_opened: 0u64,
                         invalid: {
                             number: 0u64,
                             bytes: 0u64,
@@ -162,8 +160,6 @@ mod tests {
                         $foo_moniker: {
                             url: "http://foo.com",
                             last_timestamp: AnyProperty,
-                            sockets_closed: 0u64,
-                            sockets_opened: 0u64,
                             invalid: {
                                 number: 0u64,
                                 bytes: 0u64,
@@ -200,8 +196,6 @@ mod tests {
                         $bar_moniker: {
                             url: "http://bar.com",
                             last_timestamp: AnyProperty,
-                            sockets_closed: 0u64,
-                            sockets_opened: 0u64,
                             invalid: {
                                 number: 0u64,
                                 bytes: 0u64,
@@ -594,8 +588,6 @@ mod tests {
                     "klog": {
                         url: "fuchsia-boot://kernel",
                         last_timestamp: AnyProperty,
-                        sockets_closed: 0u64,
-                        sockets_opened: 0u64,
                         invalid: {
                             number: 0u64,
                             bytes: 0u64,

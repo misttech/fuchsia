@@ -12,12 +12,9 @@ use crate::logs::stats::{LogStreamStats, SaturationCurve};
 use derivative::Derivative;
 use diagnostics_log_encoding::{Header, TRACING_FORMAT_LOG_RECORD_TYPE};
 use fidl_fuchsia_diagnostics::{ComponentSelector, StreamMode};
-use fidl_fuchsia_logger::MAX_DATAGRAM_LEN_BYTES;
 use fuchsia_async as fasync;
 use fuchsia_async::condition::{Condition, ConditionGuard};
 use fuchsia_inspect::Node;
-use fuchsia_sync::Mutex;
-use futures::channel::oneshot;
 use log::debug;
 use ring_buffer::{MAX_MESSAGE_SIZE, Reader, RingBuffer, ring_buffer_record_len};
 use std::collections::VecDeque;
@@ -71,8 +68,6 @@ pub fn create_ring_buffer(capacity: usize) -> Buffer {
     }
 }
 
-const IOB_PEER_CLOSED_KEY_BASE: u64 = 0x8000_0000_0000_0000;
-
 pub type OnInactive = Box<dyn Fn(Arc<ComponentIdentity>) + Send + Sync>;
 
 struct CompressedChunk {
@@ -91,21 +86,8 @@ struct CompressedChunk {
 pub struct SharedBuffer {
     inner: Condition<Inner>,
 
-    // Sockets. This *must* be locked after `inner` and the lock *must* be dropped before
-    // `InnerGuard` is dropped.
-    sockets: Mutex<Slab<Socket>>,
-
-    // Callback for when a container is inactive (i.e. no logs and no sockets).
+    // Callback for when a container is inactive (i.e. no logs and no IOBuffers).
     on_inactive: OnInactive,
-
-    // The port that we use to service the sockets.
-    port: zx::Port,
-
-    // Event used for termination.
-    event: zx::Event,
-
-    // The thread that we use to service the sockets.
-    socket_thread: Mutex<Option<std::thread::JoinHandle<()>>>,
 
     // The task responsible for draining the IOBuffer ring buffer into the compressed buffer and
     // waking cursors whenever new data arrives.
@@ -134,6 +116,7 @@ impl Drop for InnerGuard<'_> {
                 waker.wake();
             }
         }
+
         // SAFETY: This is the only place we drop the guard.
         unsafe {
             ManuallyDrop::drop(&mut self.guard);
@@ -165,9 +148,6 @@ struct Inner {
     // Registered containers.
     containers: Containers,
 
-    // Socket thread message queue.
-    thread_msg_queue: VecDeque<ThreadMessage>,
-
     // A copy of the tail index in the ring buffer.
     tail: u64,
 
@@ -191,24 +171,17 @@ struct Inner {
     next_msg_id: u64,
 
     // The IOBuffer peers that we must watch.
-    iob_peers: Slab<(ContainerId, zx::Iob)>,
+    iob_peers: Slab<fasync::ReceiverRegistration<IobPacketReceiver>>,
 
     // True, when the buffer has been terminated.
     terminated: bool,
-}
-
-enum ThreadMessage {
-    // The thread should terminate.
-    Terminate,
-
-    // Process all pending socket messages and report via the Sender when done.
-    Flush(oneshot::Sender<()>),
 }
 
 pub struct SharedBufferOptions {
     // To reduce how often Archivist wakes when new messages are written, Archivist will sleep for
     // this time. This will impact how quickly messages show up via the cursors.
     pub sleep_time: Duration,
+
     /// The size of the circular buffer for the saturation curve.
     pub saturation_curve_size: usize,
 }
@@ -220,7 +193,7 @@ impl Default for SharedBufferOptions {
 }
 
 impl SharedBuffer {
-    /// Returns a new shared buffer and the container for Archivist.
+    /// Returns a new shared buffer.
     pub fn new(
         ring_buffer: Buffer,
         on_inactive: OnInactive,
@@ -230,11 +203,10 @@ impl SharedBuffer {
         let Buffer { reader: ring_buffer, capacity } = ring_buffer;
         let saturation_curve =
             Arc::new(SaturationCurve::new(inspect_node, options.saturation_curve_size));
-        let this = Arc::new_cyclic(|weak: &Weak<Self>| Self {
+        Arc::new_cyclic(|weak: &Weak<Self>| Self {
             inner: Condition::new(Inner {
                 ring_buffer: Arc::clone(&ring_buffer),
                 containers: Containers::default(),
-                thread_msg_queue: VecDeque::default(),
                 tail: 0,
                 data: vec![0; capacity].into_boxed_slice(),
                 compressed_head: 0,
@@ -245,24 +217,14 @@ impl SharedBuffer {
                 iob_peers: Slab::default(),
                 terminated: false,
             }),
-            sockets: Mutex::new(Slab::default()),
             on_inactive,
-            port: zx::Port::create(),
-            event: zx::Event::create(),
-            socket_thread: Mutex::default(),
             saturation_curve,
             _buffer_monitor_task: fasync::Task::spawn(Self::buffer_monitor_task(
                 Weak::clone(weak),
                 ring_buffer,
                 options.sleep_time,
             )),
-        });
-
-        *this.socket_thread.lock() = Some({
-            let this = Arc::clone(&this);
-            std::thread::spawn(move || this.socket_thread(options.sleep_time))
-        });
-        this
+        })
     }
 
     pub fn new_container_buffer(
@@ -276,12 +238,10 @@ impl SharedBuffer {
         }
     }
 
-    pub async fn flush(&self) {
-        let (sender, receiver) = oneshot::channel();
-        self.inner.lock().thread_msg_queue.push_back(ThreadMessage::Flush(sender));
-        self.event.signal(zx::Signals::empty(), zx::Signals::USER_0).unwrap();
-        // Ignore failure if Archivist is shutting down.
-        let _ = receiver.await;
+    pub fn flush(self: &Arc<Self>) {
+        let mut inner = InnerGuard::new(self);
+        let head = inner.ring_buffer.head();
+        inner.drain_ring_buffer(head);
     }
 
     /// Returns the number of registered containers in use by the buffer.
@@ -290,20 +250,14 @@ impl SharedBuffer {
         self.inner.lock().containers.len()
     }
 
-    /// Terminates the socket thread. The socket thread will drain the sockets before terminating.
-    /// Returns a future that may be awaited if the caller wants to wait for the socket thread to
-    /// terminate.
-    pub fn terminate(self: &Arc<Self>) -> impl Future<Output = ()> {
-        {
-            let mut inner = InnerGuard::new(self);
-            inner.flush_sockets();
-            inner.thread_msg_queue.push_back(ThreadMessage::Terminate);
-        }
-        self.event.signal(zx::Signals::empty(), zx::Signals::USER_0).unwrap();
-        let join_handle = self.socket_thread.lock().take().unwrap();
-        fasync::unblock(|| {
-            let _ = join_handle.join();
-        })
+    /// Terminates the shared buffer, draining any remaining messages from the ring buffer and
+    /// waking all cursors.
+    pub fn terminate(self: &Arc<Self>) {
+        let mut inner = InnerGuard::new(self);
+        let head = inner.ring_buffer.head();
+        inner.drain_ring_buffer(head);
+        inner.terminated = true;
+        inner.wake = true;
     }
 
     /// Returns a cursor that will return messages that match `selectors`. If no selectors are
@@ -314,128 +268,6 @@ impl SharedBuffer {
         selectors: Vec<ComponentSelector>,
     ) -> FilterCursor {
         InnerGuard::new(self).cursor(mode, selectors)
-    }
-
-    fn socket_thread(self: Arc<Self>, sleep_time: Duration) {
-        const INTERRUPT_KEY: u64 = u64::MAX;
-        let mut sockets_ready = Vec::new();
-        let mut iob_peer_closed = Vec::new();
-        let mut interrupt_needs_arming = true;
-        let mut msg = None;
-
-        loop {
-            let mut deadline = if msg.is_some() {
-                zx::MonotonicInstant::INFINITE_PAST
-            } else {
-                if interrupt_needs_arming {
-                    self.event
-                        .wait_async(
-                            &self.port,
-                            INTERRUPT_KEY,
-                            zx::Signals::USER_0,
-                            zx::WaitAsyncOpts::empty(),
-                        )
-                        .unwrap();
-                    interrupt_needs_arming = false;
-                }
-
-                // Wait so that we're not constantly waking up for every log message that is queued.
-                // Ignore errors here.
-                let _ = self
-                    .event
-                    .wait_one(zx::Signals::USER_0, zx::MonotonicInstant::after(sleep_time.into()));
-                zx::MonotonicInstant::INFINITE
-            };
-
-            // Gather the list of sockets that are ready to read.
-            loop {
-                match self.port.wait(deadline) {
-                    Ok(packet) => {
-                        if packet.key() == INTERRUPT_KEY {
-                            interrupt_needs_arming = true;
-                            // To maintain proper ordering, we must capture the message here whilst
-                            // we are still gathering the list of sockets that are ready to read.
-                            // If we wait till later, we introduce windows where we might miss a
-                            // socket that should be read.
-                            if msg.is_none() {
-                                msg = self.inner.lock().thread_msg_queue.pop_front();
-                            }
-                        } else if packet.key() & IOB_PEER_CLOSED_KEY_BASE != 0 {
-                            iob_peer_closed.push(packet.key() as u32);
-                        } else {
-                            sockets_ready.push(SocketId(packet.key() as u32))
-                        }
-                    }
-                    Err(zx::Status::TIMED_OUT) => break,
-                    Err(status) => panic!("port wait error: {status:?}"),
-                }
-                deadline = zx::MonotonicInstant::INFINITE_PAST;
-            }
-
-            let mut inner = InnerGuard::new(&self);
-
-            if !iob_peer_closed.is_empty() {
-                // See the comment on `is_active()` for why this is required.
-                inner.drain_ring_buffer(inner.ring_buffer.head());
-
-                for iob_peer_closed in iob_peer_closed.drain(..) {
-                    let container_id = inner.iob_peers.free(iob_peer_closed).0;
-                    if let Some(container) = inner.containers.get_mut(container_id) {
-                        container.iob_count -= 1;
-                        if container.iob_count == 0 && !container.is_active() {
-                            if container.should_free() {
-                                inner.containers.free(container_id);
-                            } else {
-                                let identity = Arc::clone(&container.identity);
-                                inner.on_inactive.push(identity);
-                            }
-                        }
-                    }
-                }
-            }
-
-            {
-                let mut sockets = self.sockets.lock();
-                for socket_id in sockets_ready.drain(..) {
-                    inner.read_socket(&mut sockets, socket_id, |socket| {
-                        socket
-                            .socket
-                            .wait_async(
-                                &self.port,
-                                socket_id.0 as u64,
-                                zx::Signals::OBJECT_READABLE | zx::Signals::OBJECT_PEER_CLOSED,
-                                zx::WaitAsyncOpts::empty(),
-                            )
-                            .unwrap();
-                    });
-                }
-            }
-
-            // Now that we've processed the sockets, we can process the message.
-            if let Some(m) = msg.take() {
-                match m {
-                    ThreadMessage::Terminate => {
-                        inner.drain_ring_buffer(inner.ring_buffer.head());
-                        inner.terminated = true;
-                        inner.wake = true;
-                        return;
-                    }
-                    ThreadMessage::Flush(sender) => {
-                        inner.drain_ring_buffer(inner.ring_buffer.head());
-                        let _ = sender.send(());
-                    }
-                }
-
-                // See if there's another message.
-                msg = inner.thread_msg_queue.pop_front();
-                if msg.is_none() {
-                    // If there are no more messages, we must clear the signal so that we get
-                    // notified when the next message arrives. This must be done whilst we are
-                    // holding the lock.
-                    self.event.signal(zx::Signals::USER_0, zx::Signals::empty()).unwrap();
-                }
-            }
-        }
     }
 
     async fn buffer_monitor_task(this: Weak<Self>, mut ring_buffer: Reader, sleep_time: Duration) {
@@ -698,95 +530,12 @@ impl<'a> InnerGuard<'a> {
         self.finish_ingest(old_compressed_tail);
     }
 
-    /// Reads a socket. Calls `rearm` to rearm the socket once it has been drained.
-    fn read_socket(
-        &mut self,
-        sockets: &mut Slab<Socket>,
-        socket_id: SocketId,
-        rearm: impl FnOnce(&mut Socket),
-    ) {
-        let Some(socket) = sockets.get_mut(socket_id.0) else { return };
-        let container_id = socket.container_id;
-
-        self.drain_ring_buffer(self.ring_buffer.head());
-        let old_compressed_tail = self.compressed_tail_message_id();
-        let mut ingested = false;
-
-        loop {
-            let mut data = Vec::with_capacity(MAX_DATAGRAM_LEN_BYTES as usize);
-
-            // Read directly into the buffer leaving space for the header.
-            let len = match socket.socket.read_uninit(data.spare_capacity_mut()) {
-                Ok(d) => d.len(),
-                Err(zx::Status::SHOULD_WAIT) => {
-                    // The socket has been drained.
-                    if ingested {
-                        self.finish_ingest(old_compressed_tail);
-                    }
-                    rearm(socket);
-                    return;
-                }
-                Err(_) => break,
-            };
-
-            // SAFETY: `read_uninit` will have written to `len` bytes.
-            unsafe {
-                data.set_len(len);
-            }
-
-            let container = self.containers.get_mut(container_id).unwrap();
-            if data.len() < 16 {
-                container.stats.increment_invalid(data.len());
-                continue;
-            }
-
-            let header = Header::read_from_bytes(&data[..std::mem::size_of::<Header>()]).unwrap();
-            let msg_len = header.size_words() as usize * 8;
-            if header.raw_type() != TRACING_FORMAT_LOG_RECORD_TYPE || msg_len != data.len() {
-                debug!("bad type or size ({}, {}, {})", header.raw_type(), msg_len, data.len());
-                container.stats.increment_invalid(data.len());
-                continue;
-            }
-
-            self.append_message(container_id, &data);
-            ingested = true;
-        }
-
-        // This path is taken when the socket should be closed.
-        if ingested {
-            self.finish_ingest(old_compressed_tail);
-        }
-
-        let container = self.containers.get_mut(container_id).unwrap();
-        container.remove_socket(socket_id, sockets);
-        if !container.is_active() {
-            if container.should_free() {
-                self.containers.free(container_id);
-            } else {
-                let identity = Arc::clone(&container.identity);
-                self.on_inactive.push(identity);
-            }
-        }
-    }
-
-    /// Flushes sockets and drains the ring buffer into the compressed buffer.
-    fn flush_sockets(&mut self) {
-        let mut sockets = self.buffer.sockets.lock();
-        let mut socket_id = 0;
-        while let Some(next_id) = sockets.next_used(socket_id) {
-            // The socket doesn't need to be rearmed here.
-            self.read_socket(&mut sockets, SocketId(next_id), |_| {});
-            socket_id = next_id + 1;
-        }
-        let head = self.ring_buffer.head();
-        self.drain_ring_buffer(head);
-    }
-
     /// Returns a cursor.
     fn cursor(&mut self, mode: StreamMode, selectors: Vec<ComponentSelector>) -> FilterCursor {
         let (message_id, end_msg_id) = match mode {
             StreamMode::Snapshot => {
-                self.flush_sockets();
+                let head = self.ring_buffer.head();
+                self.drain_ring_buffer(head);
                 (self.compressed_tail_message_id(), Some(self.next_msg_id))
             }
             StreamMode::SnapshotThenSubscribe => (self.compressed_tail_message_id(), None),
@@ -852,60 +601,28 @@ struct ContainerInfo {
     #[derivative(Debug = "ignore")]
     stats: Arc<LogStreamStats>,
 
-    // The first socket ID for this container.
-    first_socket_id: SocketId,
-
     // The number of client IOBuffers.
     iob_count: usize,
 }
 
 impl ContainerInfo {
     fn new(identity: Arc<ComponentIdentity>, stats: Arc<LogStreamStats>) -> Self {
-        Self {
-            identity,
-            last_msg_id: None,
-            terminated: false,
-            stats,
-            first_socket_id: SocketId::NULL,
-            iob_count: 0,
-        }
+        Self { identity, last_msg_id: None, terminated: false, stats, iob_count: 0 }
     }
 
     fn should_free(&self) -> bool {
         self.terminated && !self.is_active()
     }
 
-    // Returns true if the container is considered active which is the case if it has sockets, io
-    // buffers, or buffered messages.
+    // Returns true if the container is considered active which is the case if it has IOBuffers or
+    // buffered messages.
     //
-    // NOTE: Whenever a socket or iob is closed, `drain_ring_buffer` must be called to ensure
+    // NOTE: Whenever an IOBuffer is closed, `drain_ring_buffer` must be called to ensure
     // `last_msg_id` is up to date.
     fn is_active(&self) -> bool {
-        self.first_socket_id != SocketId::NULL
-            || self.iob_count > 0
+        self.iob_count > 0
             || self.last_msg_id.is_some()
             || ARCHIVIST_MONIKER.get().is_some_and(|m| *self.identity == *m)
-    }
-
-    // # Panics
-    //
-    // This will panic if the socket isn't found.
-    fn remove_socket(&mut self, socket_id: SocketId, sockets: &mut Slab<Socket>) {
-        let Socket { prev, next, .. } = *sockets.get(socket_id.0).unwrap();
-        if prev == SocketId::NULL {
-            self.first_socket_id = next;
-        } else {
-            sockets.get_mut(prev.0).unwrap().next = next;
-        }
-        if next != SocketId::NULL {
-            sockets
-                .get_mut(next.0)
-                .unwrap_or_else(|| panic!("next {next:?} has been freed!"))
-                .prev = prev;
-        }
-        sockets.free(socket_id.0);
-        self.stats.close_socket();
-        debug!(identity:% = self.identity; "Socket closed.");
     }
 }
 
@@ -940,46 +657,43 @@ impl ContainerBuffer {
     /// Returns an IOBuffer for the container.
     pub fn iob(&self) -> zx::Iob {
         let mut inner = self.shared_buffer.inner.lock();
-
         inner.containers.get_mut(self.container_id).unwrap().iob_count += 1;
-
         let (ep0, ep1) = inner.ring_buffer.new_iob_writer(self.container_id.0 as u64).unwrap();
-
-        inner.iob_peers.insert(|idx| {
-            ep1.wait_async(
-                &self.shared_buffer.port,
-                idx as u64 | IOB_PEER_CLOSED_KEY_BASE,
-                zx::Signals::IOB_PEER_CLOSED,
-                zx::WaitAsyncOpts::empty(),
-            )
-            .unwrap();
-
-            (self.container_id, ep1)
+        let buffer = Arc::downgrade(&self.shared_buffer);
+        let container_id = self.container_id;
+        inner.iob_peers.insert(|peer_id| {
+            let reg = fasync::EHandle::local().register_receiver(IobPacketReceiver {
+                buffer,
+                container_id,
+                iob: ep1,
+                peer_id,
+            });
+            reg.iob
+                .wait_async(
+                    reg.port(),
+                    reg.key(),
+                    zx::Signals::IOB_PEER_CLOSED,
+                    zx::WaitAsyncOpts::empty(),
+                )
+                .unwrap();
+            reg
         });
 
         ep0
     }
 
-    /// Marks the buffer as terminated which will force all cursors to end and close all sockets.
-    /// The component's data will remain in the buffer until the messages are rolled out. This will
-    /// *not* drain sockets or close IOBuffers.
+    /// Marks the buffer as terminated which will force all cursors to end. The component's data
+    /// will remain in the buffer until the messages are rolled out. This will *not* close
+    /// IOBuffers.
     pub fn terminate(&self) {
         let mut inner = InnerGuard::new(&self.shared_buffer);
 
         // See the comment on `is_active()` for why this is required.
-        inner.drain_ring_buffer(inner.ring_buffer.head());
+        let head = inner.ring_buffer.head();
+        inner.drain_ring_buffer(head);
 
         if let Some(container) = inner.containers.get_mut(self.container_id) {
             container.terminated = true;
-            if container.first_socket_id != SocketId::NULL {
-                let mut sockets = self.shared_buffer.sockets.lock();
-                loop {
-                    container.remove_socket(container.first_socket_id, &mut sockets);
-                    if container.first_socket_id == SocketId::NULL {
-                        break;
-                    }
-                }
-            }
             if container.should_free() {
                 inner.containers.free(self.container_id);
             }
@@ -987,7 +701,7 @@ impl ContainerBuffer {
         }
     }
 
-    /// Returns true if the container has messages, sockets or IOBuffers.
+    /// Returns true if the container has messages or IOBuffers.
     pub fn is_active(&self) -> bool {
         self.shared_buffer
             .inner
@@ -996,35 +710,42 @@ impl ContainerBuffer {
             .get(self.container_id)
             .is_some_and(|c| c.is_active())
     }
-
-    /// Adds a socket for this container.
-    pub fn add_socket(&self, socket: zx::Socket) {
-        let mut inner = self.shared_buffer.inner.lock();
-        let Some(container) = inner.containers.get_mut(self.container_id) else { return };
-        container.stats.open_socket();
-        let next = container.first_socket_id;
-        let mut sockets = self.shared_buffer.sockets.lock();
-        let socket_id = SocketId(sockets.insert(|socket_id| {
-            socket
-                .wait_async(
-                    &self.shared_buffer.port,
-                    socket_id as u64,
-                    zx::Signals::OBJECT_READABLE | zx::Signals::OBJECT_PEER_CLOSED,
-                    zx::WaitAsyncOpts::empty(),
-                )
-                .unwrap();
-            Socket { socket, container_id: self.container_id, prev: SocketId::NULL, next }
-        }));
-        if next != SocketId::NULL {
-            sockets.get_mut(next.0).unwrap().prev = socket_id;
-        }
-        container.first_socket_id = socket_id;
-    }
 }
 
 impl Drop for ContainerBuffer {
     fn drop(&mut self) {
         self.terminate();
+    }
+}
+
+struct IobPacketReceiver {
+    buffer: Weak<SharedBuffer>,
+    container_id: ContainerId,
+    iob: zx::Iob,
+    peer_id: u32,
+}
+
+impl fasync::PacketReceiver for IobPacketReceiver {
+    fn receive_packet(&self, _packet: zx::Packet) {
+        let Some(buffer) = self.buffer.upgrade() else { return };
+        let mut inner = InnerGuard::new(&buffer);
+
+        // See the comment on `is_active()` for why this is required.
+        let head = inner.ring_buffer.head();
+        inner.drain_ring_buffer(head);
+
+        inner.iob_peers.free(self.peer_id);
+        if let Some(container) = inner.containers.get_mut(self.container_id) {
+            container.iob_count -= 1;
+            if container.iob_count == 0 && !container.is_active() {
+                if container.should_free() {
+                    inner.containers.free(self.container_id);
+                } else {
+                    let identity = Arc::clone(&container.identity);
+                    inner.on_inactive.push(identity);
+                }
+            }
+        }
     }
 }
 
@@ -1088,8 +809,6 @@ impl<T> Slab<T> {
             };
             free_index as u32
         } else {
-            // This is < rather than <= because we reserve 0xffff_ffff to be used as a NULL value
-            // (see SocketId::NULL below).
             assert!(self.slab.len() < u32::MAX as usize);
             self.slab.push(Slot::Used(value(self.slab.len() as u32)));
             (self.slab.len() - 1) as u32
@@ -1107,21 +826,6 @@ impl<T> Slab<T> {
         }
         None
     }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct SocketId(u32);
-
-impl SocketId {
-    const NULL: Self = SocketId(0xffff_ffff);
-}
-
-struct Socket {
-    socket: zx::Socket,
-    container_id: ContainerId,
-    // Sockets are stored as a linked list for each container.
-    prev: SocketId,
-    next: SocketId,
 }
 
 #[cfg(test)]
@@ -1493,7 +1197,7 @@ mod tests {
         assert!(cursor_b.next().await.is_some());
         assert!(cursor_c.next().await.is_some());
 
-        drop(buffer.terminate());
+        buffer.terminate();
 
         // All cursors should return the 4 remaining messages.
         assert_eq!(cursor_a.count().await, 4);
@@ -1517,7 +1221,7 @@ mod tests {
             container_cursor(&buffer, &container, StreamMode::SnapshotThenSubscribe).unwrap();
         let cursor_c = container_cursor(&buffer, &container, StreamMode::Snapshot).unwrap();
 
-        drop(buffer.terminate());
+        buffer.terminate();
 
         assert_eq!(cursor_a.count().await, 0);
         assert_eq!(cursor_b.count().await, 0);
@@ -1565,22 +1269,21 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn socket_increments_logstats() {
+    async fn iob_increments_logstats() {
         let inspector = Inspector::default();
         let identity =
             Arc::new(ComponentIdentity::new(ExtendedMoniker::parse_str("./test").unwrap(), ""));
         let stats = Arc::new(LogStreamStats::new(inspector.root(), &identity));
-        let buffer = Arc::new(SharedBuffer::new(
+        let buffer = SharedBuffer::new(
             create_ring_buffer(65536),
             Box::new(|_| {}),
             Default::default(),
             &fuchsia_inspect::Node::default(),
-        ));
+        );
         let container_a = Arc::new(buffer.new_container_buffer(Arc::new(vec!["a"].into()), stats));
         let msg = make_message("a", None, zx::BootInstant::from_nanos(1));
 
-        let (local, remote) = zx::Socket::create_datagram();
-        container_a.add_socket(remote);
+        let iob = container_a.iob();
 
         let cursor_a = container_cursor(&buffer, &container_a, StreamMode::Subscribe).unwrap();
 
@@ -1594,7 +1297,7 @@ mod tests {
         let mut next = futures.next();
         assert!(futures::poll!(&mut next).is_pending());
 
-        local.write(msg.bytes()).unwrap();
+        iob.write(Default::default(), 0, msg.bytes()).unwrap();
 
         let cursor_b = pin!(container_cursor(&buffer, &container_a, StreamMode::Snapshot).unwrap());
 
@@ -1602,15 +1305,14 @@ mod tests {
 
         // If cursor_a wasn't woken, this will hang.
         next.await;
-        // Validate logstats (must happen after the socket was handled)
+
+        // Validate logstats (must happen after the ring buffer was drained).
         assert_data_tree!(
             inspector,
             root: contains {
                 test: {
                     url: "",
                     last_timestamp: AnyProperty,
-                    sockets_closed: 0u64,
-                    sockets_opened: 1u64,
                     invalid: {
                         number: 0u64,
                         bytes: 0u64,
@@ -1649,47 +1351,10 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn socket() {
-        let buffer = Arc::new(SharedBuffer::new(
-            create_ring_buffer(MAX_MESSAGE_SIZE),
-            Box::new(|_| {}),
-            Default::default(),
-            &fuchsia_inspect::Node::default(),
-        ));
-        let container_a =
-            Arc::new(buffer.new_container_buffer(Arc::new(vec!["a"].into()), test_stats()));
-        let msg = make_message("a", None, zx::BootInstant::from_nanos(1));
-
-        let (local, remote) = zx::Socket::create_datagram();
-        container_a.add_socket(remote);
-
-        let cursor_a = container_cursor(&buffer, &container_a, StreamMode::Subscribe).unwrap();
-
-        // Use FuturesUnordered so that we can make sure that the cursor is woken when a message is
-        // received (FuturesUnordered uses separate wakers for all the futures it manages).
-        let mut futures = FuturesUnordered::new();
-        futures.push(async move {
-            let mut cursor_a = pin!(cursor_a);
-            cursor_a.next().await
-        });
-        let mut next = futures.next();
-        assert!(futures::poll!(&mut next).is_pending());
-
-        local.write(msg.bytes()).unwrap();
-
-        let cursor_b = pin!(container_cursor(&buffer, &container_a, StreamMode::Snapshot).unwrap());
-
-        assert_eq!(cursor_b.map(|item| assert_eq!(&*item, msg.bytes())).count().await, 1);
-
-        // If cursor_a wasn't woken, this will hang.
-        next.await;
-    }
-
-    #[fuchsia::test]
-    async fn socket_on_inactive() {
+    async fn iob_on_inactive() {
         let on_inactive = Arc::new(AtomicU64::new(0));
         let a_identity = Arc::new(vec!["a"].into());
-        let buffer = Arc::new(SharedBuffer::new(
+        let buffer = SharedBuffer::new(
             create_ring_buffer(MAX_MESSAGE_SIZE),
             {
                 let on_inactive = Arc::clone(&on_inactive);
@@ -1701,14 +1366,12 @@ mod tests {
             },
             SharedBufferOptions { sleep_time: Duration::ZERO, ..Default::default() },
             &fuchsia_inspect::Node::default(),
-        ));
+        );
         let container_a = Arc::new(buffer.new_container_buffer(a_identity, test_stats()));
         let msg = make_message("a", None, zx::BootInstant::from_nanos(1));
 
-        let (local, remote) = zx::Socket::create_datagram();
-        container_a.add_socket(remote);
-
-        local.write(msg.bytes()).unwrap();
+        let iob = container_a.iob();
+        iob.write(Default::default(), 0, msg.bytes()).unwrap();
 
         let cursor = pin!(container_cursor(&buffer, &container_a, StreamMode::Snapshot).unwrap());
 
@@ -1727,49 +1390,45 @@ mod tests {
 
         assert_eq!(on_inactive.load(Ordering::Relaxed), 0);
 
-        // Close the socket.
-        std::mem::drop(local);
+        // Close the IOBuffer.
+        std::mem::drop(iob);
 
-        // We don't know when the socket thread will run so we have to loop.
         while on_inactive.load(Ordering::Relaxed) != 1 {
-            fasync::Timer::new(Duration::from_millis(50)).await;
+            yield_to_executor().await;
         }
     }
 
+    // `SharedBuffer::new` spawns a task, which requires an active executor (provided by
+    // `#[fuchsia::test]` when the test function is `async`).
     #[fuchsia::test]
+    #[allow(clippy::unused_async)]
     async fn flush() {
         let a_identity = Arc::new(vec!["a"].into());
-        let buffer = Arc::new(SharedBuffer::new(
+        let buffer = SharedBuffer::new(
             create_ring_buffer(1024 * 1024),
             Box::new(|_| {}),
             Default::default(),
             &fuchsia_inspect::Node::default(),
-        ));
+        );
         let container_a = Arc::new(buffer.new_container_buffer(a_identity, test_stats()));
         let msg = make_message("a", None, zx::BootInstant::from_nanos(1));
 
-        let (local, remote) = zx::Socket::create_datagram();
-        container_a.add_socket(remote);
+        let iob = container_a.iob();
 
         let cursor = pin!(container_cursor(&buffer, &container_a, StreamMode::Subscribe).unwrap());
 
         const COUNT: usize = 1000;
         for _ in 0..COUNT {
-            local.write(msg.bytes()).unwrap();
+            iob.write(Default::default(), 0, msg.bytes()).unwrap();
         }
 
-        // Race two flush futures.
-        let mut flush_futures = FuturesUnordered::from_iter([buffer.flush(), buffer.flush()]);
-        flush_futures.next().await;
+        buffer.flush();
 
         let messages: Option<Vec<_>> = cursor.take(COUNT).collect().now_or_never();
-        assert!(messages.is_some());
-
-        // Make sure the other one finishes too.
-        flush_futures.next().await;
+        assert_eq!(messages.map(|m| m.len()), Some(COUNT));
 
         // Make sure we can still terminate the buffer.
-        buffer.terminate().await;
+        buffer.terminate();
     }
 
     #[fuchsia::test]
@@ -1813,6 +1472,6 @@ mod tests {
         let messages: Vec<_> = cursor.collect().await;
         assert!(!messages.is_empty());
 
-        buffer.terminate().await;
+        buffer.terminate();
     }
 }

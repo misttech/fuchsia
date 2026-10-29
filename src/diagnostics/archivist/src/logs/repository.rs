@@ -145,8 +145,8 @@ impl LogsRepository {
         })
     }
 
-    pub async fn flush(&self) {
-        self.shared_buffer.flush().await;
+    pub fn flush(&self) {
+        self.shared_buffer.flush();
     }
 
     /// Drain the kernel's debug log. The returned future completes once
@@ -239,7 +239,7 @@ impl LogsRepository {
         debug!("Log ingestion stopped.");
         // Terminate the shared buffer first so that pending messages are processed before we
         // terminate all the containers.
-        self.shared_buffer.terminate().await;
+        self.shared_buffer.terminate();
 
         // Avoid holding `mutable_state` across `container.terminate()`, which drains the ring
         // buffer and can trigger `on_container_inactive`.

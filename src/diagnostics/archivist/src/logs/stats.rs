@@ -33,8 +33,6 @@ impl LogCounter {
 
 #[derive(Debug, Default)]
 struct InnerStats {
-    sockets_opened: AtomicU64,
-    sockets_closed: AtomicU64,
     last_timestamp: AtomicI64,
     total: LogCounter,
     fatal: LogCounter,
@@ -62,8 +60,6 @@ impl LogStreamStats {
             async move {
                 let inspector = Inspector::default();
                 let root = inspector.root();
-                root.record_uint("sockets_opened", inner.sockets_opened.load(Ordering::Relaxed));
-                root.record_uint("sockets_closed", inner.sockets_closed.load(Ordering::Relaxed));
                 root.record_int("last_timestamp", inner.last_timestamp.load(Ordering::Relaxed));
                 root.record_string("url", inner.url.as_str());
 
@@ -88,14 +84,6 @@ impl LogStreamStats {
             .boxed()
         });
         Self { inner, _lazy_node: lazy_node }
-    }
-
-    pub fn open_socket(&self) {
-        self.inner.sockets_opened.fetch_add(1, Ordering::Relaxed);
-    }
-
-    pub fn close_socket(&self) {
-        self.inner.sockets_closed.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn increment_invalid(&self, bytes: usize) {

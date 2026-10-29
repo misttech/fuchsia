@@ -33,7 +33,6 @@ const INSPECTOR_SIZE: usize = 2 * 1024 * 1024 /* 2MB */;
 
 fn main() -> Result<(), Error> {
     let config = Config::take_from_startup_handle();
-    // NOTE: Sockets are serviced from a dedicated thread (which isn't counted here).
     if config.num_threads == 1 {
         fasync::LocalExecutor::default().run_singlethreaded(async_main(config))
     } else {

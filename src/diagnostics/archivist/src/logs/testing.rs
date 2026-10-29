@@ -128,7 +128,7 @@ impl TestHarness {
     }
 
     /// Check to make sure all `TestStream`s have been dropped. This ensures that we repeatedly test
-    /// the case where a socket's write half is dropped before the socket is drained.
+    /// the case where an IOBuffer's write half is dropped before the buffer is drained.
     fn check_pending_streams(&mut self) {
         self.pending_streams.retain(|w| w.upgrade().is_some());
         assert_eq!(

@@ -538,7 +538,7 @@ mod tests {
         ));
         let container = buffer.new_container_buffer(Arc::new(vec!["a"].into()), test_stats());
         container.push_back(make_message("msg", None, zx::BootInstant::from_nanos(1)).bytes());
-        drop(buffer.terminate());
+        buffer.terminate();
         assert_eq!(cursor.count().await, 1);
     }
 
@@ -585,7 +585,10 @@ mod tests {
         assert_eq!(&chunk[range], b"first");
     }
 
+    // `SharedBuffer::new` spawns a task, which requires an active executor (provided by
+    // `#[fuchsia::test]` when the test function is `async`).
     #[fuchsia::test]
+    #[allow(clippy::unused_async)]
     async fn container_ids_memoization_and_wraparound() {
         let buffer = SharedBuffer::new(
             create_ring_buffer(65536),
@@ -624,10 +627,13 @@ mod tests {
                 assert_eq!(cache.matches(&inner, c.container_id, &selectors), i % 2 == 0);
             }
         }
-        buffer.terminate().await;
+        buffer.terminate();
     }
 
+    // `SharedBuffer::new` spawns a task, which requires an active executor (provided by
+    // `#[fuchsia::test]` when the test function is `async`).
     #[fuchsia::test]
+    #[allow(clippy::unused_async)]
     async fn decompressed_chunk_compressed_and_uncompressed() {
         let buffer = SharedBuffer::new(
             create_ring_buffer(65536),
@@ -692,7 +698,7 @@ mod tests {
             decompressed.reset();
             assert_eq!(decompressed.msg_ids, 0..0);
         }
-        buffer.terminate().await;
+        buffer.terminate();
     }
 
     #[fuchsia::test]
