@@ -22,17 +22,57 @@ thread_local! {
             cctx.set_parameter(zstd::zstd_safe::CParameter::ChecksumFlag(true)).unwrap();
             cctx
         });
-    static ZSTD_DECOMPRESSOR: std::cell::RefCell<RawDCtx> = {
+    static ZSTD_DECOMPRESSOR: std::cell::RefCell<RawZstdDCtx> =
+        std::cell::RefCell::new(RawZstdDCtx::new());
+    static LZ4_COMPRESSOR: std::cell::RefCell<RawLz4StreamHC> =
+        std::cell::RefCell::new(RawLz4StreamHC::new());
+}
+
+struct RawZstdDCtx(NonNull<zstd_sys::ZSTD_DCtx>);
+
+// SAFETY: `RawZstdDCtx` owns its `ZSTD_DCtx` pointer exclusively and does not share it
+// unsynchronized across threads.
+unsafe impl Send for RawZstdDCtx {}
+
+impl RawZstdDCtx {
+    fn new() -> Self {
         // SAFETY: Creating a ZSTD decompression context does not access
         // invalid memory or violate invariants.
         let raw_ptr = unsafe { zstd_sys::ZSTD_createDCtx() };
         let ptr = NonNull::new(raw_ptr).expect("ZSTD_createDCtx failed");
-        std::cell::RefCell::new(RawDCtx(ptr))
-    };
+        Self(ptr)
+    }
+
+    /// Decompresses ZSTD using a pointer slice and a raw destination pointer slice.
+    ///
+    /// # Safety
+    ///
+    /// `dst` must point to valid memory allocated for writes of at least
+    /// `dst.len()` bytes.
+    unsafe fn decompress_ptr(
+        &mut self,
+        src: PtrByteSlice<'_>,
+        dst: *mut [MaybeUninit<u8>],
+    ) -> Result<usize, usize> {
+        let dctx = self.0.as_ptr();
+        // SAFETY: `PtrByteSlice` guarantees `src` is valid for reads. `dst`
+        // points to valid memory allocated for writes of at least `dst.len()`
+        // bytes (ensured by caller safety preconditions).
+        let result = unsafe {
+            zstd_sys::ZSTD_decompressDCtx(
+                dctx,
+                dst as *mut std::os::raw::c_void,
+                dst.len(),
+                src.as_raw_slice_ptr() as *const std::os::raw::c_void,
+                src.len(),
+            )
+        };
+        // SAFETY: Checking an integer return code is pure inspection.
+        if unsafe { zstd_sys::ZSTD_isError(result) } != 0 { Err(result) } else { Ok(result) }
+    }
 }
 
-struct RawDCtx(NonNull<zstd_sys::ZSTD_DCtx>);
-impl Drop for RawDCtx {
+impl Drop for RawZstdDCtx {
     fn drop(&mut self) {
         // SAFETY: `self.0` is non-null and was allocated via `ZSTD_createDCtx`.
         unsafe {
@@ -52,21 +92,8 @@ unsafe fn zstd_decompress_ptr(
     dst: *mut [MaybeUninit<u8>],
 ) -> Result<usize, usize> {
     ZSTD_DECOMPRESSOR.with_borrow_mut(|decompressor| {
-        let dctx = decompressor.0.as_ptr();
-        // SAFETY: `PtrByteSlice` guarantees `src` is valid for reads. `dst`
-        // points to valid memory allocated for writes of at least `dst.len()`
-        // bytes (ensured by caller safety preconditions).
-        let result = unsafe {
-            zstd_sys::ZSTD_decompressDCtx(
-                dctx,
-                dst as *mut std::os::raw::c_void,
-                dst.len(),
-                src.as_raw_slice_ptr() as *const std::os::raw::c_void,
-                src.len(),
-            )
-        };
-        // SAFETY: Checking an integer return code is pure inspection.
-        if unsafe { zstd_sys::ZSTD_isError(result) } != 0 { Err(result) } else { Ok(result) }
+        // SAFETY: The caller upholds the safety preconditions for `dst`.
+        unsafe { decompressor.decompress_ptr(src, dst) }
     })
 }
 
@@ -77,6 +104,92 @@ unsafe extern "C" {
         compressedSize: std::os::raw::c_int,
         dstCapacity: std::os::raw::c_int,
     ) -> std::os::raw::c_int;
+    fn LZ4_compressBound(inputSize: std::os::raw::c_int) -> std::os::raw::c_int;
+    fn LZ4_createStreamHC() -> *mut std::os::raw::c_void;
+    fn LZ4_freeStreamHC(streamHCPtr: *mut std::os::raw::c_void) -> std::os::raw::c_int;
+    fn LZ4_compress_HC_extStateHC_fastReset(
+        state: *mut std::os::raw::c_void,
+        src: *const std::os::raw::c_char,
+        dst: *mut std::os::raw::c_char,
+        srcSize: std::os::raw::c_int,
+        dstCapacity: std::os::raw::c_int,
+        compressionLevel: std::os::raw::c_int,
+    ) -> std::os::raw::c_int;
+}
+
+struct RawLz4StreamHC(NonNull<std::os::raw::c_void>);
+
+// SAFETY: `RawLz4StreamHC` owns its `LZ4_streamHC_t` pointer exclusively and does not share it
+// unsynchronized across threads.
+unsafe impl Send for RawLz4StreamHC {}
+
+impl RawLz4StreamHC {
+    fn new() -> Self {
+        // SAFETY: `LZ4_createStreamHC` allocates and zeroes a new stream state on the heap.
+        let raw_ptr = unsafe { LZ4_createStreamHC() };
+        let ptr = NonNull::new(raw_ptr).expect("LZ4_createStreamHC failed");
+        Self(ptr)
+    }
+
+    fn compress_into(
+        &mut self,
+        data: &[u8],
+        dst: &mut Vec<u8>,
+        compression_level: lz4::HcCompressionLevel,
+    ) -> Result<usize, lz4::Error> {
+        if data.is_empty() {
+            return Ok(0);
+        }
+        let data_size =
+            std::os::raw::c_int::try_from(data.len()).map_err(|_| lz4::Error::InputTooLarge)?;
+        // SAFETY: `LZ4_compressBound` is a pure integer calculation.
+        let bound = unsafe { LZ4_compressBound(data_size) };
+        if bound <= 0 {
+            return Err(lz4::Error::InputTooLarge);
+        }
+        let bound_usize = bound as usize;
+        dst.reserve(bound_usize);
+        let prev_len = dst.len();
+        // SAFETY:
+        //  1. `dst.reserve(bound_usize)` ensures at least `bound_usize` bytes of spare capacity.
+        //  2. `self.0` is guaranteed to be in a valid state for
+        //     `LZ4_compress_HC_extStateHC_fastReset` per `lz4hc.h`:
+        //     - It is initially created and zero-initialized by `LZ4_createStreamHC()` in
+        //       `RawLz4StreamHC::new()`.
+        //     - `RawLz4StreamHC` exclusively owns the state pointer and only ever mutates it via
+        //       `LZ4_compress_HC_extStateHC_fastReset`.
+        //     - After any successful compression call, the stream remains in a valid state for
+        //       subsequent fast resets. Even if a prior call were to fail, LZ4 marks the stream
+        //       `dirty` and `LZ4_resetStreamHC_fast` automatically falls back to a full
+        //       `LZ4_initStreamHC` reset.
+        //  3. When compression succeeds, LZ4 initializes `compressed_size` bytes in `dst`.
+        unsafe {
+            let dst_ptr =
+                dst.spare_capacity_mut()[..bound_usize].as_mut_ptr().cast::<std::os::raw::c_char>();
+            let src_ptr = data.as_ptr().cast::<std::os::raw::c_char>();
+            let compressed_size = LZ4_compress_HC_extStateHC_fastReset(
+                self.0.as_ptr(),
+                src_ptr,
+                dst_ptr,
+                data_size,
+                bound,
+                i32::from(compression_level),
+            );
+            assert!(compressed_size > 0, "LZ4 compression failed");
+            let written = compressed_size as usize;
+            dst.set_len(prev_len + written);
+            Ok(written)
+        }
+    }
+}
+
+impl Drop for RawLz4StreamHC {
+    fn drop(&mut self) {
+        // SAFETY: `self.0` was allocated by `LZ4_createStreamHC`.
+        unsafe {
+            LZ4_freeStreamHC(self.0.as_ptr());
+        }
+    }
 }
 
 /// Decompresses LZ4 using a pointer slice and a raw destination pointer slice.
@@ -122,8 +235,8 @@ impl CompressionAlgorithm {
     /// algorithm.
     pub fn decompressor(&self) -> Decompressor {
         match self {
-            Self::Zstd => Decompressor::Zstd,
-            Self::Lz4 => Decompressor::Lz4,
+            Self::Zstd => Decompressor(DecompressorInner::Zstd(RawZstdDCtx::new())),
+            Self::Lz4 => Decompressor(DecompressorInner::Lz4),
         }
     }
 
@@ -156,13 +269,23 @@ impl TryFrom<u8> for CompressionAlgorithm {
     }
 }
 
-/// A decompressor that is capable of decompressing chunks of a compressed archive.
-pub enum Decompressor {
-    Zstd,
+enum DecompressorInner {
+    Zstd(RawZstdDCtx),
     Lz4,
 }
 
+/// A decompressor that is capable of decompressing chunks of a compressed archive.
+pub struct Decompressor(DecompressorInner);
+
 impl Decompressor {
+    /// Returns the compression algorithm used by this decompressor.
+    pub fn algorithm(&self) -> CompressionAlgorithm {
+        match &self.0 {
+            DecompressorInner::Zstd(_) => CompressionAlgorithm::Zstd,
+            DecompressorInner::Lz4 => CompressionAlgorithm::Lz4,
+        }
+    }
+
     /// Decompresses a chunk of a chunked-compression archive.
     pub fn decompress<'a>(
         &mut self,
@@ -173,18 +296,18 @@ impl Decompressor {
         let src = data.into();
         let mut buffer = Vec::with_capacity(uncompressed_size);
         let dst = buffer.spare_capacity_mut() as *mut [MaybeUninit<u8>];
-        let len = match self {
-            Self::Zstd => {
+        let len = match &mut self.0 {
+            DecompressorInner::Zstd(dctx) => {
                 // SAFETY: `dst` points to `uncompressed_size` bytes of capacity
                 // in `buffer`.
-                unsafe { zstd_decompress_ptr(src, dst) }.map_err(|code| {
+                unsafe { dctx.decompress_ptr(src, dst) }.map_err(|code| {
                     ChunkedArchiveError::DecompressionError {
                         index: chunk_index,
                         error: FormatError::Zstd(ZstdError(code)),
                     }
                 })?
             }
-            Self::Lz4 => {
+            DecompressorInner::Lz4 => {
                 // SAFETY: `dst` points to `uncompressed_size` bytes of capacity
                 // in `buffer`.
                 unsafe { lz4_decompress_ptr(src, dst) }.map_err(|e| {
@@ -211,18 +334,18 @@ impl Decompressor {
     ) -> Result<usize, ChunkedArchiveError> {
         let src = data.into();
         let dst = destination as *mut [u8] as *mut [MaybeUninit<u8>];
-        match self {
-            Self::Zstd => {
+        match &mut self.0 {
+            DecompressorInner::Zstd(dctx) => {
                 // SAFETY: `dst` points to `destination.len()` bytes of valid
                 // memory in `destination`.
-                unsafe { zstd_decompress_ptr(src, dst) }.map_err(|code| {
+                unsafe { dctx.decompress_ptr(src, dst) }.map_err(|code| {
                     ChunkedArchiveError::DecompressionError {
                         index: chunk_index,
                         error: FormatError::Zstd(ZstdError(code)),
                     }
                 })
             }
-            Self::Lz4 => {
+            DecompressorInner::Lz4 => {
                 // SAFETY: `dst` points to `destination.len()` bytes of valid
                 // memory in `destination`.
                 unsafe { lz4_decompress_ptr(src, dst) }.map_err(|e| {
@@ -317,45 +440,75 @@ impl ThreadLocalDecompressor {
     }
 }
 
-/// A compressor that is capable of compressing chunks of a chunked-compression archive.
-pub enum Compressor {
-    Zstd(zstd::zstd_safe::CCtx<'static>),
-    Lz4 { compression_level: lz4::HcCompressionLevel },
+fn zstd_compress_into(
+    cctx: &mut zstd::zstd_safe::CCtx<'_>,
+    data: &[u8],
+    dst: &mut Vec<u8>,
+    chunk_index: usize,
+) -> Result<usize, ChunkedArchiveError> {
+    let buffer_len = zstd::zstd_safe::compress_bound(data.len());
+    dst.reserve(buffer_len);
+    let prev_len = dst.len();
+    let mut cursor = std::io::Cursor::new(dst);
+    cursor.set_position(prev_len as u64);
+    match cctx.compress2(&mut cursor, data) {
+        Ok(written) => Ok(written),
+        Err(code) => Err(ChunkedArchiveError::CompressionError {
+            index: chunk_index,
+            error: FormatError::Zstd(ZstdError(code)),
+        }),
+    }
 }
 
+enum CompressorInner {
+    Zstd(zstd::zstd_safe::CCtx<'static>),
+    Lz4 { state: RawLz4StreamHC, compression_level: lz4::HcCompressionLevel },
+}
+
+/// A compressor that is capable of compressing chunks of a chunked-compression archive.
+pub struct Compressor(CompressorInner);
+
 impl Compressor {
+    pub(super) fn new_zstd(compression_level: i32) -> Self {
+        let mut cctx = zstd::zstd_safe::CCtx::create();
+        cctx.set_parameter(zstd::zstd_safe::CParameter::CompressionLevel(compression_level))
+            .expect("setting the compression level should never fail");
+        Self(CompressorInner::Zstd(cctx))
+    }
+
+    pub(super) fn new_lz4(compression_level: lz4::HcCompressionLevel) -> Self {
+        Self(CompressorInner::Lz4 { state: RawLz4StreamHC::new(), compression_level })
+    }
+
+    /// Compresses a chunk of a chunked-compression archive directly into `dst`, appending the
+    /// compressed bytes and returning the number of bytes written.
+    pub fn compress_into(
+        &mut self,
+        data: &[u8],
+        dst: &mut Vec<u8>,
+        chunk_index: usize,
+    ) -> Result<usize, ChunkedArchiveError> {
+        match &mut self.0 {
+            CompressorInner::Zstd(cctx) => zstd_compress_into(cctx, data, dst, chunk_index),
+            CompressorInner::Lz4 { state, compression_level } => state
+                .compress_into(data, dst, *compression_level)
+                .map_err(|error| ChunkedArchiveError::CompressionError {
+                    index: chunk_index,
+                    error: FormatError::Lz4(error),
+                }),
+        }
+    }
+
     /// Compresses a chunk of a chunked-compression archive.
     pub fn compress(
         &mut self,
         data: &[u8],
         chunk_index: usize,
     ) -> Result<Vec<u8>, ChunkedArchiveError> {
-        match self {
-            Self::Zstd(cctx) => {
-                let buffer_len = zstd::zstd_safe::compress_bound(data.len());
-                let mut buffer = Vec::with_capacity(buffer_len);
-                match cctx.compress2(&mut buffer, data) {
-                    Ok(_) => {
-                        buffer.shrink_to_fit();
-                        Ok(buffer)
-                    }
-                    Err(code) => Err(ChunkedArchiveError::CompressionError {
-                        index: chunk_index,
-                        error: FormatError::Zstd(ZstdError(code)),
-                    }),
-                }
-            }
-            Self::Lz4 { compression_level } => {
-                let mut buffer = lz4::compress_hc(data, *compression_level).map_err(|error| {
-                    ChunkedArchiveError::CompressionError {
-                        index: chunk_index,
-                        error: FormatError::Lz4(error),
-                    }
-                })?;
-                buffer.shrink_to_fit();
-                Ok(buffer)
-            }
-        }
+        let mut buffer = Vec::new();
+        self.compress_into(data, &mut buffer, chunk_index)?;
+        buffer.shrink_to_fit();
+        Ok(buffer)
     }
 }
 
@@ -367,42 +520,43 @@ pub enum ThreadLocalCompressor {
 }
 
 impl ThreadLocalCompressor {
-    /// Compresses a chunk of a chunked-compression archive.
-    pub fn compress(
+    /// Compresses a chunk of a chunked-compression archive directly into `dst`, appending the
+    /// compressed bytes and returning the number of bytes written.
+    pub fn compress_into(
         &self,
         data: &[u8],
+        dst: &mut Vec<u8>,
         chunk_index: usize,
-    ) -> Result<Vec<u8>, ChunkedArchiveError> {
+    ) -> Result<usize, ChunkedArchiveError> {
         match self {
             Self::Zstd { compression_level } => ZSTD_COMPRESSOR.with_borrow_mut(|cctx| {
                 cctx.set_parameter(zstd::zstd_safe::CParameter::CompressionLevel(
                     *compression_level,
                 ))
                 .expect("setting the compression level should never fail");
-                let buffer_len = zstd::zstd_safe::compress_bound(data.len());
-                let mut buffer = Vec::with_capacity(buffer_len);
-                match cctx.compress2(&mut buffer, data) {
-                    Ok(_) => {
-                        buffer.shrink_to_fit();
-                        Ok(buffer)
-                    }
-                    Err(code) => Err(ChunkedArchiveError::CompressionError {
-                        index: chunk_index,
-                        error: FormatError::Zstd(ZstdError(code)),
-                    }),
-                }
+                zstd_compress_into(cctx, data, dst, chunk_index)
             }),
-            Self::Lz4 { compression_level } => {
-                let mut buffer = lz4::compress_hc(data, *compression_level).map_err(|error| {
+            Self::Lz4 { compression_level } => LZ4_COMPRESSOR.with_borrow_mut(|state| {
+                state.compress_into(data, dst, *compression_level).map_err(|error| {
                     ChunkedArchiveError::CompressionError {
                         index: chunk_index,
                         error: FormatError::Lz4(error),
                     }
-                })?;
-                buffer.shrink_to_fit();
-                Ok(buffer)
-            }
+                })
+            }),
         }
+    }
+
+    /// Compresses a chunk of a chunked-compression archive.
+    pub fn compress(
+        &self,
+        data: &[u8],
+        chunk_index: usize,
+    ) -> Result<Vec<u8>, ChunkedArchiveError> {
+        let mut buffer = Vec::new();
+        self.compress_into(data, &mut buffer, chunk_index)?;
+        buffer.shrink_to_fit();
+        Ok(buffer)
     }
 }
 

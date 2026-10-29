@@ -158,7 +158,7 @@ impl ChunkedArchiveOptions {
 
     const V3_VERSION: u16 = 3;
     const V3_MAX_CHUNKS: usize = u32::MAX as usize;
-    const V3_CHUNK_SIZE: usize = 32 * 1024;
+    pub const V3_CHUNK_SIZE: usize = 32 * 1024;
     const V3_ZSTD_COMPRESSION_LEVEL: i32 = 22;
 
     /// Which version of chunked-compression archive should be constructed.
@@ -201,24 +201,12 @@ impl ChunkedArchiveOptions {
     /// Constructs a compressor to compress chunks based on the specified options.
     pub fn compressor(&self) -> Compressor {
         match self {
-            Self::V2 { compression_level, .. } => {
-                let mut cctx = zstd::zstd_safe::CCtx::create();
-                cctx.set_parameter(zstd::zstd_safe::CParameter::CompressionLevel(
-                    *compression_level,
-                ))
-                .expect("setting the compression level should never fail");
-                Compressor::Zstd(cctx)
-            }
+            Self::V2 { compression_level, .. } => Compressor::new_zstd(*compression_level),
             Self::V3 { compression_algorithm: CompressionAlgorithm::Zstd } => {
-                let mut cctx = zstd::zstd_safe::CCtx::create();
-                cctx.set_parameter(zstd::zstd_safe::CParameter::CompressionLevel(
-                    Self::V3_ZSTD_COMPRESSION_LEVEL,
-                ))
-                .expect("setting the compression level should never fail");
-                Compressor::Zstd(cctx)
+                Compressor::new_zstd(Self::V3_ZSTD_COMPRESSION_LEVEL)
             }
             Self::V3 { compression_algorithm: CompressionAlgorithm::Lz4 } => {
-                Compressor::Lz4 { compression_level: lz4::HcCompressionLevel::custom(12) }
+                Compressor::new_lz4(lz4::HcCompressionLevel::custom(12))
             }
         }
     }
@@ -298,11 +286,20 @@ impl ChunkInfo {
 /// Validated information from decoding an archive.
 #[derive(Debug)]
 pub struct DecodedArchive {
+    version: u16,
     compression_algorithm: CompressionAlgorithm,
     seek_table: Vec<ChunkInfo>,
 }
 
 impl DecodedArchive {
+    pub fn version(&self) -> u16 {
+        self.version
+    }
+
+    pub fn compression_algorithm(&self) -> CompressionAlgorithm {
+        self.compression_algorithm
+    }
+
     /// The total size of decompressing all of the chunks in the archive.
     pub fn decompressed_size(&self) -> usize {
         self.seek_table.last().map_or(0, |entry| entry.decompressed_range.end)
@@ -477,7 +474,7 @@ impl ChunkedArchiveHeader {
             .iter()
             .map(|entry| ChunkInfo::from_entry(entry, header_length))
             .try_collect()?;
-        Ok(Some((DecodedArchive { seek_table, compression_algorithm }, chunk_data)))
+        Ok(Some((DecodedArchive { version, seek_table, compression_algorithm }, chunk_data)))
     }
 }
 
@@ -605,7 +602,7 @@ type ErrorHandler = Box<dyn Fn(usize, ChunkInfo, &[u8]) -> () + Send + 'static>;
 impl ChunkedDecompressor {
     /// Create a new decompressor to decode an archive from a validated seek table.
     pub fn new(decoded_archive: DecodedArchive) -> Result<Self, ChunkedArchiveError> {
-        let DecodedArchive { compression_algorithm, seek_table } = decoded_archive;
+        let DecodedArchive { version: _, compression_algorithm, seek_table } = decoded_archive;
         let total_compressed_size =
             seek_table.last().map_or(0, |last_chunk| last_chunk.compressed_range.end);
         let decompressed_buffer =
@@ -633,14 +630,25 @@ impl ChunkedDecompressor {
 
     /// Returns the compression algorithm used by this decompressor.
     pub fn algorithm(&self) -> CompressionAlgorithm {
-        match &self.decompressor {
-            Decompressor::Zstd => CompressionAlgorithm::Zstd,
-            Decompressor::Lz4 => CompressionAlgorithm::Lz4,
-        }
+        self.decompressor.algorithm()
     }
 
     pub fn seek_table(&self) -> &Vec<ChunkInfo> {
         &self.seek_table
+    }
+
+    /// Returns the number of compressed bytes needed to finish decompressing the current chunk,
+    /// or `None` if all chunks have been decompressed.
+    pub fn bytes_needed_for_next_chunk(&self) -> Option<usize> {
+        self.seek_table
+            .get(self.curr_chunk)
+            .map(|chunk| chunk.compressed_range.len() - self.buffer.len())
+    }
+
+    /// Returns true if all chunks in the archive have been decompressed and no buffered data
+    /// remains.
+    pub fn is_complete(&self) -> bool {
+        self.curr_chunk == self.seek_table.len() && self.buffer.is_empty()
     }
 
     fn finish_chunk(
@@ -714,7 +722,9 @@ impl ChunkedDecompressor {
 
         // Buffer the rest for the next call.
         if !data.is_empty() {
-            debug_assert!(self.curr_chunk < self.seek_table.len());
+            if self.curr_chunk >= self.seek_table.len() {
+                return Err(ChunkedArchiveError::OutOfRange);
+            }
             debug_assert!(self.data_written < self.total_compressed_size);
             self.buffer.extend_from_slice(data);
         }

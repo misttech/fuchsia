@@ -364,6 +364,12 @@ impl Type1Blob {
         compression_level: 14,
     };
 
+    /// Serialize the Type 1 delivery blob header.
+    pub fn header_bytes(&self) -> Vec<u8> {
+        let serialized_header: SerializedType1Blob = (*self).into();
+        serialized_header.as_bytes().to_vec()
+    }
+
     /// Generate a Type 1 delivery blob for `data` using the specified `mode`.
     pub fn generate(data: &[u8], mode: CompressionMode) -> Vec<u8> {
         let mut delivery_blob: Vec<u8> = vec![];

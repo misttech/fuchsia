@@ -10,7 +10,7 @@ use crate::fuchsia::directory::FxDirectory;
 use crate::fuchsia::dirent_cache::DirentCacheKey;
 use crate::fuchsia::fxblob::blob::FxBlob;
 use crate::fuchsia::fxblob::mapping_provider::BlobMappingProvider;
-use crate::fuchsia::fxblob::writer::DeliveryBlobWriter;
+use crate::fuchsia::fxblob::writer::{BlobStorageFormat, DeliveryBlobWriter};
 use crate::fuchsia::node::{FxNode, GetResult, OpenedNode};
 use crate::fuchsia::volume::{FxVolume, RootDir};
 use anyhow::{Context as _, Error, anyhow, ensure};
@@ -302,10 +302,12 @@ impl BlobDirectory {
             return Err(CreateBlobError::AlreadyExists);
         }
         let (client_end, request_stream) = create_request_stream::<BlobWriterMarker>();
-        let writer = DeliveryBlobWriter::new(self, hash).await.map_err(|e| {
-            log::error!("Failed to create blob writer: {:?}", e);
-            CreateBlobError::Internal
-        })?;
+        let writer = DeliveryBlobWriter::new(self, hash, BlobStorageFormat::DeliveryBlob)
+            .await
+            .map_err(|e| {
+                log::error!("Failed to create blob writer: {:?}", e);
+                CreateBlobError::Internal
+            })?;
         self.volume().scope().spawn(async move {
             if let Err(e) = writer.handle_requests(request_stream).await {
                 log::error!("Failed to handle BlobWriter requests: {}", e);
