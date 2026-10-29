@@ -72,6 +72,7 @@ _CURRENT_PLATFORM_SELECT_CPU = {
     "@platforms//cpu:x86_64": "x64",
     "@platforms//cpu:aarch64": "arm64",
     "@platforms//cpu:riscv64": "riscv64",
+    "@platforms//cpu:arm": "arm",
     # Let Bazel error in case of unknown CPU.
 }
 
