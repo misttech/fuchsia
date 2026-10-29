@@ -1,0 +1,49 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/components:fx_component.bzl", "fx_component", "fx_component_manifest")
+load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "bin",
+    testonly = True,
+    srcs = ["src/main.rs"],
+    crate_name = "mock_resolver_for_dash_launcher",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-fs",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:tempfile",
+    ],
+)
+
+fx_packaged_binary(
+    name = "bin_packaged_bin",
+    testonly = True,
+    binary = ":bin",
+    binary_name = "mock_resolver_for_dash_launcher",
+)
+
+fx_component_manifest(
+    name = "mock_resolver-manifest",
+    testonly = True,
+    component_name = "mock_resolver",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/mock_resolver.cml",
+)
+
+fx_component(
+    name = "mock_resolver",
+    testonly = True,
+    compiled_manifest = ":mock_resolver-manifest",
+    visibility = ["//src/sys/tools/debug-dash-launcher/integration_test:__pkg__"],
+    deps = [":bin_packaged_bin"],
+)
