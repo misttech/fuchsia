@@ -17,8 +17,38 @@ visibility(["//src/starnix/..."])
 # for a Fuchsia target CPU, using Fuchsia CPU names.
 _LINUX_CPUS = ("x64", "arm64", "riscv64")
 
-def _linux_platforms(cpu):
-    return {"//command_line_option:platforms": ["@//build/bazel/platforms:linux_starnix_" + cpu]}
+_FEATURES = "//command_line_option:features"
+
+# The C++ toolchain features that build a target with instrumentation, such as
+# sanitizers. As in GN, which never builds Starnix Linux binaries in variant
+# toolchains, linux_resource builds its sources with these disabled: nothing
+# provides an instrumentation runtime for these binaries. They can't be
+# removed from @fuchsia_rules_common//build_flags:enabled_features instead,
+# because the linux_starnix platforms set it (from the host build
+# configuration) after the transition.
+#
+# LINT.IfChange(instrumentation_features)
+_INSTRUMENTATION_FEATURES = [
+    "asan",
+    "coverage",
+    "hwasan",
+    "lsan",
+    "msan",
+    "tsan",
+    "ubsan",
+]
+# LINT.ThenChange(//build/bazel/rules/cc/fx_cc_binary.bzl:instrumentation_features)
+
+def _linux_settings(cpu, settings):
+    disabled = ["-" + f for f in _INSTRUMENTATION_FEATURES]
+    return {
+        "//command_line_option:platforms": ["@//build/bazel/platforms:linux_starnix_" + cpu],
+        _FEATURES: [
+            f
+            for f in settings[_FEATURES]
+            if f not in _INSTRUMENTATION_FEATURES and f not in disabled
+        ] + disabled,
+    }
 
 def _target_linux_transition_impl(settings, _attr):
     current_platforms = settings["//command_line_option:platforms"]
@@ -26,24 +56,27 @@ def _target_linux_transition_impl(settings, _attr):
         platform = str(current_platforms[0])
         for cpu in _LINUX_CPUS:
             if platform.endswith("_" + cpu):
-                return _linux_platforms(cpu)
+                return _linux_settings(cpu, settings)
     if target_cpu in _LINUX_CPUS:
-        return _linux_platforms(target_cpu)
-    return {"//command_line_option:platforms": current_platforms}
+        return _linux_settings(target_cpu, settings)
+    return {
+        "//command_line_option:platforms": current_platforms,
+        _FEATURES: settings[_FEATURES],
+    }
 
 _target_linux_transition = transition(
     implementation = _target_linux_transition_impl,
-    inputs = ["//command_line_option:platforms"],
-    outputs = ["//command_line_option:platforms"],
+    inputs = ["//command_line_option:platforms", _FEATURES],
+    outputs = ["//command_line_option:platforms", _FEATURES],
 )
 
-def _arch32_linux_transition_impl(_settings, _attr):
-    return _linux_platforms("arm")
+def _arch32_linux_transition_impl(settings, _attr):
+    return _linux_settings("arm", settings)
 
 _arch32_linux_transition = transition(
     implementation = _arch32_linux_transition_impl,
-    inputs = [],
-    outputs = ["//command_line_option:platforms"],
+    inputs = [_FEATURES],
+    outputs = ["//command_line_option:platforms", _FEATURES],
 )
 
 def _linux_resource_impl(ctx):
