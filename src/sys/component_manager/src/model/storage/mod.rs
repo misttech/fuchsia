@@ -20,8 +20,8 @@ use component_id_index::InstanceId;
 use derivative::Derivative;
 use errors::{ModelError, StorageError};
 use fidl::endpoints::{ServerEnd, create_proxy};
+use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_io as fio;
-use fidl_fuchsia_sys2 as fsys;
 use futures::FutureExt;
 use moniker::{ChildName, Moniker};
 use runtime_capabilities::{Dictionary, DirConnector, Router};
@@ -513,7 +513,8 @@ pub fn build_storage_admin_dictionary(
                 Arc::new(move |channel, _target, _, _| {
                     let storage_decl = storage_decl.clone();
                     let weak_component = weak_component.clone();
-                    let stream = ServerEnd::<fsys::StorageAdminMarker>::new(channel).into_stream();
+                    let stream =
+                        ServerEnd::<fcomponent::StorageAdminMarker>::new(channel).into_stream();
                     async move {
                         StorageAdmin::new(storage_decl, weak_component).await?.serve(stream).await
                     }

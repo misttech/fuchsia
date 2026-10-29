@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{Result, anyhow};
-use flex_fuchsia_sys2::StorageAdminProxy;
+use flex_fuchsia_component::StorageAdminProxy;
 
 /// Delete the contents of all the storage of this component.
 ///
@@ -27,7 +27,7 @@ pub async fn delete_all(storage_admin: StorageAdminProxy, moniker: String) -> Re
 mod test {
     use super::*;
     use fidl::endpoints::{Proxy, create_proxy_and_stream};
-    use flex_fuchsia_sys2 as fsys;
+    use flex_fuchsia_component as fcomponent;
     use futures::TryStreamExt;
 
     #[fuchsia::test]
@@ -37,7 +37,7 @@ mod test {
         // Setup fake admin
         fuchsia_async::Task::local(async move {
             let request = stream.try_next().await;
-            if let Ok(Some(fsys::StorageAdminRequest::DeleteComponentStorage {
+            if let Ok(Some(fcomponent::StorageAdminRequest::DeleteComponentStorage {
                 relative_moniker,
                 responder,
                 ..

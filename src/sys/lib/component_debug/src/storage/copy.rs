@@ -4,15 +4,15 @@
 
 use crate::io::{Directory, LocalDirectory, RemoteDirectory};
 use crate::path::{
-    add_source_filename_to_path_if_absent, LocalOrRemoteComponentStoragePath,
-    REMOTE_COMPONENT_STORAGE_PATH_HELP,
+    LocalOrRemoteComponentStoragePath, REMOTE_COMPONENT_STORAGE_PATH_HELP,
+    add_source_filename_to_path_if_absent,
 };
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use std::path::PathBuf;
 
 use flex_client::ProxyHasDomain;
+use flex_fuchsia_component::StorageAdminProxy;
 use flex_fuchsia_io as fio;
-use flex_fuchsia_sys2::StorageAdminProxy;
 
 /// Transfer a file between the host machine and the Fuchsia device.
 /// Can be used to upload a file to or from the Fuchsia device.

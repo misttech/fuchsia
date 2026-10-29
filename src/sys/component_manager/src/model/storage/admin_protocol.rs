@@ -25,7 +25,6 @@ use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_component_decl as fdecl;
 use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_io::{self as fio, DirectoryProxy, DirentType};
-use fidl_fuchsia_sys2 as fsys;
 use fuchsia_async as fasync;
 use fuchsia_fs::directory as ffs_dir;
 use futures::stream::{FuturesUnordered, StreamExt};
@@ -56,29 +55,31 @@ enum DeletionError {
     ContentError(Vec<DeletionErrorCause>),
 }
 
-impl From<StorageError> for fsys::DeletionError {
-    fn from(from: StorageError) -> fsys::DeletionError {
+impl From<StorageError> for fcomponent::DeletionError {
+    fn from(from: StorageError) -> fcomponent::DeletionError {
         match from {
-            StorageError::NoStorageFound => fsys::DeletionError::NoneAvailable,
+            StorageError::NoStorageFound => fcomponent::DeletionError::NoneAvailable,
             StorageError::Operation(DeletionError::DirectoryRead(
                 ffs_dir::EnumerateError::Fidl(_, fidl::Error::ClientChannelClosed { .. }),
-            )) => fsys::DeletionError::Connection,
+            )) => fcomponent::DeletionError::Connection,
             StorageError::Operation(DeletionError::DirectoryRead(_)) => {
-                fsys::DeletionError::Protocol
+                fcomponent::DeletionError::Protocol
             }
             StorageError::Operation(DeletionError::ContentError(errors)) => match errors.get(0) {
-                None => fsys::DeletionError::Protocol,
+                None => fcomponent::DeletionError::Protocol,
                 Some(DeletionErrorCause::Directory(dir_read_err)) => match dir_read_err {
                     ffs_dir::EnumerateError::Fidl(_, fidl::Error::ClientChannelClosed { .. }) => {
-                        fsys::DeletionError::Connection
+                        fcomponent::DeletionError::Connection
                     }
-                    _ => fsys::DeletionError::Protocol,
+                    _ => fcomponent::DeletionError::Protocol,
                 },
-                Some(DeletionErrorCause::File { _error_code }) => fsys::DeletionError::Protocol,
+                Some(DeletionErrorCause::File { _error_code }) => {
+                    fcomponent::DeletionError::Protocol
+                }
                 Some(DeletionErrorCause::FileRequest(fidl::Error::ClientChannelClosed {
                     ..
-                })) => fsys::DeletionError::Connection,
-                Some(DeletionErrorCause::FileRequest(_)) => fsys::DeletionError::Connection,
+                })) => fcomponent::DeletionError::Connection,
+                Some(DeletionErrorCause::FileRequest(_)) => fcomponent::DeletionError::Connection,
             },
         }
     }
@@ -107,12 +108,12 @@ enum StorageStatusError {
     InconsistentInformation,
 }
 
-impl From<&StorageStatusError> for fsys::StatusError {
-    fn from(from: &StorageStatusError) -> fsys::StatusError {
+impl From<&StorageStatusError> for fcomponent::StatusError {
+    fn from(from: &StorageStatusError) -> fcomponent::StatusError {
         match from {
-            StorageStatusError::InconsistentInformation => fsys::StatusError::ResponseInvalid,
-            StorageStatusError::NoFilesystemInfo => fsys::StatusError::StatusUnknown,
-            StorageStatusError::QueryError => fsys::StatusError::Provider,
+            StorageStatusError::InconsistentInformation => fcomponent::StatusError::ResponseInvalid,
+            StorageStatusError::NoFilesystemInfo => fcomponent::StatusError::StatusUnknown,
+            StorageStatusError::QueryError => fcomponent::StatusError::Provider,
         }
     }
 }
@@ -253,7 +254,7 @@ impl StorageAdmin {
             .map_err(|_| fcomponent::Error::InstanceNotFound)
     }
 
-    /// Serves the `fuchsia.sys2/StorageAdmin` protocol over the provided
+    /// Serves the `fuchsia.component/StorageAdmin` protocol over the provided
     /// channel based on the information provided by the other arguments.
     ///
     /// # Arguments
@@ -264,7 +265,7 @@ impl StorageAdmin {
     /// * `server_end`: Channel to server the protocol over.
     pub async fn serve(
         self: Arc<Self>,
-        mut stream: fsys::StorageAdminRequestStream,
+        mut stream: fcomponent::StorageAdminRequestStream,
     ) -> Result<(), Error> {
         let component = self.weak_component.upgrade().map_err(|e| {
             format_err!(
@@ -283,7 +284,11 @@ impl StorageAdmin {
 
         while let Some(request) = stream.try_next().await? {
             match request {
-                fsys::StorageAdminRequest::OpenStorage { relative_moniker, object, responder } => {
+                fcomponent::StorageAdminRequest::OpenStorage {
+                    relative_moniker,
+                    object,
+                    responder,
+                } => {
                     let fut = async {
                         let target =
                             self.find_relative_component(&component, relative_moniker).await?;
@@ -300,7 +305,7 @@ impl StorageAdmin {
                     };
                     responder.send(fut.await)?;
                 }
-                fsys::StorageAdminRequest::ListStorageInRealm {
+                fcomponent::StorageAdminRequest::ListStorageInRealm {
                     relative_moniker,
                     iterator,
                     responder,
@@ -331,7 +336,11 @@ impl StorageAdmin {
                         }
                     }
                 }
-                fsys::StorageAdminRequest::OpenComponentStorageById { id, object, responder } => {
+                fcomponent::StorageAdminRequest::OpenComponentStorageById {
+                    id,
+                    object,
+                    responder,
+                } => {
                     let instance_id_index = component.component_id_index();
                     let Ok(instance_id) = id.parse::<InstanceId>() else {
                         responder.send(Err(fcomponent::Error::InvalidArguments))?;
@@ -354,7 +363,7 @@ impl StorageAdmin {
                         Err(_) => responder.send(Err(fcomponent::Error::Internal))?,
                     }
                 }
-                fsys::StorageAdminRequest::DeleteComponentStorage {
+                fcomponent::StorageAdminRequest::DeleteComponentStorage {
                     relative_moniker: moniker_str,
                     responder,
                 } => {
@@ -391,7 +400,7 @@ impl StorageAdmin {
                     };
                     responder.send(fut.await)?
                 }
-                fsys::StorageAdminRequest::GetStatus { responder } => {
+                fcomponent::StorageAdminRequest::GetStatus { responder } => {
                     let fut = async {
                         let backing_dir_proxy = self
                             .connect_to_backing_directory()
@@ -401,12 +410,12 @@ impl StorageAdmin {
                     };
                     responder.send(fut.await.as_ref().map_err(|e| e.into()))?
                 }
-                fsys::StorageAdminRequest::DeleteAllStorageContents { responder } => {
+                fcomponent::StorageAdminRequest::DeleteAllStorageContents { responder } => {
                     let fut = async {
                         let backing_dir_proxy = self
                             .connect_to_backing_directory()
                             .await
-                            .map_err(|_e| fsys::DeletionError::Connection)?;
+                            .map_err(|_e| fcomponent::DeletionError::Connection)?;
                         if let Err(e) =
                             Self::delete_all_storage(&backing_dir_proxy, Self::delete_dir_contents)
                                 .await
@@ -425,7 +434,7 @@ impl StorageAdmin {
 
     async fn get_storage_status(
         root_storage: &DirectoryProxy,
-    ) -> Result<fsys::StorageStatus, StorageStatusError> {
+    ) -> Result<fcomponent::StorageStatus, StorageStatusError> {
         let filesystem_info = match root_storage.query_filesystem().await {
             Ok((_, Some(fs_info))) => Ok(fs_info),
             Ok((_, None)) => Err(StorageStatusError::NoFilesystemInfo),
@@ -444,7 +453,7 @@ impl StorageAdmin {
             return Err(StorageStatusError::InconsistentInformation);
         }
 
-        Ok(fsys::StorageStatus {
+        Ok(fcomponent::StorageStatus {
             total_size: Some(total_bytes),
             used_size: Some(filesystem_info.used_bytes),
             ..Default::default()
@@ -658,7 +667,7 @@ impl StorageAdmin {
 
     async fn serve_storage_iterator(
         root_component: Arc<ComponentInstance>,
-        iterator: ServerEnd<fsys::StorageIteratorMarker>,
+        iterator: ServerEnd<fcomponent::StorageIteratorMarker>,
         storage_source_info: StorageBackingDirectorySource,
     ) -> Result<(), Error> {
         let mut components_to_visit = vec![root_component];
@@ -724,7 +733,7 @@ impl StorageAdmin {
         // ListStorageUsers should also return monikers without instance id.
         let mut storage_users = storage_users.into_iter().map(|moniker| format!("{}", moniker));
         while let Some(request) = iterator_stream.try_next().await? {
-            let fsys::StorageIteratorRequest::Next { responder } = request;
+            let fcomponent::StorageIteratorRequest::Next { responder } = request;
             let monikers: Vec<_> = storage_users.by_ref().take(MAX_MONIKERS_RETURNED).collect();
             responder.send(&monikers)?;
         }

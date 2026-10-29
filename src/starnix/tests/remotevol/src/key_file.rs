@@ -26,9 +26,10 @@ async fn key_file_exists_but_starnix_volume_doesnt() {
     .unwrap();
     let realm = builder.build().await.unwrap();
 
-    let storage_admin =
-        fuchsia_component::client::connect_to_protocol::<fidl_fuchsia_sys2::StorageAdminMarker>()
-            .expect("connect_to_protocol_at_exposed_dir failed");
+    let storage_admin = fuchsia_component::client::connect_to_protocol::<
+        fidl_fuchsia_component::StorageAdminMarker,
+    >()
+    .expect("connect_to_protocol_at_exposed_dir failed");
 
     let container_data_proxy = get_storage_for_component_instance(
         &format!("realm_builder:{}/debian_container", realm.root.child_name()),

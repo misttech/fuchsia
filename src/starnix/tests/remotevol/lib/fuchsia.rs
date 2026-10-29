@@ -4,10 +4,11 @@
 
 use diagnostics_reader::ArchiveReader;
 use fidl::endpoints::create_proxy;
+use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
 use fuchsia_async::DurationExt;
 use fuchsia_component_test::RealmInstance;
 use log::info;
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 pub const PROGRAM_COLLECTION: &str = "debian_programs";
 
@@ -49,10 +50,10 @@ pub async fn wait_for_starnix_volume_to_be_mounted() {
 
 pub async fn get_storage_for_component_instance(
     moniker_prefix: &str,
-    storage_admin: fidl_fuchsia_sys2::StorageAdminProxy,
+    storage_admin: fidl_fuchsia_component::StorageAdminProxy,
 ) -> fio::DirectoryProxy {
     let (storage_user_iterator, storage_user_iterator_server_end) =
-        create_proxy::<fidl_fuchsia_sys2::StorageIteratorMarker>();
+        create_proxy::<fidl_fuchsia_component::StorageIteratorMarker>();
     storage_admin
         .list_storage_in_realm(".", storage_user_iterator_server_end)
         .await

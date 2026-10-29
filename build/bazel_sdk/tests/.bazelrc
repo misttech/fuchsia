@@ -35,7 +35,7 @@ build --flag_alias=default_fuchsia_api_level=@fuchsia_sdk//flags:repository_defa
 
 # This value determines what API level we compile our packages against when they
 # do not specify it themselves.
-build --default_fuchsia_api_level=29
+build --default_fuchsia_api_level=30
 
 # Do not generate or update MODULE.bazel.lock in the workspace directory.
 common --lockfile_mode=off

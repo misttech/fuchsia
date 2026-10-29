@@ -5,8 +5,8 @@
 use anyhow::{Context, Error, format_err};
 use cache_manager_config_lib::Config;
 use component_framework_cache_metrics_registry as metrics;
+use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_metrics;
-use fidl_fuchsia_sys2 as fsys;
 use fuchsia_async as fasync;
 use fuchsia_component::{self, client as fclient};
 use log::*;
@@ -29,7 +29,7 @@ async fn main() -> Result<(), Error> {
     );
     info!("checking storage every {} milliseconds", config.storage_checking_frequency);
 
-    let storage_admin = fclient::connect_to_protocol::<fsys::StorageAdminMarker>()
+    let storage_admin = fclient::connect_to_protocol::<fcomponent::StorageAdminMarker>()
         .context("failed opening storage admin")?;
 
     // Setup telemetry module
@@ -52,7 +52,7 @@ impl StorageState {
 }
 
 async fn monitor_storage(
-    storage_admin: &fsys::StorageAdminProxy,
+    storage_admin: &fcomponent::StorageAdminProxy,
     config: Config,
     cobalt_logger: Option<fidl_fuchsia_metrics::MetricEventLoggerProxy>,
 ) {
@@ -170,7 +170,7 @@ async fn monitor_storage(
 /// Check the current cache storage utilization. If no components are using cache, the utilization
 /// reported by the filesystem is not checked and utlization is reported as zero.
 async fn get_storage_utilization(
-    storage_admin: &fsys::StorageAdminProxy,
+    storage_admin: &fcomponent::StorageAdminProxy,
 ) -> Result<StorageState, Error> {
     let utilization = match storage_admin.get_status().await? {
         Ok(u) => u,
@@ -191,7 +191,7 @@ async fn get_storage_utilization(
 /// Tries to delete the cache for all components. Failures for individual components are ignored,
 /// but if `storage_admin` is closed that is reported as the `fidl::Error::ClientChannelClosed`
 /// that it is.
-async fn clear_cache_storage(storage_admin: &fsys::StorageAdminProxy) -> Result<(), Error> {
+async fn clear_cache_storage(storage_admin: &fcomponent::StorageAdminProxy) -> Result<(), Error> {
     storage_admin
         .delete_all_storage_contents()
         .await?
@@ -251,16 +251,16 @@ mod tests {
     use crate::monitor_storage;
     use cache_manager_config_lib::Config;
     use fidl::endpoints::{ClientEnd, ServerEnd};
+    use fidl_fuchsia_component as fcomponent;
     use fidl_fuchsia_metrics::{MetricEvent, MetricEventLoggerRequest, MetricEventPayload};
-    use fidl_fuchsia_sys2 as fsys;
     use fuchsia_async::{self as fasync, MonotonicDuration, TestExecutor};
     use futures::channel::mpsc::{self as mpsc, UnboundedReceiver};
     use futures::{StreamExt, TryStreamExt};
     use std::future::Future;
     use std::pin::Pin;
     struct FakeStorageServer {
-        storage_statuses: Vec<fsys::StorageStatus>,
-        chan: ServerEnd<fsys::StorageAdminMarker>,
+        storage_statuses: Vec<fcomponent::StorageStatus>,
+        chan: ServerEnd<fcomponent::StorageAdminMarker>,
     }
 
     #[derive(Debug, PartialEq)]
@@ -280,11 +280,13 @@ mod tests {
                 let mut req_stream = self.chan.into_stream();
                 while let Ok(request) = req_stream.try_next().await {
                     match request {
-                        Some(fsys::StorageAdminRequest::DeleteAllStorageContents { responder }) => {
+                        Some(fcomponent::StorageAdminRequest::DeleteAllStorageContents {
+                            responder,
+                        }) => {
                             call_chan.unbounded_send(CallType::Delete).unwrap();
                             let _ = responder.send(Ok(()));
                         }
-                        Some(fsys::StorageAdminRequest::GetStatus { responder }) => {
+                        Some(fcomponent::StorageAdminRequest::GetStatus { responder }) => {
                             call_chan.unbounded_send(CallType::Status).unwrap();
                             // note that we can panic here, but that is okay because if more
                             // status values are requested than expect that is also an error
@@ -302,12 +304,12 @@ mod tests {
 
     fn common_setup(
         server: Option<FakeStorageServer>,
-        client: ClientEnd<fsys::StorageAdminMarker>,
+        client: ClientEnd<fcomponent::StorageAdminMarker>,
     ) -> (
         UnboundedReceiver<CallType>,
         TestExecutor,
         MonotonicDuration,
-        fsys::StorageAdminProxy,
+        fcomponent::StorageAdminProxy,
         Config,
         fidl_fuchsia_metrics::MetricEventLoggerProxy,
         fidl_fuchsia_metrics::MetricEventLoggerRequestStream,
@@ -379,28 +381,28 @@ mod tests {
     #[test]
     fn test_typical_case() {
         let (client_end, server_end) =
-            fidl::endpoints::create_endpoints::<fsys::StorageAdminMarker>();
+            fidl::endpoints::create_endpoints::<fcomponent::StorageAdminMarker>();
 
         // Create a take storage server with the canned call responses for
         // GetStatus that we want.
         let server = FakeStorageServer {
             storage_statuses: vec![
-                fsys::StorageStatus {
+                fcomponent::StorageStatus {
                     total_size: Some(100),
                     used_size: Some(10),
                     ..Default::default()
                 },
-                fsys::StorageStatus {
+                fcomponent::StorageStatus {
                     total_size: Some(100),
                     used_size: Some(50),
                     ..Default::default()
                 },
-                fsys::StorageStatus {
+                fcomponent::StorageStatus {
                     total_size: Some(100),
                     used_size: Some(0),
                     ..Default::default()
                 },
-                fsys::StorageStatus {
+                fcomponent::StorageStatus {
                     total_size: Some(100),
                     used_size: Some(0),
                     ..Default::default()
@@ -469,33 +471,33 @@ mod tests {
     /// threshold. In this case we expect the call behavior to be the same as "normal" operrations.
     fn test_utilization_stays_above_threshold() {
         let (client_end, server_end) =
-            fidl::endpoints::create_endpoints::<fsys::StorageAdminMarker>();
+            fidl::endpoints::create_endpoints::<fcomponent::StorageAdminMarker>();
 
         // Create a take storage server with the canned call responses for
         // GetStatus that we want.
         let server = FakeStorageServer {
             storage_statuses: vec![
-                fsys::StorageStatus {
+                fcomponent::StorageStatus {
                     total_size: Some(100),
                     used_size: Some(10),
                     ..Default::default()
                 },
-                fsys::StorageStatus {
+                fcomponent::StorageStatus {
                     total_size: Some(100),
                     used_size: Some(50),
                     ..Default::default()
                 },
-                fsys::StorageStatus {
+                fcomponent::StorageStatus {
                     total_size: Some(100),
                     used_size: Some(50),
                     ..Default::default()
                 },
-                fsys::StorageStatus {
+                fcomponent::StorageStatus {
                     total_size: Some(100),
                     used_size: Some(50),
                     ..Default::default()
                 },
-                fsys::StorageStatus {
+                fcomponent::StorageStatus {
                     total_size: Some(100),
                     used_size: Some(50),
                     ..Default::default()
@@ -569,7 +571,7 @@ mod tests {
     #[should_panic]
     fn test_channel_closure_panics() {
         let (client_end, server_end) =
-            fidl::endpoints::create_endpoints::<fsys::StorageAdminMarker>();
+            fidl::endpoints::create_endpoints::<fcomponent::StorageAdminMarker>();
 
         let (mut _calls_rx, mut exec, time_step, client, config, cobalt_client, mut _cobalt_stream) =
             common_setup(None, client_end);

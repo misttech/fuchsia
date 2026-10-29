@@ -107,7 +107,7 @@
         // Control storage capabilities of this realm. See
         // `offer: [{from: "self"}]` for routing details.
         {
-            protocol: "fuchsia.sys2.StorageAdmin",
+            protocol: "fuchsia.component.StorageAdmin",
             from: "#data",
         },
 

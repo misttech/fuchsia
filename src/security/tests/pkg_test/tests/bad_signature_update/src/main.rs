@@ -5,9 +5,9 @@
 use anyhow::{Result, bail};
 use argh::{FromArgs, from_env};
 use fidl::endpoints::{ServerEnd, create_endpoints, create_proxy};
+use fidl_fuchsia_component::{StorageAdminMarker, StorageIteratorMarker};
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_pkg::PackageUrl;
-use fidl_fuchsia_sys2::{StorageAdminMarker, StorageIteratorMarker};
 use fidl_fuchsia_update_installer::{
     FailPrepareData, Initiator, InstallerMarker, MonitorMarker, MonitorRequest, Options,
     PrepareFailureReason, RebootControllerMarker, State,

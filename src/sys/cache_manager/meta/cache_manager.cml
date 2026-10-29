@@ -10,8 +10,8 @@
     use: [
         {
             protocol: [
+                "fuchsia.component.StorageAdmin",
                 "fuchsia.metrics.MetricEventLoggerFactory",
-                "fuchsia.sys2.StorageAdmin",
             ],
         },
         {

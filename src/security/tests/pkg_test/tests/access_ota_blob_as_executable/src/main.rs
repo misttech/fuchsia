@@ -5,10 +5,10 @@
 use anyhow::Result;
 use argh::{FromArgs, from_env};
 use fidl::endpoints::{DiscoverableProtocolMarker as _, ServerEnd, create_endpoints, create_proxy};
+use fidl_fuchsia_component::{StorageAdminMarker, StorageIteratorMarker};
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_mem::Buffer;
 use fidl_fuchsia_pkg::{BlobId, PackageCacheMarker, PackageResolverMarker, PackageUrl};
-use fidl_fuchsia_sys2::{StorageAdminMarker, StorageIteratorMarker};
 use fidl_fuchsia_update_installer::{
     Initiator, InstallerMarker, MonitorMarker, MonitorRequest, Options, RebootControllerMarker,
     State,

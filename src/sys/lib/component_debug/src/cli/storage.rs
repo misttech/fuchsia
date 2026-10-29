@@ -8,26 +8,23 @@ use moniker::Moniker;
 use std::io::Write;
 
 use flex_client::ProxyHasDomain;
+use flex_fuchsia_component as fcomponent;
 use flex_fuchsia_sys2 as fsys;
 
 async fn get_storage_admin(
     realm_query: fsys::RealmQueryProxy,
     storage_provider_moniker: String,
     storage_capability_name: String,
-) -> Result<fsys::StorageAdminProxy> {
+) -> Result<fcomponent::StorageAdminProxy> {
     let storage_provider_moniker = Moniker::parse_str(&storage_provider_moniker).map_err(|e| {
         format_err!("Error: {} is not a valid moniker ({})", storage_provider_moniker, e)
     })?;
 
     let (storage_admin, server_end) =
-        realm_query.domain().create_proxy::<fsys::StorageAdminMarker>();
+        realm_query.domain().create_proxy::<fcomponent::StorageAdminMarker>();
 
     realm_query
-        .connect_to_storage_admin(
-            storage_provider_moniker.as_ref(),
-            &storage_capability_name,
-            server_end,
-        )
+        .open_storage_admin(storage_provider_moniker.as_ref(), &storage_capability_name, server_end)
         .await?
         .map_err(|e| {
             format_err!(

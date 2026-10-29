@@ -19,8 +19,8 @@ rustc_binary("bin") {
   deps = [
     ":cache_manager_config_lib",
     ":component_framework_cache_metrics_registry_rustlib",
+    "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
     "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
-    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",

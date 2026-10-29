@@ -20,7 +20,7 @@
             ],
         },
         {
-            protocol: "fuchsia.sys2.StorageAdmin",
+            protocol: "fuchsia.component.StorageAdmin",
             from: "#data",
         },
         {

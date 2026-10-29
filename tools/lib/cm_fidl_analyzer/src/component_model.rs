@@ -17,7 +17,7 @@ use cm_rust::{
 use cm_types::{IterablePath, Name, Url};
 use config_encoder::ConfigFields;
 use fidl::prelude::*;
-use fidl_fuchsia_sys2 as fsys;
+use fidl_fuchsia_component as fcomponent;
 use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 use futures::FutureExt;
 use moniker::{ChildName, ExtendedMoniker, Moniker};
@@ -867,7 +867,7 @@ impl ComponentModelForAnalyzer {
             _ => Err(AnalyzerModelError::InvalidSourceCapability(
                 source_moniker,
                 format!("{:?}", source_capability.source_name()),
-                fsys::StorageAdminMarker::PROTOCOL_NAME.to_string(),
+                fcomponent::StorageAdminMarker::PROTOCOL_NAME.to_string(),
             )),
         }
     }

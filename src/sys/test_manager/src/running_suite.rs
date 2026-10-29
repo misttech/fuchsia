@@ -25,7 +25,6 @@ use fidl_fuchsia_component_resolution::ResolverProxy;
 use fidl_fuchsia_diagnostics as fdiagnostics;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_pkg::PackageResolverProxy;
-use fidl_fuchsia_sys2 as fsys;
 use fidl_fuchsia_test as ftest;
 use fidl_fuchsia_test_manager as ftest_manager;
 use fidl_fuchsia_tracing_provider as ftracing_provider;
@@ -410,7 +409,7 @@ impl RunningSuite {
         let artifact_storage_admin = self.connect_to_storage_admin()?;
 
         let root_moniker = "./";
-        let (iterator, iter_server) = create_proxy::<fsys::StorageIteratorMarker>();
+        let (iterator, iter_server) = create_proxy::<fcomponent::StorageIteratorMarker>();
         artifact_storage_admin
             .list_storage_in_realm(&root_moniker, iter_server)
             .await?
@@ -455,7 +454,7 @@ impl RunningSuite {
             .map_err(|e| LaunchTestError::ConnectToTestSuite(e))
     }
 
-    fn connect_to_storage_admin(&self) -> Result<fsys::StorageAdminProxy, LaunchTestError> {
+    fn connect_to_storage_admin(&self) -> Result<fcomponent::StorageAdminProxy, LaunchTestError> {
         self.instance
             .root
             .connect_to_protocol_at_exposed_dir()
@@ -950,7 +949,7 @@ async fn get_realm(
     wrapper_realm
         .add_route(
             Route::new()
-                .capability(Capability::protocol::<fsys::StorageAdminMarker>())
+                .capability(Capability::protocol::<fcomponent::StorageAdminMarker>())
                 .from(Ref::capability(CUSTOM_ARTIFACTS_CAPABILITY_NAME))
                 .to(Ref::parent()),
         )
@@ -1025,7 +1024,7 @@ async fn get_realm(
                 // from test root
                 .capability(Capability::protocol::<ftest::SuiteMarker>())
                 // custom_artifact capability
-                .capability(Capability::protocol::<fsys::StorageAdminMarker>())
+                .capability(Capability::protocol::<fcomponent::StorageAdminMarker>())
                 .capability(Capability::protocol::<fcomponent::RealmMarker>())
                 .from(&wrapper_realm)
                 .to(Ref::parent()),

@@ -6,9 +6,9 @@ use anyhow::{Context, Result, anyhow, bail};
 use chrono::{Local, TimeZone};
 use errors::{ffx_bail, ffx_error};
 use fdomain_client::fidl::Proxy;
+use fdomain_fuchsia_component as fcomponent;
 use fdomain_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use fdomain_fuchsia_io as fio;
-use fdomain_fuchsia_sys2 as fsys;
 use ffx_component::rcs::connect_to_realm_query;
 use ffx_writer::SimpleWriter;
 use fho::{FfxContext as _, FfxMain, FfxTool};
@@ -122,16 +122,12 @@ async fn list_minidumps(rcs: &RemoteControlProxy, capability: &str) -> Result<Ve
     connect_to_realm_query(&rcs)
         .await
         .context("Error in connect_to_realm_query")?
-        .connect_to_storage_admin(
-            "./core",
-            capability,
-            fdomain_client::fidl::ServerEnd::new(server),
-        )
+        .open_storage_admin("./core", capability, fdomain_client::fidl::ServerEnd::new(server))
         .await
         .context("FDIL error in get_storage_admin")?
         .map_err(|e| anyhow!("Error in get_storage_admin: {:?}", e))?;
 
-    let storage_admin = fsys::StorageAdminProxy::new(client);
+    let storage_admin = fcomponent::StorageAdminProxy::new(client);
 
     let (root_dir, server_end) = rcs.domain().create_proxy::<fio::DirectoryMarker>();
     storage_admin

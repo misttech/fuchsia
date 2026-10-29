@@ -7,8 +7,8 @@ use crate::path::RemoteComponentStoragePath;
 use anyhow::{Result, anyhow, bail};
 
 use flex_client::ProxyHasDomain;
+use flex_fuchsia_component::StorageAdminProxy;
 use flex_fuchsia_io as fio;
-use flex_fuchsia_sys2::StorageAdminProxy;
 
 /// Create a new directory in a component's storage.
 ///

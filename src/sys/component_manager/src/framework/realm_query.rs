@@ -11,6 +11,7 @@ use crate::sandbox_util::take_handle_as_stream;
 use cm_rust::NativeIntoFidl;
 use cm_types::{Name, Url};
 use fidl::endpoints::{ClientEnd, ServerEnd};
+use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_component_decl as fcdecl;
 use fidl_fuchsia_component_runner as fcrunner;
 use fidl_fuchsia_io as fio;
@@ -111,7 +112,13 @@ async fn handle_request(
             server_end,
             responder,
         } => {
-            let result = connect_to_storage_admin(scope, &moniker, storage_name, server_end).await;
+            let result = connect_to_storage_admin(
+                scope,
+                &moniker,
+                storage_name,
+                ServerEnd::new(server_end.into_channel()),
+            )
+            .await;
             responder.send(result)
         }
         fsys::RealmQueryRequest::OpenStorageAdmin {
@@ -120,13 +127,7 @@ async fn handle_request(
             server_end,
             responder,
         } => {
-            let result = connect_to_storage_admin(
-                scope,
-                &moniker,
-                storage_name,
-                ServerEnd::new(server_end.into_channel()),
-            )
-            .await;
+            let result = connect_to_storage_admin(scope, &moniker, storage_name, server_end).await;
             responder.send(result)
         }
     }
@@ -444,7 +445,7 @@ async fn connect_to_storage_admin(
     scope: &WeakComponentInstance,
     moniker_str: &str,
     storage_name: String,
-    server_end: ServerEnd<fsys::StorageAdminMarker>,
+    server_end: ServerEnd<fcomponent::StorageAdminMarker>,
 ) -> Result<(), fsys::ConnectToStorageAdminError> {
     // Construct the complete moniker using the scope moniker and the moniker string.
     let moniker =
@@ -1053,11 +1054,11 @@ mod tests {
 
         test.model.start().await;
 
-        let (storage_admin, server_end) = create_proxy::<fsys::StorageAdminMarker>();
+        let (storage_admin, server_end) = create_proxy::<fcomponent::StorageAdminMarker>();
 
-        query.connect_to_storage_admin("./", "data", server_end).await.unwrap().unwrap();
+        query.open_storage_admin("./", "data", server_end).await.unwrap().unwrap();
 
-        let (it_proxy, it_server) = create_proxy::<fsys::StorageIteratorMarker>();
+        let (it_proxy, it_server) = create_proxy::<fcomponent::StorageIteratorMarker>();
 
         storage_admin.list_storage_in_realm("./", it_server).await.unwrap().unwrap();
 

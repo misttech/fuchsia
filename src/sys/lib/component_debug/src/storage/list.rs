@@ -7,8 +7,8 @@ use crate::path::RemoteComponentStoragePath;
 use anyhow::{Result, anyhow};
 
 use flex_client::ProxyHasDomain;
+use flex_fuchsia_component::StorageAdminProxy;
 use flex_fuchsia_io as fio;
-use flex_fuchsia_sys2::StorageAdminProxy;
 
 /// List all directories and files in a component's storage.
 /// Returns a vector of names of the directories and files as strings.

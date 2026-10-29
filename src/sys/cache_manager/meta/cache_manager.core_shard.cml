@@ -20,7 +20,7 @@
             availability: "optional",
         },
         {
-            protocol: "fuchsia.sys2.StorageAdmin",
+            protocol: "fuchsia.component.StorageAdmin",
             from: "#cache",
             to: "#storage_cache_manager",
         },
