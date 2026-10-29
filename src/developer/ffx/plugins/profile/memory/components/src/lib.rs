@@ -21,7 +21,6 @@ use ffx_writer::{MachineWriter, ToolIO};
 use fho::{AvailabilityFlag, Deferred, FfxMain, FfxTool, deferred};
 use futures::AsyncReadExt;
 use json::JsonConvertible;
-use regex_lite::Regex;
 use serde::Serialize;
 use std::io::Write;
 use std::thread::sleep;
@@ -235,20 +234,21 @@ fn process_snapshot_summary(
         snapshot.resources.into_iter().flatten().map(|r| r.into()).collect();
     // Map from subject moniker token ID to Attribution struct.
     let attributions = snapshot.attributions.unwrap().into_iter().map(|a| a.into()).collect();
-    let default_empty_vec = Vec::new();
-    let bucket_definitions: Vec<digest::BucketDefinition> = snapshot
-        .bucket_definitions
-        .as_ref()
-        .unwrap_or(&default_empty_vec)
-        .iter()
-        .map(|bd| digest::BucketDefinition {
-            name: bd.name.clone().unwrap_or_default(),
-            process: bd.process.as_ref().map(|p| Regex::new(&p).unwrap()),
-            vmo: bd.vmo.as_ref().map(|p| Regex::new(&p).unwrap()),
-            principal: bd.principal.as_ref().map(|a| Regex::new(&a).unwrap()),
-            event_code: 0, // The information is unavailable client side.
-        })
-        .collect();
+    let bucket_definitions = digest::BucketDefinitions::new(
+        snapshot
+            .bucket_definitions
+            .into_iter()
+            .flatten()
+            .map(|bd| digest::BucketDefinition {
+                name: bd.name.unwrap_or_default(),
+                process: bd.process.unwrap_or_default(),
+                vmo: bd.vmo.unwrap_or_default(),
+                principal: bd.principal.unwrap_or_default(),
+                event_code: 0, // The information is unavailable client side.
+            })
+            .collect(),
+    )
+    .unwrap();
     let attribution_data = attribution_processing::attribute_vmos(AttributionData {
         principals_vec: principals,
         resources_vec: resources,
@@ -649,7 +649,7 @@ mod tests {
             bucket_definitions: Some(vec![fplugin::BucketDefinition {
                 name: Some("da_bucket".to_string()),
                 process: None,
-                vmo: Some("root_vmo".to_string()),
+                vmo: Some(vec!["root_vmo".to_string()]),
                 ..Default::default()
             }]),
             ..Default::default()

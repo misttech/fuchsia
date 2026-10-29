@@ -18,11 +18,11 @@ rustc_library("processing") {
     "//src/lib/fidl/rust/fidl",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:bstr",
-    "//third_party/rust_crates:regex-lite",
     "//third_party/rust_crates:rustc-hash",
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:smallvec",
     "//third_party/rust_crates:zerocopy",
+    "//third_party/rust_crates:zerotrie",
   ]
 
   if (is_fuchsia) {
@@ -32,6 +32,7 @@ rustc_library("processing") {
   test_deps = [
     "//third_party/rust_crates:pretty_assertions",
     "//third_party/rust_crates:rand",
+    "//third_party/rust_crates:regex-lite",
     "//third_party/rust_crates:serde_json",
   ]
 
@@ -41,6 +42,7 @@ rustc_library("processing") {
     "src/fplugin_serde.rs",
     "src/lib.rs",
     "src/macros.rs",
+    "src/matcher.rs",
     "src/name.rs",
     "src/summary.rs",
   ]

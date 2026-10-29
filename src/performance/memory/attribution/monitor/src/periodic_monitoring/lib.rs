@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use anyhow::{Context, Result};
-use attribution_processing::digest::{BucketDefinition, Digest};
+use attribution_processing::digest::{BucketDefinitions, Digest};
 use attribution_processing::summary::MemorySummary;
 use attribution_processing::{
     AttributionData, AttributionDataProvider, ProcessedAttributionData, attribute_vmos,
@@ -114,7 +114,7 @@ pub async fn periodic_monitoring(
     stall_provider: &impl StallProvider,
     page_fault_provider: &impl PageFaultProvider,
     metric_event_logger: &fmetrics::MetricEventLoggerProxy,
-    bucket_definitions: &[BucketDefinition],
+    bucket_definitions: &BucketDefinitions,
     inspect_root: Node,
     manual_events: impl Stream<Item = ManualMonitoringEvent> + Unpin,
 ) -> Result<()> {
@@ -493,7 +493,7 @@ mod tests {
             &attribution_data,
             &kernel_stats,
             &kernel_stats_compression,
-            &vec![],
+            &BucketDefinitions::default(),
             false,
         )?;
         let mut bucket_list_node = std::cell::OnceCell::new();
@@ -708,6 +708,7 @@ mod tests {
             CountingAttributionDataProvider { call_count: std::sync::atomic::AtomicUsize::new(0) };
         let stall_provider = FakeStallProvider {};
         let page_fault_provider = FakePageFaultProvider { refault_count: 300, fault_count: 400 };
+        let bucket_definitions = BucketDefinitions::default();
         let (tx, rx) = futures::channel::mpsc::unbounded::<ManualMonitoringEvent>();
 
         let mut monitoring_fut = std::pin::pin!(periodic_monitoring(
@@ -716,7 +717,7 @@ mod tests {
             &stall_provider,
             &page_fault_provider,
             &metric_event_logger,
-            &[],
+            &bucket_definitions,
             inspector.root().create_child("logger"),
             rx,
         ));

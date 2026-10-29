@@ -22,14 +22,14 @@ using BucketMatchUnitTest = testing::Test;
 const std::string kValidConfiguration = R"([
     {
         "name": "ContiguousPool",
-        "process": "driver_host",
-        "vmo": "SysmemContiguousPool",
+        "process": ["driver_host"],
+        "vmo": ["SysmemContiguousPool"],
         "event_code": 1
     },
     {
         "name": "Blobfs",
-        "process": ".*blobfs",
-        "vmo": ".*",
+        "process": ["/pkg/bin/blobfs", "blobfs.cm"],
+        "vmo": [],
         "event_code": 2
     }
 ])";
@@ -50,21 +50,28 @@ TEST_F(BucketMatchUnitTest, ValidConfiguration) {
   BucketMatch& match_1 = bucket_matches[1];
   EXPECT_EQ(match_1.name(), "Blobfs");
   EXPECT_EQ(match_1.event_code(), 2);
-  EXPECT_TRUE(match_1.ProcessMatch(Process{1, 0, "active_blobfs", {}}));
+  EXPECT_TRUE(match_1.ProcessMatch(Process{1, 0, "blobfs.cm", {}}));
+  EXPECT_TRUE(match_1.ProcessMatch(Process{2, 0, "/pkg/bin/blobfs", {}}));
+  EXPECT_FALSE(match_1.ProcessMatch(Process{3, 0, "blobfs_cm", {}}));
   EXPECT_TRUE(match_1.VmoMatch("blob-01234"));
 }
 
 TEST_F(BucketMatchUnitTest, InvalidConfiguration) {
   // Missing "name"
-  EXPECT_FALSE(BucketMatch::ReadBucketMatchesFromConfig(R"([{"process": "a", "vmo": ".*"}])"));
+  EXPECT_FALSE(BucketMatch::ReadBucketMatchesFromConfig(R"([{"process": ["a"], "vmo": []}])"));
   // Missing "process"
-  EXPECT_FALSE(BucketMatch::ReadBucketMatchesFromConfig(R"([{"name": "a", "vmo": ".*"}])"));
+  EXPECT_FALSE(BucketMatch::ReadBucketMatchesFromConfig(R"([{"name": "a", "vmo": []}])"));
   // Missing "vmo"
-  EXPECT_FALSE(BucketMatch::ReadBucketMatchesFromConfig(R"([{"name": "a", "process": ".*"}])"));
+  EXPECT_FALSE(BucketMatch::ReadBucketMatchesFromConfig(R"([{"name": "a", "process": []}])"));
+  // Non-array "process" or "vmo"
+  EXPECT_FALSE(
+      BucketMatch::ReadBucketMatchesFromConfig(R"([{"name": "a", "process": "a", "vmo": []}])"));
+  EXPECT_FALSE(
+      BucketMatch::ReadBucketMatchesFromConfig(R"([{"name": "a", "process": [], "vmo": ".*"}])"));
 
   // Badly formatted JSON
   EXPECT_FALSE(
-      BucketMatch::ReadBucketMatchesFromConfig(R"([{"name": "a", "process": ".*", "vmo": ".*"]})"));
+      BucketMatch::ReadBucketMatchesFromConfig(R"([{"name": "a", "process": [], "vmo": []]})"));
 }
 
 TEST_F(BucketMatchUnitTest, Sweep) {

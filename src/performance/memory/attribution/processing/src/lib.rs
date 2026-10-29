@@ -16,6 +16,7 @@ pub mod digest;
 pub mod fkernel_serde;
 pub mod fplugin_serde;
 mod macros;
+mod matcher;
 pub mod summary;
 
 #[cfg(target_os = "fuchsia")]

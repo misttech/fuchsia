@@ -50,9 +50,9 @@ impl AttributionSnapshot {
                     .iter()
                     .map(|b| fplugin::BucketDefinition {
                         name: Some(b.name.clone()),
-                        process: b.process.as_ref().map(|r| r.as_str().into()),
-                        vmo: b.vmo.as_ref().map(|r| r.as_str().into()),
-                        principal: b.principal.as_ref().map(|r| r.as_str().into()),
+                        process: (!b.process.is_empty()).then(|| b.process.clone()),
+                        vmo: (!b.vmo.is_empty()).then(|| b.vmo.clone()),
+                        principal: (!b.principal.is_empty()).then(|| b.principal.clone()),
                         ..Default::default()
                     })
                     .collect(),

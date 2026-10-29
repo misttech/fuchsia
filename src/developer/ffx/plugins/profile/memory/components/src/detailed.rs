@@ -9,7 +9,6 @@ use attribution_processing::{
     Resource, ZXName, digest, fplugin_serde,
 };
 use fdomain_fuchsia_memory_attribution_plugin as fplugin;
-use regex_lite::Regex;
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -38,24 +37,20 @@ pub fn process_snapshot_detailed(
     // Map from subject moniker token ID to Attribution struct.
     let attributions =
         snapshot.attributions.unwrap_or_default().into_iter().map(|a| a.into()).collect();
-    let bucket_definitions: Vec<digest::BucketDefinition> = snapshot
-        .bucket_definitions
-        .as_ref()
-        .unwrap_or(&Vec::new())
-        .iter()
-        .map(|bd| {
-            let process = bd.process.as_ref().map(|p| Regex::new(&p)).transpose()?;
-            let vmo = bd.vmo.as_ref().map(|p| Regex::new(&p)).transpose()?;
-            let principal = bd.principal.as_ref().map(|a| Regex::new(&a)).transpose()?;
-            Ok(digest::BucketDefinition {
-                name: bd.name.clone().unwrap_or_default(),
-                process,
-                vmo,
-                principal,
+    let bucket_definitions = digest::BucketDefinitions::new(
+        snapshot
+            .bucket_definitions
+            .into_iter()
+            .flatten()
+            .map(|bd| digest::BucketDefinition {
+                name: bd.name.unwrap_or_default(),
+                process: bd.process.unwrap_or_default(),
+                vmo: bd.vmo.unwrap_or_default(),
+                principal: bd.principal.unwrap_or_default(),
                 event_code: 0, // The information is unavailable client side.
             })
-        })
-        .collect::<Result<_>>()?;
+            .collect(),
+    )?;
     let attribution_data = AttributionData {
         principals_vec: principals,
         resources_vec: resources,

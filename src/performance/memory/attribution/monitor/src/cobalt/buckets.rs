@@ -205,7 +205,6 @@ mod tests {
     };
     use fidl_fuchsia_memory_attribution_plugin as fplugin;
     use futures::{TryFutureExt, TryStreamExt, try_join};
-    use regex_lite::Regex;
 
     fn get_data() -> ProcessedAttributionData {
         let attribution_data = AttributionData {
@@ -315,13 +314,14 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_upload_metrics() -> anyhow::Result<()> {
-        let bucket_definitions = [BucketDefinition {
-            name: "bucket1".to_string(),
-            vmo: Some(Regex::new("bucket1.*")?),
-            event_code: 1,
-            process: None,
-            principal: None,
-        }];
+        let bucket_definitions =
+            attribution_processing::digest::BucketDefinitions::new(vec![BucketDefinition {
+                name: "bucket1".to_string(),
+                vmo: vec!["bucket1".to_string()],
+                event_code: 1,
+                process: vec![],
+                principal: vec![],
+            }])?;
 
         let (metric_event_logger, mut metric_event_request_stream) =
             fidl::endpoints::create_proxy_and_stream::<fmetrics::MetricEventLoggerMarker>();

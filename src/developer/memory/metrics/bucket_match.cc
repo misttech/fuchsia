@@ -8,12 +8,40 @@
 #include <lib/trace/event.h>
 
 #include <optional>
+#include <string_view>
 
 #include <re2/re2.h>
 
 #include "third_party/rapidjson/include/rapidjson/document.h"
 
 namespace memory {
+namespace {
+
+std::optional<std::string> BuildRegexFromPrefixes(const rapidjson::Value& prefixes) {
+  if (!prefixes.IsArray()) {
+    return std::nullopt;
+  }
+  if (prefixes.Empty()) {
+    return "";
+  }
+  // Group prefixes in non-capturing parentheses with a single trailing ".*" to optimize RE2
+  // alternation factoring and avoid duplicating the wildcard loop per branch.
+  std::string regex = "(?:";
+  for (rapidjson::SizeType i = 0; i < prefixes.Size(); ++i) {
+    if (!prefixes[i].IsString()) {
+      return std::nullopt;
+    }
+    if (i > 0) {
+      regex.append("|");
+    }
+    regex.append(re2::RE2::QuoteMeta(
+        std::string_view(prefixes[i].GetString(), prefixes[i].GetStringLength())));
+  }
+  regex.append(").*");
+  return regex;
+}
+
+}  // namespace
 
 BucketMatch::BucketMatch(std::string name, const std::string& process, const std::string& vmo,
                          std::optional<int64_t> event_code)
@@ -69,7 +97,7 @@ std::optional<std::vector<BucketMatch>> BucketMatch::ReadBucketMatchesFromConfig
 
   for (const auto& v : doc.GetArray()) {
     if (!(v.HasMember("name") && v["name"].IsString() && v.HasMember("process") &&
-          v["process"].IsString() && v.HasMember("vmo") && v["vmo"].IsString())) {
+          v.HasMember("vmo"))) {
       FX_LOGS(WARNING) << "Missing member";
       return std::nullopt;
     }
@@ -78,14 +106,18 @@ std::optional<std::vector<BucketMatch>> BucketMatch::ReadBucketMatchesFromConfig
       // Principal filtering is only supported in memory_monitor2; skip those.
       continue;
     }
+    std::optional<std::string> process = BuildRegexFromPrefixes(v["process"]);
+    std::optional<std::string> vmo = BuildRegexFromPrefixes(v["vmo"]);
+    if (!process.has_value() || !vmo.has_value()) {
+      FX_LOGS(WARNING) << "Expected 'process' and 'vmo' to be arrays of strings";
+      return std::nullopt;
+    }
     std::string name(v["name"].GetString(), v["name"].GetStringLength());
-    std::string process(v["process"].GetString(), v["process"].GetStringLength());
-    std::string vmo(v["vmo"].GetString(), v["vmo"].GetStringLength());
     std::optional<int64_t> event_code;
     if (v.HasMember("event_code") && v["event_code"].IsInt64()) {
       event_code = v["event_code"].GetInt64();
     }
-    result.emplace_back(name, process, vmo, event_code);
+    result.emplace_back(name, *process, *vmo, event_code);
   }
   return result;
 }

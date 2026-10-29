@@ -470,10 +470,10 @@ impl JsonConvertible for fkernel::MemoryStatsCompression {
 #[serde(remote = "fplugin::BucketDefinition")]
 struct BucketDefinitionDef {
     pub name: Option<String>,
-    pub process: Option<String>,
-    pub vmo: Option<String>,
+    pub process: Option<Vec<String>>,
+    pub vmo: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub principal: Option<String>,
+    pub principal: Option<Vec<String>>,
     #[doc(hidden)]
     #[serde(skip)]
     pub __source_breaking: fidl::marker::SourceBreaking,
@@ -774,7 +774,7 @@ mod tests {
             bucket_definitions: Some(vec![fplugin::BucketDefinition {
                 name: Some("abc".to_string()),
                 process: None,
-                vmo: Some("def".to_string()),
+                vmo: Some(vec!["def".to_string()]),
                 ..Default::default()
             }]),
             performance_metrics: Some(fplugin::PerformanceImpactMetrics {
@@ -829,7 +829,9 @@ mod tests {
                     {
                         "name": "abc",
                         "process": null,
-                        "vmo": "def"
+                        "vmo": [
+                            "def"
+                        ]
                     }
                 ],
                 "kernel_statistics": {

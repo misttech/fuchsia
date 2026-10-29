@@ -4,15 +4,11 @@
 
 use crate::{ProcessedAttributionData, ZXName};
 use anyhow::Result;
-use bstr::ByteSlice;
 use fidl_fuchsia_kernel_common as fkernel;
 use fidl_fuchsia_memory_attribution_plugin_common as fplugin;
-use regex_lite::Regex;
 use rustc_hash::FxHashMap;
-use serde::de::Error;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
-use std::collections::hash_map::Entry::Occupied;
 #[cfg(target_os = "fuchsia")]
 use {crate::CATEGORY_MEMORY_CAPTURE, fuchsia_trace::duration};
 
@@ -28,6 +24,9 @@ const DISCARDABLE_UNLOCKED: &str = "[Addl]DiscardableUnlocked";
 const ZRAM_COMPRESSED_BYTES: &str = "[Addl]ZramCompressedBytes";
 const POPULATED_ANONYMOUS_BYTES: &str = "[Addl]PopulatedAnonymousBytes";
 
+pub use crate::matcher::MatcherError;
+use crate::matcher::{BucketSet, BucketTrie};
+
 /// Represents a specification for aggregating memory usage in meaningful groups.
 ///
 /// `name` represents the meaningful name of the group; grouping is done based on process and VMO
@@ -35,63 +34,94 @@ const POPULATED_ANONYMOUS_BYTES: &str = "[Addl]PopulatedAnonymousBytes";
 ///
 // Note: This needs to mirror `//src/lib/assembly/memory_buckets/src/memory_buckets.rs`, but cannot
 // reuse it directly because it is an host-only library.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct BucketDefinition {
     pub name: String,
-    #[serde(deserialize_with = "deserialize_regex")]
-    pub process: Option<Regex>,
-    #[serde(deserialize_with = "deserialize_regex")]
-    pub vmo: Option<Regex>,
-    #[serde(default, deserialize_with = "deserialize_regex")]
-    pub principal: Option<Regex>,
+    #[serde(default)]
+    pub process: Vec<String>,
+    #[serde(default)]
+    pub vmo: Vec<String>,
+    #[serde(default)]
+    pub principal: Vec<String>,
     pub event_code: u64,
 }
 
-impl BucketDefinition {
-    /// Tests whether a process matches this bucket's definition, based on its name.
-    fn process_match(&self, process: &ZXName) -> bool {
-        self.process.as_ref().is_none_or(|process_regex| {
-            process
-                .as_bstr()
-                .to_str()
-                .is_ok_and(|process_name| process_regex.is_match(process_name))
-        })
+/// Pre-compiled collection of [`BucketDefinition`]s holding one prefix trie for processes,
+/// one for VMOs, and one for principals.
+///
+/// Each trie maps string prefixes to a [`BucketSet`] of matching bucket indices, allowing
+/// a single trie traversal per string followed by set intersection and `min_index()`
+/// to select the highest-priority matching bucket.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BucketDefinitions {
+    definitions: Vec<BucketDefinition>,
+    process_trie: BucketTrie,
+    vmo_trie: BucketTrie,
+    principal_trie: BucketTrie,
+}
+
+impl BucketDefinitions {
+    /// Compiles a list of [`BucketDefinition`]s into three prefix tries.
+    pub fn new(definitions: Vec<BucketDefinition>) -> Result<Self, MatcherError> {
+        if definitions.len() > BucketSet::MAX_BUCKETS {
+            return Err(MatcherError::TooManyBuckets(definitions.len()));
+        }
+        let process_trie = BucketTrie::build(
+            definitions.iter().enumerate().map(|(i, d)| (i, d.process.as_slice())),
+        )?;
+        let vmo_trie =
+            BucketTrie::build(definitions.iter().enumerate().map(|(i, d)| (i, d.vmo.as_slice())))?;
+        let principal_trie = BucketTrie::build(
+            definitions.iter().enumerate().map(|(i, d)| (i, d.principal.as_slice())),
+        )?;
+        Ok(Self { definitions, process_trie, vmo_trie, principal_trie })
     }
 
-    /// Tests whether a VMO matches this bucket's definition, based on its name.
-    fn vmo_match(&self, vmo: &ZXName) -> bool {
-        self.vmo.as_ref().is_none_or(|vmo_regex| {
-            vmo.as_bstr().to_str().is_ok_and(|vmo_name| vmo_regex.is_match(vmo_name))
-        })
+    /// Returns the underlying slice of [`BucketDefinition`]s.
+    pub fn definitions(&self) -> &[BucketDefinition] {
+        &self.definitions
     }
 
-    /// Tests whether any of the specified principal names match this bucket's definition.
-    fn principals_match(&self, principals: &[&str]) -> bool {
-        self.principal.as_ref().is_none_or(|a| principals.iter().any(|name| a.is_match(name)))
+    /// Returns the set of buckets matching `process` (in a single trie traversal).
+    fn match_process(&self, process: &ZXName) -> BucketSet {
+        self.process_trie.match_bytes(process.buffer())
+    }
+
+    /// Returns the set of buckets matching `vmo` (in a single trie traversal).
+    fn match_vmo(&self, vmo: &ZXName) -> BucketSet {
+        self.vmo_trie.match_bytes(vmo.buffer())
+    }
+
+    /// Returns the set of buckets matching any of `principals` (one trie traversal per principal).
+    fn match_any_principal(&self, principals: &[&str]) -> BucketSet {
+        self.principal_trie.match_any_str(principals)
     }
 }
 
-// Teach serde to deserialize an optional regex.
-fn deserialize_regex<'de, D>(d: D) -> Result<Option<Regex>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    // Deserialize as Option<&str>
-    Option::<String>::deserialize(d)
-        // If the parsing failed, return the error, otherwise transform the value
-        .and_then(|os| {
-            os
-                // If there is a value, try to parse it as a Regex.
-                .map(|s| {
-                    Regex::new(&s)
-                        // If the regex compilation failed, wrap the error in the error type expected
-                        // by serde.
-                        .map_err(D::Error::custom)
-                })
-                // If there was a value but it failed to compile, return an error, otherwise return
-                // the potentially parsed option.
-                .transpose()
-        })
+impl std::ops::Deref for BucketDefinitions {
+    type Target = [BucketDefinition];
+
+    fn deref(&self) -> &Self::Target {
+        &self.definitions
+    }
+}
+
+impl TryFrom<Vec<BucketDefinition>> for BucketDefinitions {
+    type Error = MatcherError;
+
+    fn try_from(definitions: Vec<BucketDefinition>) -> Result<Self, Self::Error> {
+        Self::new(definitions)
+    }
+}
+
+impl<'de> Deserialize<'de> for BucketDefinitions {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let definitions = Vec::<BucketDefinition>::deserialize(deserializer)?;
+        Self::new(definitions).map_err(serde::de::Error::custom)
+    }
 }
 
 /// Aggregates bytes in categories with human readable names.
@@ -116,6 +146,9 @@ struct UndigestedVmo<'a> {
     committed_size: u64,
     name: &'a ZXName,
     principals: &'a [&'a str],
+    /// Set of buckets whose `process` pattern matches at least one process referencing this VMO
+    /// (including buckets that do not constrain the process name).
+    process_buckets: BucketSet,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -134,7 +167,7 @@ impl Digest {
         attribution_data: &ProcessedAttributionData,
         kmem_stats: &fkernel::MemoryStats,
         kmem_stats_compression: &fkernel::MemoryStatsCompression,
-        bucket_definitions: &[BucketDefinition],
+        bucket_definitions: &BucketDefinitions,
         detailed_vmos: bool,
     ) -> Result<Digest> {
         #[cfg(target_os = "fuchsia")]
@@ -192,6 +225,7 @@ impl Digest {
                                 populated_size,
                                 committed_size,
                                 principals: owners.get(koid).map_or(&[], |v| v.as_slice()),
+                                process_buckets: BucketSet::default(),
                             },
                         ))
                     })
@@ -199,102 +233,68 @@ impl Digest {
                 _ => None,
             })
             .collect();
-        let processes: Vec<(&ZXName, &fplugin::Process)> = attribution_data
-            .resources
-            .values()
-            .filter_map(|r| match &r.resource.resource_type {
-                fplugin::ResourceType::Process(process) => attribution_data
-                    .resource_names
-                    .get(r.resource.name_index)
-                    .map(|name| (name, process)),
-                _ => None,
-            })
-            .collect();
+
+        // Traverse the process trie once per process and accumulate matching bucket sets
+        // onto each VMO referenced by that process.
+        for r in attribution_data.resources.values() {
+            if let fplugin::ResourceType::Process(process) = &r.resource.resource_type {
+                if let Some(process_name) =
+                    attribution_data.resource_names.get(r.resource.name_index)
+                {
+                    let proc_buckets = bucket_definitions.match_process(process_name);
+                    if !proc_buckets.is_empty() {
+                        for koid in process.vmos.iter().flatten() {
+                            if let Some(vmo) = undigested_vmos.get_mut(koid) {
+                                vmo.process_buckets = vmo.process_buckets.union(proc_buckets);
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         let mut buckets: Vec<Bucket> = bucket_definitions
             .iter()
-            .map(|bd| {
-                let mut bucket = Bucket {
-                    name: bd.name.to_owned(),
-                    populated_size: 0,
-                    committed_size: 0,
-                    vmos: None,
-                };
-                processes.iter().for_each(|(process_name, process)| {
-                    if bd.process_match(process_name) {
-                        for koid in process.vmos.iter().flatten() {
-                            let (populated_size, committed_size) = match undigested_vmos
-                                .entry(*koid)
-                            {
-                                Occupied(e) => {
-                                    let UndigestedVmo { name, principals, .. } = e.get();
-                                    if bd.vmo_match(&name) && bd.principals_match(principals) {
-                                        let (_, vmo) = e.remove_entry();
-                                        if detailed_vmos {
-                                            bucket.vmos.get_or_insert_default().push(NamedVmo {
-                                                name: vmo.name.clone(),
-                                                populated_size: vmo.populated_size,
-                                                committed_size: vmo.committed_size,
-                                                principals: vmo
-                                                    .principals
-                                                    .iter()
-                                                    .map(|&name| name.to_owned())
-                                                    .collect(),
-                                            });
-                                        }
-                                        (vmo.populated_size, vmo.committed_size)
-                                    } else {
-                                        (0, 0)
-                                    }
-                                }
-                                _ => (0, 0),
-                            };
-                            bucket.committed_size += committed_size;
-                            bucket.populated_size += populated_size;
-                        }
-                    };
-                });
-                bucket
+            .map(|bd| Bucket {
+                name: bd.name.to_owned(),
+                populated_size: 0,
+                committed_size: 0,
+                vmos: None,
             })
             .collect();
 
         // This bucket contains the total size of the known VMOs that have not been covered
         // by any other bucket.
-        let undigested = {
-            let (populated_size, committed_size) = undigested_vmos
-                .values()
-                .map(|UndigestedVmo { populated_size, committed_size, .. }| {
-                    (*populated_size, *committed_size)
-                })
-                .fold((0, 0), |(total_populated, total_committed), (populated, committed)| {
-                    (total_populated + populated, total_committed + committed)
-                });
-
-            Bucket {
-                name: UNDIGESTED.to_string(),
-                populated_size: populated_size,
-                committed_size,
-                vmos: if detailed_vmos {
-                    Some(
-                        undigested_vmos
-                            .values()
-                            .map(|vmo| NamedVmo {
-                                name: vmo.name.clone(),
-                                populated_size: vmo.populated_size,
-                                committed_size: vmo.committed_size,
-                                principals: vmo
-                                    .principals
-                                    .iter()
-                                    .map(|&name| name.to_owned())
-                                    .collect(),
-                            })
-                            .collect(),
-                    )
-                } else {
-                    None
-                },
-            }
+        let mut undigested = Bucket {
+            name: UNDIGESTED.to_string(),
+            populated_size: 0,
+            committed_size: 0,
+            vmos: if detailed_vmos { Some(Vec::new()) } else { None },
         };
+
+        for vmo in undigested_vmos.into_values() {
+            let matched = vmo
+                .process_buckets
+                .intersection(bucket_definitions.match_vmo(vmo.name))
+                .intersection(bucket_definitions.match_any_principal(vmo.principals));
+
+            let target_bucket = if let Some(bucket_idx) = matched.min_index() {
+                &mut buckets[bucket_idx]
+            } else {
+                &mut undigested
+            };
+
+            target_bucket.populated_size += vmo.populated_size;
+            target_bucket.committed_size += vmo.committed_size;
+            if detailed_vmos {
+                target_bucket.vmos.get_or_insert_default().push(NamedVmo {
+                    name: vmo.name.clone(),
+                    populated_size: vmo.populated_size,
+                    committed_size: vmo.committed_size,
+                    principals: vmo.principals.iter().map(|&name| name.to_owned()).collect(),
+                });
+            }
+        }
 
         let total_vmo_size: u64 = undigested.committed_size
             + buckets.iter().map(|Bucket { committed_size, .. }| committed_size).sum::<u64>();
@@ -430,7 +430,6 @@ mod tests {
         PrincipalType, ProcessedAttributionData, Resource, ResourceReference, attribute_vmos,
     };
     use fidl_fuchsia_memory_attribution_plugin_common as fplugin;
-    use regex_lite::Regex;
 
     fn get_attribution_data() -> ProcessedAttributionData {
         attribute_vmos(AttributionData {
@@ -558,7 +557,7 @@ mod tests {
                 &get_attribution_data(),
                 &kernel_stats,
                 &kernel_stats_compression,
-                &vec![],
+                &BucketDefinitions::default(),
                 true,
             )
             .unwrap();
@@ -651,13 +650,13 @@ mod tests {
                 &get_attribution_data(),
                 &kernel_stats,
                 &kernel_stats_compression,
-                &vec![BucketDefinition {
+                &BucketDefinitions::new(vec![BucketDefinition {
                     name: "matched".to_string(),
-                    process: None,
-                    vmo: Some(Regex::new("matched")?),
-                    principal: None,
+                    process: vec![],
+                    vmo: vec!["matched".to_string()],
+                    principal: vec![],
                     event_code: Default::default(),
-                }],
+                }])?,
                 true,
             )
             .unwrap();
@@ -755,13 +754,13 @@ mod tests {
                 &get_attribution_data(),
                 &kernel_stats,
                 &kernel_stats_compression,
-                &vec![BucketDefinition {
+                &BucketDefinitions::new(vec![BucketDefinition {
                     name: "matched".to_string(),
-                    process: Some(Regex::new("matched")?),
-                    vmo: None,
-                    principal: None,
+                    process: vec!["matched".to_string()],
+                    vmo: vec![],
+                    principal: vec![],
                     event_code: Default::default(),
-                }],
+                }])?,
                 true,
             )
             .unwrap();
@@ -862,13 +861,13 @@ mod tests {
                 &get_attribution_data(),
                 &kernel_stats,
                 &kernel_stats_compression,
-                &vec![BucketDefinition {
+                &BucketDefinitions::new(vec![BucketDefinition {
                     name: "matched".to_string(),
-                    process: None,
-                    vmo: None,
-                    principal: Some(Regex::new("principal")?),
+                    process: vec![],
+                    vmo: vec![],
+                    principal: vec!["principal".to_string()],
                     event_code: Default::default(),
-                }],
+                }])?,
                 true,
             )
             .unwrap();
@@ -966,13 +965,13 @@ mod tests {
                 &get_attribution_data(),
                 &kernel_stats,
                 &kernel_stats_compression,
-                &vec![BucketDefinition {
+                &BucketDefinitions::new(vec![BucketDefinition {
                     name: "matched".to_string(),
-                    process: Some(Regex::new("matched")?),
-                    vmo: Some(Regex::new("matched")?),
-                    principal: Some(Regex::new("principal")?),
+                    process: vec!["matched".to_string()],
+                    vmo: vec!["matched".to_string()],
+                    principal: vec!["principal".to_string()],
                     event_code: Default::default(),
-                }],
+                }])?,
                 true,
             )
             .unwrap();
@@ -1077,13 +1076,13 @@ mod tests {
             &get_attribution_data(),
             &kernel_stats,
             &kernel_stats_compression,
-            &vec![BucketDefinition {
+            &BucketDefinitions::new(vec![BucketDefinition {
                 name: "matched".to_string(),
-                process: None,
-                vmo: Some(Regex::new("matched")?),
-                principal: None,
+                process: vec![],
+                vmo: vec!["matched".to_string()],
+                principal: vec![],
                 event_code: Default::default(),
-            }],
+            }])?,
             false, // detailed_vmos = false
         )?;
 
@@ -1115,22 +1114,22 @@ mod tests {
             &get_attribution_data(),
             &kernel_stats,
             &kernel_stats_compression,
-            &vec![
+            &BucketDefinitions::new(vec![
                 BucketDefinition {
                     name: "first_bucket".to_string(),
-                    process: None,
-                    vmo: Some(Regex::new("matched")?),
-                    principal: None,
+                    process: vec![],
+                    vmo: vec!["matched".to_string()],
+                    principal: vec![],
                     event_code: Default::default(),
                 },
                 BucketDefinition {
                     name: "second_bucket".to_string(),
-                    process: None,
-                    vmo: Some(Regex::new(".*")?),
-                    principal: None,
+                    process: vec![],
+                    vmo: vec![],
+                    principal: vec![],
                     event_code: Default::default(),
                 },
-            ],
+            ])?,
             true,
         )?;
 
@@ -1158,13 +1157,13 @@ mod tests {
             &get_attribution_data(),
             &kernel_stats,
             &kernel_stats_compression,
-            &vec![BucketDefinition {
+            &BucketDefinitions::new(vec![BucketDefinition {
                 name: "partial_mismatch".to_string(),
-                process: Some(Regex::new("matched")?),
-                vmo: Some(Regex::new("nonexistent_vmo")?),
-                principal: Some(Regex::new("principal")?),
+                process: vec!["matched".to_string()],
+                vmo: vec!["nonexistent_vmo".to_string()],
+                principal: vec!["principal".to_string()],
                 event_code: Default::default(),
-            }],
+            }])?,
             true,
         )?;
 
@@ -1193,8 +1192,13 @@ mod tests {
         }
 
         let (kernel_stats, kernel_stats_compression) = get_kernel_stats();
-        let digest =
-            Digest::compute(&attr_data, &kernel_stats, &kernel_stats_compression, &vec![], true)?;
+        let digest = Digest::compute(
+            &attr_data,
+            &kernel_stats,
+            &kernel_stats_compression,
+            &BucketDefinitions::default(),
+            true,
+        )?;
 
         let anon_bucket =
             digest.buckets.iter().find(|b| b.name == POPULATED_ANONYMOUS_BYTES).unwrap();
@@ -1216,7 +1220,7 @@ mod tests {
             &get_attribution_data(),
             &fkernel::MemoryStats::default(),
             &fkernel::MemoryStatsCompression::default(),
-            &vec![],
+            &BucketDefinitions::default(),
             true,
         )?;
 

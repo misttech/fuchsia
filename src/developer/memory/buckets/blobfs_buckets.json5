@@ -1,8 +1,13 @@
 [
     {
         name: "BlobfsInactive",
-        process: "/pkg/bin/blobfs|blobfs\\.cm",
-        vmo: "inactive-blob-.*",
+        process: [
+            "/pkg/bin/blobfs",
+            "blobfs.cm",
+        ],
+        vmo: [
+            "inactive-blob-",
+        ],
         event_code: 29,
 
         // The relative ordering between 'Blobfs', 'BlobfsInactive' and 'Fxblob' is
@@ -19,8 +24,11 @@
     },
     {
         name: "Blobfs",
-        process: "/pkg/bin/blobfs|blobfs\\.cm",
-        vmo: "",
+        process: [
+            "/pkg/bin/blobfs",
+            "blobfs.cm",
+        ],
+        vmo: [],
         event_code: 5,
 
         // See 'BlobfsInactive' for the rationale behind this order.

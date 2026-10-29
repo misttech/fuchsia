@@ -14,15 +14,21 @@ pub struct MemoryBucket {
     /// When 'memory_monitor' writes the measurement of this bucket data to Inspect,
     /// this is the user-facing name that will be used.
     name: String,
-    /// The regex to match process names against to be included in this bucket.
-    process: String,
-    /// The regex to match VMO names against to be included in this bucket.
-    vmo: String,
-    /// Regex to match VMOs or processes based on their principals' names.
+    /// The list of prefixes to match process names against to be included in this bucket.
+    #[serde(deserialize_with = "deserialize_prefixes")]
+    process: Vec<String>,
+    /// The list of prefixes to match VMO names against to be included in this bucket.
+    #[serde(deserialize_with = "deserialize_prefixes")]
+    vmo: Vec<String>,
+    /// List of prefixes to match VMOs or processes based on their principals' names.
     /// Note: This field is only supported by memory_monitor2.
-    // Skip serializing when missing, for backwards compatibility.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    principal: Option<String>,
+    // Skip serializing when empty, for backwards compatibility.
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        deserialize_with = "deserialize_prefixes"
+    )]
+    principal: Vec<String>,
     /// The event code used by Cobalt to record the bucket measurement.
     event_code: u64,
     /// The order in which the bucket regex will be applied, in relation to all
@@ -33,6 +39,56 @@ pub struct MemoryBucket {
     order: u64,
 }
 
+fn validate_prefixes<E: serde::de::Error>(prefixes: Vec<String>) -> Result<Vec<String>, E> {
+    for prefix in &prefixes {
+        if prefix.is_empty() {
+            return Err(E::custom("bucket prefix must not be empty; use [] for unconstrained"));
+        }
+        if !prefix.is_ascii() {
+            return Err(E::custom(format!("bucket prefix must be ASCII: '{prefix}'")));
+        }
+    }
+    Ok(prefixes)
+}
+
+fn deserialize_prefixes<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum PrefixesOrLegacyPrebuilt {
+        Prefixes(Vec<String>),
+        // TODO(b/571444259): Remove once prebuilt/starnix/internal/iris (iris_memory_buckets.json5)
+        // and vendor/google-smart/bin/memory/smart_display_memory_buckets.json roll.
+        LegacyPrebuilt(String),
+    }
+    match PrefixesOrLegacyPrebuilt::deserialize(deserializer)? {
+        PrefixesOrLegacyPrebuilt::Prefixes(prefixes) => validate_prefixes(prefixes),
+        PrefixesOrLegacyPrebuilt::LegacyPrebuilt(s) => match s.as_str() {
+            "" => Ok(vec![]),
+            "android_(aidl|hidl).*" => {
+                Ok(vec!["android_aidl".to_string(), "android_hidl".to_string()])
+            }
+            other => {
+                let mut prefixes = Vec::new();
+                for branch in other.split('|') {
+                    let branch = branch.strip_suffix(".*").unwrap_or(branch);
+                    let branch = branch.strip_suffix("t?").unwrap_or(branch);
+                    let unescaped = branch.replace(r"\.", ".");
+                    if unescaped.contains(['(', ')', '[', ']', '*', '+', '?', '^', '$', '\\']) {
+                        return Err(serde::de::Error::custom(format!(
+                            "expected an array of prefix strings, found unsupported regex string '{other}'"
+                        )));
+                    }
+                    prefixes.push(unescaped);
+                }
+                validate_prefixes(prefixes)
+            }
+        },
+    }
+}
+
 /// Sets the default order to the maximum u64, to indicate that this bucket should
 /// appear last in the order if left unspecified.
 fn default_order() -> u64 {
@@ -41,7 +97,7 @@ fn default_order() -> u64 {
 
 impl Ord for MemoryBucket {
     /// When comparing two buckets, we compare their 'order' fields. If they are
-    /// the same, then the one that specifies a VMO regex is sorted ahead of the
+    /// the same, then the one that specifies a VMO prefix is sorted ahead of the
     /// other.
     fn cmp(&self, other: &Self) -> Ordering {
         if self.order != other.order {
@@ -95,8 +151,8 @@ mod tests {
         let input1 = json!([
             {
                 "name": "bucket name 1",
-                "process": "",
-                "vmo": "",
+                "process": [],
+                "vmo": [],
                 "event_code": 1,
                 "order": 1,
             },
@@ -104,8 +160,8 @@ mod tests {
         let input2 = json!([
             {
                 "name": "bucket name 2",
-                "process": "",
-                "vmo": "",
+                "process": [],
+                "vmo": [],
                 "event_code": 2,
                 "order": 2,
             },
@@ -113,8 +169,8 @@ mod tests {
         let input3 = json!([
             {
                 "name": "bucket name 3",
-                "process": "",
-                "vmo": "",
+                "process": [],
+                "vmo": [],
                 "event_code": 3,
                 "order": 3,
             },
@@ -145,20 +201,20 @@ mod tests {
         let expected_output = json!([
             {
                 "name": "bucket name 1",
-                "process": "",
-                "vmo": "",
+                "process": [],
+                "vmo": [],
                 "event_code": 1
             },
             {
                 "name": "bucket name 2",
-                "process": "",
-                "vmo": "",
+                "process": [],
+                "vmo": [],
                 "event_code": 2
             },
             {
                 "name": "bucket name 3",
-                "process": "",
-                "vmo": "",
+                "process": [],
+                "vmo": [],
                 "event_code": 3
             },
         ]);
@@ -171,16 +227,16 @@ mod tests {
         let input1 = json!([
             {
                 "name": "bucket name 1",
-                "process": "bucket_1.cm",
-                "vmo": "",
+                "process": ["bucket_1.cm"],
+                "vmo": [],
                 "event_code": 1
             },
         ]);
         let input2 = json!([
             {
                 "name": "bucket name 2",
-                "process": "",
-                "vmo": "bucket_2_vmos",
+                "process": [],
+                "vmo": ["bucket_2_vmos"],
                 "event_code": 2,
                 "order": 100
             },
@@ -188,8 +244,8 @@ mod tests {
         let input3 = json!([
             {
                 "name": "bucket name 3",
-                "process": "",
-                "vmo": "bucket_3_vmos",
+                "process": [],
+                "vmo": ["bucket_3_vmos"],
                 "event_code": 3,
                 "order": 50
             },
@@ -197,8 +253,8 @@ mod tests {
         let input4 = json!([
             {
                 "name": "bucket name 4",
-                "process": "",
-                "vmo": "bucket_4_vmos",
+                "process": [],
+                "vmo": ["bucket_4_vmos"],
                 "event_code": 4
             },
         ]);
@@ -230,32 +286,32 @@ mod tests {
         // Bucket 3 should be first, as it has a specified order 50.
         // Bucket 2 should be second, as it has a specified order 100.
         // Bucket 4 should be third, as it has no specified order and is a VMO-only bucket.
-        // Bucket 1 should be third, as it has no specified order.
+        // Bucket 1 should be fourth, as it has no specified order.
         let buckets_output = File::open(buckets_output).unwrap();
         let output: serde_json::Value = serde_json::from_reader(&buckets_output).unwrap();
         let expected_output = json!([
             {
                 "name": "bucket name 3",
-                "process": "",
-                "vmo": "bucket_3_vmos",
+                "process": [],
+                "vmo": ["bucket_3_vmos"],
                 "event_code": 3
             },
             {
                 "name": "bucket name 2",
-                "process": "",
-                "vmo": "bucket_2_vmos",
+                "process": [],
+                "vmo": ["bucket_2_vmos"],
                 "event_code": 2
             },
             {
                 "name": "bucket name 4",
-                "process": "",
-                "vmo": "bucket_4_vmos",
+                "process": [],
+                "vmo": ["bucket_4_vmos"],
                 "event_code": 4
             },
             {
                 "name": "bucket name 1",
-                "process": "bucket_1.cm",
-                "vmo": "",
+                "process": ["bucket_1.cm"],
+                "vmo": [],
                 "event_code": 1
             },
         ]);

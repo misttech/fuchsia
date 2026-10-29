@@ -4,7 +4,7 @@
 
 use anyhow::{Context, Result};
 use attribution_data::AttributionDataProviderImpl;
-use attribution_processing::digest::BucketDefinition;
+use attribution_processing::digest::{BucketDefinition, BucketDefinitions};
 use attribution_processing::{AttributionDataProvider, PrincipalDescription};
 use cobalt::{collect_stalls_forever, create_metric_event_logger};
 use fidl::endpoints::RequestStream;
@@ -112,7 +112,7 @@ async fn main() -> Result<()> {
         )),
     );
 
-    let bucket_definitions: Arc<[BucketDefinition]> = read_bucket_definitions().into();
+    let bucket_definitions = Arc::new(read_bucket_definitions());
     // Serves Fuchsia component inspection protocol
     // https://fuchsia.dev/fuchsia-src/development/diagnostics/inspect
     let mut inspect_nodes_service = fuchsia_async::Task::spawn(inspect_nodes::serve(
@@ -371,7 +371,7 @@ async fn provide_snapshot(
 /// Looks for a bucket definitions configuration, to perform memory
 /// aggregations for reporting purposes. Returns an empty list if no
 /// such configuration was found.
-fn read_bucket_definitions() -> Vec<BucketDefinition> {
+fn read_bucket_definitions() -> BucketDefinitions {
     std::fs::File::open("/config/data/buckets.json")
         .inspect_err(|err| warn!(err:%; "Could not access the bucket definitions configuration"))
         .ok()

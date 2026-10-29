@@ -1,8 +1,11 @@
 [
     {
         name: "SetUI",
-        process: "setui_service\\.cm|setui_service_with_camera\\.cm",
-        vmo: "",
+        process: [
+            "setui_service.cm",
+            "setui_service_with_camera.cm",
+        ],
+        vmo: [],
         event_code: 54,
     },
 ]
