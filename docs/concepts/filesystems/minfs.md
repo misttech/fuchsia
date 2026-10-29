@@ -27,7 +27,7 @@ It currently supports files up to 4 GB in size.
 
 ### Target Device (QEMU and Real Hardware)
 
-Warning: On real hardware, `/dev/class/block/...` refers to **REAL** storage
+Warning: On real hardware, `/block/...` refers to **REAL** storage
 devices (USBs, SSDs, etc).
 
 **BE CAREFUL NOT TO FORMAT THE WRONG DEVICE.** If in doubt, only run the
@@ -36,8 +36,8 @@ The `lsblk` command can be used to see more information about the devices
 accessible from Zircon.
 
  * Within zircon, `lsblk` can be used to list the block devices currently on
-   the system. On this example system below, `/dev/class/block/000` is a raw
-   block device.
+   the system. On this example system below, `/block/000/fuchsia.storage.block.Block`
+   is a raw block device.
 
   ```
   > lsblk
@@ -48,7 +48,7 @@ accessible from Zircon.
  * Let's add a GPT to this block device.
 
   ```
-  > gpt init /dev/class/block/000
+  > gpt init /block/000/fuchsia.storage.block.Block
   ...
   > lsblk
   ID  DEV      DRV      SIZE TYPE           LABEL
@@ -60,7 +60,7 @@ accessible from Zircon.
    to keep track of how to refer to the block device).
 
   ```
-  > gpt dump /dev/class/block/002
+  > gpt dump /block/002/fuchsia.storage.block.Block
   blocksize=512 blocks=33554432
   Partition table is valid
   GPT contains usable blocks from 34 to 33554398 (inclusive)
@@ -72,13 +72,13 @@ accessible from Zircon.
    Let's fill part of the disk with a MinFS filesystem.
 
   ```
-  > gpt add 34 20000000 minfs /dev/class/block/002
+  > gpt add 34 20000000 minfs /block/002/fuchsia.storage.block.Block
   ```
 
  * Within Zircon, format the partition as MinFS. Using `lsblk` you should see
    a block device, which is the whole disk, and a slightly smaller device, which
    is the partition. In the above output, the partition is device 003, and would
-   have the path `/dev/class/block/003`
+   have the path `/block/003/fuchsia.storage.block.Block`
 
   ```
   > mkfs <PARTITION_PATH> minfs

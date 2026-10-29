@@ -30,8 +30,8 @@ descriptor, an optional mount path, the disk format, options, and a launch callb
 an RAII MountedFilesystem object with which you can Unmount and get access to the export directory.
 
 The block device should be opened as read-write unless you configure the filesystem to be in
-read-only mode. One option for block device paths to open is in `/dev/class/block`, which is an
-enumerated list of all the block devices Fuchsia knows about (starting at `000` and counting up).
+read-only mode. One option for block device paths to open is in `/block` (or `/debug_block`), which
+is an enumerated list of block devices Fuchsia knows about (starting at `000` and counting up).
 It's populated in the order that the drivers are bound, which is _not_ consistent across boots. The
 other option is to use the topological path, which will depend on the drivers the storage uses (but
 is otherwise consistent). Both of these can be found using `lsblk` on the command line. A couple of
@@ -70,7 +70,7 @@ shard is `fs-collection`.
 Launching a filesystem using regular processes -
 
 ```cpp
-fbl::unique_fd device_fd(open("/dev/class/block/001", O_RDWR));
+fbl::unique_fd device_fd(open("/block/001/fuchsia.storage.block.Block", O_RDWR));
 ASSERT_TRUE(device_fd);
 fs_management::MountOptions options;
 auto fs = fs_management::Mount(std::move(device_fd), fs_management::kDiskFormatMinfs, options);
@@ -85,7 +85,7 @@ ASSERT_EQ(binding.status(), ZX_OK);
 Launching a filesystem using a component collection -
 
 ```cpp
-fbl::unique_fd device_fd(open("/dev/class/block/001", O_RDWR));
+fbl::unique_fd device_fd(open("/block/001/fuchsia.storage.block.Block", O_RDWR));
 ASSERT_TRUE(device_fd);
 fs_management::MountOptions options {
   .component_child_name = "minfs",

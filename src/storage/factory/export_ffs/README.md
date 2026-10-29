@@ -17,5 +17,5 @@ $ fx set core.x64 --with //src/storage:tools
 $ fx build
 
 # on fuchsia
-$ export-ffs /path/to/export /dev/class/block/<id>
+$ export-ffs /path/to/export /block/<id>/fuchsia.storage.block.Block
 ```

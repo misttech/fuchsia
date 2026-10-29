@@ -67,7 +67,7 @@ TEST_F(GuestConfigTest, BlockSpecJson) {
                        R"JSON({
           "block": [
             "/pkg/data/foo,ro,file",
-            "/dev/class/block/001,rw,file"
+            "/block/001,rw,file"
           ]
         })JSON"));
   ASSERT_EQ(2ul, config_.block_devices().size());
@@ -78,11 +78,11 @@ TEST_F(GuestConfigTest, BlockSpecJson) {
   ASSERT_TRUE(spec0.format.is_file()) << spec0.format.Which();
 
   const fuchsia::virtualization::BlockSpec& spec1 = config_.block_devices()[1];
-  ASSERT_EQ("/dev/class/block/001", spec1.id);
+  ASSERT_EQ("/block/001", spec1.id);
   ASSERT_EQ(fuchsia::virtualization::BlockMode::READ_WRITE, spec1.mode);
   ASSERT_TRUE(spec1.format.is_file()) << spec1.format.Which();
 
-  EXPECT_THAT(paths_, testing::ElementsAre("/pkg/data/foo", "/dev/class/block/001"));
+  EXPECT_THAT(paths_, testing::ElementsAre("/pkg/data/foo", "/block/001"));
 }
 
 TEST_F(GuestConfigTest, MergeConfigs_Simple) {

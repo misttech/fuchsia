@@ -170,12 +170,12 @@ int ParseArgs(int argc, const char** argv, DdOptions* options) {
 
 bool IsBlockPath(std::string_view path) {
   // E.g.
-  //   /dev/class/block/000
   //   /dev/sys/platform/00:2d/ramctl/ramdisk-0/block
   //   /block/000/fuchsia.storage.block.Block
+  //   /debug_block/000/fuchsia.storage.block.Block
   return (path.starts_with("/dev") && path.ends_with("/block")) ||
-         path.starts_with("/dev/class/block") ||
-         (path.starts_with("/block") && path.ends_with("fuchsia.storage.block.Block"));
+         ((path.starts_with("/block") || path.starts_with("/debug_block")) &&
+          path.ends_with("fuchsia.storage.block.Block"));
 }
 
 bool IsSkipBlockPath(std::string_view path) {

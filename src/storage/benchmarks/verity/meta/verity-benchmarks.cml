@@ -78,12 +78,6 @@
             subdir: "kernel",
         },
         {
-            directory: "dev-class-block",
-            from: "parent",
-            to: "#test_fxfs",
-            rights: [ "r*" ],
-        },
-        {
             directory: "sys",
             from: "parent",
             to: "#test_fxfs",

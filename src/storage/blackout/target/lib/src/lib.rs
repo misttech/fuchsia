@@ -10,14 +10,11 @@ use anyhow::{Context as _, Result, anyhow};
 use async_trait::async_trait;
 use block_matcher::{BlockDeviceMatcher, Guid, create_random_guid, find_block_device, into_guid};
 use fidl_fuchsia_blackout_test::{ControllerRequest, ControllerRequestStream};
-use fidl_fuchsia_device::ControllerMarker;
-use fidl_fuchsia_io as fio;
 use fidl_fuchsia_storage_partitions as fpartitions;
 use fs_management::filesystem::BlockConnector;
 use fuchsia_async as fasync;
-use fuchsia_component::client::{Service, connect_to_protocol, connect_to_protocol_at_path};
+use fuchsia_component::client::{Service, connect_to_protocol};
 use fuchsia_component::server::{ServiceFs, ServiceObj};
-use fuchsia_fs::directory::readdir;
 use futures::{FutureExt, StreamExt, TryFutureExt, TryStreamExt, future};
 use rand::distr::StandardUniform;
 use rand::rngs::StdRng;
@@ -153,29 +150,6 @@ pub fn generate_content(seed: u64) -> Vec<u8> {
 
     let size = rng.random_range(1..1 << 16);
     rng.sample_iter(&StandardUniform).take(size).collect()
-}
-
-/// Find the device in /dev/class/block that represents a given topological path. Returns the full
-/// path of the device in /dev/class/block.
-pub async fn find_dev(dev: &str) -> Result<String> {
-    let dev_class_block =
-        fuchsia_fs::directory::open_in_namespace("/dev/class/block", fio::PERM_READABLE)?;
-    for entry in readdir(&dev_class_block).await? {
-        let path = format!("/dev/class/block/{}", entry.name);
-        let proxy = connect_to_protocol_at_path::<ControllerMarker>(&path)?;
-        let topo_path = proxy.get_topological_path().await?.map_err(zx::Status::err_from_raw)?;
-        log::info!("{} => {}", path, topo_path);
-        if dev == topo_path {
-            return Ok(path);
-        }
-    }
-    Err(anyhow::anyhow!("Couldn't find {} in /dev/class/block", dev))
-}
-
-/// Returns a directory proxy connected to /dev.
-pub fn dev() -> fio::DirectoryProxy {
-    fuchsia_fs::directory::open_in_namespace("/dev", fio::PERM_READABLE)
-        .expect("failed to open /dev")
 }
 
 /// This type guid is only used if the test has to create the gpt partition itself. Otherwise, only

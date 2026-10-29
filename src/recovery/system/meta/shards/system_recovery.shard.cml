@@ -27,11 +27,6 @@
             path: "/system-recovery-config",
         },
         {
-            directory: "dev-class-block",
-            rights: [ "r*" ],
-            path: "/dev/class/block",
-        },
-        {
             directory: "dev-sys-platform",
             rights: [ "r*" ],
             path: "/dev/sys/platform",

@@ -8,7 +8,7 @@ ask for confirmation before executing. Run at your own risk.
 `blktest` is an integration that may be used to check adherence to the block protocol.
 
 ```shell
-$ blktest -d /dev/class/block/000
+$ blktest -d /block/000/fuchsia.storage.block.Block
 ```
 
 ## Filesystem testing
@@ -38,7 +38,7 @@ assembly_developer_overrides("disable_automount") {
 ```
 
 ```shell
-$ /boot/test/fs/fs-test -d /dev/class/block/000 -f minfs
+$ /boot/test/fs/fs-test -d /block/000/fuchsia.storage.block.Block -f minfs
 ```
 
 ## Correctness testing
@@ -46,7 +46,7 @@ $ /boot/test/fs/fs-test -d /dev/class/block/000 -f minfs
 `iochk` is a tool that pseudorandomly reads and writes to a block device to check for errors.
 
 ```shell
-$ iochk -bs 32k -t 8 /dev/class/block/000
+$ iochk -bs 32k -t 8 /block/000/fuchsia.storage.block.Block
 ```
 
 ## Performance testing
@@ -54,7 +54,7 @@ $ iochk -bs 32k -t 8 /dev/class/block/000
 `iotime` is a benchmarking tool that tests the read and write performance of block devices.
 
 ```shell
-$ iotime read fifo /dev/class/block/000 64m 4k
+$ iotime read fifo /block/000/fuchsia.storage.block.Block 64m 4k
 ```
 
 

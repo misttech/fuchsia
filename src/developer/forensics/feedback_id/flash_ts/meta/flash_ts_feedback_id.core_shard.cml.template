@@ -57,13 +57,6 @@
         {
             directory: "dev-class",
             from: "parent",
-            as: "dev-class-block",
-            to: [ "#flash_ts_feedback_id" ],
-            subdir: "block",
-        },
-        {
-            directory: "dev-class",
-            from: "parent",
             as: "dev-class-skip-block",
             to: [ "#flash_ts_feedback_id" ],
             subdir: "skip-block",
