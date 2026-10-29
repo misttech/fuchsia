@@ -1,6 +1,6 @@
 {
     "name": "evaluate-review-skills",
-    "description": "Discover in-tree SKILL.md files across the Fuchsia checkout (including any vendor/* sub-repositories when present), evaluate unregistered skills in parallel for suitability in local /review (AGENTIC_REVIEW) and Gerrit CRACS (agent_configs.textproto), and cross-check recommendations.",
+    "description": "Discover in-tree SKILL.md files across the Fuchsia checkout (including vendor/google when present), evaluate skills in parallel for inclusion in .agents/code-review/agent_configs.textproto (used by both local /review and Gerrit CRACS), and cross-check recommendations.",
     "entry": "workflow.py",
     "args": {
         "type": "object",
@@ -12,7 +12,7 @@
             "repo": {
                 "type": "string",
                 "default": "all",
-                "description": "Repository to scan: 'all' (fuchsia.git plus any present vendor/* git repos, default), 'fuchsia', or a relative sub-repo path such as 'vendor/google'."
+                "description": "Repository to scan for SKILL.md files: 'all' (fuchsia.git plus vendor/google when present, default), 'fuchsia', or 'vendor/google'."
             },
             "path_prefix": {
                 "type": "string",
@@ -21,18 +21,17 @@
             "only_unregistered": {
                 "type": "boolean",
                 "default": true,
-                "description": "If true (default), only evaluate skills not yet referenced in any existing AGENTIC_REVIEW or agent_configs.textproto."
+                "description": "If true (default), only evaluate skills not yet referenced in .agents/code-review/agent_configs.textproto (fuchsia.git or vendor/google)."
             },
             "since_date": {
                 "type": "string",
-                "default": "2026-08-26",
-                "description": "Start date (YYYY-MM-DD) for measuring git commit volume in target directories (defaults to the past 2 months, i.e., 2026-08-26)."
+                "description": "Start date (YYYY-MM-DD) for measuring git commit volume in target paths (defaults dynamically to 2 months before the run date)."
             },
             "min_commits": {
                 "type": "integer",
                 "minimum": 1,
                 "default": 20,
-                "description": "Minimum commit count since since_date required in target files/directories to recommend AGENTIC_REVIEW."
+                "description": "Minimum commit count since since_date required in target paths to recommend adding or keeping an agent_configs.textproto entry."
             },
             "max_concurrency": {
                 "type": "integer",
