@@ -984,8 +984,13 @@ impl<
         let src_ip = None;
         let options = [NdpOptionBuilder::Nonce(NdpNonce::from(&nonce))];
 
+        // Send through the inner core context rather than `self` so that
+        // `send_ndp_packet` is monomorphized for the same context type used by
+        // `send_rs_packet` below, instead of for this configuration wrapper
+        // too. The configuration is not needed to send the probe.
+        let Self { config: _, core_ctx } = self;
         let result = ip::icmp::send_ndp_packet(
-            self,
+            core_ctx,
             bindings_ctx,
             device_id,
             src_ip,
