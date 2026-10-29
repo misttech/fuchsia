@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -29,7 +30,7 @@ type GCSBucket struct {
 func (bkt *GCSBucket) objectExists(ctx context.Context, object string) (bool, error) {
 	obj := bkt.bkt.Object(object)
 	_, err := obj.Attrs(ctx)
-	if err == storage.ErrObjectNotExist {
+	if errors.Is(err, storage.ErrObjectNotExist) {
 		return false, nil
 	} else if err != nil {
 		return false, fmt.Errorf("object possibly exists, but is in unknown state: %v", err)
