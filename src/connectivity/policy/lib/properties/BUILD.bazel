@@ -1,0 +1,23 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "properties",
+    srcs = ["src/lib.rs"],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate_name = "policy_properties",
+    edition = "2024",
+    visibility = [
+        "//src/connectivity/policy/netcfg:__pkg__",
+        "//src/connectivity/policy/tests/integration/management:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.net.policy.properties:fuchsia.net.policy.properties_rust",
+        "//sdk/rust/zx",
+    ],
+)

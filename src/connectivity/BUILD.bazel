@@ -12,6 +12,7 @@ test_suite(
     tests = [
         "//src/connectivity/bluetooth:target_tests",
         "//src/connectivity/location:target_tests",
+        "//src/connectivity/lowpan/lib/spinel_pack:spinel-pack-tests",
         "//src/connectivity/network:target_tests",
     ],
 )
@@ -22,6 +23,7 @@ test_suite(
     tests = [
         "//src/connectivity/lib/at-commands:host_tests",
         "//src/connectivity/lib/at-commands/codegen:host_tests",
+        "//src/connectivity/lowpan/lib/spinel_pack:spinel_pack_host_test",
         "//src/connectivity/network:host_tests",
     ],
 )

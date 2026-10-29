@@ -1,0 +1,48 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "spinel_pack",
+    srcs = [
+        "src/eui.rs",
+        "src/lib.rs",
+        "src/primitives.rs",
+    ],
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    proc_macro_deps = ["//src/connectivity/lowpan/lib/spinel_pack/spinel_pack_macros"],
+    visibility = ["//src/connectivity/lowpan/lib:__subpackages__"],
+    deps = [
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:byteorder",
+        "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
+
+rustc_test(
+    name = "spinel_pack_test",
+    crate = ":spinel_pack",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    deps = ["//third_party/rust_crates/vendor:assert_matches"],
+)
+
+wrap_host_rust_test(
+    name = "spinel_pack_host_test",
+    binary_name = "spinel_pack_test",
+    visibility = ["//src/connectivity:__pkg__"],
+)
+
+fx_unittest_package(
+    name = "spinel-pack-tests",
+    unit_tests = [":spinel_pack_test"],
+    visibility = ["//src/connectivity:__pkg__"],
+)
