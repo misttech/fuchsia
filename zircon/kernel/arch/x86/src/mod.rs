@@ -15,9 +15,7 @@ mod cache_ffi;
 pub mod cpuid;
 pub mod fake_msr_access;
 pub mod feature;
-#[cfg(console_enabled)]
 pub mod hwp;
-#[cfg(any(console_enabled, ktest))]
 mod hwp_ffi;
 mod idle_states;
 mod idle_states_ffi;
@@ -618,53 +616,24 @@ mod x86_tests {
 }
 
 #[cfg(ktest)]
-/// Hardware P-states (HWP) unit tests.
-#[unittest::suite(name = "x86_hwp_rust")]
-mod x86_hwp_tests {
-    use super::hwp_ffi::cpp_x86_intel_hwp_parse_policy;
-    use boot_options::IntelHwpPolicy;
-    use unittest::{assert_true, expect_eq, expect_false};
-
-    /// TestParsePolicy
-    #[test]
-    fn test_parse_policy() {
-        let mut policy: u8 = 0;
-
-        // Valid parse.
-        // SAFETY: `c"bios-specified"` is a valid NUL-terminated string and `policy` is valid.
-        assert_true!(unsafe {
-            cpp_x86_intel_hwp_parse_policy(c"bios-specified".as_ptr(), &mut policy)
-        });
-        expect_eq!(policy, IntelHwpPolicy::BiosSpecified as u8);
-
-        // Invalid parses.
-        // SAFETY: `cpp_x86_intel_hwp_parse_policy` handles null and NUL-terminated C strings.
-        unsafe {
-            expect_false!(cpp_x86_intel_hwp_parse_policy(core::ptr::null(), &mut policy));
-            expect_false!(cpp_x86_intel_hwp_parse_policy(c"".as_ptr(), &mut policy));
-            expect_false!(cpp_x86_intel_hwp_parse_policy(c"invalid".as_ptr(), &mut policy));
-            expect_false!(cpp_x86_intel_hwp_parse_policy(c"\n".as_ptr(), &mut policy));
-        }
-    }
-}
-
-#[cfg(ktest)]
 /// x64 platform tests.
 #[unittest::suite(name = "x64_platform_tests_rust")]
 mod x64_platform_tests {
     use super::apic::ApicInterruptDeliveryMode;
+    use super::cpuid::RealCpuId;
     use super::feature::{
         X86_FEATURE_RDTSCP, X86HypervisorList, x86_feature_test, x86_get_hypervisor,
     };
-    use super::hwp_ffi::{cpp_x86_intel_hwp_init, cpp_x86_intel_hwp_supported};
+    use super::hwp::{intel_hwp_init, intel_hwp_supported};
     use super::interrupts::X86_INT_NMI;
     use super::lapic::apic_send_mask_ipi;
     use super::msr::{read_msr_on_cpu, read_msr_safe_on_cpu, write_msr_on_cpu};
+    use super::platform_access::RealMsrAccess;
     use super::registers::{X86_MSR_IA32_FMASK, X86_MSR_IA32_LSTAR, X86_MSR_IA32_TSC_AUX};
     use super::x86::{read_msr, write_msr};
     use crate::console::console_run_script_locked;
     use crate::kernel::deadline::{Deadline, TimerSlack};
-    use crate::kernel::mp::{MpIpiTarget, is_cpu_online, sync_exec_raw};
+    use crate::kernel::mp::{MpIpiTarget, is_cpu_online, sync_exec, sync_exec_raw};
     use crate::kernel::scheduler::peek_active_mask;
     use crate::kernel::types::cpu_num_to_mask;
     use crate::platform_rs::timer::{DurationMono, current_mono_time};
@@ -791,8 +760,7 @@ mod x64_platform_tests {
         }
 
         // If we don't support HWP, expect every command to just return "not supported".
-        // SAFETY: `cpp_x86_intel_hwp_supported` queries CPUID without side effects.
-        if !unsafe { cpp_x86_intel_hwp_supported() } {
+        if !intel_hwp_supported(&RealCpuId) {
             expect_eq!(Status::NOT_SUPPORTED.into_raw(), console_run_script_locked("hwp"));
             return true;
         }
@@ -827,11 +795,12 @@ mod x64_platform_tests {
         expect_eq!(ZX_OK, console_run_script_locked("hwp set-freq 100"));
         expect_eq!(ZX_OK, console_run_script_locked("hwp set-freq 255"));
 
-        // Restore the policy to default.
-        // SAFETY: `cpp_x86_intel_hwp_init` reinitializes HWP policy using the boot option value.
-        unsafe {
-            cpp_x86_intel_hwp_init(BootOptions::get().x86_hwp_policy as u8);
-        }
+        // Restore the policy to default across all CPUs.
+        let policy = BootOptions::get().x86_hwp_policy;
+        sync_exec(MpIpiTarget::All, 0, || {
+            let mut msr = RealMsrAccess;
+            intel_hwp_init(&RealCpuId, &mut msr, policy);
+        });
     }
 
     // TODO(https://fxbug.dev/42169592): Unconditionally re-enable this test when

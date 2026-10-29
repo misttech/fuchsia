@@ -133,8 +133,7 @@ static bool test_x64_hwp_k_commands() {
   }
 
   // If we don't support HWP, expect every command to just return "not supported".
-  cpu_id::CpuId cpuid;
-  if (!x86::IntelHwpSupported(&cpuid)) {
+  if (!x86::IntelHwpSupported()) {
     EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, console_run_script_locked("hwp"));
     return all_ok;
   }
@@ -160,9 +159,10 @@ static bool test_x64_hwp_k_commands() {
   EXPECT_EQ(ZX_OK, console_run_script_locked("hwp set-freq 100"));
   EXPECT_EQ(ZX_OK, console_run_script_locked("hwp set-freq 255"));
 
-  // Restore the policy to default.
-  MsrAccess msr;
-  x86::IntelHwpInit(&cpuid, &msr, BootOptions::Get()->x86_hwp_policy);
+  // Restore the policy to default across all CPUs.
+  mp_sync_exec(
+      mp_ipi_target::ALL, 0, [](void*) { x86::IntelHwpInit(BootOptions::Get()->x86_hwp_policy); },
+      nullptr);
 
   END_TEST;
 }

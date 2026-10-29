@@ -200,7 +200,6 @@ source_set("x86") {
     "feature.cc",
     "gdt.S",
     "handoff.cc",
-    "hwp.cc",
     "idt.cc",
     "intel.cc",
     "ioport.cc",
@@ -423,6 +422,7 @@ kernel_rust_mod("arch-x86-rs") {
     "//zircon/kernel/arch:arch-types-bindings",
     "//zircon/kernel/lib/acpi_lite/rust:acpi_lite",
     "//zircon/kernel/lib/arch:arch-rs",
+    "//zircon/kernel/lib/boot-options:boot-options-rs",
     "//zircon/kernel/lib/debug",
     "//zircon/kernel/lib/page:page-rs",
     "//zircon/system/ulib/fbl/rust:fbl",
@@ -433,7 +433,6 @@ kernel_rust_mod("arch-x86-rs") {
 source_set("tests") {
   testonly = true
   sources = [
-    "hwp_tests.cc",
     "idle_states_test.cc",
     "mmu_tests.cc",
     "platform_tests.cc",

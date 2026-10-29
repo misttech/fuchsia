@@ -340,13 +340,9 @@ void x86_cpu_feature_late_init_percpu(void) {
     printf("Turbo performance boost: unsupported\n");
   }
 
-  // TODO(https://fxbug.dev/42139346): Replace with newer lib/arch and hwreg counterparts.
-  cpu_id::CpuId cpuid_old;
-  MsrAccess msr_old;
-
   // Set up hardware-controlled performance states.
   if (BootOptions::Get()->x86_hwp) {
-    x86::IntelHwpInit(&cpuid_old, &msr_old, BootOptions::Get()->x86_hwp_policy);
+    x86::IntelHwpInit(BootOptions::Get()->x86_hwp_policy);
   }
 
   // If we are running under a hypervisor and paravirtual EOI (PV_EOI) is available, enable it.
