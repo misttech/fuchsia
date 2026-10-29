@@ -10,6 +10,7 @@ test_suite(
     name = "target_tests",
     target_compatible_with = ["@platforms//os:fuchsia"],
     tests = [
+        "//src/graphics/display/bin/display-tweak:display-tweak-tests",
         "//src/graphics/display/lib/rust/display-mocks:display-mocks-test",
         "//src/graphics/display/lib/rust/display-utils:display-utils-test",
         "//src/graphics/lib/compute/forma:forma-tests",

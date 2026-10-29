@@ -1,0 +1,52 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "bin",
+    srcs = [
+        "src/backlight.rs",
+        "src/main.rs",
+        "src/panel.rs",
+        "src/utils.rs",
+    ],
+    binary_name = "display-tweak",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.hardware.backlight:fuchsia.hardware.backlight_rust",
+        "//sdk/fidl/fuchsia.hardware.display:fuchsia.hardware.display_rust",
+        "//sdk/fidl/fuchsia.hardware.display.types:fuchsia.hardware.display.types_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-fs",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:argh",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+rustc_test(
+    name = "display_tweak_bin_test",
+    crate = ":bin",
+    deps = [
+        "//src/lib/fdio/rust:fdio",
+        "//third_party/rust_crates/vendor:googletest",
+    ],
+)
+
+fx_unittest_package(
+    name = "display-tweak-tests",
+    unit_tests = [":display_tweak_bin_test"],
+    visibility = ["//src/graphics:__pkg__"],
+)
