@@ -21,6 +21,7 @@ executable("bin") {
     "handle.cc",
     "integration.cc",
     "message_packet.cc",
+    "multi_dispatcher.cc",
     "one_way.cc",
     "round_trips.cc",
     "test_runner.cc",
