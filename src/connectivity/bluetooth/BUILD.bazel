@@ -10,6 +10,11 @@ test_suite(
     name = "target_tests",
     target_compatible_with = ["@platforms//os:fuchsia"],
     tests = [
+        "//src/connectivity/bluetooth/examples/bt-device-id-client:bt-device-id-client-tests",
+        "//src/connectivity/bluetooth/examples/bt-fastpair-client:bt-fastpair-client-tests",
+        "//src/connectivity/bluetooth/examples/bt-le-battery-monitor:bt-le-battery-monitor-tests",
+        "//src/connectivity/bluetooth/examples/bt-le-battery-service:bt-le-battery-service-tests",
+        "//src/connectivity/bluetooth/examples/bt-opp-client:bt-opp-client-tests",
         "//src/connectivity/bluetooth/lib/async-helpers:async-helpers-tests",
         "//src/connectivity/bluetooth/lib/battery-client:battery-client-tests",
         "//src/connectivity/bluetooth/lib/bt-a2dp:bt-a2dp-lib-tests",

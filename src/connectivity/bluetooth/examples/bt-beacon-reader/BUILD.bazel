@@ -1,0 +1,27 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_binary(
+    name = "bt-beacon-reader",
+    srcs = [
+        "app.cc",
+        "app.h",
+        "beacons.cc",
+        "beacons.h",
+        "main.cc",
+    ],
+    visibility = ["//src/connectivity/bluetooth/examples:__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.bluetooth.le:fuchsia.bluetooth.le_hlcpp",
+        "//sdk/lib/async-loop:async-loop-cpp",
+        "//sdk/lib/async-loop:async-loop-default",
+        "//sdk/lib/sys/cpp",
+        "//src/lib/fsl",
+        "//src/lib/fxl:fxl_cli",
+    ],
+)

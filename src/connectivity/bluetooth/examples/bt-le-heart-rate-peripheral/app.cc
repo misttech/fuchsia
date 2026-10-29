@@ -10,10 +10,9 @@
 #include <functional>
 #include <iostream>
 
-#include <src/lib/fxl/strings/string_printf.h>
-
 #include "fidl_helpers.h"
 #include "heart_model.h"
+#include "src/lib/fxl/strings/string_printf.h"
 
 namespace ble = fuchsia::bluetooth::le;
 

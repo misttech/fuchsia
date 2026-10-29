@@ -83,4 +83,5 @@ rustc_test(
 fx_unittest_package(
     name = "bt-fastpair-client-tests",
     unit_tests = [":bin_test"],
+    visibility = ["//src/connectivity/bluetooth:__pkg__"],
 )
