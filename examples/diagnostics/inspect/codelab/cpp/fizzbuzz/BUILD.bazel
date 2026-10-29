@@ -1,0 +1,56 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+
+package(default_applicable_licenses = ["//:license"])
+
+# `fx_cc_binary` has no `output_name` attribute (the binary name in the package
+# is set on `fx_packaged_binary`), whereas GN `executable` sets `output_name`.
+# @bazel2gn:raw_attribute:output_name = "inspect_cpp_codelab_fizzbuzz"
+fx_cc_binary(
+    name = "bin",
+    srcs = ["main.cc"],
+    tags = ["manual"],
+    deps = [
+        "//examples/diagnostics/inspect/codelab/fidl:fuchsia.examples.inspect_hlcpp",
+        "//sdk/lib/async-loop:async-loop-cpp",
+        "//sdk/lib/async-loop:async-loop-default",
+        "//sdk/lib/inspect/component/cpp",
+        "//sdk/lib/sys/cpp",
+        "//sdk/lib/syslog/cpp",
+    ],
+)
+
+fx_packaged_binary(
+    name = "bin_packaged",
+    binary = ":bin",
+    binary_name = "inspect_cpp_codelab_fizzbuzz",
+)
+
+fx_component_manifest(
+    name = "fizzbuzz-manifest",
+    component_name = "fizzbuzz",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+    ],
+    manifest = "meta/inspect_cpp_codelab_fizzbuzz.cml",
+)
+
+fx_component(
+    name = "fizzbuzz",
+    compiled_manifest = ":fizzbuzz-manifest",
+    visibility = ["//examples/diagnostics/inspect/codelab/cpp:__subpackages__"],
+    deps = [":bin_packaged"],
+)

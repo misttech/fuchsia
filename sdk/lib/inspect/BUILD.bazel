@@ -47,7 +47,7 @@ cml_shard(
     ],
     shard = "client.shard.cml",
     visibility = [
-        "//examples/diagnostics/inspect:__subpackages__",
+        "//examples:__subpackages__",
         "//src:__subpackages__",
     ],
 )
