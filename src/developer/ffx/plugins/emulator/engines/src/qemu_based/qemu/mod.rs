@@ -17,8 +17,11 @@ use emulator_instance::{
 use ffx_config::EnvironmentContext;
 use ffx_emulator_common::config::QEMU_TOOL;
 use ffx_emulator_common::{find_unused_vsock_cid, validate_snapshot_name};
-use ffx_emulator_config::{BoxFuture, EmulatorEngine, EngineConsoleType, ShowDetail, SnapshotInfo};
-use fho::{Result, bug, return_bug, return_user_error};
+use ffx_emulator_config::{
+    BoxFuture, EmulatorEngine, EngineConsoleType, InputStep, ShowDetail, SnapshotInfo,
+};
+use fho::{Result, bug, return_bug, return_user_error, user_error};
+use fuchsia_async::Timer;
 use monitor::Monitor;
 use serde_json::{Deserializer, Value, json};
 use std::path::{Path, PathBuf};
@@ -421,6 +424,19 @@ impl EmulatorEngine for QemuEngine {
         })
     }
 
+    fn send_input<'a>(&'a mut self, steps: &'a [InputStep]) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
+            if self.engine_state() != EngineState::Running {
+                return Err(user_error!(
+                    "Emulator is not running (current state: {:?}). \
+                    Please start the emulator before sending input.",
+                    self.engine_state()
+                ));
+            }
+            self.send_input_qmp(steps).await
+        })
+    }
+
     fn save_to_disk(&self) -> BoxFuture<'_, Result<()>> {
         Box::pin(async move {
             write_to_disk(
@@ -467,6 +483,66 @@ impl QemuEngine {
             /* png_destination= */ absolute_path,
         )
     }
+
+    /// Sends each step as one QMP `input-send-event` command over a single QMP connection.
+    async fn send_input_qmp(&mut self, steps: &[InputStep]) -> Result<()> {
+        let instance_dir =
+            self.data.get_emulator_configuration().runtime.instance_directory.clone();
+        let console_path =
+            self.get_path_for_console_type(&instance_dir, EngineConsoleType::Machine);
+
+        let mut socket = QemuSocket::new(&console_path);
+        let stream = self.open_socket(&mut socket, &QMP_TIMEOUT).await?;
+        let mut responses = Deserializer::from_reader(&stream).into_iter::<Value>();
+
+        // The QMP helpers block on socket reads. This is fine because ffx runs one command on a
+        // single-threaded executor.
+        crate::qemu_based::qmp_wait_for_greeting(&stream, &mut responses, QMP_TIMEOUT)?;
+        for (index, step) in steps.iter().enumerate() {
+            crate::qemu_based::qmp_execute(
+                &stream,
+                &mut responses,
+                "input-send-event",
+                Some(step.to_qmp_arguments()),
+                QMP_TIMEOUT,
+            )
+            .map_err(|error| input_step_error(error, index, steps))?;
+            // There is nothing to wait for after the last step.
+            if index + 1 < steps.len() {
+                Timer::new(step.delay_after).await;
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Adds the failed step's position, and a hint for a missing input device, to a user error from
+/// sending `steps[step_index]`.
+fn input_step_error(error: fho::Error, step_index: usize, steps: &[InputStep]) -> fho::Error {
+    let fho::Error::User(error) = error else {
+        return error;
+    };
+    let message = error.to_string();
+    // QEMU reports this, as a GenericError, when no virtual device accepts the event type.
+    let event_type =
+        message.rsplit_once("Input handler not found for event type ").map(|(_, name)| name);
+    let hint = match event_type {
+        None => "",
+        Some("rel") => {
+            "\n`rel` events need a virtual device whose pointing device is 'mouse'. \
+            Check it with `ffx emu show`."
+        }
+        Some("mtt") => {
+            "\n`mtt` events need a virtual device whose pointing device is 'touch'. \
+            Check it with `ffx emu show`."
+        }
+        Some("abs") => {
+            "\nThe virtual devices of `ffx emu` don't accept `abs` events. Use `rel` events \
+            with a 'mouse' pointing device, or `mtt` events with a 'touch' one."
+        }
+        Some(_) => "\nCheck the virtual device's input devices with `ffx emu show`.",
+    };
+    user_error!("Failed to send input step {} of {}: {message}{hint}", step_index + 1, steps.len())
 }
 
 impl QemuBasedEngine for QemuEngine {
@@ -494,10 +570,12 @@ mod tests {
     use crate::EngineBuilder;
     use crate::qemu_based::tests::make_fake_sdk;
     use emulator_instance::{NetworkingMode, PortMapping};
+    use ffx_emulator_config::InputEvent;
     use std::ffi::OsStr;
     use std::io::Write as _;
     use std::os::unix::net::UnixListener;
     use std::sync::mpsc;
+    use std::time::Instant;
     use std::{fs, thread};
     use tempfile::tempdir;
 
@@ -961,5 +1039,120 @@ mod tests {
         assert_eq!(request["arguments"]["filename"], output.to_str().unwrap());
         drop(engine);
         handle.join().unwrap();
+    }
+
+    fn key_event_json(down: bool) -> Value {
+        json!({"type": "key", "data": {"key": {"type": "qcode", "data": "a"}, "down": down}})
+    }
+
+    /// Two steps that press and release the 'a' key.
+    fn key_steps(delay_after: Duration) -> Vec<InputStep> {
+        [true, false]
+            .into_iter()
+            .map(|down| InputStep {
+                events: vec![InputEvent::Raw(key_event_json(down))],
+                delay_after,
+            })
+            .collect()
+    }
+
+    #[fuchsia::test]
+    async fn test_send_input() {
+        let env = ffx_config::test_init().unwrap();
+        let temp = tempdir().expect("cannot get tempdir");
+        let (receiver, handle) = start_fake_qmp(temp.path(), None);
+        let mut engine = running_engine(&env, temp.path(), false);
+
+        let start = Instant::now();
+        engine.send_input(&key_steps(Duration::from_millis(300))).await.expect("send_input");
+        // Only the delay between the two steps is waited for, not the one after the last step.
+        let elapsed = start.elapsed();
+        assert!(elapsed >= Duration::from_millis(300), "{elapsed:?}");
+        assert!(elapsed < Duration::from_millis(600), "{elapsed:?}");
+
+        let sent: Vec<Value> = receiver.try_iter().collect();
+        assert_eq!(sent.len(), 2);
+        assert_eq!(sent[0]["execute"], "input-send-event");
+        assert_eq!(sent[0]["arguments"], json!({"events": [key_event_json(true)]}));
+        assert_eq!(sent[1]["arguments"], json!({"events": [key_event_json(false)]}));
+        drop(engine);
+        handle.join().unwrap();
+    }
+
+    #[fuchsia::test]
+    async fn test_send_input_qmp_error() {
+        let env = ffx_config::test_init().unwrap();
+        let temp = tempdir().expect("cannot get tempdir");
+        let desc = "Input handler not found for event type key";
+        let error = FakeQmpError { command_index: 1, desc };
+        let (receiver, handle) = start_fake_qmp(temp.path(), Some(error));
+        let mut engine = running_engine(&env, temp.path(), false);
+
+        let err = engine.send_input(&key_steps(Duration::ZERO)).await.unwrap_err().to_string();
+        assert!(err.starts_with("Failed to send input step 2 of 2: "), "{err}");
+        assert!(err.contains(desc), "{err}");
+        assert!(err.contains("ffx emu show"), "{err}");
+        assert_eq!(receiver.try_iter().count(), 2);
+        drop(engine);
+        handle.join().unwrap();
+    }
+
+    #[fuchsia::test]
+    async fn test_send_input_qmp_error_without_hint() {
+        let env = ffx_config::test_init().unwrap();
+        let temp = tempdir().expect("cannot get tempdir");
+        let error = FakeQmpError { command_index: 0, desc: "VM not running" };
+        let (_receiver, handle) = start_fake_qmp(temp.path(), Some(error));
+        let mut engine = running_engine(&env, temp.path(), false);
+
+        let err = engine.send_input(&key_steps(Duration::ZERO)).await.unwrap_err().to_string();
+        assert_eq!(
+            err,
+            "Failed to send input step 1 of 2: \
+            QMP command 'input-send-event' failed: VM not running"
+        );
+        drop(engine);
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn test_input_step_error_hints() {
+        let steps = key_steps(Duration::ZERO);
+        for (event_type, expected) in [
+            ("rel", "pointing device is 'mouse'"),
+            ("mtt", "pointing device is 'touch'"),
+            ("abs", "don't accept `abs` events"),
+            ("key", "input devices with `ffx emu show`"),
+        ] {
+            let error = user_error!(
+                "QMP command 'input-send-event' failed: \
+                Input handler not found for event type {event_type}"
+            );
+            let message = input_step_error(error, 1, &steps).to_string();
+            assert!(message.starts_with("Failed to send input step 2 of 2: "), "{message}");
+            assert!(message.contains(expected), "{message}");
+        }
+    }
+
+    #[test]
+    fn test_input_step_error_keeps_bugs() {
+        let error = input_step_error(bug!("broken"), 0, &key_steps(Duration::ZERO));
+        assert!(matches!(error, fho::Error::Unexpected(_)), "{error:?}");
+        assert!(!error.to_string().contains("Failed to send"), "{error}");
+    }
+
+    #[fuchsia::test]
+    async fn test_send_input_not_running() {
+        let env = ffx_config::test_init().unwrap();
+        let temp = tempdir().expect("cannot get tempdir");
+        let data = EmulatorInstanceData::new(
+            EmulatorConfiguration::default(),
+            EngineType::Qemu,
+            EngineState::Staged,
+        );
+        let mut engine =
+            QemuEngine::new(&env.context, data, EmulatorInstances::new(temp.path().to_owned()));
+        let err = engine.send_input(&key_steps(Duration::ZERO)).await.unwrap_err().to_string();
+        assert!(err.contains("Emulator is not running"), "{err}");
     }
 }

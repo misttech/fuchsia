@@ -9,10 +9,12 @@
 
 mod conversions;
 mod enumerations;
+mod input_types;
 mod interface_types;
 
 pub use conversions::*;
 pub use enumerations::*;
+pub use input_types::*;
 pub use interface_types::*;
 
 pub use sdk_metadata::{

@@ -8,6 +8,7 @@
 //! runtime.
 
 use crate::enumerations::{EngineConsoleType, ShowDetail, SnapshotInfo};
+use crate::input_types::InputStep;
 use emulator_instance::{EmulatorConfiguration, EmulatorInstanceData, EngineState, EngineType};
 use ffx_config::EnvironmentContext;
 pub use ffx_futures::LocalBoxFuture as BoxFuture;
@@ -143,6 +144,24 @@ pub trait EmulatorEngine: Send + Sync {
     /// returns an error.
     fn delete_snapshot<'a>(&'a mut self, _name: &'a str) -> BoxFuture<'a, Result<()>> {
         Box::pin(async { Err(user_error!("Snapshots are not supported by this emulator engine.")) })
+    }
+
+    /// Injects input events into the emulator's virtual input devices.
+    ///
+    /// Each [`InputStep`] is sent as one QMP `input-send-event` command. The engine waits for
+    /// [`InputStep::delay_after`] after each step except the last. Only the QEMU engine supports
+    /// this method.
+    ///
+    /// # Errors
+    ///
+    /// Errors if the engine doesn't support input, the emulator is not running, or the emulator
+    /// rejects an event. The error names the step that failed. The steps before it were delivered.
+    fn send_input<'a>(&'a mut self, _steps: &'a [InputStep]) -> BoxFuture<'a, Result<()>> {
+        // Input injection is an optional capability, like snapshots. Engines that support it
+        // override this method; the others return this error.
+        Box::pin(async {
+            Err(user_error!("Input injection is not supported by this emulator engine."))
+        })
     }
 
     /// Output the details of an existing emulation instance. The engine should have been

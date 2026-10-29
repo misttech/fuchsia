@@ -318,6 +318,20 @@ mod tests {
     use tempfile::tempdir;
 
     #[fuchsia::test]
+    async fn test_send_input_unsupported() {
+        let env = ffx_config::test_env().build().expect("test env");
+        let data = EmulatorInstanceData::new(
+            EmulatorConfiguration::default(),
+            EngineType::Crosvm,
+            EngineState::Running,
+        );
+        let mut engine =
+            CrosvmEngine::new(&env.context, data, EmulatorInstances::new(PathBuf::new()));
+        let err = engine.send_input(&[]).await.unwrap_err().to_string();
+        assert_eq!(err, "Input injection is not supported by this emulator engine.");
+    }
+
+    #[fuchsia::test]
     fn test_build_emulator_cmd() {
         let env = ffx_config::test_env().build().expect("test env");
         let program_name = "/test_crosvm_bin";

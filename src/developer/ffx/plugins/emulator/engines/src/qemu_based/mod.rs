@@ -173,6 +173,37 @@ where
     }
 }
 
+/// Waits for the QMP greeting (`{"QMP": ...}`) on a newly opened QMP connection.
+///
+/// QEMU serves one QMP client at a time. It does not read from a new connection until the
+/// previous client disconnects. Waiting for the greeting ensures that no command with side
+/// effects, such as a key press, is queued behind another client and executed late.
+pub(crate) fn qmp_wait_for_greeting<I>(
+    stream: &UnixStream,
+    responses: &mut I,
+    timeout: Duration,
+) -> Result<()>
+where
+    I: Iterator<Item = serde_json::Result<Value>>,
+{
+    let deadline = Instant::now() + timeout;
+    loop {
+        let data = qmp_read(stream, responses, deadline, "the QMP greeting").map_err(|e| {
+            if Instant::now() >= deadline {
+                user_error!(
+                    "{e} Another QMP client, such as `ffx emu console --machine`, may be connected."
+                )
+            } else {
+                e
+            }
+        })?;
+        if data.get("QMP").is_some() {
+            return Ok(());
+        }
+        log::debug!("Skipping QMP message while waiting for the greeting: {data}");
+    }
+}
+
 pub(crate) fn get_host_tool(context: &EnvironmentContext, name: &str) -> Result<PathBuf> {
     // Attempts to get a host tool from the SDK manifest. If it fails, falls
     // back to attempting to derive the path to the host tool binary by simply checking
@@ -2890,6 +2921,49 @@ pub(crate) mod tests {
         let err =
             qmp_execute(&client, &mut responses, "cmd", None, Duration::from_secs(10)).unwrap_err();
         assert!(err.to_string().contains("connection closed"), "{err}");
+        handle.join().unwrap();
+    }
+
+    #[fuchsia::test]
+    fn test_qmp_wait_for_greeting() {
+        let (client, handle) = fake_qmp_pair(|stream, _requests| {
+            write_json(&stream, json!({"event": "RTC_CHANGE", "data": {"offset": 0}}));
+            write_json(&stream, json!({"QMP": {"version": {}, "capabilities": []}}));
+        });
+        let mut responses = Deserializer::from_reader(&client).into_iter::<Value>();
+        qmp_wait_for_greeting(&client, &mut responses, Duration::from_secs(10)).expect("greeting");
+        handle.join().unwrap();
+    }
+
+    #[fuchsia::test]
+    fn test_qmp_wait_for_greeting_timeout() {
+        // Models a QMP server that is busy with another client: the connection is open, but
+        // nothing is ever sent on it.
+        let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();
+        let (client, handle) = fake_qmp_pair(move |_stream, _requests| {
+            let _ = done_rx.recv();
+        });
+        let mut responses = Deserializer::from_reader(&client).into_iter::<Value>();
+        let start = Instant::now();
+        let err = qmp_wait_for_greeting(&client, &mut responses, Duration::from_millis(200))
+            .unwrap_err()
+            .to_string();
+        assert!(start.elapsed() >= Duration::from_millis(200));
+        assert!(start.elapsed() < Duration::from_secs(5), "took {:?}", start.elapsed());
+        assert!(err.contains("Timed out"), "{err}");
+        assert!(err.contains("Another QMP client"), "{err}");
+        done_tx.send(()).unwrap();
+        handle.join().unwrap();
+    }
+
+    #[fuchsia::test]
+    fn test_qmp_wait_for_greeting_connection_closed() {
+        let (client, handle) = fake_qmp_pair(|_stream, _requests| {});
+        let mut responses = Deserializer::from_reader(&client).into_iter::<Value>();
+        let err = qmp_wait_for_greeting(&client, &mut responses, Duration::from_secs(10))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("closed"), "{err}");
         handle.join().unwrap();
     }
 }
