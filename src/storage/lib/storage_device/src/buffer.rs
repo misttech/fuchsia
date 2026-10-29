@@ -45,20 +45,6 @@ pub trait BufferAllocator: Send + Sync + std::fmt::Debug + 'static {
     }
 }
 
-pub(super) fn round_down<T>(value: T, granularity: T) -> T
-where
-    T: num_traits::Num + Copy,
-{
-    value - value % granularity
-}
-
-pub(super) fn round_up<T>(value: T, granularity: T) -> T
-where
-    T: num_traits::Num + Copy,
-{
-    round_down(value + granularity - T::one(), granularity)
-}
-
 // Returns a range within a range.
 // For example, subrange(100..200, 20..30) = 120..130.
 fn subrange<R: RangeBounds<usize>>(source: &Range<usize>, bounds: &R) -> Range<usize> {

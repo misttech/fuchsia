@@ -18,13 +18,13 @@ lib_srcs = [
 lib_deps = [
   "//src/lib/fuchsia-sync",
   "//src/storage/lib/block_protocol",
+  "//src/storage/lib/buddy_allocator",
   "//src/storage/lib/ptr_slice",
   "//third_party/rust_crates:anyhow",
   "//third_party/rust_crates:async-trait",
   "//third_party/rust_crates:event-listener",
   "//third_party/rust_crates:futures",
   "//third_party/rust_crates:log",
-  "//third_party/rust_crates:num-traits",
   "//third_party/rust_crates:rand",
 ]
 
@@ -134,12 +134,12 @@ rustc_library("storage_device") {
   deps += [
     "//src/lib/fuchsia-sync",
     "//src/storage/lib/block_protocol",
+    "//src/storage/lib/buddy_allocator",
     "//src/storage/lib/ptr_slice",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:event-listener",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
-    "//third_party/rust_crates:num-traits",
     "//third_party/rust_crates:rand",
   ]
   if (is_fuchsia) {

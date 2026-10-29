@@ -41,12 +41,12 @@ rustc_library(
     deps = [
         "//src/lib/fuchsia-sync",
         "//src/storage/lib/block_protocol",
+        "//src/storage/lib/buddy_allocator",
         "//src/storage/lib/ptr_slice",
         "//third_party/rust_crates/vendor:anyhow",
         "//third_party/rust_crates/vendor:event-listener",
         "//third_party/rust_crates/vendor:futures",
         "//third_party/rust_crates/vendor:log",
-        "//third_party/rust_crates/vendor:num-traits",
         "//third_party/rust_crates/vendor:rand",
     ] + select({
         "@platforms//os:fuchsia": [

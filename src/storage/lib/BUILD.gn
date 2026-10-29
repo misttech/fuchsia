@@ -22,6 +22,7 @@ group("tests") {
     "blob_writer:tests",
     "block_client:tests",
     "block_server:tests",
+    "buddy_allocator:tests",
     "buffer:tests",
     "delivery_blob:tests",
     "dm_verity:tests",

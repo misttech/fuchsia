@@ -2,13 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::buffer::{
-    Buffer, BufferAllocator as BufferAllocatorTrait, OwnedBuffer, round_down, round_up,
-};
+use crate::buffer::{Buffer, BufferAllocator as BufferAllocatorTrait, OwnedBuffer};
+use buddy_allocator::BuddyAllocator;
 use event_listener::{Event, EventListener, Listener as _};
 use fuchsia_sync::Mutex;
 use futures::{Future, FutureExt as _};
-use std::collections::BTreeMap;
 use std::ops::Range;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -238,80 +236,19 @@ mod buffer_source {
 
 pub use buffer_source::BufferSource;
 
-// Stores a list of offsets into a BufferSource. The size of the free ranges is determined by which
-// FreeList we are looking at.
-//
-// FreeLists are kept sorted in descending order of offset (highest offset at the front, lowest
-// offset at the back). This allows `pop()` to remove and return the lowest offset in O(1) time,
-// ensuring the allocator allocates from lowest addresses to highest addresses (first-fit).
-// This guarantees that allocations are packed into lower addresses, and that recently freed lower
-// offsets are prioritized for reuse. `PinnedBufferAllocator` relies on this property to ensure
-// allocations pack into the permanently pinned first chunk before spilling over into dynamically
-// pinned chunks.
-type FreeList = Vec<usize>;
-
-#[derive(Debug)]
-struct Inner {
-    // The index corresponds to the order of free memory blocks in the free list.
-    free_lists: Vec<FreeList>,
-    // Maps offsets to allocated length (the actual length, not the size requested by the client).
-    allocation_map: BTreeMap<usize, usize>,
-}
-
 /// BufferAllocator creates Buffer objects to be used for block device I/O requests.
 ///
-/// This is implemented through a simple buddy allocation scheme. Allocations always prioritize
-/// the lowest available offset (first-fit), packing allocations toward the beginning of the
-/// memory pool and reusing recently freed lower offsets.
+/// This is implemented through a simple buddy allocation scheme. Allocations within a given order
+/// always prioritize the lowest available offset, packing allocations toward the beginning of the
+/// memory pool and reusing recently freed lower offsets. `PinnedBufferAllocator` relies on this
+/// property to ensure allocations pack into the permanently pinned first chunk before spilling over
+/// into dynamically pinned chunks.
 #[derive(Debug)]
 pub struct BufferAllocator {
     block_size: usize,
     source: BufferSource,
-    inner: Mutex<Inner>,
+    inner: Mutex<BuddyAllocator>,
     event: Event,
-}
-
-// Returns the smallest order which is at least `size` bytes.
-fn order(size: usize, block_size: usize) -> usize {
-    if size <= block_size {
-        return 0;
-    }
-    let nblocks = round_up(size, block_size) / block_size;
-    nblocks.next_power_of_two().trailing_zeros() as usize
-}
-
-// Returns the largest order which is no more than `size` bytes.
-fn order_fit(size: usize, block_size: usize) -> usize {
-    assert!(size >= block_size);
-    let nblocks = round_up(size, block_size) / block_size;
-    if nblocks.is_power_of_two() {
-        nblocks.trailing_zeros() as usize
-    } else {
-        nblocks.next_power_of_two().trailing_zeros() as usize - 1
-    }
-}
-
-fn size_for_order(order: usize, block_size: usize) -> usize {
-    block_size * (1 << (order as u32))
-}
-
-fn initial_free_lists(size: usize, block_size: usize) -> Vec<FreeList> {
-    let size = round_down(size, block_size);
-    assert!(block_size <= size);
-    assert!(block_size.is_power_of_two());
-    let max_order = order_fit(size, block_size);
-    let mut free_lists = Vec::with_capacity(max_order + 1);
-    for _ in 0..=max_order {
-        free_lists.push(FreeList::new())
-    }
-    let mut offset = 0;
-    while offset < size {
-        let order = order_fit(size - offset, block_size);
-        let size = size_for_order(order, block_size);
-        free_lists[order].push(offset);
-        offset += size;
-    }
-    free_lists
 }
 
 /// A trait for buffer allocators that support asynchronous buffer allocation via event listeners.
@@ -371,13 +308,9 @@ impl<'a, A: TryAllocateBuffer<'a> + ?Sized> Future for BufferFuture<'a, A> {
 
 impl BufferAllocator {
     pub fn new(block_size: usize, source: BufferSource) -> Self {
-        let free_lists = initial_free_lists(source.size(), block_size);
-        Self {
-            block_size,
-            source,
-            inner: Mutex::new(Inner { free_lists, allocation_map: BTreeMap::new() }),
-            event: Event::new(),
-        }
+        assert!(block_size <= source.size());
+        let allocator = BuddyAllocator::new(source.size(), block_size);
+        Self { block_size, source, inner: Mutex::new(allocator), event: Event::new() }
     }
 
     /// Returns the underlying VMO if the allocator is untrusted.
@@ -477,39 +410,24 @@ impl BufferAllocator {
     ///
     /// # Panics
     ///
-    /// Panics if `size` exceeds the pool size (`self.buffer_source().size()`).
+    /// Panics if `size` exceeds the maximum single allocation size of the pool.
     pub fn try_allocate_buffer(&self, size: usize) -> Result<Buffer<'_>, EventListener> {
-        if size > self.source.size() {
-            panic!("Allocation of {} bytes would exceed limit {}", size, self.source.size());
-        }
-        let mut inner = self.inner.lock();
-        let requested_order = order(size, self.block_size());
-        assert!(requested_order < inner.free_lists.len());
-        // Pick the smallest possible order with a free entry.
-        let mut order = {
-            let mut idx = requested_order;
-            loop {
-                if idx >= inner.free_lists.len() {
-                    return Err(self.event.listen());
-                }
-                if !inner.free_lists[idx].is_empty() {
-                    break idx;
-                }
-                idx += 1;
+        let (offset, bytes_used) = {
+            let mut inner = self.inner.lock();
+            if size > inner.max_allocation_size() {
+                panic!(
+                    "Allocation of {} bytes would exceed limit {}",
+                    size,
+                    inner.max_allocation_size()
+                );
             }
+            let Some(alloc) = inner.allocate(size) else {
+                return Err(self.event.listen());
+            };
+            alloc
         };
-
-        // Split the free region until it's the right size.
-        let offset = inner.free_lists[order].pop().unwrap();
-        while order > requested_order {
-            order -= 1;
-            assert!(inner.free_lists[order].is_empty());
-            inner.free_lists[order].push(offset + self.size_for_order(order));
-        }
-
-        inner.allocation_map.insert(offset, self.size_for_order(order));
         let range = offset..offset + size;
-        log::debug!(range:?, bytes_used = self.size_for_order(order); "Allocated");
+        log::debug!(range:?, bytes_used; "Allocated");
 
         // SAFETY: The allocator guarantees that this range does not overlap with any other
         // active allocations. `self` guarantees `self.source` remains valid for `'a`.
@@ -545,58 +463,20 @@ impl BufferAllocator {
     #[doc(hidden)]
     pub(crate) fn free_buffer(&self, range: Range<usize>) {
         let mut inner = self.inner.lock();
-        let mut offset = range.start;
-        let size = inner
-            .allocation_map
-            .remove(&offset)
-            .unwrap_or_else(|| panic!("No allocation record found for {:?}", range));
+        let size = inner.free(range.start);
         assert!(range.end - range.start <= size);
         log::debug!(range:?, bytes_used = size; "Freeing");
-
-        // Merge as many free slots as we can.
-        let mut order = order(size, self.block_size());
-        while order < inner.free_lists.len() - 1 {
-            let buddy = self.find_buddy(offset, order);
-            let idx = if let Ok(idx) =
-                inner.free_lists[order].binary_search_by(|probe| buddy.cmp(probe))
-            {
-                idx
-            } else {
-                break;
-            };
-            inner.free_lists[order].remove(idx);
-            offset = std::cmp::min(offset, buddy);
-            order += 1;
-        }
-
-        let idx = match inner.free_lists[order].binary_search_by(|probe| offset.cmp(probe)) {
-            Ok(_) => panic!("Unexpectedly found {} in free list {}", offset, order),
-            Err(idx) => idx,
-        };
-        inner.free_lists[order].insert(idx, offset);
 
         // Notify all stuck tasks.  This might be inefficient, but it's simple and correct.
         self.event.notify(usize::MAX);
     }
 
-    fn size_for_order(&self, order: usize) -> usize {
-        size_for_order(order, self.block_size)
-    }
-
-    fn find_buddy(&self, offset: usize, order: usize) -> usize {
-        offset ^ self.size_for_order(order)
-    }
-
-    /// Zeroes out all unnallocated ranges in the transfer buffer.
+    /// Zeroes out all unallocated ranges in the transfer buffer.
     pub fn clean_transfer_buffer(&self) {
         let inner = self.inner.lock();
-        for (n, free_list) in inner.free_lists.iter().enumerate() {
-            for offset in free_list {
-                // SAFETY: The range is not allocated.
-                unsafe {
-                    self.source.clean_range(*offset..(*offset + size_for_order(n, self.block_size)))
-                };
-            }
+        for range in inner.free_ranges() {
+            // SAFETY: The range is not allocated.
+            unsafe { self.source.clean_range(range) };
         }
     }
 }
@@ -609,7 +489,8 @@ pub use crate::pinned_buffer_allocator::{
 #[cfg(test)]
 mod tests {
     use crate::buffer::BufferAllocator as BufferAllocatorTrait;
-    use crate::buffer_allocator::{BufferAllocator, BufferSource, order};
+    use crate::buffer_allocator::{BufferAllocator, BufferSource};
+    use buddy_allocator::order;
     use fuchsia_async as fasync;
     use futures::future::join_all;
     use futures::pin_mut;

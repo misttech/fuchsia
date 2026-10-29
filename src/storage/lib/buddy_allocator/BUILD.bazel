@@ -1,0 +1,36 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "buddy_allocator",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    visibility = [
+        "//src/storage/lib:__subpackages__",
+    ],
+    deps = [],
+)
+
+rustc_test(
+    name = "buddy_allocator_test",
+    crate = ":buddy_allocator",
+    edition = "2024",
+    deps = ["//src/lib/fuchsia"],
+)
+
+wrap_host_rust_test(
+    name = "buddy_allocator_host_test",
+    binary_name = "buddy_allocator_test",
+)
+
+fx_unittest_package(
+    name = "buddy-allocator-tests",
+    unit_tests = [":buddy_allocator_test"],
+)
