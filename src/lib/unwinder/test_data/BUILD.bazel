@@ -1,0 +1,28 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+# Use this target to regenerate libunwind_info_test_data.so.
+# This binary is only intended to be built for 32-bit Arm Linux (aarch32).
+fx_cc_binary(
+    name = "unwind_info_test_data",
+    srcs = [
+        "arm_ehabi_unwind_table.cc",
+        "arm_ehabi_unwind_table.h",
+    ],
+    # Make sure we get the .ARM.exidx and .ARM.extab segments.
+    copts = [
+        "-g",
+        "-fasynchronous-unwind-tables",
+    ],
+    linkshared = True,
+    tags = ["manual"],
+    target_compatible_with = [
+        "@platforms//cpu:armv7",
+        "@platforms//os:linux",
+    ],
+)
