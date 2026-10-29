@@ -6,6 +6,12 @@ load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
 
 package(default_applicable_licenses = ["//:license"])
 
+alias(
+    name = "rust",
+    actual = ":fuchsia-inspect",
+    visibility = ["//:__subpackages__"],
+)
+
 rustc_library(
     name = "fuchsia-inspect",
     srcs = [

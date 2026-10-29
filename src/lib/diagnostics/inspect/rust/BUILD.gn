@@ -19,10 +19,6 @@ group("host-inspect-tests") {
   deps = [ ":fuchsia-inspect_test($host_toolchain)" ]
 }
 
-group("rust") {
-  public_deps = [ ":fuchsia-inspect" ]
-}
-
 group("tests") {
   testonly = true
   deps = [
@@ -62,6 +58,10 @@ group("benchmarks") {
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
+group("rust") {
+  public_deps = [ ":fuchsia-inspect" ]
+  visibility = [ "//*" ]
+}
 rustc_library("fuchsia-inspect") {
   sources = []
   sources += [

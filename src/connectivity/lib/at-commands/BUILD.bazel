@@ -39,7 +39,7 @@ genrule(
 
 # Build the at command library from the generated sources
 rustc_library(
-    name = "lib",
+    name = "at-commands",
     srcs = [
         "src/lib.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/lib.rs
         "src/lowlevel/arguments.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/lowlevel/arguments.rs
@@ -60,7 +60,6 @@ rustc_library(
         ":src/generated/types.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/generated/types.rs
     ],
     build_flags = ["//build/config/rust/lints:deny_unused_results"],
-    crate_name = "at_commands",
     crate_root = ":src/lib.rs",  # @bazel2gn:raw_overwrite:"$target_gen_dir/src/lib.rs"
     data = [
         ":generate_sources",
