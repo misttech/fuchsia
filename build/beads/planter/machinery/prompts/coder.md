@@ -306,6 +306,37 @@ in `unit_tests = [":foo_unittest_bin"]`. Wire `":foo-tests"` into `group("tests"
 `//src/area/BUILD.bazel` (or into a local `bazel_test_suite("bazel_tests")` only when no ancestor
 test suite exists).
 
+## Migrating ffx Tools (Bazel-only `ffx_tool` + GN `bazel_ffx_tool` Bridge)
+`bazel2gn` maps `ffx_tool` and `idk_ffx_tool` to `noGNEquivalent`, so ffx subtools are Bazel-only.
+A GN `ffx_tool("<name>")` (generated or hand-written) must not remain in BUILD.gn: below
+`## BAZEL2GN SENTINEL` it fails `gn gen` with `Unknown function: ffx_tool`. References:
+`//src/developer/ffx/tools/efi` (`ffx_tool`) and `//src/developer/ffx/plugins/coverage`
+(`idk_ffx_tool`).
+1. **BUILD.bazel**: define the tool without `# @bazel2gn:skip`, keeping the GN target name.
+   - Non-IDK tools: `ffx_tool` from `//src/developer/ffx/build:ffx_tool.bzl`, with
+     `binary_name = "<GN output_name>"` when it differs from the target name.
+   - Tools with GN `sdk_category = "partner"` (or `sdk_target_name`): `idk_ffx_tool` from
+     `//build/bazel/rules/idk:idk_ffx_tool.bzl` with `idk_name = "<GN output_name>"`,
+     `category = "partner"`, and `"//sdk:__pkg__"` in `visibility`; `name` must not contain
+     `idk`/`sdk`. Add `"//<dir>:<name>_idk"` to `_NON_BUILD_FFX_TOOLS_ATOMS_REQUIRED_BY_BAZEL_SDK`
+     in `//sdk/atom_lists.bzl`.
+   - Helper `rustc_library` targets and unit tests (`host_rustc_test`, or
+     `with_host_unit_tests = True` on `ffx_tool`) go in BUILD.bazel as usual.
+2. **BUILD.gn** (above the sentinel; a BUILD.gn with only the bridge may keep an empty sentinel
+   like efi or have none like coverage): keep
+   `import("//src/developer/ffx/build/ffx_tool.gni")`, `assert(is_host, ...)`, and the existing
+   forwarding groups (`group("<dir>")` -> `:<name>`, `:<name>_host_tool`; `group("bin")` ->
+   `:<name>_versioned`), and replace `ffx_tool(...)` with
+   `bazel_ffx_tool("<name>") { output_name = "<GN output_name>" }` (plus `sdk_category =
+   "partner"` for IDK tools). It defines `:<name>`, `:<name>_versioned`, and `:<name>_host_tool`,
+   so existing GN callers keep working. For IDK tools, keep a hand-written GN `sdk_atom("sdk")`
+   (`non_sdk_deps = [ ":<name>_versioned" ]`) with the coverage TODO until the IDK uses the Bazel
+   atom. Recreate any `host_test_data` that consumed the GN tool from `:<name>_host_tool`.
+3. **Tests**: add the Bazel unit test to `test_suite` in `//src/developer/ffx/BUILD.bazel`, and if
+   the package is in `_tools` in `//src/developer/ffx/tools/BUILD.gn`, add it to
+   `_bazel_tested_tools` there so its GN `:tests` group is no longer expected. Drop
+   `group("tests")` from BUILD.gn when it only listed the migrated tests.
+
 ## Dependencies Without a Bazel Build or With Missing Bazel Visibility (Fix Them, Don't Stop)
 When a target you are migrating depends on something with no Bazel build yet or that fails with a
 Bazel `Visibility error`, fix that dependency in this same change instead of stopping:
