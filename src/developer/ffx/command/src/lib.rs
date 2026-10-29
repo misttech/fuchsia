@@ -33,7 +33,7 @@ pub use ffx_command_error::{
 };
 pub use metrics::{MetricsSession, analytics_command, send_enhanced_analytics};
 pub use subcommand::ExternalSubToolSuite;
-pub use tools::{FfxToolInfo, FfxToolSource, ToolRunner, ToolSuite};
+pub use tools::{FfxToolInfo, FfxToolSource, LocalBoxFuture, ToolRunner, ToolSuite};
 
 pub use writer::Format;
 

@@ -4,8 +4,8 @@
 
 use crate::args_info::CliArgsInfo;
 use crate::{Error, FfxCommandLine, MetricsSession, Result};
-use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
+pub use ffx_futures::LocalBoxFuture;
 use std::collections::HashSet;
 use std::fmt::Write;
 use std::path::PathBuf;
@@ -51,9 +51,13 @@ impl From<&argh::CommandInfo> for FfxToolInfo {
     }
 }
 
-#[async_trait(?Send)]
 pub trait ToolRunner {
-    async fn run(self: Box<Self>, metrics: MetricsSession) -> Result<ExitStatus, Error>;
+    fn run<'a>(
+        self: Box<Self>,
+        metrics: MetricsSession,
+    ) -> LocalBoxFuture<'a, Result<ExitStatus, Error>>
+    where
+        Self: 'a;
 }
 
 /// Implements discovering and loading the subtools a particular ffx binary

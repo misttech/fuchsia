@@ -4,10 +4,9 @@
 
 use crate::{FhoEnvironment, TryFromEnv};
 use argh::{ArgsInfo, CommandInfo, FromArgs, SubCommand, SubCommands};
-use async_trait::async_trait;
 use ffx_command::{
-    Error, FfxCommandLine, FfxContext, MetricsSession, Result, ToolRunner, ToolSuite,
-    analytics_command, check_strict_constraints, send_enhanced_analytics, user_error,
+    Error, FfxCommandLine, FfxContext, LocalBoxFuture, MetricsSession, Result, ToolRunner,
+    ToolSuite, analytics_command, check_strict_constraints, send_enhanced_analytics, user_error,
 };
 use ffx_config::EnvironmentContext;
 use ffx_config::environment::ExecutableKind;
@@ -193,56 +192,64 @@ struct MetadataRunner {
     info: &'static CommandInfo,
 }
 
-#[async_trait(?Send)]
 impl ToolRunner for MetadataRunner {
-    async fn run(self: Box<Self>, _metrics: MetricsSession) -> Result<ExitStatus> {
-        // We don't ever want to emit metrics for a metadata query, it's a tool-level
-        // command
-        self.cmd.run(self.info).await
+    fn run<'a>(self: Box<Self>, _metrics: MetricsSession) -> LocalBoxFuture<'a, Result<ExitStatus>>
+    where
+        Self: 'a,
+    {
+        Box::pin(async move {
+            // We don't ever want to emit metrics for a metadata query, it's a tool-level
+            // command
+            self.cmd.run(self.info).await
+        })
     }
 }
 
-#[async_trait(?Send)]
 impl<T: FfxTool<E>, E: Into<Error> + 'static> ToolRunner for FhoTool<T, E> {
-    async fn run(self: Box<Self>, metrics: MetricsSession) -> Result<ExitStatus> {
-        if !analytics_command(&self.redacted_args.join(" ")) {
-            metrics.print_notice(&mut std::io::stderr()).await?;
-        }
-        let writer = <<T as FfxMain>::Writer as TryFromEnv>::try_from_env(&self.env)
-            .await
-            .map_err(|e| Error::Unexpected(anyhow::Error::new(e)))?;
-        let res: Result<ExitStatus> = if self.env.ffx_command().global.schema {
-            if self.main.has_schema() {
-                self.main
-                    .try_print_schema(writer)
-                    .await
-                    .map(|_| ExitStatus::from_raw(0))
-                    .map_err(|e| e.into())
-            } else {
-                Err(user_error!("--schema is not supported for this command (subtool)."))
+    fn run<'a>(self: Box<Self>, metrics: MetricsSession) -> LocalBoxFuture<'a, Result<ExitStatus>>
+    where
+        Self: 'a,
+    {
+        Box::pin(async move {
+            if !analytics_command(&self.redacted_args.join(" ")) {
+                metrics.print_notice(&mut std::io::stderr()).await?;
             }
-        } else {
-            let r = self.main.main(writer).await;
-            match r {
-                Ok(()) => Ok(ExitStatus::from_raw(0)),
-                Err(e) => {
-                    let fho_err: Error = e.into();
-                    log::error!("[{}]: {:?}", fho_err.diagnostic_code(), fho_err);
-                    Err(fho_err)
+            let writer = <<T as FfxMain>::Writer as TryFromEnv>::try_from_env(&self.env)
+                .await
+                .map_err(|e| Error::Unexpected(anyhow::Error::new(e)))?;
+            let res: Result<ExitStatus> = if self.env.ffx_command().global.schema {
+                if self.main.has_schema() {
+                    self.main
+                        .try_print_schema(writer)
+                        .await
+                        .map(|_| ExitStatus::from_raw(0))
+                        .map_err(|e| e.into())
+                } else {
+                    Err(user_error!("--schema is not supported for this command (subtool)."))
                 }
-            }
-        };
-        let res = metrics
-            .command_finished(
-                &res,
-                &self.redacted_args,
-                &self.subcommand_chain,
-                false,
-                self.enhanced_args.as_deref(),
-            )
-            .await
-            .and(res);
-        self.env.wrap_main_result(res)
+            } else {
+                let r = self.main.main(writer).await;
+                match r {
+                    Ok(()) => Ok(ExitStatus::from_raw(0)),
+                    Err(e) => {
+                        let fho_err: Error = e.into();
+                        log::error!("[{}]: {:?}", fho_err.diagnostic_code(), fho_err);
+                        Err(fho_err)
+                    }
+                }
+            };
+            let res = metrics
+                .command_finished(
+                    &res,
+                    &self.redacted_args,
+                    &self.subcommand_chain,
+                    false,
+                    self.enhanced_args.as_deref(),
+                )
+                .await
+                .and(res);
+            self.env.wrap_main_result(res)
+        })
     }
 }
 

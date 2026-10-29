@@ -56,7 +56,6 @@ ffx("ffx") {
     "//src/developer/ffx/lib/traceable_error:lib",
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:argh",
-    "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:log",
   ]
 

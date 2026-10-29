@@ -50,7 +50,6 @@ if (is_host) {
     ]
     crate_name = "ffx_command"
     edition = "2024"
-    proc_macro_deps = [ "//third_party/rust_crates:async-trait" ]
     test_deps = [
       "//src/lib/fuchsia",
       "//third_party/rust_crates:assert_matches",
@@ -79,6 +78,7 @@ if (is_host) {
       "//src/developer/ffx/lib/addr:lib",
       "//src/developer/ffx/lib/errors:lib",
       "//src/developer/ffx/lib/fho/metadata:lib",
+      "//src/developer/ffx/lib/futures:lib",
       "//src/developer/ffx/lib/metrics:lib",
       "//src/developer/ffx/lib/timeout:lib",
       "//src/developer/lib/writer:lib",

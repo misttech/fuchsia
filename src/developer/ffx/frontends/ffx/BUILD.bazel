@@ -42,9 +42,6 @@ rustc_binary(
     srcs = ["src/main.rs"],
     crate_name = "ffx_unversioned",
     edition = "2024",
-    proc_macro_deps = [
-        "//third_party/rust_crates/vendor:async-trait",
-    ],
     target_compatible_with = HOST_CONSTRAINTS,
     deps = [
         ":ffx_lib_args",
