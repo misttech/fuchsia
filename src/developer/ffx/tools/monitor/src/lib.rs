@@ -37,8 +37,12 @@ const CONFIG_PORT_FILE: &str = "monitor.port_file";
 const LOCAL_SERVER_IP_ADDRESS: &str = "127.0.0.1";
 const LOCAL_SERVER_IP_ADDRESS_ARRAY: [u8; 4] = [127, 0, 0, 1];
 const DEFAULT_MONITOR_PORT: u16 = 8080;
-const LOG_VERSION: u16 = 3;
+const LOG_VERSION: u16 = 4;
 const AGGREGATIONS_VERSION: u16 = 2;
+
+/// Max time a deferred notice waits for a poll to report its target online.
+/// Covers a missed poll (2s probe timeout) + 1s inter-poll sleep + reconnect poll (~1s).
+const DEFERRED_NOTICE_TIMEOUT_MS: u64 = 5000;
 
 #[derive(FfxTool)]
 #[target(None)]
@@ -62,10 +66,23 @@ struct LogContext {
 struct IntentionalDisconnectRecord {
     nodename: String,
     timestamp: u64,
-    /// True if the notice was ignored because the target was already
-    /// disconnected when it arrived.
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    ignored: bool,
+    #[serde(skip_serializing_if = "NoticeOutcome::is_accepted")]
+    outcome: NoticeOutcome,
+}
+
+#[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum NoticeOutcome {
+    Accepted,
+    Deferred,
+    DeferredAccepted,
+    Ignored,
+}
+
+impl NoticeOutcome {
+    fn is_accepted(&self) -> bool {
+        *self == NoticeOutcome::Accepted
+    }
 }
 
 #[derive(Serialize, Debug)]
@@ -160,30 +177,66 @@ struct AggregationsState {
     prev_time: u64,
     /// A set of target nodenames that are expected to disconnect intentionally.
     pending_intentional_disconnects: HashSet<String>,
+    intentional_disconnect_records: Vec<IntentionalDisconnectRecord>,
+    unsettled_start: usize,
 }
 
 impl AggregationsState {
-    /// Records that `nodename` is expected to disconnect intentionally, so that
-    /// its next vanish is classified as intentional.
-    ///
-    /// Returns false, and records nothing, if the target is already
-    /// disconnected: there is no upcoming vanish for the notice to describe,
-    /// and keeping it would mis-classify a later, unrelated disconnect once
-    /// the target has reconnected.
-    fn note_intentional_disconnect(&mut self, nodename: &str) -> bool {
+    /// Accepts an intentional disconnect notice, or defers it to the next poll
+    /// if the target was last seen disconnected.
+    fn note_intentional_disconnect(&mut self, nodename: &str, timestamp: u64) -> NoticeOutcome {
         let already_disconnected = matches!(
             self.devices.get(nodename).and_then(|d| d.last_seen_state.as_ref()),
             Some(DeviceState::Disconnected)
         );
-        if already_disconnected {
+        let outcome = if already_disconnected {
             log::info!(
-                "Ignoring intentional disconnect notice for {nodename}: target is already disconnected"
+                "Deferring intentional disconnect notice for {nodename}: target was last seen disconnected"
             );
-            return false;
-        }
-        self.pending_intentional_disconnects.insert(nodename.to_string());
-        true
+            NoticeOutcome::Deferred
+        } else {
+            self.pending_intentional_disconnects.insert(nodename.to_string());
+            NoticeOutcome::Accepted
+        };
+        self.intentional_disconnect_records.push(IntentionalDisconnectRecord {
+            nodename: nodename.to_string(),
+            timestamp,
+            outcome,
+        });
+        outcome
     }
+
+    /// Accepts deferred notices whose target reconnects within
+    /// `DEFERRED_NOTICE_TIMEOUT_MS`; ignores notices once that window expires.
+    fn resolve_deferred_notices(&mut self, entry: &LogEntry, present: &HashSet<String>) {
+        let mut all_settled = true;
+        for record in &mut self.intentional_disconnect_records[self.unsettled_start..] {
+            if record.outcome == NoticeOutcome::Deferred {
+                if entry.timestamp.saturating_sub(record.timestamp) > DEFERRED_NOTICE_TIMEOUT_MS {
+                    log::info!(
+                        "Ignoring intentional disconnect notice for {}: target did not reconnect within {}ms",
+                        record.nodename,
+                        DEFERRED_NOTICE_TIMEOUT_MS
+                    );
+                    record.outcome = NoticeOutcome::Ignored;
+                } else if present.contains(&record.nodename) {
+                    log::info!(
+                        "Accepting deferred intentional disconnect notice for {}: target reconnected within {}ms",
+                        record.nodename,
+                        DEFERRED_NOTICE_TIMEOUT_MS
+                    );
+                    self.pending_intentional_disconnects.insert(record.nodename.clone());
+                    record.outcome = NoticeOutcome::DeferredAccepted;
+                } else {
+                    all_settled = false;
+                }
+            }
+            if all_settled {
+                self.unsettled_start += 1;
+            }
+        }
+    }
+
     fn update(&mut self, entry: &LogEntry) {
         if self.start_time.is_none() {
             self.start_time = Some(entry.timestamp);
@@ -249,6 +302,8 @@ impl AggregationsState {
                 Some(if is_active { DeviceState::Active } else { DeviceState::Inactive });
             dev_metrics.last_disconnect_type = None;
         }
+
+        self.resolve_deferred_notices(entry, &current_nodenames);
 
         for (name, dev_metrics) in self.devices.iter_mut() {
             if !current_nodenames.contains(name) {
@@ -744,7 +799,6 @@ impl FfxMain for MonitorTool {
 ///   overwriting any existing file. The in-memory buffer is cleared after flushing.
 async fn run_log_manager(mut log_receiver: mpsc::UnboundedReceiver<LogMessage>) {
     let mut logs: Vec<LogEntry> = Vec::new();
-    let mut intentional_disconnect_records: Vec<IntentionalDisconnectRecord> = Vec::new();
     let mut state = AggregationsState::default();
     while let Some(msg) = log_receiver.recv().await {
         match msg {
@@ -753,22 +807,16 @@ async fn run_log_manager(mut log_receiver: mpsc::UnboundedReceiver<LogMessage>) 
                 logs.push(entry);
             }
             LogMessage::IntentionalDisconnect(nodename, timestamp) => {
-                let armed = state.note_intentional_disconnect(&nodename);
-                intentional_disconnect_records.push(IntentionalDisconnectRecord {
-                    nodename,
-                    timestamp,
-                    ignored: !armed,
-                });
+                state.note_intentional_disconnect(&nodename, timestamp);
             }
             LogMessage::Flush(log_path, aggregations_path, reply) => {
                 let logs_to_write = logs.clone();
-                let intentional_disconnects_to_write = intentional_disconnect_records.clone();
                 let current_state = state.clone();
                 let res = spawn_blocking(move || {
                     if let Some(path) = log_path {
                         let json = serde_json::json!({
                             "data": logs_to_write,
-                            "intentional_disconnects": intentional_disconnects_to_write,
+                            "intentional_disconnects": current_state.intentional_disconnect_records,
                             "version": LOG_VERSION,
                         });
                         let json_str = serde_json::to_string_pretty(&json)?;
@@ -952,7 +1000,6 @@ mod tests {
     #[test]
     fn test_compute_aggregations_intentional_disconnect() {
         let mut state = AggregationsState::default();
-        let mut intentional_disconnect_records = Vec::new();
 
         // Time 0: A is active
         state.update(&make_entry(0, 100, vec![make_target("A", "Y")]));
@@ -967,20 +1014,10 @@ mod tests {
         state.update(&make_entry(2000, 100, vec![make_target("A", "N")]));
 
         // Time 2500: Intentional disconnect requested (Record 1)
-        intentional_disconnect_records.push(IntentionalDisconnectRecord {
-            nodename: "A".to_string(),
-            timestamp: 2500,
-            ignored: false,
-        });
-        assert!(state.note_intentional_disconnect("A"));
+        assert_eq!(state.note_intentional_disconnect("A", 2500), NoticeOutcome::Accepted);
 
         // Time 2600: Redundant Intentional disconnect requested (Record 2)
-        intentional_disconnect_records.push(IntentionalDisconnectRecord {
-            nodename: "A".to_string(),
-            timestamp: 2600,
-            ignored: false,
-        });
-        assert!(state.note_intentional_disconnect("A"));
+        assert_eq!(state.note_intentional_disconnect("A", 2600), NoticeOutcome::Accepted);
 
         // Time 3000: A drops intentionally
         state.update(&make_entry(3000, 100, vec![]));
@@ -998,12 +1035,7 @@ mod tests {
         state.update(&make_entry(6000, 100, vec![make_target("A", "Y")]));
 
         // Time 6500: Intentional disconnect requested (Record 3)
-        intentional_disconnect_records.push(IntentionalDisconnectRecord {
-            nodename: "A".to_string(),
-            timestamp: 6500,
-            ignored: false,
-        });
-        assert!(state.note_intentional_disconnect("A"));
+        assert_eq!(state.note_intentional_disconnect("A", 6500), NoticeOutcome::Accepted);
 
         // Time 7000: A drops intentionally
         state.update(&make_entry(7000, 100, vec![]));
@@ -1039,44 +1071,205 @@ mod tests {
         );
 
         // Verify intentional disconnect records (3 total, including redundant ones)
-        assert_eq!(intentional_disconnect_records.len(), 3);
-        assert_eq!(intentional_disconnect_records[0].timestamp, 2500);
-        assert_eq!(intentional_disconnect_records[1].timestamp, 2600);
-        assert_eq!(intentional_disconnect_records[2].timestamp, 6500);
+        let records = &state.intentional_disconnect_records;
+        assert_eq!(records.len(), 3);
+        assert_eq!(records[0].timestamp, 2500);
+        assert_eq!(records[1].timestamp, 2600);
+        assert_eq!(records[2].timestamp, 6500);
+        assert!(records.iter().all(|r| r.outcome == NoticeOutcome::Accepted));
     }
 
     #[test]
     fn test_intentional_disconnect_ignored_while_already_disconnected() {
         let mut state = AggregationsState::default();
 
-        // A notice for a target the monitor has never seen is kept: there is
-        // no evidence that the target is disconnected.
-        assert!(state.note_intentional_disconnect("A"));
+        assert_eq!(state.note_intentional_disconnect("A", 0), NoticeOutcome::Accepted);
         state.update(&make_entry(0, 100, vec![make_target("A", "Y")]));
         state.update(&make_entry(1000, 100, vec![]));
         assert_eq!(state.devices["A"].intentional_target_vanished_count, 1);
 
-        // A is now disconnected. A notice received in this state has nothing
-        // to describe and must not be armed for a later vanish.
-        assert!(!state.note_intentional_disconnect("A"));
+        // Notice while disconnected stays deferred inside the 5s window, then is ignored.
+        assert_eq!(state.note_intentional_disconnect("A", 1500), NoticeOutcome::Deferred);
         assert!(state.pending_intentional_disconnects.is_empty());
+        state.update(&make_entry(2000, 100, vec![]));
+        assert_eq!(state.intentional_disconnect_records[1].outcome, NoticeOutcome::Deferred);
+        state.update(&make_entry(6501, 100, vec![]));
+        assert!(state.pending_intentional_disconnects.is_empty());
+        assert_eq!(state.intentional_disconnect_records[1].outcome, NoticeOutcome::Ignored);
 
-        // A reconnects, then drops for an unrelated reason: unexpected.
-        state.update(&make_entry(2000, 100, vec![make_target("A", "Y")]));
-        state.update(&make_entry(3000, 100, vec![]));
+        // Unrelated drop after reconnect is unexpected.
+        state.update(&make_entry(7000, 100, vec![make_target("A", "Y")]));
+        state.update(&make_entry(8000, 100, vec![]));
         let dev_a = &state.devices["A"];
         assert_eq!(dev_a.target_vanished_count, 2);
         assert_eq!(dev_a.intentional_target_vanished_count, 1);
         assert_eq!(dev_a.unexpected_target_vanished_count, 1);
 
-        // Once reconnected, a notice is honoured again.
-        state.update(&make_entry(4000, 100, vec![make_target("A", "N")]));
-        assert!(state.note_intentional_disconnect("A"));
-        state.update(&make_entry(5000, 100, vec![]));
+        state.update(&make_entry(9000, 100, vec![make_target("A", "N")]));
+        assert_eq!(state.note_intentional_disconnect("A", 9500), NoticeOutcome::Accepted);
+        state.update(&make_entry(10_000, 100, vec![]));
         let dev_a = &state.devices["A"];
         assert_eq!(dev_a.target_vanished_count, 3);
         assert_eq!(dev_a.intentional_target_vanished_count, 2);
         assert_eq!(dev_a.unexpected_target_vanished_count, 1);
+        assert_eq!(state.intentional_disconnect_records[2].outcome, NoticeOutcome::Accepted);
+    }
+
+    #[test]
+    fn test_deferred_intentional_disconnect_accepted_when_target_reconnects_within_timeout() {
+        let mut state = AggregationsState::default();
+        state.update(&make_entry(0, 50, vec![make_target("A", "Y")]));
+        state.update(&make_entry(3000, 2000, vec![]));
+        assert_eq!(state.devices["A"].unexpected_target_vanished_count, 1);
+
+        assert_eq!(state.note_intentional_disconnect("A", 30_000), NoticeOutcome::Deferred);
+        assert!(state.pending_intentional_disconnects.is_empty());
+        // Still absent at +500ms: remains Deferred.
+        state.update(&make_entry(30_500, 50, vec![]));
+        assert_eq!(state.intentional_disconnect_records[0].outcome, NoticeOutcome::Deferred);
+        // Reconnects at +1500ms (within 5s): accepted.
+        state.update(&make_entry(31_500, 50, vec![make_target("A", "Y")]));
+        assert!(state.pending_intentional_disconnects.contains("A"));
+        let record = &state.intentional_disconnect_records[0];
+        assert_eq!(record.timestamp, 30_000);
+        assert_eq!(record.outcome, NoticeOutcome::DeferredAccepted);
+
+        // Vanish 25s later is still classified as intentional.
+        state.update(&make_entry(56_500, 2000, vec![]));
+        let dev_a = &state.devices["A"];
+        assert_eq!(dev_a.target_vanished_count, 2);
+        assert_eq!(dev_a.intentional_target_vanished_count, 1);
+        assert_eq!(dev_a.unexpected_target_vanished_count, 1);
+        assert!(state.pending_intentional_disconnects.is_empty());
+    }
+
+    #[test]
+    fn test_deferred_intentional_disconnect_window() {
+        let poll_end = 10_000;
+        let earliest = poll_end - DEFERRED_NOTICE_TIMEOUT_MS;
+        for (notice_ts, accepted) in
+            [(earliest - 1, false), (earliest, true), (poll_end, true), (poll_end + 1, true)]
+        {
+            let mut state = AggregationsState::default();
+            state.update(&make_entry(0, 50, vec![make_target("A", "Y")]));
+            state.update(&make_entry(1000, 50, vec![]));
+            assert_eq!(state.note_intentional_disconnect("A", notice_ts), NoticeOutcome::Deferred);
+            state.update(&make_entry(poll_end, 50, vec![make_target("A", "Y")]));
+            assert_eq!(
+                state.pending_intentional_disconnects.contains("A"),
+                accepted,
+                "notice at {notice_ts} should {}be accepted",
+                if accepted { "" } else { "not " }
+            );
+            assert_eq!(
+                state.intentional_disconnect_records[0].outcome,
+                if accepted { NoticeOutcome::DeferredAccepted } else { NoticeOutcome::Ignored }
+            );
+        }
+    }
+
+    #[test]
+    fn test_deferred_intentional_disconnect_ignored_when_target_was_genuinely_down() {
+        let mut state = AggregationsState::default();
+        state.update(&make_entry(0, 50, vec![make_target("A", "Y")]));
+        state.update(&make_entry(1000, 2000, vec![]));
+
+        assert_eq!(state.note_intentional_disconnect("A", 2000), NoticeOutcome::Deferred);
+        state.update(&make_entry(4000, 2000, vec![]));
+        assert_eq!(state.intentional_disconnect_records[0].outcome, NoticeOutcome::Deferred);
+
+        state.update(&make_entry(20_000, 50, vec![make_target("A", "Y")]));
+        assert!(state.pending_intentional_disconnects.is_empty());
+        assert_eq!(state.intentional_disconnect_records[0].outcome, NoticeOutcome::Ignored);
+        state.update(&make_entry(21_000, 2000, vec![]));
+        let dev_a = &state.devices["A"];
+        assert_eq!(dev_a.target_vanished_count, 2);
+        assert_eq!(dev_a.intentional_target_vanished_count, 0);
+        assert_eq!(dev_a.unexpected_target_vanished_count, 2);
+    }
+
+    #[test]
+    fn test_deferred_intentional_disconnects_settled_per_target() {
+        let mut state = AggregationsState::default();
+        state.update(&make_entry(0, 50, vec![make_target("A", "Y"), make_target("B", "Y")]));
+        state.update(&make_entry(1000, 2000, vec![]));
+
+        assert_eq!(state.note_intentional_disconnect("A", 3990), NoticeOutcome::Deferred);
+        assert_eq!(state.note_intentional_disconnect("A", 4010), NoticeOutcome::Deferred);
+        assert_eq!(state.note_intentional_disconnect("B", 4020), NoticeOutcome::Deferred);
+        state.update(&make_entry(4050, 50, vec![make_target("A", "Y")]));
+
+        assert!(state.pending_intentional_disconnects.contains("A"));
+        assert!(!state.pending_intentional_disconnects.contains("B"));
+        assert_eq!(
+            state.intentional_disconnect_records[0].outcome,
+            NoticeOutcome::DeferredAccepted
+        );
+        assert_eq!(
+            state.intentional_disconnect_records[1].outcome,
+            NoticeOutcome::DeferredAccepted
+        );
+        assert_eq!(state.intentional_disconnect_records[2].outcome, NoticeOutcome::Deferred);
+
+        // B reconnects at 10_000 (after its 5s window expired) and drops at 11_000.
+        state.update(&make_entry(10_000, 2000, vec![make_target("B", "Y")]));
+        assert_eq!(state.intentional_disconnect_records[2].outcome, NoticeOutcome::Ignored);
+        state.update(&make_entry(11_000, 2000, vec![]));
+        assert_eq!(state.devices["A"].intentional_target_vanished_count, 1);
+        assert_eq!(state.devices["A"].unexpected_target_vanished_count, 1);
+        assert_eq!(state.devices["B"].intentional_target_vanished_count, 0);
+        assert_eq!(state.devices["B"].unexpected_target_vanished_count, 2);
+    }
+
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn test_log_manager_records_deferred_notice_outcomes() -> anyhow::Result<()> {
+        let dir = tempdir()?;
+        let log_path = dir.path().join("log.json");
+        let aggregations_path = dir.path().join("aggregations.json");
+        let (tx, rx) = mpsc::unbounded_channel();
+        fuchsia_async::Task::local(run_log_manager(rx)).detach();
+
+        let node = "fuchsia-1234-5678-abcd";
+        tx.send(LogMessage::Log(make_entry(1000, 50, vec![make_target(node, "Y")])))?;
+        tx.send(LogMessage::Log(make_entry(2000, 50, vec![])))?;
+        tx.send(LogMessage::IntentionalDisconnect(node.to_string(), 2990))?;
+        tx.send(LogMessage::Log(make_entry(3050, 60, vec![make_target(node, "Y")])))?;
+        tx.send(LogMessage::Log(make_entry(4000, 50, vec![])))?;
+        tx.send(LogMessage::IntentionalDisconnect(node.to_string(), 4500))?;
+        tx.send(LogMessage::Log(make_entry(10_000, 50, vec![])))?;
+        tx.send(LogMessage::Log(make_entry(11_000, 50, vec![make_target(node, "Y")])))?;
+        tx.send(LogMessage::IntentionalDisconnect(node.to_string(), 11_500))?;
+        tx.send(LogMessage::Log(make_entry(12_000, 50, vec![])))?;
+        tx.send(LogMessage::IntentionalDisconnect(node.to_string(), 12_500))?;
+
+        let (flush_tx, flush_rx) = oneshot::channel();
+        tx.send(LogMessage::Flush(
+            Some(Arc::new(log_path.clone())),
+            Some(Arc::new(aggregations_path.clone())),
+            flush_tx,
+        ))?;
+        flush_rx.await??;
+
+        let json: serde_json::Value = serde_json::from_str(&fs::read_to_string(&log_path)?)?;
+        assert_eq!(json["version"], LOG_VERSION);
+        let notices = json["intentional_disconnects"].as_array().unwrap();
+        assert_eq!(notices.len(), 4);
+        assert_eq!(notices[0]["timestamp"], 2990);
+        assert_eq!(notices[0]["outcome"], "deferred_accepted");
+        assert_eq!(notices[1]["timestamp"], 4500);
+        assert_eq!(notices[1]["outcome"], "ignored");
+        assert_eq!(notices[2]["timestamp"], 11_500);
+        assert!(notices[2].get("outcome").is_none());
+        assert_eq!(notices[3]["timestamp"], 12_500);
+        assert_eq!(notices[3]["outcome"], "deferred");
+
+        let aggs: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&aggregations_path)?)?;
+        let metrics = &aggs["device_aggregations"][0]["metrics"];
+        assert_eq!(metrics["target_vanished_count"], 3);
+        assert_eq!(metrics["intentional_target_vanished_count"], 2);
+        assert_eq!(metrics["unexpected_target_vanished_count"], 1);
+        Ok(())
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
