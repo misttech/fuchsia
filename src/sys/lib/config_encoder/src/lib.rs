@@ -12,7 +12,7 @@ use cm_rust::{
     ConfigValuesData, ConfigVectorValue, NativeIntoFidl,
 };
 use dynfidl::{BasicField, Field, Structure, VectorField};
-use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_decl_common as fdecl;
 use flyweights::FlyStr;
 use thiserror::Error;
 
@@ -336,7 +336,7 @@ pub enum ValueError {
 mod tests {
     use super::*;
     use fidl_fuchsia_component_config_ext::{config_decl, values_data};
-    use fidl_test_config_encoder::BasicSuccessSchema;
+    use fidl_test_config_encoder_common::BasicSuccessSchema;
 
     use ConfigSingleValue::*;
     use ConfigValue::*;

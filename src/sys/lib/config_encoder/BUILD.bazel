@@ -23,7 +23,7 @@ rustc_library(
         "//tools/lib/cm_fidl_analyzer:__subpackages__",
     ],
     deps = [
-        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust_common",
         "//src/lib/dynfidl/rust:dynfidl",  # @bazel2gn:path_overwrite://src/lib/dynfidl/rust
         "//src/sys/lib/cm_rust",
         "//third_party/rust_crates/vendor:flyweights",
@@ -42,7 +42,7 @@ rustc_test(
     crate = ":config_encoder",
     edition = "2024",
     deps = [
-        ":test.config.encoder_rust",
+        ":test.config.encoder_rust_common",
         "//src/lib/fidl/rust/fidl",
         "//src/sys/lib/fidl_fuchsia_component_config_ext",
     ],
