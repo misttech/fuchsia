@@ -8,7 +8,7 @@ pub const MAX_SUPPORTED_CPUID: u32 = 0x17;
 pub const MAX_SUPPORTED_CPUID_HYP: u32 = 0x40000001;
 pub const MAX_SUPPORTED_CPUID_EXT: u32 = 0x80000021;
 
-pub const X86_MAX_CSTATES: usize = 12;
+pub const X86_MAX_CSTATES: usize = x86_idle_states_bindings::X86_MAX_CSTATES as usize;
 
 /// Transparent `UnsafeCell` wrapper for `extern "C"` globals populated during early boot.
 #[repr(transparent)]
@@ -234,43 +234,23 @@ pub enum X86HypervisorList {
 zr::static_assert!(core::mem::size_of::<X86HypervisorList>() == 4);
 zr::static_assert!(core::mem::align_of::<X86HypervisorList>() == 4);
 
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct X86IdleStateT {
-    pub name: *const core::ffi::c_char,
-    pub mwait_hint: u32,
-    pub exit_latency: u32,
-    pub flushes_tlb: bool,
-}
+pub use x86_idle_states_bindings::{x86_idle_state_t, x86_idle_states_t};
 
-zr::static_assert!(core::mem::size_of::<X86IdleStateT>() == 24);
-zr::static_assert!(core::mem::align_of::<X86IdleStateT>() == 8);
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct X86IdleStatesT {
-    pub states: [X86IdleStateT; X86_MAX_CSTATES],
-    pub default_state_mask: u32,
-}
-
-zr::static_assert!(core::mem::size_of::<X86IdleStatesT>() == 296);
-zr::static_assert!(core::mem::align_of::<X86IdleStatesT>() == 8);
-
-pub type X86GetTimerFreqFuncT = Option<unsafe extern "C" fn() -> u64>;
-pub type X86RebootSystemFuncT = Option<unsafe extern "C" fn()>;
-pub type X86RebootReasonFuncT = Option<unsafe extern "C" fn(reason: u64)>;
+pub type X86GetTimerFreqFunc = Option<unsafe extern "C" fn() -> u64>;
+pub type X86RebootSystemFunc = Option<unsafe extern "C" fn()>;
+pub type X86RebootReasonFunc = Option<unsafe extern "C" fn(reason: u64)>;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct X86MicroarchConfig {
     pub x86_microarch: X86MicroarchList,
-    pub get_apic_freq: X86GetTimerFreqFuncT,
-    pub get_tsc_freq: X86GetTimerFreqFuncT,
-    pub reboot_system: X86RebootSystemFuncT,
-    pub reboot_reason: X86RebootReasonFuncT,
+    pub get_apic_freq: X86GetTimerFreqFunc,
+    pub get_tsc_freq: X86GetTimerFreqFunc,
+    pub reboot_system: X86RebootSystemFunc,
+    pub reboot_reason: X86RebootReasonFunc,
     pub disable_c1e: bool,
     pub idle_prefer_hlt: bool,
-    pub idle_states: X86IdleStatesT,
+    pub idle_states: x86_idle_states_t,
 }
 
 zr::static_assert!(core::mem::size_of::<X86MicroarchConfig>() == 344);
@@ -463,21 +443,7 @@ pub fn x86_get_model() -> &'static X86ModelInfo {
     unsafe { &*c_x86_get_model() }
 }
 
-#[inline]
-pub fn x86_lookup_core_crystal_freq() -> u64 {
-    let config = x86_get_microarch_config().expect("x86_microarch_config not initialized");
-    let get_apic_freq = config.get_apic_freq.expect("get_apic_freq is null");
-    // SAFETY: `get_apic_freq` is a valid function pointer in the static microarch config table.
-    unsafe { get_apic_freq() }
-}
-
-#[inline]
-pub fn x86_lookup_tsc_freq() -> u64 {
-    let config = x86_get_microarch_config().expect("x86_microarch_config not initialized");
-    let get_tsc_freq = config.get_tsc_freq.expect("get_tsc_freq is null");
-    // SAFETY: `get_tsc_freq` is a valid function pointer in the static microarch config table.
-    unsafe { get_tsc_freq() }
-}
+pub use super::timer_freq::{x86_lookup_core_crystal_freq, x86_lookup_tsc_freq};
 
 #[inline]
 pub fn x86_cpu_has_ibpb() -> bool {

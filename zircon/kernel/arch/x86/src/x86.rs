@@ -185,21 +185,83 @@ mod ffi {
 
     // Implemented in assembly.
     unsafe extern "C" {
+        /// Reads MSR `msr_id` into `*val`. Returns `ZX_OK` if the read was successful or a non-OK
+        /// status if the read failed because we received a `#GP` fault.
         pub(super) fn read_msr_safe(msr_id: u32, val: *mut u64) -> zx_status_t;
-        // Write value |val| into MSR |msr_id|. Returns ZX_OK if the write was successful or
-        // a non-Ok status if the write failed because we received a #GP fault.
+        /// Writes value `val` into MSR `msr_id`. Returns `ZX_OK` if the write was successful or a
+        /// non-OK status if the write failed because we received a `#GP` fault.
         pub(super) fn write_msr_safe(msr_id: u32, val: u64) -> zx_status_t;
+        /// Arms the CPU's `MWAIT` address monitor at `addr`.
+        pub(super) fn x86_monitor(addr: *const core::ffi::c_void);
+        /// Enables maskable interrupts and enters `MWAIT` with `hints` (`sti; mwait`).
+        pub(super) fn x86_enable_ints_and_mwait(hints: u32);
+        /// Fills the CPU's Return Address Stack / Return Stack Buffer (`RSB`).
+        pub(super) fn x86_ras_fill();
     }
+}
+
+/// Arms the CPU's `MWAIT` address monitor at `addr`.
+///
+/// # Safety
+///
+/// - The current privilege level must be `CPL == 0` (`#UD` on Intel / `#GP(0)` on AMD otherwise).
+/// - `MONITOR` must be supported and enabled on the current logical processor
+///   (`CPUID.01H:ECX[3]`, with Intel `IA32_MISC_ENABLE[18]` set and AMD `HWCR[MonMwaitDis]`
+///   clear).
+/// - `addr` must point to canonical, readable memory of Write-Back (`WB`) caching type (`UC`,
+///   `WC`, or MMIO addresses do not fault on `MONITOR` yet fail to arm the hardware monitor).
+pub unsafe fn x86_monitor(addr: *const core::ffi::c_void) {
+    // SAFETY: Caller guarantees `CPL == 0`, `MONITOR` is enabled on this logical processor, and
+    // `addr` points to canonical, readable Write-Back memory.
+    unsafe { ffi::x86_monitor(addr) };
+}
+
+/// Enables maskable interrupts and enters `MWAIT` with `hints` (`sti; mwait`), returning with
+/// `RFLAGS.IF = 1`.
+///
+/// # Safety
+///
+/// - The caller must be at `CPL == 0` with `MONITOR`/`MWAIT` enabled on the current logical
+///   processor.
+/// - Maskable interrupts must be disabled on entry (`RFLAGS.IF == 0`), as `STI` only creates the
+///   1-instruction interrupt shadow covering `mwait` when transitioning `IF` from `0` to `1`.
+/// - Because this function returns with `RFLAGS.IF = 1`, the caller must be in a context where
+///   enabling and servicing interrupts is sound (no spinlocks or `InterruptDisableGuard` held
+///   across the call).
+/// - On processors susceptible to cross-thread Return Address Stack (RAS) consumption during
+///   `MWAIT` (such as SMT AMD Family 17h `AMD-SB-1045`, even in `C1`), the caller must fill the
+///   RAS (`x86_ras_fill`) before entering `MWAIT`.
+/// - When `hints` requests a C-state deeper than `C1`, the caller must account for architectural
+///   side effects of deep C-states (potential TLB flush, non-ARAT Local APIC timer stop, RSB/RAS
+///   emptying on Skylake, and DMA stores not waking `MWAIT`).
+pub unsafe fn x86_enable_ints_and_mwait(hints: u32) {
+    // SAFETY: Caller guarantees `CPL == 0`, `MONITOR`/`MWAIT` is enabled, `RFLAGS.IF == 0` on
+    // entry, enabling interrupts on return is sound, and C-state side effects are handled.
+    unsafe { ffi::x86_enable_ints_and_mwait(hints) };
+}
+
+/// Overwrites the hardware Return Address Stack (RAS/RSB) with 32 speculation-trap entries.
+#[inline]
+pub fn x86_ras_fill() {
+    // SAFETY: `x86_ras_fill` (`ops.S`) uses 264 bytes of temporary kernel stack space and restores
+    // `%rcx` and `%rsp` before returning.
+    unsafe { ffi::x86_ras_fill() };
 }
 
 /// Safely reads a 64-bit Model Specific Register (MSR) with fault recovery.
 ///
-/// Returns `Ok(value)` if the read succeeded, or `Err(Status)` if a #GP fault occurred.
+/// Returns `Ok(value)` if the read succeeded, or `Err(Status)` if a `#GP(0)` fault occurred.
 ///
 /// # Safety
 ///
-/// While this catches #GP faults, caller must ensure that reading `msr_id` does not trigger
-/// unwanted side effects.
+/// - While this catches `#GP(0)` faults, the caller must ensure that reading `msr_id` does not
+///   trigger unwanted hardware side effects.
+/// - Because `#GP(0)` recovery uses per-CPU `%gs:PERCPU_GPF_RETURN_OFFSET` and the kernel IDT's
+///   `x86_exception_handler` -> `x86_gpf_handler`, `%gs.base` and the kernel IDT must be
+///   initialized, `!blocking_disallowed()` must hold if `msr_id` can fault (otherwise
+///   `x86_exception_handler` panics on interrupt-handler recursion), and thread-context callers
+///   must have preemption or interrupts disabled so the thread cannot migrate or be preempted
+///   before recovery completes (see `read_msr_safe_on_cpu`).
 pub unsafe fn read_msr_safe(msr_id: u32) -> Result<u64, Status> {
     let mut val: u64 = 0;
     // SAFETY: Calls assembly implementation with valid pointer to local variable.
@@ -209,12 +271,18 @@ pub unsafe fn read_msr_safe(msr_id: u32) -> Result<u64, Status> {
 
 /// Safely writes a 64-bit value to a Model Specific Register (MSR) with fault recovery.
 ///
-/// Returns `Ok(())` if the write succeeded, or `Err(Status)` if a #GP fault occurred.
+/// Returns `Ok(())` if the write succeeded, or `Err(Status)` if a `#GP(0)` fault occurred.
 ///
 /// # Safety
 ///
-/// While this catches #GP faults, caller must ensure that writing `val` to `msr_id` does not
-/// violate system invariants or trigger unwanted hardware side effects.
+/// - While this catches `#GP(0)` faults, the caller must ensure that writing `val` to `msr_id`
+///   does not violate system invariants or trigger unwanted hardware side effects.
+/// - Because `#GP(0)` recovery uses per-CPU `%gs:PERCPU_GPF_RETURN_OFFSET` and the kernel IDT's
+///   `x86_exception_handler` -> `x86_gpf_handler`, `%gs.base` and the kernel IDT must be
+///   initialized, `!blocking_disallowed()` must hold if `msr_id` can fault (otherwise
+///   `x86_exception_handler` panics on interrupt-handler recursion), and thread-context callers
+///   must have preemption or interrupts disabled so the thread cannot migrate or be preempted
+///   before recovery completes (see `write_msr_safe_on_cpu`).
 pub unsafe fn write_msr_safe(msr_id: u32, val: u64) -> Result<(), Status> {
     // SAFETY: Calls assembly implementation which handles #GP faults safely.
     let status = unsafe { ffi::write_msr_safe(msr_id, val) };

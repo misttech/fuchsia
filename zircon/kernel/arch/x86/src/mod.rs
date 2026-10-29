@@ -19,6 +19,8 @@ pub mod feature;
 pub mod hwp;
 #[cfg(any(console_enabled, ktest))]
 mod hwp_ffi;
+mod idle_states;
+mod idle_states_ffi;
 pub mod interrupts;
 pub mod ioapic;
 pub mod lapic;
@@ -28,14 +30,17 @@ pub mod mmu_mem_types;
 mod mmu_mem_types_ffi;
 pub mod mp;
 mod mp_ffi;
+mod msr;
 #[cfg(console_enabled)]
 pub mod msr_bench;
 #[cfg(console_enabled)]
 mod msr_bench_ffi;
+mod msr_ffi;
 pub mod platform_access;
 pub mod pv;
 pub mod registers;
 pub mod system_topology;
+mod timer_freq;
 pub mod vm;
 pub mod x86;
 
@@ -648,13 +653,13 @@ mod x86_hwp_tests {
 #[unittest::suite(name = "x64_platform_tests_rust")]
 mod x64_platform_tests {
     use super::apic::ApicInterruptDeliveryMode;
-    use super::arch_ffi::{cpp_x86_read_msr_on_cpu, cpp_x86_write_msr_on_cpu};
     use super::feature::{
         X86_FEATURE_RDTSCP, X86HypervisorList, x86_feature_test, x86_get_hypervisor,
     };
     use super::hwp_ffi::{cpp_x86_intel_hwp_init, cpp_x86_intel_hwp_supported};
     use super::interrupts::X86_INT_NMI;
     use super::lapic::apic_send_mask_ipi;
+    use super::msr::{read_msr_on_cpu, read_msr_safe_on_cpu, write_msr_on_cpu};
     use super::registers::{X86_MSR_IA32_FMASK, X86_MSR_IA32_LSTAR, X86_MSR_IA32_TSC_AUX};
     use super::x86::{read_msr, write_msr};
     use crate::console::console_run_script_locked;
@@ -665,7 +670,7 @@ mod x64_platform_tests {
     use crate::platform_rs::timer::{DurationMono, current_mono_time};
     use boot_options::BootOptions;
     use kprint::kprintln;
-    use unittest::{expect_eq, expect_ne};
+    use unittest::{expect_eq, expect_ne, expect_true};
     use zx_status::sys::ZX_OK;
 
     unsafe extern "C" fn rdtscp_aux(context: *mut core::ffi::c_void) {
@@ -704,7 +709,7 @@ mod x64_platform_tests {
         // TODO: Enable when the QEMU TCG issue is sorted (TCG never
         // generates a #GP on MSR access).
 
-        // Test read_msr_on_cpu.
+        // Test read_msr_on_cpu and read_msr_safe_on_cpu.
         // SAFETY: `X86_MSR_IA32_FMASK` is an architectural MSR that always exists on x86_64.
         let initial_fmask = unsafe { read_msr(X86_MSR_IA32_FMASK) };
         for i in 0..crate::arch_rs::max_num_cpus() {
@@ -712,9 +717,21 @@ mod x64_platform_tests {
                 continue;
             }
             // SAFETY: CPU `i` is online and `X86_MSR_IA32_FMASK` is a valid MSR.
-            let fmask = unsafe { cpp_x86_read_msr_on_cpu(i, X86_MSR_IA32_FMASK) };
-            expect_eq!(initial_fmask, fmask);
+            let fmask = unsafe { read_msr_on_cpu(i, X86_MSR_IA32_FMASK) };
+            expect_true!(fmask == Ok(initial_fmask));
+            // SAFETY: `read_msr_safe_on_cpu` catches `#GP(0)` faults and has no side effects.
+            let safe_fmask = unsafe { read_msr_safe_on_cpu(i, X86_MSR_IA32_FMASK) };
+            expect_true!(safe_fmask == Ok(initial_fmask));
+            // SAFETY: `0xdeadbeef` is an unimplemented MSR; `read_msr_safe_on_cpu` catches `#GP(0)`
+            // across both the local fast path and remote worker-thread path.
+            let _ = unsafe { read_msr_safe_on_cpu(i, 0xdeadbeef) };
         }
+
+        let invalid_cpu = crate::arch_rs::max_num_cpus();
+        // SAFETY: `invalid_cpu` is out of range and returns `Err(Status::BAD_STATE)` without
+        // issuing `rdmsr`.
+        let invalid_res = unsafe { read_msr_safe_on_cpu(invalid_cpu, X86_MSR_IA32_FMASK) };
+        expect_true!(invalid_res == Err(Status::BAD_STATE));
 
         // Test write_msr_on_cpu
         for i in 0..crate::arch_rs::max_num_cpus() {
@@ -722,7 +739,8 @@ mod x64_platform_tests {
                 continue;
             }
             // SAFETY: CPU `i` is online and writing back `initial_fmask` preserves state.
-            unsafe { cpp_x86_write_msr_on_cpu(i, X86_MSR_IA32_FMASK, initial_fmask) };
+            let res = unsafe { write_msr_on_cpu(i, X86_MSR_IA32_FMASK, initial_fmask) };
+            expect_true!(res.is_ok());
         }
 
         // If RDTSCP is supported, check that the TSC_AUX MSR is correctly programmed.
@@ -733,8 +751,8 @@ mod x64_platform_tests {
                 }
                 // SAFETY: CPU `i` is online and `X86_MSR_IA32_TSC_AUX` is supported when RDTSCP is
                 // present.
-                let cpuid = unsafe { cpp_x86_read_msr_on_cpu(i, X86_MSR_IA32_TSC_AUX) };
-                expect_eq!(cpuid, i as u64);
+                let cpuid = unsafe { read_msr_on_cpu(i, X86_MSR_IA32_TSC_AUX) };
+                expect_true!(cpuid == Ok(i as u64));
 
                 let mut aux: u32 = 0;
                 let mut mask = 0;
@@ -744,7 +762,7 @@ mod x64_platform_tests {
                 unsafe {
                     sync_exec_raw(MpIpiTarget::Mask, mask, rdtscp_aux, (&raw mut aux).cast());
                 }
-                expect_eq!(cpuid, aux as u64);
+                expect_true!(cpuid == Ok(aux as u64));
             }
         }
     }
@@ -752,7 +770,16 @@ mod x64_platform_tests {
     /// test k cpu rdmsr commands
     #[test]
     fn test_x64_msrs_k_commands() {
-        console_run_script_locked("cpu rdmsr 0 0x10");
+        expect_eq!(ZX_OK, console_run_script_locked("cpu rdmsr 0 0x10"));
+        expect_eq!(Status::BAD_STATE.into_raw(), console_run_script_locked("cpu rdmsr 9999 0x10"));
+        expect_eq!(
+            Status::INVALID_ARGS.into_raw(),
+            console_run_script_locked("cpu rdmsr 0 0x100000000")
+        );
+        // Verify that reading an unimplemented MSR via the debug console does not panic the kernel
+        // with #GP(0) (on TCG this returns 0, while on hardware/KVM `read_msr_safe_on_cpu` catches
+        // the #GP fault and returns an error status).
+        let _ = console_run_script_locked("cpu rdmsr 0 0xdeadbeef");
     }
 
     /// test k hwp commands

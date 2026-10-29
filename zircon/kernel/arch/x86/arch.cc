@@ -245,14 +245,4 @@ FFI_ALWAYS_INLINE void cpp_x86_print_frame(const iframe_t* frame) { PrintFrame(*
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_x86_feature_debug() { x86_feature_debug(); }
 
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE uint64_t cpp_x86_read_msr_on_cpu(cpu_num_t cpu, uint32_t msr_id) {
-  return read_msr_on_cpu(cpu, msr_id);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_x86_write_msr_on_cpu(cpu_num_t cpu, uint32_t msr_id, uint64_t val) {
-  write_msr_on_cpu(cpu, msr_id, val);
-}
-
 }  // extern "C"

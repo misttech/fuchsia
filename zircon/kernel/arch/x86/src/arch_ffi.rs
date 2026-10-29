@@ -46,18 +46,4 @@ unsafe extern "C" {
     ///
     /// Must be called after early boot CPUID initialization.
     pub(super) fn cpp_x86_feature_debug();
-
-    /// Reads `msr_id` on `cpu` synchronously via IPI.
-    ///
-    /// # Safety
-    ///
-    /// `msr_id` must be a valid architectural MSR on `cpu`.
-    pub(super) fn cpp_x86_read_msr_on_cpu(cpu: cpu_num_t, msr_id: u32) -> u64;
-
-    /// Writes `val` to `msr_id` on `cpu` synchronously via IPI.
-    ///
-    /// # Safety
-    ///
-    /// `msr_id` must be a valid architectural MSR on `cpu` and `val` must be a valid value for it.
-    pub(super) fn cpp_x86_write_msr_on_cpu(cpu: cpu_num_t, msr_id: u32, val: u64);
 }

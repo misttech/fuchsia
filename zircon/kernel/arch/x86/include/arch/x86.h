@@ -18,6 +18,7 @@
 #include <zircon/compiler.h>
 #include <zircon/types.h>
 
+#include <arch/x86/msr_ffi.h>
 #include <arch/x86/registers.h>
 #include <kernel/cpu.h>
 
@@ -287,7 +288,9 @@ static inline uint32_t read_msr32(uint32_t msr_id) {
 extern "C" zx_status_t read_msr_safe(uint32_t msr_id, uint64_t* val);
 
 // Read msr |msr_id| on CPU |cpu| and return the 64-bit value.
-uint64_t read_msr_on_cpu(cpu_num_t cpu, uint32_t msr_id);
+inline uint64_t read_msr_on_cpu(cpu_num_t cpu, uint32_t msr_id) {
+  return rust_x86_read_msr_on_cpu(cpu, msr_id);
+}
 
 static inline void write_msr(uint32_t msr_id, uint64_t msr_write_val) {
   __asm__ __volatile__("wrmsr \n\t"
@@ -300,7 +303,9 @@ static inline void write_msr(uint32_t msr_id, uint64_t msr_write_val) {
 zx_status_t write_msr_safe(uint32_t msr_id, uint64_t val);
 
 // Write value |val| into MSR |msr_id| on cpu |cpu|.
-void write_msr_on_cpu(cpu_num_t cpu, uint32_t msr_id, uint64_t val);
+inline void write_msr_on_cpu(cpu_num_t cpu, uint32_t msr_id, uint64_t val) {
+  rust_x86_write_msr_on_cpu(cpu, msr_id, val);
+}
 
 static inline bool x86_is_paging_enabled() {
   if (x86_get_cr0() & X86_CR0_PG)
@@ -463,8 +468,6 @@ zx_status_t cpp_x86_request_context(cpu_num_t target_cpu, zx_duration_mono_t tim
 void cpp_x86_backtrace_print(const Backtrace* bt);
 void cpp_x86_print_frame(const iframe_t* frame);
 void cpp_x86_feature_debug();
-uint64_t cpp_x86_read_msr_on_cpu(cpu_num_t cpu, uint32_t msr_id);
-void cpp_x86_write_msr_on_cpu(cpu_num_t cpu, uint32_t msr_id, uint64_t val);
 int cpp_x86_benchmark_state_run(void* state);
 void cpp_x86_benchmark_state_destroy(void* state);
 }  // extern "C"

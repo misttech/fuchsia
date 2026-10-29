@@ -178,7 +178,7 @@ config("kernel") {
     # <page_tables/x86/constants.h>.
     "//zircon/system/ulib/page_tables/include",
 
-    # <arch/x86/idle_states.h> has #include <ktl/atomic.h>.
+    # <arch/x86/idle_states.h> has #include <kernel/ffi.h> -> <ktl/byte.h>.
     "//zircon/kernel/lib/ktl/include",
 
     # <arch/x86.h> has #include <lib/arch/intrin.h>.
@@ -201,14 +201,12 @@ source_set("x86") {
     "gdt.S",
     "handoff.cc",
     "hwp.cc",
-    "idle_states.cc",
     "idt.cc",
     "intel.cc",
     "ioport.cc",
     "mmu.cc",
     "mmu_mem_types.cc",
     "mp.cc",
-    "msr.cc",
     "msr_bench.cc",
     "ops.S",
     "registers.cc",
@@ -218,7 +216,6 @@ source_set("x86") {
     "start.S",
     "start16.S",
     "thread.cc",
-    "timer_freq.cc",
     "uspace_entry.S",
   ]
   deps = [
@@ -284,7 +281,7 @@ library_headers("headers") {
     # <arch/aspace.h> uses various fbl things
     "//zircon/system/ulib/fbl:headers",
 
-    # <arch/x86/idle_states.h> has #include <ktl/atomic.h>.
+    # <arch/x86/idle_states.h> has #include <kernel/ffi.h> -> <ktl/byte.h>.
     "//zircon/kernel/lib/ktl:headers",
 
     # <arch/x86.h> has #include <lib/arch/intrin.h>.
@@ -332,6 +329,46 @@ kernel_bindgen_crate("arch-x86-aspace-bindings") {
   notice_year = 2026
 }
 
+kernel_bindgen_crate("x86-idle-states-bindings") {
+  visibility = [ ":*" ]
+  headers = [ "include/arch/x86/idle_states.h" ]
+  cpp = true
+  non_rust_deps = [ ":headers" ]
+  type_blocklist = [
+    "zx_.*",
+    "X86IdleState.*",
+  ]
+  type_allowlist = [
+    "x86_idle_state_t",
+    "x86_idle_states_t",
+  ]
+  var_allowlist = [
+    "X86_CSTATE_C1_MWAIT_HINT",
+    "X86_MAX_CSTATES",
+    "kX86IdleStateMaskC1Only",
+  ]
+  explicit_padding = false
+  std_derives = [
+    "default",
+    "eq",
+    "partialeq",
+  ]
+  expect_lints = [
+    "non_camel_case_types",
+    "non_upper_case_globals",
+  ]
+  raw_lines = [
+    "#![no_std]",
+    "// SAFETY: Raw pointers cannot be dereferenced in safe Rust; `unsafe`",
+    "// constructors validate `name`.",
+    "unsafe impl Sync for x86_idle_state_t {}",
+    "// SAFETY: Contains only `[x86_idle_state_t; X86_MAX_CSTATES]` and `u32`",
+    "// fields.",
+    "unsafe impl Sync for x86_idle_states_t {}",
+  ]
+  notice_year = 2026
+}
+
 kernel_rust_mod("arch-x86-rs") {
   output_name = "arch_x86"
   source_root = "src/mod.rs"
@@ -347,6 +384,8 @@ kernel_rust_mod("arch-x86-rs") {
     "src/feature.rs",
     "src/hwp.rs",
     "src/hwp_ffi.rs",
+    "src/idle_states.rs",
+    "src/idle_states_ffi.rs",
     "src/interrupts.rs",
     "src/ioapic.rs",
     "src/lapic.rs",
@@ -355,18 +394,22 @@ kernel_rust_mod("arch-x86-rs") {
     "src/mod.rs",
     "src/mp.rs",
     "src/mp_ffi.rs",
+    "src/msr.rs",
     "src/msr_bench.rs",
     "src/msr_bench_ffi.rs",
+    "src/msr_ffi.rs",
     "src/platform_access.rs",
     "src/pv.rs",
     "src/registers.rs",
     "src/system_topology.rs",
+    "src/timer_freq.rs",
     "src/vm.rs",
     "src/x86.rs",
   ]
   deps = [
     ":arch-x86-aspace-bindings",
     ":arch-x86-vm-bindings",
+    ":x86-idle-states-bindings",
     "//sdk/rust/zbi",
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
