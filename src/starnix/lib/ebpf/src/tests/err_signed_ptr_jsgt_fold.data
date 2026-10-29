@@ -1,0 +1,12 @@
+# Verify signed pointer comparison (jsgt) is not constant-folded using 64-bit
+# offset signs when runtime addresses can straddle 0x8000_0000_0000_0000.
+-- asm
+mov %r1, %r10
+add %r1, -8
+mov %r2, %r10
+jsgt %r2, %r1, +1
+exit
+mov %r0, 0
+exit
+-- error
+register 0 is incorrect at exit time

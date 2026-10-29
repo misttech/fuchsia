@@ -1,0 +1,13 @@
+# Verify unsigned pointer comparison does not constant-fold wrapped negative
+# offsets and skip dead-code verification of reachable fallthrough paths.
+-- asm
+mov %r1, %r10
+mov %r2, %r10
+add %r1, -1024
+jgt %r1, %r2, +2
+mov %r3, 0x12345678
+stdw [%r3], 0
+mov %r0, 0
+exit
+-- error
+store through a non-pointer value

@@ -500,8 +500,15 @@ impl Type {
     pub fn is_non_zero(&self) -> bool {
         match self {
             Self::ScalarValue(d) => d.min() > 0,
-            Self::NullOr { .. } => false,
-            _ => true,
+            Self::PtrToStack { offset } => {
+                offset.reg().is_fully_initialized() && offset.reg().max() <= (BPF_STACK_SIZE as u64)
+            }
+            Self::PtrToMemory { offset, buffer_size, .. } => {
+                offset.is_fully_initialized() && offset.max() <= *buffer_size
+            }
+            Self::PtrToStruct { offset, .. } => offset.is_zero(),
+            Self::Releasable { inner, .. } => inner.is_non_zero(),
+            _ => false,
         }
     }
 
@@ -525,6 +532,7 @@ impl Type {
             Self::Releasable { id, inner } => {
                 Self::Releasable { id: id.clone(), inner: Arc::new(inner.with_offset(offset)) }
             }
+            Self::PtrToStack { .. } => Self::PtrToStack { offset: StackOffset(offset) },
             Self::PtrToMemory { id, buffer_size, origin, .. } => Self::PtrToMemory {
                 id: id.clone(),
                 offset,
@@ -537,6 +545,30 @@ impl Type {
             Self::PtrToArray { id, .. } => Self::PtrToArray { id: id.clone(), offset },
             _ => self.clone(),
         }
+    }
+
+    fn constrain_equal_offsets(
+        context: &mut ComputationContext,
+        type1: &Self,
+        type2: &Self,
+        offset1: ScalarValueData,
+        offset2: ScalarValueData,
+    ) -> Result<(Self, Self), VerifierErrorKind> {
+        // Both pointers share the same base, so they are equal iff their offsets are
+        // equal. Constrain the offsets, and keep the rest of each type (including any
+        // `Releasable` wrapper) so that neither pointer loses information.
+        let (offset, _) = Self::constraint(
+            context,
+            JumpType::Eq,
+            JumpWidth::W64,
+            Type::ScalarValue(offset1),
+            Type::ScalarValue(offset2),
+        )?;
+        let offset = match offset {
+            Type::ScalarValue(offset) => offset,
+            _ => offset1,
+        };
+        Ok((type1.with_offset(offset), type2.with_offset(offset)))
     }
 
     /// Constraints `type1` and `type2` for a conditional jump with the specified `jump_type` and
@@ -697,6 +729,12 @@ impl Type {
             (
                 JumpWidth::W64,
                 JumpType::Eq,
+                Type::PtrToStack { offset: StackOffset(offset1) },
+                Type::PtrToStack { offset: StackOffset(offset2) },
+            ) => Self::constrain_equal_offsets(context, &type1, &type2, *offset1, *offset2)?,
+            (
+                JumpWidth::W64,
+                JumpType::Eq,
                 Type::PtrToMemory { id: id1, offset: offset1, .. },
                 Type::PtrToMemory { id: id2, offset: offset2, .. },
             )
@@ -712,21 +750,7 @@ impl Type {
                 Type::PtrToArray { id: id1, offset: offset1 },
                 Type::PtrToArray { id: id2, offset: offset2 },
             ) if id1 == id2 => {
-                // Both pointers share the same base, so they are equal iff their offsets are
-                // equal. Constrain the offsets, and keep the rest of each type (including any
-                // `Releasable` wrapper) so that neither pointer loses information.
-                let (offset, _) = Self::constraint(
-                    context,
-                    JumpType::Eq,
-                    JumpWidth::W64,
-                    Type::ScalarValue(*offset1),
-                    Type::ScalarValue(*offset2),
-                )?;
-                let offset = match offset {
-                    Type::ScalarValue(offset) => offset,
-                    _ => *offset1,
-                };
-                (type1.with_offset(offset), type2.with_offset(offset))
+                Self::constrain_equal_offsets(context, &type1, &type2, *offset1, *offset2)?
             }
             (JumpWidth::W64, JumpType::Eq, _, _) => (type1.clone(), type1),
             _ => (type1, type2),
@@ -2258,7 +2282,7 @@ impl ComputationContext {
         let dst = self.load_memory(verification_context, &addr, field)?;
         let value = self.reg(src)?;
         let r0 = self.reg(0)?;
-        let branch = self.compute_branch(jump_width, &dst, &r0, op)?;
+        let branch = self.compute_branch(JumpType::Eq, jump_width, &dst, &r0, op)?;
         // r0 = dst
         if branch.unwrap_or(true) {
             let mut next = self.next()?;
@@ -2313,11 +2337,33 @@ impl ComputationContext {
 
     fn compute_branch(
         &self,
+        jump_type: JumpType,
         jump_width: JumpWidth,
         op1: &Type,
         op2: &Type,
         op: impl Fn(ScalarValueData, ScalarValueData) -> Result<Option<bool>, ()>,
     ) -> Result<Option<bool>, VerifierErrorKind> {
+        let eval_same_region_ptr = |sx: ScalarValueData,
+                                    sy: ScalarValueData,
+                                    in_bounds: bool|
+         -> Result<Option<bool>, ()> {
+            if !sx.is_fully_initialized() || !sy.is_fully_initialized() {
+                return Err(());
+            }
+            match jump_type {
+                JumpType::Eq | JumpType::Ne => op(sx, sy),
+                JumpType::Gt | JumpType::Ge | JumpType::Lt | JumpType::Le => {
+                    if in_bounds {
+                        op(sx, sy)
+                    } else {
+                        Ok(None)
+                    }
+                }
+                JumpType::LooseComparaison | JumpType::StrictComparaison | JumpType::Unknown => {
+                    Ok(None)
+                }
+            }
+        };
         // Unwrap Releasable operands (verifying they have not been released) so
         // pointer comparisons work on their underlying pointer types.
         match (jump_width, op1.inner(self)?, op2.inner(self)?) {
@@ -2342,24 +2388,34 @@ impl ComputationContext {
             }
 
             (JumpWidth::W64, Type::PtrToStack { offset: x }, Type::PtrToStack { offset: y }) => {
-                op(x.reg(), y.reg())
+                let in_bounds = x.reg().max() <= (BPF_STACK_SIZE as u64)
+                    && y.reg().max() <= (BPF_STACK_SIZE as u64);
+                eval_same_region_ptr(x.reg(), y.reg(), in_bounds)
             }
 
             (
                 JumpWidth::W64,
-                Type::PtrToMemory { id: id1, offset: x, .. },
-                Type::PtrToMemory { id: id2, offset: y, .. },
-            )
-            | (
+                Type::PtrToMemory { id: id1, offset: x, buffer_size: b1, .. },
+                Type::PtrToMemory { id: id2, offset: y, buffer_size: b2, .. },
+            ) if *id1 == *id2 => {
+                let in_bounds = x.max() <= *b1 && y.max() <= *b2;
+                eval_same_region_ptr(*x, *y, in_bounds)
+            }
+
+            (
                 JumpWidth::W64,
                 Type::PtrToStruct { id: id1, offset: x, .. },
                 Type::PtrToStruct { id: id2, offset: y, .. },
-            )
-            | (
+            ) if *id1 == *id2 => eval_same_region_ptr(*x, *y, x.is_zero() && y.is_zero()),
+
+            (
                 JumpWidth::W64,
                 Type::PtrToArray { id: id1, offset: x, .. },
                 Type::PtrToArray { id: id2, offset: y, .. },
-            ) if *id1 == *id2 => op(*x, *y),
+            ) if *id1 == *id2 => {
+                let bound = *self.array_bounds.get(id1).unwrap_or(&0);
+                eval_same_region_ptr(*x, *y, x.max() <= bound && y.max() <= bound)
+            }
 
             (JumpWidth::W64, Type::PtrToArray { id: id1, .. }, Type::PtrToEndArray { id: id2 })
             | (JumpWidth::W64, Type::PtrToEndArray { id: id1 }, Type::PtrToArray { id: id2, .. })
@@ -2400,11 +2456,11 @@ impl ComputationContext {
             if jump_type != JumpType::Unknown {
                 let (new_op1, new_op2) =
                     Type::constraint(&mut next, jump_type, jump_width, op1.clone(), op2.clone())?;
-                if dst < REGISTER_COUNT {
+                if dst < GENERAL_REGISTER_COUNT {
                     next.set_reg(dst, new_op1)?;
                 }
                 match src {
-                    Source::Reg(r) => {
+                    Source::Reg(r) if r < GENERAL_REGISTER_COUNT => {
                         next.set_reg(r, new_op2)?;
                     }
                     _ => {
@@ -2414,7 +2470,7 @@ impl ComputationContext {
             }
             Ok(next)
         };
-        let branch = self.compute_branch(jump_width, &op1, &op2, op)?;
+        let branch = self.compute_branch(jump_type, jump_width, &op1, &op2, op)?;
         if branch.unwrap_or(true) {
             // Do the jump
             verification_context.states.push(apply_constraints_and_register(
