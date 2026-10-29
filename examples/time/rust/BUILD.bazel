@@ -1,0 +1,48 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "bin",
+    srcs = ["src/main.rs"],
+    crate_name = "rust_time_example",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//sdk/rust/zx",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-runtime",
+    ],
+)
+
+fx_packaged_binary(
+    name = "rust_time_example_packaged_bin",
+    binary = ":bin",
+    binary_name = "rust_time_example",
+)
+
+fx_component_manifest(
+    name = "rust-time-example-manifest",
+    component_name = "rust-time-example",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/rust-time-example.cml",
+)
+
+fx_component(
+    name = "rust-time-example-component",
+    compiled_manifest = ":rust-time-example-manifest",
+    component_name = "rust-time-example",
+    visibility = ["//examples/time:__subpackages__"],
+    deps = [":rust_time_example_packaged_bin"],
+)
