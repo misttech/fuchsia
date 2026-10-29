@@ -859,11 +859,11 @@ impl Type {
                 }
                 let expected_size = size.size(context)?;
                 let offset_max = offset.max();
-                if offset_max > *buffer_size {
+                if offset_max > *buffer_size || offset_max == u64::MAX {
                     return Err(VerifierErrorKind::OutOfBoundsMemoryAccess);
                 }
                 let size_left = *buffer_size - offset_max;
-                if expected_size > size_left {
+                if expected_size > size_left || expected_size == u64::MAX {
                     return Err(VerifierErrorKind::OutOfBoundsMemoryAccess);
                 }
                 Ok(())
@@ -871,6 +871,10 @@ impl Type {
 
             (Type::MemoryParameter { size, input, output }, Type::PtrToStack { offset }) => {
                 let size = size.size(context)?;
+                if size > BPF_STACK_SIZE as u64 {
+                    return Err(VerifierErrorKind::OutOfBoundsMemoryAccess);
+                }
+                offset.check_valid_offset()?;
                 let buffer_end = offset.add(size);
                 if !buffer_end.is_within_stack() {
                     Err(VerifierErrorKind::OutOfBoundsMemoryAccess)
@@ -1875,8 +1879,12 @@ impl ComputationContext {
         instruction_offset: i16,
         width: usize,
     ) -> Result<(), VerifierErrorKind> {
-        let memory_range = dst_offset.urange + instruction_offset + U64Range::new(0, width as u64);
-        if memory_range.max > dst_buffer_size {
+        let base_range = dst_offset.urange + instruction_offset;
+        let end = base_range
+            .max
+            .checked_add(width as u64)
+            .ok_or(VerifierErrorKind::OutOfBoundsMemoryAccess)?;
+        if end > dst_buffer_size || base_range.max == u64::MAX {
             return Err(VerifierErrorKind::OutOfBoundsMemoryAccess);
         }
         Ok(())
@@ -6191,6 +6199,135 @@ mod tests {
         assert_eq!(
             verify_program(err_negative_sub, make_context(), &mut NullVerifierLogger).err(),
             Some(VerifierError { kind: VerifierErrorKind::PointerOffsetOverflow, pc: Some(1) })
+        );
+    }
+
+    #[test]
+    fn test_mem_param_stack_size_wraparound() {
+        static READ_MEM_HELPER: std::sync::LazyLock<HelperDefinition> =
+            std::sync::LazyLock::new(|| HelperDefinition {
+                index: 1,
+                name: "read_mem",
+                signature: FunctionSignature {
+                    args: vec![
+                        Type::MemoryParameter {
+                            size: MemoryParameterSize::Reference { index: 1 },
+                            input: true,
+                            output: false,
+                        },
+                        Type::ScalarValueParameter,
+                    ],
+                    return_value: Type::UNKNOWN_SCALAR,
+                    invalidate_array_bounds: false,
+                },
+            });
+        static WRITE_MEM_HELPER: std::sync::LazyLock<HelperDefinition> =
+            std::sync::LazyLock::new(|| HelperDefinition {
+                index: 2,
+                name: "write_mem",
+                signature: FunctionSignature {
+                    args: vec![
+                        Type::MemoryParameter {
+                            size: MemoryParameterSize::Reference { index: 1 },
+                            input: false,
+                            output: true,
+                        },
+                        Type::ScalarValueParameter,
+                    ],
+                    return_value: Type::UNKNOWN_SCALAR,
+                    invalidate_array_bounds: false,
+                },
+            });
+        static UNTOUCHED_MEM_HELPER: std::sync::LazyLock<HelperDefinition> =
+            std::sync::LazyLock::new(|| HelperDefinition {
+                index: 3,
+                name: "untouched_mem",
+                signature: FunctionSignature {
+                    args: vec![
+                        Type::MemoryParameter {
+                            size: MemoryParameterSize::Reference { index: 1 },
+                            input: false,
+                            output: false,
+                        },
+                        Type::ScalarValueParameter,
+                    ],
+                    return_value: Type::UNKNOWN_SCALAR,
+                    invalidate_array_bounds: false,
+                },
+            });
+
+        let make_context = || CallingContext {
+            args: vec![Type::UNKNOWN_SCALAR],
+            helpers: HashMap::from([
+                (1, &*READ_MEM_HELPER),
+                (2, &*WRITE_MEM_HELPER),
+                (3, &*UNTOUCHED_MEM_HELPER),
+            ]),
+            ..CallingContext::default()
+        };
+
+        // At offset `r10 - 8` (`504`), passing `size = -504` (`u64::MAX - 503`) would wrap
+        // `504 + size` modulo 2^64 to `0 <= BPF_STACK_SIZE` without the `size > BPF_STACK_SIZE`
+        // guard, returning `StackAccessOutOfBounds` from `read_data_ptr`/`write_data_ptr` (or `Ok`
+        // when neither `input` nor `output` is set) instead of `OutOfBoundsMemoryAccess`.
+        for helper_id in [1, 2, 3] {
+            let code = vec![
+                EbpfInstruction::new(BPF_ST | BPF_MEM | BPF_DW, 10, 0, -8, 0),
+                EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_X, 1, 10, 0, 0),
+                EbpfInstruction::new(BPF_ALU64 | BPF_ADD | BPF_K, 1, 0, 0, -8),
+                EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_K, 2, 0, 0, -504),
+                EbpfInstruction::new(BPF_JMP | BPF_CALL, 0, 0, 0, helper_id),
+                EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_K, 0, 0, 0, 0),
+                EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0),
+            ];
+            assert_eq!(
+                verify_program(code, make_context(), &mut NullVerifierLogger).err(),
+                Some(VerifierError {
+                    kind: VerifierErrorKind::OutOfBoundsMemoryAccess,
+                    pc: Some(4),
+                }),
+                "helper {helper_id} should reject wrapped stack buffer size with OutOfBoundsMemoryAccess",
+            );
+        }
+
+        // `size == 0` at a valid constant stack offset (`r10 - 8`) succeeds, whereas `r10`
+        // (`offset == BPF_STACK_SIZE`) and variable offsets are rejected by `check_valid_offset`.
+        let ok_zero_size = vec![
+            EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_X, 1, 10, 0, 0),
+            EbpfInstruction::new(BPF_ALU64 | BPF_ADD | BPF_K, 1, 0, 0, -8),
+            EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_K, 2, 0, 0, 0),
+            EbpfInstruction::new(BPF_JMP | BPF_CALL, 0, 0, 0, 1),
+            EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_K, 0, 0, 0, 0),
+            EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0),
+        ];
+        assert!(verify_program(ok_zero_size, make_context(), &mut NullVerifierLogger).is_ok());
+
+        let err_zero_size_at_r10 = vec![
+            EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_X, 1, 10, 0, 0),
+            EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_K, 2, 0, 0, 0),
+            EbpfInstruction::new(BPF_JMP | BPF_CALL, 0, 0, 0, 1),
+            EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_K, 0, 0, 0, 0),
+            EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0),
+        ];
+        assert_eq!(
+            verify_program(err_zero_size_at_r10, make_context(), &mut NullVerifierLogger).err(),
+            Some(VerifierError { kind: VerifierErrorKind::StackAccessOutOfBounds, pc: Some(2) })
+        );
+
+        let err_zero_size_var_offset = vec![
+            EbpfInstruction::new(BPF_ALU64 | crate::BPF_AND | BPF_K, 1, 0, 0, 7),
+            EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_X, 3, 10, 0, 0),
+            EbpfInstruction::new(BPF_ALU64 | BPF_ADD | BPF_K, 3, 0, 0, -16),
+            EbpfInstruction::new(BPF_ALU64 | BPF_ADD | BPF_X, 3, 1, 0, 0),
+            EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_X, 1, 3, 0, 0),
+            EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_K, 2, 0, 0, 0),
+            EbpfInstruction::new(BPF_JMP | BPF_CALL, 0, 0, 0, 1),
+            EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_K, 0, 0, 0, 0),
+            EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0),
+        ];
+        assert_eq!(
+            verify_program(err_zero_size_var_offset, make_context(), &mut NullVerifierLogger).err(),
+            Some(VerifierError { kind: VerifierErrorKind::VariableStackOffset, pc: Some(6) })
         );
     }
 }

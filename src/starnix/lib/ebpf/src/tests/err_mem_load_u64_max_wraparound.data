@@ -1,0 +1,16 @@
+# Verify negative-offset load on a u64::MAX-sized memory buffer does not wrap
+# U64Range addition to [0, u64::MAX] and bypass check_memory_access.
+-- asm
+mov %r1, -1
+call 103
+jne %r0, 0, +2
+mov %r0, 0
+exit
+mov %r6, %r0
+ldxdw %r7, [%r6-8]
+mov %r1, %r6
+call 104
+mov %r0, 0
+exit
+-- error
+out of bounds memory access

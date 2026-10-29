@@ -97,6 +97,7 @@ rustc_library("ebpf") {
     "src/tests/err_infinite_loop_same_state.data",
     "src/tests/err_lddw_punning.data",
     "src/tests/err_map_ptr_jeq_zero_dce.data",
+    "src/tests/err_mem_load_u64_max_wraparound.data",
     "src/tests/err_memory_id_collision.data",
     "src/tests/err_mixed_struct_and_mem_store.data",
     "src/tests/err_mixed_struct_and_stack_load.data",

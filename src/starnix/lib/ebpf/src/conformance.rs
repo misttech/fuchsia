@@ -1355,6 +1355,7 @@ pub mod test {
     #[test_case(local_test_data!("err_infinite_loop_same_state.data"))]
     #[test_case(local_test_data!("err_lddw_punning.data"))]
     #[test_case(local_test_data!("err_map_ptr_jeq_zero_dce.data"))]
+    #[test_case(local_test_data!("err_mem_load_u64_max_wraparound.data"))]
     #[test_case(local_test_data!("err_memory_id_collision.data"))]
     #[test_case(local_test_data!("err_mixed_struct_and_mem_store.data"))]
     #[test_case(local_test_data!("err_mixed_struct_and_stack_load.data"))]
