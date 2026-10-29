@@ -469,15 +469,16 @@ impl Constraint {
                     stack.push(evaluate_name_expr(expr, source.type_(), target.type_()));
                 }
                 ConstraintTerm::MlsOp(operands, operator) => {
+                    let (source_range, target_range) = (source.mls_range(), target.mls_range());
                     let (left, right) = match operands {
-                        MlsOperands::L1L2 => (source.low_level(), target.low_level()),
-                        MlsOperands::L1H2 => (source.low_level(), target.effective_high_level()),
-                        MlsOperands::H1L2 => (source.effective_high_level(), target.low_level()),
+                        MlsOperands::L1L2 => (source_range.low(), target_range.low()),
+                        MlsOperands::L1H2 => (source_range.low(), target_range.effective_high()),
+                        MlsOperands::H1L2 => (source_range.effective_high(), target_range.low()),
                         MlsOperands::H1H2 => {
-                            (source.effective_high_level(), target.effective_high_level())
+                            (source_range.effective_high(), target_range.effective_high())
                         }
-                        MlsOperands::L1H1 => (source.low_level(), source.effective_high_level()),
-                        MlsOperands::L2H2 => (target.low_level(), target.effective_high_level()),
+                        MlsOperands::L1H1 => (source_range.low(), source_range.effective_high()),
+                        MlsOperands::L2H2 => (target_range.low(), target_range.effective_high()),
                     };
                     stack.push(evaluate_mls(left, right, *operator));
                 }

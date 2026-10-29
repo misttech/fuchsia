@@ -8,8 +8,8 @@ use super::rules::{
 };
 use super::traits::{HasName, HasPolicyId};
 use super::{
-    AccessDecision, AccessVector, CategorySet, Class, ClassDefault, ClassDefaultRange, ClassId,
-    FsUseType, GenfsConPath, MlsLevel, OBJECT_R_ROLE_ID, PermissionId, Policy, PolicyCap, RoleId,
+    AccessDecision, AccessVector, Class, ClassDefault, ClassDefaultRange, ClassId, FsUseType,
+    GenfsConPath, MlsRange, OBJECT_R_ROLE_ID, PermissionId, Policy, PolicyCap, RoleId,
     SELINUX_AVD_FLAGS_PERMISSIVE, SecurityContext, TypeId,
 };
 use crate::{InitialSid, NullessByteStr};
@@ -315,18 +315,16 @@ impl Policy {
                 source.user(),
                 self.object_role(),
                 target.type_(),
-                source.low_level().clone(),
-                None,
+                MlsRange::new(source.mls_range().low().clone(), /* high = */ None),
             );
         };
 
         let is_process_or_socket = class.name() == b"process" || class.common_name() == b"socket";
-        let (unspecified_role, unspecified_type, unspecified_low, unspecified_high) =
-            if is_process_or_socket {
-                (source.role(), source.type_(), source.low_level(), source.high_level())
-            } else {
-                (self.object_role(), target.type_(), source.low_level(), None)
-            };
+        let (unspecified_role, unspecified_type) = if is_process_or_socket {
+            (source.role(), source.type_())
+        } else {
+            (self.object_role(), target.type_())
+        };
         let defaults = class.defaults();
 
         let user = match defaults.user() {
@@ -360,28 +358,37 @@ impl Policy {
             }
         });
 
-        let (low_level, high_level) =
-            match self.range_transition_new_range(source.type_(), target.type_(), class) {
-                Some((low_level, high_level)) => (low_level, high_level),
-                None => match defaults.range() {
-                    ClassDefaultRange::SourceLow => (source.low_level().clone(), None),
-                    ClassDefaultRange::SourceHigh => (source.effective_high_level().clone(), None),
-                    ClassDefaultRange::SourceLowHigh => {
-                        (source.low_level().clone(), source.high_level().cloned())
+        let (source_range, target_range) = (source.mls_range(), target.mls_range());
+        let mls_range = match self.range_transition_new_range(source.type_(), target.type_(), class)
+        {
+            Some(mls_range) => mls_range,
+            None => match defaults.range() {
+                ClassDefaultRange::SourceLow => {
+                    MlsRange::new(source_range.low().clone(), /* high = */ None)
+                }
+                ClassDefaultRange::SourceHigh => {
+                    MlsRange::new(source_range.effective_high().clone(), /* high = */ None)
+                }
+                ClassDefaultRange::SourceLowHigh => source_range.clone(),
+                ClassDefaultRange::TargetLow => {
+                    MlsRange::new(target_range.low().clone(), /* high = */ None)
+                }
+                ClassDefaultRange::TargetHigh => {
+                    MlsRange::new(target_range.effective_high().clone(), /* high = */ None)
+                }
+                ClassDefaultRange::TargetLowHigh => target_range.clone(),
+                ClassDefaultRange::Unspecified => {
+                    if is_process_or_socket {
+                        source_range.clone()
+                    } else {
+                        MlsRange::new(source_range.low().clone(), /* high = */ None)
                     }
-                    ClassDefaultRange::TargetLow => (target.low_level().clone(), None),
-                    ClassDefaultRange::TargetHigh => (target.effective_high_level().clone(), None),
-                    ClassDefaultRange::TargetLowHigh => {
-                        (target.low_level().clone(), target.high_level().cloned())
-                    }
-                    ClassDefaultRange::Unspecified => {
-                        (unspecified_low.clone(), unspecified_high.cloned())
-                    }
-                    ClassDefaultRange::Glblub => glblub_range(source, target),
-                },
-            };
+                }
+                ClassDefaultRange::Glblub => source_range.glblub(target_range),
+            },
+        };
 
-        SecurityContext::new(user, role, type_, low_level, high_level)
+        SecurityContext::new(user, role, type_, mls_range)
     }
 
     /// Computes the access granted to `source` on `target`, for the specified `class`. The result
@@ -576,50 +583,16 @@ impl Policy {
         source: TypeId,
         target: TypeId,
         class: &Class,
-    ) -> Option<(MlsLevel, Option<MlsLevel>)> {
+    ) -> Option<MlsRange> {
         for range_transition in self.range_transitions.iter() {
             if range_transition.source_type() == source
                 && range_transition.target_type() == target
                 && range_transition.target_class() == class.id()
             {
-                let mls_range = range_transition.mls_range();
-                let low_level = mls_range.low().clone();
-                let high_level = mls_range.high().cloned();
-                return Some((low_level, high_level));
+                return Some(range_transition.mls_range().clone());
             }
         }
 
         None
     }
-}
-
-/// Returns the set of categories present in both `left` and `right`.
-fn intersect_categories(left: &MlsLevel, right: &MlsLevel) -> CategorySet {
-    let right_categories = right.categories();
-    CategorySet::from_ids(left.categories().iter().filter(|id| right_categories.contains(*id)))
-}
-
-/// Returns the intersection of the `source` and `target` ranges.
-///
-/// If the two ranges do not overlap then the intersection is empty, and the returned range is
-/// mis-ordered, i.e. its high level does not dominate its low level. Such a range is rejected
-/// when the resulting Security Context is validated.
-fn glblub_range(
-    source: &SecurityContext,
-    target: &SecurityContext,
-) -> (MlsLevel, Option<MlsLevel>) {
-    let source_low = source.low_level();
-    let source_high = source.effective_high_level();
-    let target_low = target.low_level();
-    let target_high = target.effective_high_level();
-
-    let low_level = MlsLevel::new(
-        std::cmp::max(source_low.sensitivity(), target_low.sensitivity()),
-        intersect_categories(source_low, target_low),
-    );
-    let high_level = MlsLevel::new(
-        std::cmp::min(source_high.sensitivity(), target_high.sensitivity()),
-        intersect_categories(source_high, target_high),
-    );
-    (low_level, Some(high_level))
 }

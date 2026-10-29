@@ -36,7 +36,6 @@ use selinux_policy_derive::{Parse, Serialize, Validate};
 
 use crate::InitialSid;
 pub use access_vector::AccessVector;
-use bitmap::IdSpan;
 use booleans::{ConditionalBoolean, ConditionalBooleanId};
 pub(crate) use classes::Class;
 pub use classes::ClassId;
@@ -51,10 +50,7 @@ use initial_sids::InitialSids;
 pub(crate) use metadata::HandleUnknown;
 pub use metadata::POLICYDB_VERSION_MAX;
 use metadata::{Config, Counts, Magic, PolicyVersion, Signature};
-use mls::{
-    Category, CategoryId, CategorySet, CategorySetBuilder, RangeTransition, Sensitivity,
-    SensitivityId,
-};
+use mls::{Category, MlsLevel, MlsRange, RangeTransition, Sensitivity};
 pub use object_contexts::FsUseType;
 use object_contexts::{GenfsCon, GenfsConPath, ObjectContexts};
 pub use parser::PolicyData;
@@ -67,7 +63,6 @@ use roles::{Role, RoleAllow, RoleSet, RoleTransition};
 pub use rules::AccessDecision;
 use rules::{ConditionalNode, IndexedAccessVectorRules};
 pub(crate) use rules::{SELINUX_AVD_FLAGS_PERMISSIVE, XpermsBitmap};
-use security_context::{MlsLevel, MlsRange};
 pub(crate) use security_context::{SecurityContext, SecurityContextError};
 pub use traits::PolicyId;
 pub(crate) use traits::{HasName, HasPolicyId};

@@ -2,220 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::cmp::Ordering;
-
 use bstr::BString;
 use selinux_policy_derive::{Parse, Serialize, Validate};
 use thiserror::Error;
 
-use super::error::{ParseError, SerializeError, ValidateError};
-use super::parser::{PolicyCursor, PolicyWriter};
-use super::traits::{HasName, HasPolicyId, Parse, PolicyId as _, Serialize, Validate};
-use super::{
-    CategoryId, CategorySet, CategorySetBuilder, IdSpan, Policy, RoleId, SensitivityId, TypeId,
-    UserId,
-};
+use super::traits::{HasName, HasPolicyId};
+use super::{MlsRange, Policy, RoleId, TypeId, UserId};
 use crate::NullessByteStr;
-
-/// Security level in Multi-Level Security (MLS), consisting of a sensitivity and a set of
-/// categories.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Parse, Serialize, Validate)]
-pub struct MlsLevel {
-    sensitivity: SensitivityId,
-    categories: CategorySet,
-}
-
-impl MlsLevel {
-    /// Constructs a new [`MlsLevel`].
-    pub fn new(sensitivity: SensitivityId, categories: CategorySet) -> Self {
-        Self { sensitivity, categories }
-    }
-
-    /// Returns the sensitivity level.
-    pub fn sensitivity(&self) -> SensitivityId {
-        self.sensitivity
-    }
-
-    /// Returns the set of categories.
-    pub fn categories(&self) -> &CategorySet {
-        &self.categories
-    }
-
-    /// Compares two [`MlsLevel`]s, returning [`None`] if they are incomparable.
-    pub fn compare(&self, other: &Self) -> Option<Ordering> {
-        let s_order = self.sensitivity().cmp(&other.sensitivity());
-        let c_order = self.categories().compare(other.categories())?;
-        if s_order == c_order {
-            return Some(s_order);
-        } else if c_order == Ordering::Equal {
-            return Some(s_order);
-        } else if s_order == Ordering::Equal {
-            return Some(c_order);
-        }
-        None
-    }
-
-    /// Returns `true` if `self` dominates `other` (i.e. is greater than or equal to).
-    pub fn dominates(&self, other: &Self) -> bool {
-        self.sensitivity() >= other.sensitivity()
-            && self.categories().is_superset(other.categories())
-    }
-
-    /// Parses [`MlsLevel`] from the supplied string slice.
-    fn from_string(policy: &Policy, level: &str) -> Result<Self, SecurityContextError> {
-        if level.is_empty() {
-            return Err(SecurityContextError::InvalidSyntax);
-        }
-
-        // Parse the parts before looking up values, to catch invalid syntax.
-        let mut items = level.split(":");
-        let sensitivity = items.next().ok_or(SecurityContextError::InvalidSyntax)?;
-        let categories_item = items.next();
-        if items.next() != None {
-            return Err(SecurityContextError::InvalidSyntax);
-        }
-
-        // Lookup the sensitivity, and associated categories/ranges, if any.
-        let sensitivity = policy
-            .sensitivities
-            .get_by_name(sensitivity.as_bytes())
-            .ok_or_else(|| SecurityContextError::UnknownSensitivity { name: sensitivity.into() })?
-            .id();
-
-        let mut categories = CategorySetBuilder::new();
-        if let Some(categories_str) = categories_item {
-            for entry in categories_str.split(",") {
-                if let Some((low_str, high_str)) = entry.split_once(".") {
-                    let low = Self::category_id_by_name(policy, low_str)?;
-                    let high = Self::category_id_by_name(policy, high_str)?;
-                    if high <= low {
-                        return Err(SecurityContextError::InvalidSyntax);
-                    }
-                    categories.insert_range(low, high);
-                } else {
-                    let id = Self::category_id_by_name(policy, entry)?;
-                    categories.insert(id);
-                };
-            }
-        }
-
-        Ok(Self::new(sensitivity, categories.build()))
-    }
-
-    fn category_id_by_name(
-        policy: &Policy,
-        name: &str,
-    ) -> Result<CategoryId, SecurityContextError> {
-        Ok(policy
-            .categories
-            .get_by_name(name.as_bytes())
-            .ok_or_else(|| SecurityContextError::UnknownCategory { name: name.into() })?
-            .id())
-    }
-
-    fn to_string(&self, policy: &Policy) -> Vec<u8> {
-        let sensitivity = policy.sensitivities.get_by_id(self.sensitivity()).unwrap().name();
-        let categories = self
-            .categories
-            .spans()
-            .map(|x| x.to_string(policy))
-            .collect::<Vec<Vec<u8>>>()
-            .join(b",".as_ref());
-
-        if categories.is_empty() {
-            sensitivity.to_vec()
-        } else {
-            [sensitivity, categories.as_slice()].join(b":".as_ref())
-        }
-    }
-}
-
-/// Security range in Multi-Level Security (MLS), consisting of a low level and an optional
-/// high level.
-///
-/// Ranges whose high level equals their low level are normalized to omit `high`, ensuring that
-/// equivalent single-level ranges compare and serialize identically.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct MlsRange {
-    low: MlsLevel,
-    high: Option<MlsLevel>,
-}
-
-impl MlsRange {
-    /// Constructs a new [`MlsRange`], normalizing equal low and high levels to omit `high`.
-    pub fn new(low: MlsLevel, high: Option<MlsLevel>) -> Self {
-        let high = high.filter(|high| *high != low);
-        Self { low, high }
-    }
-
-    /// Returns the low security level.
-    pub fn low(&self) -> &MlsLevel {
-        &self.low
-    }
-
-    /// Returns the high security level, if distinct from [`Self::low`].
-    pub fn high(&self) -> Option<&MlsLevel> {
-        self.high.as_ref()
-    }
-
-    /// Returns the high security level if distinct from [`Self::low`], or [`Self::low`]
-    /// otherwise.
-    pub fn effective_high(&self) -> &MlsLevel {
-        self.high.as_ref().unwrap_or(&self.low)
-    }
-}
-
-impl Parse for MlsRange {
-    fn parse(cursor: &mut PolicyCursor<'_>) -> Result<Self, ParseError> {
-        let levels_count = u32::parse(cursor)?;
-        let sensitivity_low = SensitivityId::parse(cursor)?;
-
-        // If levels_count > 1, the MLS range contains both low and high security levels.
-        if levels_count > 1 {
-            let sensitivity_high = SensitivityId::parse(cursor)?;
-            let low_categories = CategorySet::parse(cursor)?;
-            let high_categories = CategorySet::parse(cursor)?;
-
-            Ok(Self::new(
-                MlsLevel::new(sensitivity_low, low_categories),
-                Some(MlsLevel::new(sensitivity_high, high_categories)),
-            ))
-        } else {
-            let low_categories = CategorySet::parse(cursor)?;
-            Ok(Self::new(MlsLevel::new(sensitivity_low, low_categories), /* high = */ None))
-        }
-    }
-}
-
-impl Serialize for MlsRange {
-    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
-        if let Some(ref high) = self.high {
-            2u32.serialize(writer)?;
-            self.low.sensitivity.serialize(writer)?;
-            high.sensitivity.serialize(writer)?;
-            self.low.categories.serialize(writer)?;
-            high.categories.serialize(writer)?;
-        } else {
-            1u32.serialize(writer)?;
-            self.low.sensitivity.serialize(writer)?;
-            self.low.categories.serialize(writer)?;
-        }
-        Ok(())
-    }
-}
-
-impl Validate for MlsRange {
-    fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
-        self.low.validate(policy)?;
-        if let Some(ref high) = self.high {
-            high.validate(policy)?;
-            if !high.dominates(&self.low) {
-                return Err(ValidateError::InvalidMlsRange);
-            }
-        }
-        Ok(())
-    }
-}
 
 /// Security context, a variable-length label associated with each SELinux object in the
 /// system. Contains mandatory `user:role:type` components and an MLS `range` component.
@@ -237,14 +30,8 @@ impl SecurityContext {
     /// Fields are not validated against policy constraints until explicitly validated via
     /// [`Policy::validate_security_context`], or implicitly via insertion into a
     /// [`crate::sid_table::SidTable`].
-    pub(super) fn new(
-        user: UserId,
-        role: RoleId,
-        type_: TypeId,
-        low_level: MlsLevel,
-        high_level: Option<MlsLevel>,
-    ) -> Self {
-        Self { user, role, type_, mls_range: MlsRange::new(low_level, high_level) }
+    pub(super) fn new(user: UserId, role: RoleId, type_: TypeId, mls_range: MlsRange) -> Self {
+        Self { user, role, type_, mls_range }
     }
 
     /// Returns the user ID.
@@ -262,20 +49,9 @@ impl SecurityContext {
         self.type_
     }
 
-    /// Returns the low security level.
-    pub(super) fn low_level(&self) -> &MlsLevel {
-        self.mls_range.low()
-    }
-
-    /// Returns the high security level, if distinct from [`Self::low_level`].
-    pub(super) fn high_level(&self) -> Option<&MlsLevel> {
-        self.mls_range.high()
-    }
-
-    /// Returns the high security level if distinct from [`Self::low_level`], or
-    /// [`Self::low_level`] otherwise.
-    pub(super) fn effective_high_level(&self) -> &MlsLevel {
-        self.mls_range.effective_high()
+    /// Returns the MLS security range.
+    pub(super) fn mls_range(&self) -> &MlsRange {
+        &self.mls_range
     }
 }
 
@@ -320,26 +96,11 @@ impl Policy {
             .map_err(|_| SecurityContextError::InvalidSyntax)?;
 
         // Parse the user, role, type and security level parts, to validate syntax.
-        let mut items = as_str.splitn(4, ":");
+        let mut items = as_str.splitn(4, ':');
         let user = items.next().ok_or(SecurityContextError::InvalidSyntax)?;
         let role = items.next().ok_or(SecurityContextError::InvalidSyntax)?;
         let type_ = items.next().ok_or(SecurityContextError::InvalidSyntax)?;
-
-        // `next()` holds the remainder of the string, if any.
-        let mut levels = items.next().ok_or(SecurityContextError::InvalidSyntax)?.split("-");
-        let low_level = levels.next().ok_or(SecurityContextError::InvalidSyntax)?;
-        if low_level.is_empty() {
-            return Err(SecurityContextError::InvalidSyntax);
-        }
-        let high_level = levels.next();
-        if let Some(high_level) = high_level {
-            if high_level.is_empty() {
-                return Err(SecurityContextError::InvalidSyntax);
-            }
-        }
-        if levels.next() != None {
-            return Err(SecurityContextError::InvalidSyntax);
-        }
+        let levels = items.next().ok_or(SecurityContextError::InvalidSyntax)?;
 
         // Resolve the user, role, type and security levels to identifiers.
         let user = self
@@ -357,11 +118,9 @@ impl Policy {
             .get_by_name(type_.as_bytes())
             .ok_or_else(|| SecurityContextError::UnknownType { name: type_.into() })?
             .id();
+        let mls_range = MlsRange::parse_str(self, levels)?;
 
-        let low_level = MlsLevel::from_string(self, low_level)?;
-        let high_level = high_level.map(|x| MlsLevel::from_string(self, x)).transpose()?;
-
-        Ok(SecurityContext::new(user, role, type_, low_level, high_level))
+        Ok(SecurityContext::new(user, role, type_, mls_range))
     }
 
     /// Validates that `context`'s fields are consistent with this policy's constraints (e.g. that
@@ -375,13 +134,11 @@ impl Policy {
         // Check that the security context's levels are internally consistent: i.e., that the
         // high level, if any, dominates the low level. This applies to every context, including
         // those labelled with the special "object_r" role.
-        if let Some(high_level) = context.high_level() {
-            if !high_level.dominates(context.low_level()) {
-                return Err(SecurityContextError::InvalidSecurityRange {
-                    low: context.low_level().to_string(self).into(),
-                    high: high_level.to_string(self).into(),
-                });
-            }
+        if !context.mls_range.is_consistent() {
+            return Err(SecurityContextError::InvalidSecurityRange {
+                low: context.mls_range.low().serialize_str(self).into(),
+                high: context.mls_range.effective_high().serialize_str(self).into(),
+            });
         }
 
         // Validation of the user/role/type relationships is skipped for the special "object_r"
@@ -408,23 +165,21 @@ impl Policy {
         }
 
         // Check that the security context's MLS range is valid for the user.
-        let valid_low = user.mls_range().low();
-        let valid_high = user.mls_range().effective_high();
+        let user_range = user.mls_range();
 
         // 1. Check that the security context's low level is in the valid range for the user.
-        if !(context.low_level().dominates(valid_low) && valid_high.dominates(context.low_level()))
-        {
+        if !user_range.contains_level(context.mls_range.low()) {
             return Err(SecurityContextError::InvalidLevelForUser {
-                level: context.low_level().to_string(self).into(),
+                level: context.mls_range.low().serialize_str(self).into(),
                 user: user.name().into(),
             });
         }
 
         // 2. Check that the security context's high level is in the valid range for the user.
-        if let Some(high_level) = context.high_level() {
-            if !(valid_high.dominates(high_level) && high_level.dominates(valid_low)) {
+        if let Some(high_level) = context.mls_range.high() {
+            if !user_range.contains_level(high_level) {
                 return Err(SecurityContextError::InvalidLevelForUser {
-                    level: high_level.to_string(self).into(),
+                    level: high_level.serialize_str(self).into(),
                     user: user.name().into(),
                 });
             }
@@ -435,11 +190,7 @@ impl Policy {
 
     /// Serializes `context` to a canonical Security Context byte string.
     pub fn serialize_security_context(&self, context: &SecurityContext) -> Vec<u8> {
-        let mut levels = context.low_level().to_string(self);
-        if let Some(high_level) = context.high_level() {
-            levels.push(b'-');
-            levels.extend(high_level.to_string(self));
-        }
+        let levels = context.mls_range().serialize_str(self);
         let type_ = self.types.get_by_id(context.type_()).unwrap();
         let parts: [&[u8]; 4] = [
             self.users.get_by_id(context.user()).unwrap().name(),
@@ -448,27 +199,6 @@ impl Policy {
             levels.as_slice(),
         ];
         parts.join(b":".as_ref())
-    }
-}
-
-/// Entry in a category specification, which may be a single category (in which case
-/// [`IdSpan::low`] = [`IdSpan::high`]) or a span of consecutive categories. Bounds are included in
-/// the span.
-type CategorySpan = IdSpan<CategoryId>;
-
-impl CategorySpan {
-    /// Returns `Vec<u8>` describing the category, or category range.
-    fn to_string(&self, policy: &Policy) -> Vec<u8> {
-        let low = policy.categories.get_by_id(self.low()).unwrap().name();
-        if self.low() == self.high() {
-            return low.into();
-        }
-        let high = policy.categories.get_by_id(self.high()).unwrap().name();
-        // A span of just two categories is described as a pair of individual categories, rather
-        // than as a range.
-        let separator: &[u8] =
-            if self.high().as_u32() == self.low().as_u32() + 1 { b"," } else { b"." };
-        [low, high].join(separator)
     }
 }
 
@@ -499,6 +229,7 @@ pub enum SecurityContextError {
 
 #[cfg(test)]
 mod tests {
+    use super::super::mls::{CategoryId, CategorySpan, MlsLevel, SensitivityId};
     use super::*;
 
     fn test_policy() -> Policy {
@@ -547,122 +278,6 @@ mod tests {
         level.categories().spans().map(|x| category_span(policy, &x)).collect()
     }
 
-    // Creates a category range for testing.
-    fn cat(low: u32, high: u32) -> CategorySpan {
-        CategorySpan::new(
-            CategoryId::from_u32(low).expect("category ids are nonzero"),
-            CategoryId::from_u32(high).expect("category ids are nonzero"),
-        )
-    }
-
-    // Compares two sets of categories for testing.
-    fn compare(lhs: &[CategorySpan], rhs: &[CategorySpan]) -> Option<Ordering> {
-        let lhs_set = CategorySet::from_ids(lhs.iter().flat_map(|span| {
-            (span.low().as_u32()..=span.high().as_u32()).map(|i| CategoryId::from_u32(i).unwrap())
-        }));
-        let rhs_set = CategorySet::from_ids(rhs.iter().flat_map(|span| {
-            (span.low().as_u32()..=span.high().as_u32()).map(|i| CategoryId::from_u32(i).unwrap())
-        }));
-        lhs_set.compare(&rhs_set)
-    }
-
-    #[test]
-    fn category_compare() {
-        let cat_1 = cat(1, 1);
-        let cat_2 = cat(1, 3);
-        let cat_3 = cat(2, 3);
-        assert_eq!(compare(&[cat_1.clone()], &[cat_1.clone()]), Some(Ordering::Equal));
-        assert_eq!(compare(&[cat_1.clone()], &[cat_2.clone()]), Some(Ordering::Less));
-        assert_eq!(compare(&[cat_1.clone()], &[cat_3.clone()]), None);
-        assert_eq!(compare(&[cat_2.clone()], &[cat_1.clone()]), Some(Ordering::Greater));
-        assert_eq!(compare(&[cat_2.clone()], &[cat_3.clone()]), Some(Ordering::Greater));
-    }
-
-    #[test]
-    fn categories_compare_empty_iter() {
-        let cats_0 = &[];
-        let cats_1 = &[cat(1, 1)];
-        assert_eq!(compare(cats_0, cats_0), Some(Ordering::Equal));
-        assert_eq!(compare(cats_0, cats_1), Some(Ordering::Less));
-        assert_eq!(compare(cats_1, cats_0), Some(Ordering::Greater));
-    }
-
-    #[test]
-    fn categories_compare_same_length() {
-        let cats_1 = &[cat(1, 1), cat(3, 3)];
-        let cats_2 = &[cat(1, 1), cat(4, 4)];
-        let cats_3 = &[cat(1, 2), cat(4, 4)];
-        let cats_4 = &[cat(1, 2), cat(4, 5)];
-
-        assert_eq!(compare(cats_1, cats_1), Some(Ordering::Equal));
-        assert_eq!(compare(cats_1, cats_2), None);
-        assert_eq!(compare(cats_1, cats_3), None);
-        assert_eq!(compare(cats_1, cats_4), None);
-
-        assert_eq!(compare(cats_2, cats_1), None);
-        assert_eq!(compare(cats_2, cats_2), Some(Ordering::Equal));
-        assert_eq!(compare(cats_2, cats_3), Some(Ordering::Less));
-        assert_eq!(compare(cats_2, cats_4), Some(Ordering::Less));
-
-        assert_eq!(compare(cats_3, cats_1), None);
-        assert_eq!(compare(cats_3, cats_2), Some(Ordering::Greater));
-        assert_eq!(compare(cats_3, cats_3), Some(Ordering::Equal));
-        assert_eq!(compare(cats_3, cats_4), Some(Ordering::Less));
-
-        assert_eq!(compare(cats_4, cats_1), None);
-        assert_eq!(compare(cats_4, cats_2), Some(Ordering::Greater));
-        assert_eq!(compare(cats_4, cats_3), Some(Ordering::Greater));
-        assert_eq!(compare(cats_4, cats_4), Some(Ordering::Equal));
-    }
-
-    #[test]
-    fn categories_compare_different_lengths() {
-        let cats_1 = &[cat(1, 1)];
-        let cats_2 = &[cat(1, 4)];
-        let cats_3 = &[cat(1, 1), cat(4, 4)];
-        let cats_4 = &[cat(1, 2), cat(4, 5), cat(7, 7)];
-
-        assert_eq!(compare(cats_1, cats_3), Some(Ordering::Less));
-        assert_eq!(compare(cats_1, cats_4), Some(Ordering::Less));
-
-        assert_eq!(compare(cats_2, cats_3), Some(Ordering::Greater));
-        assert_eq!(compare(cats_2, cats_4), None);
-
-        assert_eq!(compare(cats_3, cats_1), Some(Ordering::Greater));
-        assert_eq!(compare(cats_3, cats_2), Some(Ordering::Less));
-        assert_eq!(compare(cats_3, cats_4), Some(Ordering::Less));
-
-        assert_eq!(compare(cats_4, cats_1), Some(Ordering::Greater));
-        assert_eq!(compare(cats_4, cats_2), None);
-        assert_eq!(compare(cats_4, cats_3), Some(Ordering::Greater));
-    }
-
-    #[test]
-    // Test cases where one interval appears before or after all intervals of the
-    // other set, or in a gap between intervals of the other set.
-    fn categories_compare_with_gaps() {
-        let cats_1 = &[cat(1, 2), cat(4, 5)];
-        let cats_2 = &[cat(4, 5)];
-        let cats_3 = &[cat(2, 5), cat(10, 11)];
-        let cats_4 = &[cat(2, 5), cat(7, 8), cat(10, 11)];
-
-        assert_eq!(compare(cats_1, cats_2), Some(Ordering::Greater));
-        assert_eq!(compare(cats_1, cats_3), None);
-        assert_eq!(compare(cats_1, cats_4), None);
-
-        assert_eq!(compare(cats_2, cats_1), Some(Ordering::Less));
-        assert_eq!(compare(cats_2, cats_3), Some(Ordering::Less));
-        assert_eq!(compare(cats_2, cats_4), Some(Ordering::Less));
-
-        assert_eq!(compare(cats_3, cats_1), None);
-        assert_eq!(compare(cats_3, cats_2), Some(Ordering::Greater));
-        assert_eq!(compare(cats_3, cats_4), Some(Ordering::Less));
-
-        assert_eq!(compare(cats_4, cats_1), None);
-        assert_eq!(compare(cats_4, cats_2), Some(Ordering::Greater));
-        assert_eq!(compare(cats_4, cats_3), Some(Ordering::Greater));
-    }
-
     #[test]
     fn parse_security_context_single_sensitivity() {
         let policy = test_policy();
@@ -672,9 +287,12 @@ mod tests {
         assert_eq!(user_name(&policy, security_context.user()), "user0");
         assert_eq!(role_name(&policy, security_context.role()), "object_r");
         assert_eq!(type_name(&policy, security_context.type_()), "type0");
-        assert_eq!(sensitivity_name(&policy, security_context.low_level().sensitivity()), "s0");
-        assert!(category_spans(&policy, security_context.low_level()).is_empty());
-        assert_eq!(security_context.high_level(), None);
+        assert_eq!(
+            sensitivity_name(&policy, security_context.mls_range().low().sensitivity()),
+            "s0"
+        );
+        assert!(category_spans(&policy, security_context.mls_range().low()).is_empty());
+        assert_eq!(security_context.mls_range().high(), None);
     }
 
     #[test]
@@ -686,9 +304,12 @@ mod tests {
         assert_eq!(user_name(&policy, security_context.user()), "user0");
         assert_eq!(role_name(&policy, security_context.role()), "object_r");
         assert_eq!(type_name(&policy, security_context.type_()), "type0");
-        assert_eq!(sensitivity_name(&policy, security_context.low_level().sensitivity()), "s0");
-        assert!(category_spans(&policy, security_context.low_level()).is_empty());
-        let high_level = security_context.high_level().unwrap();
+        assert_eq!(
+            sensitivity_name(&policy, security_context.mls_range().low().sensitivity()),
+            "s0"
+        );
+        assert!(category_spans(&policy, security_context.mls_range().low()).is_empty());
+        let high_level = security_context.mls_range().high().unwrap();
         assert_eq!(sensitivity_name(&policy, high_level.sensitivity()), "s1");
         assert!(category_spans(&policy, high_level).is_empty());
     }
@@ -702,12 +323,15 @@ mod tests {
         assert_eq!(user_name(&policy, security_context.user()), "user0");
         assert_eq!(role_name(&policy, security_context.role()), "object_r");
         assert_eq!(type_name(&policy, security_context.type_()), "type0");
-        assert_eq!(sensitivity_name(&policy, security_context.low_level().sensitivity()), "s1");
         assert_eq!(
-            category_spans(&policy, security_context.low_level()),
+            sensitivity_name(&policy, security_context.mls_range().low().sensitivity()),
+            "s1"
+        );
+        assert_eq!(
+            category_spans(&policy, security_context.mls_range().low()),
             [CategoryItem { low: "c0".to_string(), high: "c4".to_string() }]
         );
-        assert_eq!(security_context.high_level(), None);
+        assert_eq!(security_context.mls_range().high(), None);
     }
 
     #[test]
@@ -753,9 +377,12 @@ mod tests {
         assert_eq!(user_name(&policy, security_context.user()), "user0");
         assert_eq!(role_name(&policy, security_context.role()), "object_r");
         assert_eq!(type_name(&policy, security_context.type_()), "type0");
-        assert_eq!(sensitivity_name(&policy, security_context.low_level().sensitivity()), "s0");
-        assert!(category_spans(&policy, security_context.low_level()).is_empty());
-        let high_level = security_context.high_level().unwrap();
+        assert_eq!(
+            sensitivity_name(&policy, security_context.mls_range().low().sensitivity()),
+            "s0"
+        );
+        assert!(category_spans(&policy, security_context.mls_range().low()).is_empty());
+        let high_level = security_context.mls_range().high().unwrap();
         assert_eq!(sensitivity_name(&policy, high_level.sensitivity()), "s1");
         assert_eq!(
             category_spans(&policy, high_level),
@@ -772,13 +399,16 @@ mod tests {
         assert_eq!(user_name(&policy, security_context.user()), "user0");
         assert_eq!(role_name(&policy, security_context.role()), "object_r");
         assert_eq!(type_name(&policy, security_context.type_()), "type0");
-        assert_eq!(sensitivity_name(&policy, security_context.low_level().sensitivity()), "s0");
         assert_eq!(
-            category_spans(&policy, security_context.low_level()),
+            sensitivity_name(&policy, security_context.mls_range().low().sensitivity()),
+            "s0"
+        );
+        assert_eq!(
+            category_spans(&policy, security_context.mls_range().low()),
             [CategoryItem { low: "c0".to_string(), high: "c0".to_string() }]
         );
 
-        let high_level = security_context.high_level().unwrap();
+        let high_level = security_context.mls_range().high().unwrap();
         assert_eq!(sensitivity_name(&policy, high_level.sensitivity()), "s1");
         assert_eq!(
             category_spans(&policy, high_level),
@@ -795,15 +425,18 @@ mod tests {
         assert_eq!(user_name(&policy, security_context.user()), "user0");
         assert_eq!(role_name(&policy, security_context.role()), "object_r");
         assert_eq!(type_name(&policy, security_context.type_()), "type0");
-        assert_eq!(sensitivity_name(&policy, security_context.low_level().sensitivity()), "s1");
         assert_eq!(
-            category_spans(&policy, security_context.low_level()),
+            sensitivity_name(&policy, security_context.mls_range().low().sensitivity()),
+            "s1"
+        );
+        assert_eq!(
+            category_spans(&policy, security_context.mls_range().low()),
             [
                 CategoryItem { low: "c0".to_string(), high: "c0".to_string() },
                 CategoryItem { low: "c4".to_string(), high: "c4".to_string() }
             ]
         );
-        assert_eq!(security_context.high_level(), None);
+        assert_eq!(security_context.mls_range().high(), None);
     }
 
     #[test]
@@ -815,15 +448,18 @@ mod tests {
         assert_eq!(user_name(&policy, security_context.user()), "user0");
         assert_eq!(role_name(&policy, security_context.role()), "object_r");
         assert_eq!(type_name(&policy, security_context.type_()), "type0");
-        assert_eq!(sensitivity_name(&policy, security_context.low_level().sensitivity()), "s1");
         assert_eq!(
-            category_spans(&policy, security_context.low_level()),
+            sensitivity_name(&policy, security_context.mls_range().low().sensitivity()),
+            "s1"
+        );
+        assert_eq!(
+            category_spans(&policy, security_context.mls_range().low()),
             [
                 CategoryItem { low: "c0".to_string(), high: "c0".to_string() },
                 CategoryItem { low: "c3".to_string(), high: "c4".to_string() }
             ]
         );
-        assert_eq!(security_context.high_level(), None);
+        assert_eq!(security_context.mls_range().high(), None);
     }
 
     #[test]
@@ -999,21 +635,8 @@ mod tests {
             policy.parse_security_context(b"user0:object_r:type0:s0:c0".into()).unwrap();
         let equal_range =
             policy.parse_security_context(b"user0:object_r:type0:s0:c0-s0:c0".into()).unwrap();
-        assert_eq!(equal_range.high_level(), None);
+        assert_eq!(equal_range.mls_range().high(), None);
         assert_eq!(equal_range, single_level);
         assert_eq!(policy.serialize_security_context(&equal_range), b"user0:object_r:type0:s0:c0");
-
-        // A binary 2-level MLS range with equal low and high levels is also normalized on parse.
-        let level = single_level.low_level();
-        let mut bytes = Vec::new();
-        let mut writer = PolicyWriter::new(policy.version, &mut bytes);
-        2u32.serialize(&mut writer).unwrap();
-        level.sensitivity().serialize(&mut writer).unwrap();
-        level.sensitivity().serialize(&mut writer).unwrap();
-        level.categories().serialize(&mut writer).unwrap();
-        level.categories().serialize(&mut writer).unwrap();
-        let parsed_range = MlsRange::parse(&mut PolicyCursor::new(&bytes)).unwrap();
-        assert_eq!(parsed_range.high(), None);
-        assert_eq!(parsed_range, MlsRange::new(level.clone(), /* high = */ None));
     }
 }
