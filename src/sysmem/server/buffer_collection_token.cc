@@ -100,9 +100,8 @@ void BufferCollectionToken::CombinedTokenServer::DuplicateSyncV1(
                      "BufferCollectionToken::DuplicateSync() attempted when is_done_");
     return;
   }
-  std::vector<zx::channel> new_tokens;
-
-  for (auto& rights_attenuation_mask : request.rights_attenuation_masks()) {
+  const auto& masks = request.rights_attenuation_masks();
+  for (auto& rights_attenuation_mask : masks) {
     if (rights_attenuation_mask == 0) {
       parent_.FailSync(FROM_HERE, ConnectionVersion::kVersion1, completer, ZX_ERR_INVALID_ARGS,
                        "DuplicateSync() rights_attenuation_mask 0 not permitted");
@@ -110,7 +109,9 @@ void BufferCollectionToken::CombinedTokenServer::DuplicateSyncV1(
     }
   }
 
-  for (auto& rights_attenuation_mask : request.rights_attenuation_masks()) {
+  std::vector<zx::channel> new_tokens;
+  new_tokens.reserve(masks.size());
+  for (auto& rights_attenuation_mask : masks) {
     auto token_endpoints = fidl::CreateEndpoints<fuchsia_sysmem::BufferCollectionToken>();
     if (!token_endpoints.is_ok()) {
       parent_.FailSync(FROM_HERE, ConnectionVersion::kVersion1, completer,
@@ -154,7 +155,8 @@ void BufferCollectionToken::CombinedTokenServer::DuplicateSyncV2(
     return;
   }
 
-  for (auto& rights_attenuation_mask : *request.rights_attenuation_masks()) {
+  const auto& masks = *request.rights_attenuation_masks();
+  for (auto& rights_attenuation_mask : masks) {
     if (rights_attenuation_mask == 0) {
       parent_.FailSync(FROM_HERE, ConnectionVersion::kVersion2, completer, ZX_ERR_INVALID_ARGS,
                        "DuplicateSync() rights_attenuation_mask 0 not permitted");
@@ -163,7 +165,8 @@ void BufferCollectionToken::CombinedTokenServer::DuplicateSyncV2(
   }
 
   std::vector<fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>> new_tokens;
-  for (auto& rights_attenuation_mask : request.rights_attenuation_masks().value()) {
+  new_tokens.reserve(masks.size());
+  for (auto& rights_attenuation_mask : masks) {
     auto token_endpoints = fidl::CreateEndpoints<fuchsia_sysmem2::BufferCollectionToken>();
     if (!token_endpoints.is_ok()) {
       parent_.FailSync(FROM_HERE, ConnectionVersion::kVersion2, completer,
