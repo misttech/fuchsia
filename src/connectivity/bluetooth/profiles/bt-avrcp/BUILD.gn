@@ -135,7 +135,7 @@ if (is_fuchsia) {
   }
 }
 if (is_fuchsia) {
-  rustc_test("bin_test") {
+  rustc_test("bt_avrcp_bin_test") {
     sources = [
       "src/browse_controller_service.rs",
       "src/controller_service.rs",
@@ -218,13 +218,12 @@ if (is_fuchsia) {
            ]
     source_root = "src/main.rs"
     configs += [ "//build/config/rust/lints:deny_unused_results" ]
-    output_name = "bt_avrcp_bin_test"
   }
 }
 fuchsia_unittest_package("bt-avrcp-tests") {
   package_name = "bt-avrcp-tests-gn"
   component_name = "bt-avrcp-tests"
-  deps = [ ":bin_test" ]
+  deps = [ ":bt_avrcp_bin_test" ]
   test_specs = {
     log_settings = {
       max_severity = "ERROR"

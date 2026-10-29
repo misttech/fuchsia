@@ -96,7 +96,7 @@ if (is_fuchsia) {
   }
 }
 if (is_fuchsia) {
-  rustc_test("bin_test") {
+  rustc_test("bt_device_id_bin_test") {
     sources = [
       "src/device_id/mod.rs",
       "src/device_id/server.rs",
@@ -129,13 +129,12 @@ if (is_fuchsia) {
            ]
     source_root = "src/main.rs"
     configs += [ "//build/config/rust/lints:deny_unused_results" ]
-    output_name = "bt_device_id_bin_test"
   }
 }
 fuchsia_unittest_package("bt-device-id-tests") {
   package_name = "bt-device-id-tests-gn"
   component_name = "bt-device-id-tests"
-  deps = [ ":bin_test" ]
+  deps = [ ":bt_device_id_bin_test" ]
   visibility = [
     ":*",
     "//src/connectivity/bluetooth:*",

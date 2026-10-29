@@ -53,7 +53,7 @@ rustc_library("async-helpers") {
   ]
 }
 if (is_fuchsia) {
-  rustc_test("async-helpers_test") {
+  rustc_test("async_helpers_lib_test") {
     sources = [
       "src/hanging_get/async_server.rs",
       "src/hanging_get/mod.rs",
@@ -72,7 +72,6 @@ if (is_fuchsia) {
              "//src/lib/fuchsia-async",
            ]
     configs += [ "//build/config/rust/lints:deny_unused_results" ]
-    output_name = "async_helpers_lib_test"
   }
 }
 rustc_library("async-test-helpers") {
@@ -94,7 +93,7 @@ rustc_library("async-test-helpers") {
 fuchsia_unittest_package("async-helpers-tests") {
   package_name = "async-helpers-tests-gn"
   component_name = "async-helpers-tests"
-  deps = [ ":async-helpers_test" ]
+  deps = [ ":async_helpers_lib_test" ]
   visibility = [
     ":*",
     "//src/connectivity/bluetooth:*",

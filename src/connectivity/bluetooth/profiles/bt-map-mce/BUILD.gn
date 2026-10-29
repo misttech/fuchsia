@@ -88,7 +88,7 @@ if (is_fuchsia) {
   }
 }
 if (is_fuchsia) {
-  rustc_test("bin_test") {
+  rustc_test("bt_map_mce_bin_test") {
     sources = [
       "src/main.rs",
       "src/message_access_service.rs",
@@ -129,13 +129,12 @@ if (is_fuchsia) {
         ]
     source_root = "src/main.rs"
     configs += [ "//build/config/rust/lints:deny_unused_results" ]
-    output_name = "bt_map_mce_bin_test"
   }
 }
 fuchsia_unittest_package("bt-map-mce-unittests") {
   package_name = "bt-map-mce-unittests-gn"
   component_name = "bt-map-mce-unittests"
-  deps = [ ":bin_test" ]
+  deps = [ ":bt_map_mce_bin_test" ]
   test_specs = {
     log_settings = {
       max_severity = "ERROR"

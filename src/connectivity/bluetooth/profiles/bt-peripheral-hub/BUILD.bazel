@@ -64,9 +64,8 @@ fx_component(
     deps = [":bin_packaged_bin"],
 )
 
-# @bazel2gn:raw_attribute:output_name = "bt_peripheral_hub_bin_test"
 rustc_test(
-    name = "bin_test",
+    name = "bt_peripheral_hub_bin_test",
     build_flags = ["//build/config/rust/lints:deny_unused_results"],
     crate = ":bin",
     target_compatible_with = ["@platforms//os:fuchsia"],
@@ -79,6 +78,6 @@ rustc_test(
 
 fx_unittest_package(
     name = "bt-peripheral-hub-tests",
-    unit_tests = [":bin_test"],
+    unit_tests = [":bt_peripheral_hub_bin_test"],
     visibility = ["//src/connectivity/bluetooth:__pkg__"],
 )
