@@ -1216,17 +1216,19 @@ pub mod test {
     #[test_case(ubpf_test_data!("call.data"))]
     #[test_case(ubpf_test_data!("call-memfrob.data"))]
     #[test_case(ubpf_test_data!("call-save.data"))]
+    // `call_unwind.data` and `call_unwind_fail.data` are omitted because they test a
+    // uBPF-specific unwind extension not present in Linux eBPF.
     #[test_case(ubpf_test_data!("div32-by-zero-reg.data"))]
     #[test_case(ubpf_test_data!("div32-high-divisor.data"))]
     #[test_case(ubpf_test_data!("div32-imm.data"))]
     #[test_case(ubpf_test_data!("div32-reg.data"))]
-    #[test_case(ubpf_test_data!("div64-by-zero-imm.data"))]
+    // `div64-by-zero-imm.data` and `div-by-zero-imm.data` are omitted because uBPF executes
+    // immediate division by zero at runtime, whereas the Linux verifier rejects it at load time.
     #[test_case(ubpf_test_data!("div64-by-zero-reg.data"))]
     #[test_case(ubpf_test_data!("div64-imm.data"))]
     #[test_case(ubpf_test_data!("div64-negative-imm.data"))]
     #[test_case(ubpf_test_data!("div64-negative-reg.data"))]
     #[test_case(ubpf_test_data!("div64-reg.data"))]
-    #[test_case(ubpf_test_data!("div-by-zero-imm.data"))]
     #[test_case(ubpf_test_data!("div-by-zero-reg.data"))]
     #[test_case(ubpf_test_data!("early-exit.data"))]
     #[test_case(ubpf_test_data!("err-call-bad-imm.data"))]
@@ -1286,10 +1288,10 @@ pub mod test {
     #[test_case(ubpf_test_data!("lsh-reg.data"))]
     #[test_case(ubpf_test_data!("mem-len.data"))]
     #[test_case(ubpf_test_data!("mod32.data"))]
-    #[test_case(ubpf_test_data!("mod64-by-zero-imm.data"))]
+    // `mod64-by-zero-imm.data` and `mod-by-zero-imm.data` are omitted because uBPF executes
+    // immediate modulo by zero at runtime, whereas the Linux verifier rejects it at load time.
     #[test_case(ubpf_test_data!("mod64-by-zero-reg.data"))]
     #[test_case(ubpf_test_data!("mod64.data"))]
-    #[test_case(ubpf_test_data!("mod-by-zero-imm.data"))]
     #[test_case(ubpf_test_data!("mod-by-zero-reg.data"))]
     #[test_case(ubpf_test_data!("mod.data"))]
     #[test_case(ubpf_test_data!("mov64-sign-extend.data"))]
@@ -1300,9 +1302,13 @@ pub mod test {
     #[test_case(ubpf_test_data!("mul64-imm.data"))]
     #[test_case(ubpf_test_data!("mul64-reg.data"))]
     #[test_case(ubpf_test_data!("mul-loop.data"))]
+    // `mul-loop-memory-iterations.data` is omitted because it loops on a counter loaded from
+    // memory, which the static verifier rejects as a potentially unbounded loop.
     #[test_case(ubpf_test_data!("neg64.data"))]
     #[test_case(ubpf_test_data!("neg.data"))]
     #[test_case(ubpf_test_data!("prime.data"))]
+    // `reload.data` and `unload_reload.data` are omitted because they test uBPF's C VM
+    // reload API rather than eBPF program verification or execution.
     #[test_case(ubpf_test_data!("rsh32.data"))]
     #[test_case(ubpf_test_data!("rsh-reg.data"))]
     #[test_case(ubpf_test_data!("stack2.data"))]
@@ -1456,7 +1462,7 @@ pub mod test {
 
         let verified_program = verify_program(
             test_case.code,
-            CallingContext { maps, helpers, args, packet_type },
+            CallingContext { maps, helpers, args, packet_type, allow_ptr_leaks: false },
             &mut NullVerifierLogger,
         );
 

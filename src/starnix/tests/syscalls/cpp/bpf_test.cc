@@ -1300,6 +1300,257 @@ TEST_F(BpfMapTest, ObjGetInfoByFdOnlyWritesRequestedSize) {
   munmap(mem, page_size * 2);
 }
 
+TEST_F(BpfTestBase, DivByZeroConstant) {
+  const uint8_t kDivByZeroCodes[] = {
+      BPF_ALU | BPF_DIV | BPF_K,
+      BPF_ALU64 | BPF_DIV | BPF_K,
+  };
+  for (uint8_t code : kDivByZeroCodes) {
+    bpf_insn prog[] = {
+        BPF_MOV_IMM(0, 42),
+        // r0 /= 0
+        bpf_insn{
+            .code = code,
+            .dst_reg = 0,
+            .src_reg = 0,
+            .off = 0,
+            .imm = 0,
+        },
+        BPF_RETURN(),
+    };
+    fbl::unique_fd prog_fd = TryLoadProgram(prog, std::size(prog), BPF_PROG_TYPE_SOCKET_FILTER, 0);
+    EXPECT_THAT(prog_fd.get(), SyscallFailsWithErrno(EINVAL));
+  }
+}
+
+TEST_F(BpfTestBase, ModByZeroConstant) {
+  const uint8_t kModByZeroCodes[] = {
+      BPF_ALU | BPF_MOD | BPF_K,
+      BPF_ALU64 | BPF_MOD | BPF_K,
+  };
+  for (uint8_t code : kModByZeroCodes) {
+    bpf_insn prog[] = {
+        BPF_MOV_IMM(0, 42),
+        // r0 %= 0
+        bpf_insn{
+            .code = code,
+            .dst_reg = 0,
+            .src_reg = 0,
+            .off = 0,
+            .imm = 0,
+        },
+        BPF_RETURN(),
+    };
+    fbl::unique_fd prog_fd = TryLoadProgram(prog, std::size(prog), BPF_PROG_TYPE_SOCKET_FILTER, 0);
+    EXPECT_THAT(prog_fd.get(), SyscallFailsWithErrno(EINVAL));
+  }
+}
+
+TEST_F(BpfTestBase, ShiftOutOfBound) {
+  const std::pair<uint8_t, int32_t> kInvalidShifts[] = {
+      {BPF_ALU | BPF_LSH | BPF_K, 32},
+      {BPF_ALU | BPF_RSH | BPF_K, -1},
+      {BPF_ALU64 | BPF_LSH | BPF_K, 64},
+      {BPF_ALU64 | BPF_ARSH | BPF_K, -1},
+  };
+  for (const auto& [code, imm] : kInvalidShifts) {
+    bpf_insn prog[] = {
+        BPF_MOV_IMM(0, 1),
+        bpf_insn{
+            .code = code,
+            .dst_reg = 0,
+            .src_reg = 0,
+            .off = 0,
+            .imm = imm,
+        },
+        BPF_RETURN(),
+    };
+    fbl::unique_fd prog_fd = TryLoadProgram(prog, std::size(prog), BPF_PROG_TYPE_SOCKET_FILTER, 0);
+    EXPECT_THAT(prog_fd.get(), SyscallFailsWithErrno(EINVAL));
+  }
+}
+
+TEST_F(BpfTestBase, ContextUnalignedRead) {
+  bpf_insn unaligned_prog[] = {
+      // r0 = *(uint32_t*)(r1 + 1) - unaligned read from __sk_buff.
+      BPF_LOAD_OFFSET(0, 1, 1),
+      BPF_RETURN(),
+  };
+  fbl::unique_fd prog_fd =
+      TryLoadProgram(unaligned_prog, std::size(unaligned_prog), BPF_PROG_TYPE_SOCKET_FILTER, 0);
+  EXPECT_THAT(prog_fd.get(), SyscallFailsWithErrno(EACCES));
+
+  // Variable-offset read from __sk_buff must also be rejected, even when aligned and in bounds.
+  bpf_insn variable_offset_prog[] = {
+      // r2 = *(uint32_t*)(r1 + 0)
+      BPF_LOAD_OFFSET(2, 1, 0),
+      // r2 &= 4 (so r2 is 0 or 4, both aligned 4-byte __sk_buff fields)
+      bpf_insn{
+          .code = BPF_ALU64 | BPF_AND | BPF_K,
+          .dst_reg = 2,
+          .src_reg = 0,
+          .off = 0,
+          .imm = 4,
+      },
+      // r1 += r2
+      bpf_insn{
+          .code = BPF_ALU64 | BPF_ADD | BPF_X,
+          .dst_reg = 1,
+          .src_reg = 2,
+          .off = 0,
+          .imm = 0,
+      },
+      // r0 = *(uint32_t*)(r1 + 0)
+      BPF_LOAD_OFFSET(0, 1, 0),
+      BPF_RETURN(),
+  };
+  prog_fd = TryLoadProgram(variable_offset_prog, std::size(variable_offset_prog),
+                           BPF_PROG_TYPE_SOCKET_FILTER, 0);
+  EXPECT_THAT(prog_fd.get(), SyscallFailsWithErrno(EACCES));
+}
+
+TEST_F(BpfTestBase, LdAbsUninitializedR0) {
+  bpf_insn prog[] = {
+      // r6 = r1 (BPF_LD | BPF_ABS expects skb in r6).
+      BPF_MOV_REG(6, 1),
+      // r0 = *(uint8_t*)(skb->data + 0) without initializing r0 first.
+      bpf_insn{
+          .code = BPF_LD | BPF_B | BPF_ABS,
+          .dst_reg = 0,
+          .src_reg = 0,
+          .off = 0,
+          .imm = 0,
+      },
+      BPF_RETURN(),
+  };
+  fbl::unique_fd prog_fd = TryLoadProgram(prog, std::size(prog), BPF_PROG_TYPE_SOCKET_FILTER, 0);
+  EXPECT_THAT(prog_fd.get(), SyscallSucceeds());
+}
+
+TEST_F(BpfMapTest, PointerHugeOffset) {
+  bpf_insn prog[] = {
+      // *(uint32_t*)(r10 - 4) = 0
+      bpf_insn{
+          .code = BPF_ST | BPF_MEM | BPF_W,
+          .dst_reg = 10,
+          .src_reg = 0,
+          .off = -4,
+          .imm = 0,
+      },
+      BPF_MOV_REG(2, 10),
+      BPF_ADD_IMM(2, -4),
+      BPF_LOAD_MAP(1, array_fd()),
+      BPF_CALL_EXTERNAL(BPF_FUNC_map_lookup_elem),
+      bpf_insn{
+          .code = BPF_JMP | BPF_JEQ | BPF_K,
+          .dst_reg = 0,
+          .src_reg = 0,
+          .off = 6,
+          .imm = 0,
+      },
+      BPF_MOV_REG(6, 0),
+      // r1 = 1ULL << 32 (exceeds the 1 << 29 pointer offset limit)
+      bpf_insn{
+          .code = BPF_LD | BPF_DW | BPF_IMM,
+          .dst_reg = 1,
+          .src_reg = 0,
+          .off = 0,
+          .imm = 0,
+      },
+      bpf_insn{
+          .code = 0,
+          .dst_reg = 0,
+          .src_reg = 0,
+          .off = 0,
+          .imm = 1,
+      },
+      // Add and then subtract `r1` so the pointer returns in bounds before the dereference,
+      // verifying that `1 << 29` is enforced at the pointer-arithmetic step itself.
+      // r6 += r1
+      bpf_insn{
+          .code = BPF_ALU64 | BPF_ADD | BPF_X,
+          .dst_reg = 6,
+          .src_reg = 1,
+          .off = 0,
+          .imm = 0,
+      },
+      // r6 -= r1
+      bpf_insn{
+          .code = BPF_ALU64 | BPF_SUB | BPF_X,
+          .dst_reg = 6,
+          .src_reg = 1,
+          .off = 0,
+          .imm = 0,
+      },
+      // r0 = *(uint32_t*)(r6 + 0)
+      BPF_LOAD_OFFSET(0, 6, 0),
+      BPF_MOV_IMM(0, 0),
+      BPF_RETURN(),
+  };
+  fbl::unique_fd prog_fd = TryLoadProgram(prog, std::size(prog), BPF_PROG_TYPE_SOCKET_FILTER, 0);
+  EXPECT_THAT(prog_fd.get(), SyscallFailsWithErrno(EINVAL));
+}
+
+TEST_F(BpfTestBase, PointerLeakByEnd) {
+  bpf_insn ptr_swap_prog[] = {
+      // r0 = r10 (frame pointer)
+      BPF_MOV_REG(0, 10),
+      // r0 = htobe64(r0)
+      bpf_insn{
+          .code = BPF_ALU | BPF_END | BPF_TO_BE,
+          .dst_reg = 0,
+          .src_reg = 0,
+          .off = 0,
+          .imm = 64,
+      },
+      BPF_MOV_IMM(0, 0),
+      BPF_RETURN(),
+  };
+
+  // Byte-swapping a pointer register is permitted (coercing the register to an unknown scalar)
+  // when the caller holds CAP_SYS_ADMIN or CAP_PERFMON.
+  fbl::unique_fd prog_fd =
+      TryLoadProgram(ptr_swap_prog, std::size(ptr_swap_prog), BPF_PROG_TYPE_SOCKET_FILTER, 0);
+  EXPECT_THAT(prog_fd.get(), SyscallSucceeds());
+
+  test_helper::ForkHelper fork_helper;
+  fork_helper.RunInForkedProcess([&]() {
+    test_helper::UnsetCapabilityEffective(CAP_SYS_ADMIN);
+    fbl::unique_fd prog_fd =
+        TryLoadProgram(ptr_swap_prog, std::size(ptr_swap_prog), BPF_PROG_TYPE_SOCKET_FILTER, 0);
+    EXPECT_THAT(prog_fd.get(), SyscallSucceeds());
+  });
+  EXPECT_TRUE(fork_helper.WaitForChildren());
+
+  // Without CAP_SYS_ADMIN or CAP_PERFMON (retaining CAP_BPF to load the program), byte-swapping a
+  // pointer register must be rejected with EACCES.
+  fork_helper.RunInForkedProcess([&]() {
+    test_helper::UnsetCapabilityEffective(CAP_SYS_ADMIN);
+    test_helper::UnsetCapabilityEffective(CAP_PERFMON);
+    fbl::unique_fd prog_fd =
+        TryLoadProgram(ptr_swap_prog, std::size(ptr_swap_prog), BPF_PROG_TYPE_SOCKET_FILTER, 0);
+    EXPECT_THAT(prog_fd.get(), SyscallFailsWithErrno(EACCES));
+  });
+  EXPECT_TRUE(fork_helper.WaitForChildren());
+
+  // Byte-swapping an uninitialized register must always be rejected, even with CAP_SYS_ADMIN.
+  bpf_insn uninit_swap_prog[] = {
+      // r2 = htobe64(r2) where r2 is uninitialized.
+      bpf_insn{
+          .code = BPF_ALU | BPF_END | BPF_TO_BE,
+          .dst_reg = 2,
+          .src_reg = 0,
+          .off = 0,
+          .imm = 64,
+      },
+      BPF_MOV_IMM(0, 0),
+      BPF_RETURN(),
+  };
+  prog_fd =
+      TryLoadProgram(uninit_swap_prog, std::size(uninit_swap_prog), BPF_PROG_TYPE_SOCKET_FILTER, 0);
+  EXPECT_THAT(prog_fd.get(), SyscallFailsWithErrno(EACCES));
+}
+
 class BpfMapCapabilityTest
     : public BpfTestBase,
       public ::testing::WithParamInterface<std::tuple<uint32_t, bool, bool, bool, bool>> {

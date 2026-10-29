@@ -149,11 +149,15 @@ impl Program {
         mut code: Vec<EbpfInstruction>,
     ) -> Result<ProgramHandle, Errno> {
         let maps = link_maps_fds(current_task, &mut code)?;
+        let allow_ptr_leaks = check_cap_or_sys_admin(current_task, CAP_PERFMON).is_ok();
         let program = verify_with_logger(code, info.log_level, logger, || {
             let maps_schema = maps.iter().map(|m| m.schema).collect();
-            info.program_type
+            let mut calling_context = info
+                .program_type
                 .create_calling_context(info.expected_attach_type, maps_schema)
-                .map_err(map_ebpf_api_error)
+                .map_err(map_ebpf_api_error)?;
+            calling_context.allow_ptr_leaks = allow_ptr_leaks;
+            Ok(calling_context)
         })?;
 
         let (fidl_handle, service_handle) = zx::EventPair::create();

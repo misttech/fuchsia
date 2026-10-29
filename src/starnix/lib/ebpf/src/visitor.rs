@@ -514,6 +514,24 @@ pub trait BpfVisitor {
         let src_imm = || Source::Value(inst.imm() as u64);
         let src_reg = || Source::Reg(inst.src_reg());
 
+        let div_imm = || {
+            let imm = inst.imm();
+            if imm == 0 {
+                Err(VerifierErrorKind::DivByZero.into())
+            } else {
+                Ok(Source::Value(imm as u64))
+            }
+        };
+
+        let shift_imm = |max_bits: i32| {
+            let imm = inst.imm();
+            if imm < 0 || imm >= max_bits {
+                Err(VerifierErrorKind::InvalidShift(imm).into())
+            } else {
+                Ok(Source::Value(imm as u64))
+            }
+        };
+
         let width_from_imm = || match inst.imm() {
             16 => Ok(DataWidth::U16),
             32 => Ok(DataWidth::U32),
@@ -659,23 +677,23 @@ pub trait BpfVisitor {
             BPF_ALU_SUB_X => self.sub(context, dst, src_reg()),
             BPF_ALU_MUL_K => self.mul(context, dst, src_imm()),
             BPF_ALU_MUL_X => self.mul(context, dst, src_reg()),
-            BPF_ALU_DIV_K => self.div(context, dst, src_imm()),
+            BPF_ALU_DIV_K => self.div(context, dst, div_imm()?),
             BPF_ALU_DIV_X => self.div(context, dst, src_reg()),
             BPF_ALU_OR_K => self.or(context, dst, src_imm()),
             BPF_ALU_OR_X => self.or(context, dst, src_reg()),
             BPF_ALU_AND_K => self.and(context, dst, src_imm()),
             BPF_ALU_AND_X => self.and(context, dst, src_reg()),
-            BPF_ALU_LSH_K => self.lsh(context, dst, src_imm()),
+            BPF_ALU_LSH_K => self.lsh(context, dst, shift_imm(32)?),
             BPF_ALU_LSH_X => self.lsh(context, dst, src_reg()),
-            BPF_ALU_RSH_K => self.rsh(context, dst, src_imm()),
+            BPF_ALU_RSH_K => self.rsh(context, dst, shift_imm(32)?),
             BPF_ALU_RSH_X => self.rsh(context, dst, src_reg()),
-            BPF_ALU_MOD_K => self.r#mod(context, dst, src_imm()),
+            BPF_ALU_MOD_K => self.r#mod(context, dst, div_imm()?),
             BPF_ALU_MOD_X => self.r#mod(context, dst, src_reg()),
             BPF_ALU_XOR_K => self.xor(context, dst, src_imm()),
             BPF_ALU_XOR_X => self.xor(context, dst, src_reg()),
             BPF_ALU_MOV_K => self.mov(context, dst, src_imm()),
             BPF_ALU_MOV_X => self.mov(context, dst, src_reg()),
-            BPF_ALU_ARSH_K => self.arsh(context, dst, src_imm()),
+            BPF_ALU_ARSH_K => self.arsh(context, dst, shift_imm(32)?),
             BPF_ALU_ARSH_X => self.arsh(context, dst, src_reg()),
             BPF_ALU_NEG => self.neg(context, dst),
 
@@ -686,23 +704,23 @@ pub trait BpfVisitor {
             BPF_ALU64_SUB_X => self.sub64(context, dst, src_reg()),
             BPF_ALU64_MUL_K => self.mul64(context, dst, src_imm()),
             BPF_ALU64_MUL_X => self.mul64(context, dst, src_reg()),
-            BPF_ALU64_DIV_K => self.div64(context, dst, src_imm()),
+            BPF_ALU64_DIV_K => self.div64(context, dst, div_imm()?),
             BPF_ALU64_DIV_X => self.div64(context, dst, src_reg()),
             BPF_ALU64_OR_K => self.or64(context, dst, src_imm()),
             BPF_ALU64_OR_X => self.or64(context, dst, src_reg()),
             BPF_ALU64_AND_K => self.and64(context, dst, src_imm()),
             BPF_ALU64_AND_X => self.and64(context, dst, src_reg()),
-            BPF_ALU64_LSH_K => self.lsh64(context, dst, src_imm()),
+            BPF_ALU64_LSH_K => self.lsh64(context, dst, shift_imm(64)?),
             BPF_ALU64_LSH_X => self.lsh64(context, dst, src_reg()),
-            BPF_ALU64_RSH_K => self.rsh64(context, dst, src_imm()),
+            BPF_ALU64_RSH_K => self.rsh64(context, dst, shift_imm(64)?),
             BPF_ALU64_RSH_X => self.rsh64(context, dst, src_reg()),
-            BPF_ALU64_MOD_K => self.mod64(context, dst, src_imm()),
+            BPF_ALU64_MOD_K => self.mod64(context, dst, div_imm()?),
             BPF_ALU64_MOD_X => self.mod64(context, dst, src_reg()),
             BPF_ALU64_XOR_K => self.xor64(context, dst, src_imm()),
             BPF_ALU64_XOR_X => self.xor64(context, dst, src_reg()),
             BPF_ALU64_MOV_K => self.mov64(context, dst, src_imm()),
             BPF_ALU64_MOV_X => self.mov64(context, dst, src_reg()),
-            BPF_ALU64_ARSH_K => self.arsh64(context, dst, src_imm()),
+            BPF_ALU64_ARSH_K => self.arsh64(context, dst, shift_imm(64)?),
             BPF_ALU64_ARSH_X => self.arsh64(context, dst, src_reg()),
             BPF_ALU64_NEG => self.neg64(context, dst),
 

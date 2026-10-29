@@ -448,6 +448,7 @@ pub fn convert_and_verify_cbpf(
         helpers: HashMap::new(),
         args: vec![packet_type.clone()],
         packet_type: Some(packet_type),
+        allow_ptr_leaks: false,
     };
     let ebpf_code = cbpf_to_ebpf(bpf_code, config)?;
     Ok(verify_program(ebpf_code, context, &mut NullVerifierLogger)?)

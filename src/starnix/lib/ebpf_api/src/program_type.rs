@@ -1436,7 +1436,13 @@ impl ProgramType {
             Self::SchedAct | Self::SchedCls => Some(SCHED_ARG_TYPE.clone()),
             _ => None,
         };
-        Ok(CallingContext { maps, helpers: self.get_helpers(), args, packet_type })
+        Ok(CallingContext {
+            maps,
+            helpers: self.get_helpers(),
+            args,
+            packet_type,
+            allow_ptr_leaks: false,
+        })
     }
 }
 

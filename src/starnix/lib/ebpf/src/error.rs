@@ -51,6 +51,12 @@ pub enum VerifierErrorKind {
     #[error("invalid byte swap width: {0}")]
     InvalidByteSwapWidth(i32),
 
+    #[error("invalid shift value: {0}")]
+    InvalidShift(i32),
+
+    #[error("division by zero")]
+    DivByZero,
+
     #[error("invalid atomic operation {0:x}")]
     InvalidAtomicOp(u8),
 
@@ -188,6 +194,9 @@ pub enum VerifierErrorKind {
     #[error("register 0 is incorrect at exit time")]
     InvalidReturnValue,
 
+    #[error("byte swap requires an initialized scalar register")]
+    InvalidByteSwapTarget,
+
     // Packet access.
     #[error("R{0} is not a packet")]
     RegisterNotPacket(Register),
@@ -207,6 +216,8 @@ impl VerifierErrorKind {
             // references to maps or helpers.
             Self::InvalidOpcode(_)
             | Self::InvalidByteSwapWidth(_)
+            | Self::InvalidShift(_)
+            | Self::DivByZero
             | Self::InvalidAtomicOp(_)
             | Self::UnsupportedCallType(_)
             | Self::IncompleteLddw
@@ -221,7 +232,8 @@ impl VerifierErrorKind {
             | Self::EmptyArrayMap
             | Self::InvalidMapTypeForHelper(_)
             | Self::ResourceLeak
-            | Self::RegisterNotPacket(_) => EINVAL,
+            | Self::RegisterNotPacket(_)
+            | Self::PointerOffsetOverflow => EINVAL,
 
             // Type, bounds and permission violations.
             Self::NonConstantBufferSize
@@ -233,7 +245,6 @@ impl VerifierErrorKind {
             | Self::WriteToReadOnlyMap
             | Self::WriteToReadOnlyMemory
             | Self::OutOfBoundsMemoryAccess
-            | Self::PointerOffsetOverflow
             | Self::UninitializedPointerArithmetic
             | Self::StoreToNonPointer
             | Self::LoadFromNonPointer
@@ -253,6 +264,7 @@ impl VerifierErrorKind {
             | Self::WriteToReadOnlyRegister(_)
             | Self::InvalidComparison
             | Self::InvalidReturnValue
+            | Self::InvalidByteSwapTarget
             | Self::UninitializedPacketOffset => EACCES,
         }
     }
@@ -296,6 +308,8 @@ mod tests {
         // Structural errors map to EINVAL.
         assert_eq!(VerifierErrorKind::InvalidOpcode(0xff).errno(), EINVAL);
         assert_eq!(VerifierErrorKind::InvalidByteSwapWidth(8).errno(), EINVAL);
+        assert_eq!(VerifierErrorKind::InvalidShift(32).errno(), EINVAL);
+        assert_eq!(VerifierErrorKind::DivByZero.errno(), EINVAL);
         assert_eq!(VerifierErrorKind::InvalidAtomicOp(0xff).errno(), EINVAL);
         assert_eq!(VerifierErrorKind::UnsupportedCallType(1).errno(), EINVAL);
         assert_eq!(VerifierErrorKind::IncompleteLddw.errno(), EINVAL);
@@ -311,6 +325,7 @@ mod tests {
         assert_eq!(VerifierErrorKind::InvalidMapTypeForHelper(1).errno(), EINVAL);
         assert_eq!(VerifierErrorKind::ResourceLeak.errno(), EINVAL);
         assert_eq!(VerifierErrorKind::RegisterNotPacket(6).errno(), EINVAL);
+        assert_eq!(VerifierErrorKind::PointerOffsetOverflow.errno(), EINVAL);
 
         // Type, bounds, and permission violations map to EACCES.
         assert_eq!(VerifierErrorKind::NonConstantBufferSize.errno(), EACCES);
@@ -322,7 +337,6 @@ mod tests {
         assert_eq!(VerifierErrorKind::WriteToReadOnlyMap.errno(), EACCES);
         assert_eq!(VerifierErrorKind::WriteToReadOnlyMemory.errno(), EACCES);
         assert_eq!(VerifierErrorKind::OutOfBoundsMemoryAccess.errno(), EACCES);
-        assert_eq!(VerifierErrorKind::PointerOffsetOverflow.errno(), EACCES);
         assert_eq!(VerifierErrorKind::UninitializedPointerArithmetic.errno(), EACCES);
         assert_eq!(VerifierErrorKind::StoreToNonPointer.errno(), EACCES);
         assert_eq!(VerifierErrorKind::LoadFromNonPointer.errno(), EACCES);
@@ -340,6 +354,7 @@ mod tests {
         assert_eq!(VerifierErrorKind::WriteToReadOnlyRegister(10).errno(), EACCES);
         assert_eq!(VerifierErrorKind::InvalidComparison.errno(), EACCES);
         assert_eq!(VerifierErrorKind::InvalidReturnValue.errno(), EACCES);
+        assert_eq!(VerifierErrorKind::InvalidByteSwapTarget.errno(), EACCES);
         assert_eq!(VerifierErrorKind::UninitializedPacketOffset.errno(), EACCES);
     }
 }

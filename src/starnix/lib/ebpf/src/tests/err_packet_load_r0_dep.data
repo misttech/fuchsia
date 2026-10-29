@@ -1,6 +1,6 @@
 # The packet load is a prune point. The fall-through branch (r7 != 0) reaches it with r0 initialized
 # to a scalar (0). The jump branch (r7 == 0) reaches it with r0 holding a pointer (%r6), which must
-# be rejected because r0 is checked to be a written scalar on the failure exit path.
+# be rejected when r0 is used as the indirect packet offset register.
 -- asm
 mov %r6, %r1
 ldxw %r7, [%r6]
@@ -8,9 +8,9 @@ mov %r0, 0
 jeq %r7, 0, +1
 ja +1
 mov %r0, %r6
-ldpb +0
+ldpb %r0+0
 exit
 -- mem
 00000000000000000000000000000000
 -- error
-register 0 is incorrect at exit time
+access to unwritten offset

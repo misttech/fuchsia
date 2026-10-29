@@ -236,14 +236,23 @@ impl StructDescriptor {
     /// Finds the field type for load/store at the specified location. None is returned if the
     /// access is invalid and the program must be rejected.
     fn find_field(&self, base_offset: ScalarValueData, field: Field) -> Option<&FieldDescriptor> {
+        // Struct accesses must use a statically known, naturally aligned offset because
+        // context fields are remapped by static offset at link time.
         let offset = base_offset + field.offset;
-        let field_desc = self.fields.iter().find(|f| {
-            f.offset <= offset.min() as usize && (offset.max() as usize) < f.offset + f.size()
-        })?;
+        if !offset.is_known() {
+            return None;
+        }
+        let offset = usize::try_from(offset.value).ok()?;
+        let width_bytes = field.width.bytes();
+        if !offset.is_multiple_of(width_bytes) {
+            return None;
+        }
+        let field_desc =
+            self.fields.iter().find(|f| f.offset <= offset && offset < f.offset + f.size())?;
         let is_valid_load = match field_desc.field_type {
             FieldType::Scalar { size } | FieldType::MutableScalar { size } => {
                 // For scalars check that the access is within the bounds of the field.
-                ((offset + field.width.bytes()).max() as usize) <= field_desc.offset + size
+                offset.checked_add(width_bytes)? <= field_desc.offset + size
             }
             FieldType::PtrToMemory { is_32_bit, .. }
             | FieldType::NullablePtrToMemory { is_32_bit, .. }
@@ -251,9 +260,7 @@ impl StructDescriptor {
             | FieldType::PtrToEndArray { is_32_bit, .. } => {
                 let expected_width = if is_32_bit { DataWidth::U32 } else { DataWidth::U64 };
                 // Pointer loads are expected to load the whole field.
-                offset.is_known()
-                    && offset.value as usize == field_desc.offset
-                    && field.width == expected_width
+                offset == field_desc.offset && field.width == expected_width
             }
         };
 
@@ -1040,6 +1047,8 @@ pub struct CallingContext {
     pub args: Vec<Type>,
     /// Packet type. Normally it should be either `None` or `args[0]`.
     pub packet_type: Option<Type>,
+    /// Whether pointer values may be coerced to scalars (`CAP_PERFMON` or `CAP_SYS_ADMIN`).
+    pub allow_ptr_leaks: bool,
 }
 
 impl CallingContext {
@@ -2126,13 +2135,25 @@ impl ComputationContext {
             (alu_type, Type::PtrToStack { offset: x }, Type::ScalarValue(data))
                 if alu_type.is_ptr_compatible() =>
             {
-                Type::PtrToStack { offset: run_on_stack_offset(*x, |x| op(x, *data)) }
+                const BPF_MAX_VAR_OFF: u64 = 1 << 29;
+                let offset = op(x.reg(), *data);
+                if offset.max() > BPF_MAX_VAR_OFF {
+                    return Err(VerifierErrorKind::PointerOffsetOverflow);
+                }
+                Type::PtrToStack { offset: StackOffset(offset) }
             }
             (
                 alu_type,
                 Type::PtrToMemory { offset: x, .. } | Type::PtrToStruct { offset: x, .. },
                 Type::ScalarValue(data),
-            ) if alu_type.is_ptr_compatible() => op1.with_offset(op(*x, *data)),
+            ) if alu_type.is_ptr_compatible() => {
+                const BPF_MAX_VAR_OFF: u64 = 1 << 29;
+                let offset = op(*x, *data);
+                if offset.max() > BPF_MAX_VAR_OFF {
+                    return Err(VerifierErrorKind::PointerOffsetOverflow);
+                }
+                op1.with_offset(offset)
+            }
             (AluType::Add, Type::PtrToArray { offset: x, .. }, Type::ScalarValue(data)) => {
                 let offset =
                     x.checked_add(*data).ok_or(VerifierErrorKind::PointerOffsetOverflow)?;
@@ -2342,14 +2363,21 @@ impl ComputationContext {
             }
         };
         let value = self.reg(dst)?;
-        let new_value = match value {
-            Type::ScalarValue(data) => Type::ScalarValue(ScalarValueData::new(
-                bit_op(data.value),
-                bit_op(data.unknown_mask),
-                bit_op(data.unwritten_mask),
-                U64Range::max(),
-            )),
-            _ => Type::default(),
+        // Reject partially or uninitialized scalars (since 16- and 32-bit byte swaps
+        // zero-extend the upper bits into `unwritten_mask == 0`). Pointers are rejected unless
+        // `allow_ptr_leaks` is set, in which case they coerce to an unknown scalar.
+        let new_value = match value.inner(self)? {
+            Type::ScalarValue(data) if data.is_fully_initialized() => {
+                Type::ScalarValue(ScalarValueData::new(
+                    bit_op(data.value),
+                    bit_op(data.unknown_mask),
+                    0,
+                    U64Range::max(),
+                ))
+            }
+            Type::ScalarValue(_) => return Err(VerifierErrorKind::InvalidByteSwapTarget),
+            _ if verification_context.calling_context.allow_ptr_leaks => Type::UNKNOWN_SCALAR,
+            _ => return Err(VerifierErrorKind::InvalidByteSwapTarget),
         };
         let mut next = self.next()?;
         next.set_reg(dst, new_value)?;
@@ -2972,19 +3000,21 @@ impl BpfVisitor for DataDependencies {
     fn be<'a>(
         &mut self,
         _context: &mut Self::Context<'a>,
-        _dst: Register,
+        dst: Register,
         _width: DataWidth,
     ) -> Result<(), VerifierErrorKind> {
-        // This is reading and writing the same value. This induces no change in dependencies.
+        // The type of `dst` is always checked.
+        self.add_reg(dst);
         Ok(())
     }
     fn le<'a>(
         &mut self,
         _context: &mut Self::Context<'a>,
-        _dst: Register,
+        dst: Register,
         _width: DataWidth,
     ) -> Result<(), VerifierErrorKind> {
-        // This is reading and writing the same value. This induces no change in dependencies.
+        // The type of `dst` is always checked.
+        self.add_reg(dst);
         Ok(())
     }
 
@@ -3415,13 +3445,11 @@ impl BpfVisitor for DataDependencies {
         // 1 to 5 are scratch registers (bits 1..=5)
         self.registers &= !0b0011_1110;
         self.remove_reg(dst);
-        // The types of the packet and of the offset are always checked, and r0 is checked to be a
-        // written scalar on the exit path taken when the load fails.
+        // The types of the packet and of the offset are always checked.
         self.add_reg(src);
         if let Some(reg) = register_offset {
             self.add_reg(reg);
         }
-        self.add_reg(0);
         Ok(())
     }
 
@@ -4898,10 +4926,9 @@ impl BpfVisitor for &ComputationContext {
                 return Err(VerifierErrorKind::UninitializedPacketOffset);
             }
         }
-        // Handle the case where the load fails.
-        if !self.reg(0)?.is_written_scalar() {
-            return Err(VerifierErrorKind::InvalidReturnValue);
-        }
+        // Handle the case where the load fails. Out-of-bounds packet loads terminate the
+        // program and return `0` directly without reading `r0`, so only unreleased
+        // resources need to be checked here.
         if !self.resources.is_empty() {
             return Err(VerifierErrorKind::ResourceLeak);
         }
@@ -5047,13 +5074,6 @@ fn print_offset<T: Into<i32>>(offset: T) -> DisplayOffset {
 
 fn print_jump_offset<T: Into<i32>>(offset: T) -> DisplayOffset {
     DisplayOffset { offset: offset.into(), show_zero: true }
-}
-
-fn run_on_stack_offset<F>(v: StackOffset, f: F) -> StackOffset
-where
-    F: FnOnce(ScalarValueData) -> ScalarValueData,
-{
-    StackOffset(f(v.reg()))
 }
 
 fn error_and_log<T>(
