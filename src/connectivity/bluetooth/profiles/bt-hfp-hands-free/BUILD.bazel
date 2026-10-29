@@ -2,9 +2,133 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("//build/bazel/rules/components:fx_component.bzl", "fx_component", "fx_component_manifest")
+load("//build/bazel/rules/components:structured_config.bzl", "fuchsia_structured_config_rust_lib")
+load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
 package(default_applicable_licenses = ["//:license"])
 
 exports_files(
     ["meta/bt-hfp-hands-free.core_shard.cml"],
     visibility = ["//bundles/assembly:__subpackages__"],
+)
+
+rustc_binary(
+    name = "bin",
+    srcs = [
+        "src/config.rs",
+        "src/features.rs",
+        "src/hfp.rs",
+        "src/hfp/tests.rs",
+        "src/main.rs",
+        "src/one_to_one.rs",
+        "src/peer.rs",
+        "src/peer/ag_indicators.rs",
+        "src/peer/at_connection.rs",
+        "src/peer/calls.rs",
+        "src/peer/hf_indicators.rs",
+        "src/peer/indicated_state.rs",
+        "src/peer/parse_cind_test.rs",
+        "src/peer/peer_task.rs",
+        "src/peer/procedure.rs",
+        "src/peer/procedure/answer_incoming.rs",
+        "src/peer/procedure/audio_connection_setup.rs",
+        "src/peer/procedure/codec_connection_setup.rs",
+        "src/peer/procedure/hang_up.rs",
+        "src/peer/procedure/initiate_call.rs",
+        "src/peer/procedure/query_calls.rs",
+        "src/peer/procedure/send_dtmf_code.rs",
+        "src/peer/procedure/slc_initialization.rs",
+        "src/peer/procedure/test.rs",
+        "src/peer/procedure_manager.rs",
+        "src/peer/procedure_manipulated_state.rs",
+        "src/profile.rs",
+        "src/service_definition.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate_name = "bt_hfp_hands_free",
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        ":hfp_hands_free_profile_config",
+        "//sdk/fidl/fuchsia.bluetooth.bredr:fuchsia.bluetooth.bredr_rust",
+        "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth_rust",
+        "//sdk/fidl/fuchsia.bluetooth.hfp:fuchsia.bluetooth.hfp_rust",
+        "//sdk/rust/zx",
+        "//src/connectivity/bluetooth/lib/async-helpers",
+        "//src/connectivity/bluetooth/lib/bt-hfp",
+        "//src/connectivity/bluetooth/lib/bt-rfcomm",
+        "//src/connectivity/bluetooth/lib/fuchsia-bluetooth",
+        "//src/connectivity/bluetooth/lib/profile-client",
+        "//src/connectivity/bluetooth/lib/vigil",
+        "//src/connectivity/lib/at-commands",
+        "//src/lib/async-utils",
+        "//src/lib/diagnostics/inspect/runtime/rust",
+        "//src/lib/diagnostics/inspect/rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:bitflags",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:nom",
+    ],
+)
+
+fx_packaged_binary(
+    name = "bin_packaged_bin",
+    binary = ":bin",
+    binary_name = "bt_hfp_hands_free",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+)
+
+fx_component_manifest(
+    name = "manifest",
+    component_name = "bt-hfp-hands-free",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+    ],
+    manifest = "meta/bt-hfp-hands-free.cml",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+)
+
+fuchsia_structured_config_rust_lib(
+    name = "hfp_hands_free_profile_config",
+    cm_label = ":manifest",
+)
+
+fx_component(
+    name = "component",
+    compiled_manifest = ":manifest",
+    component_name = "bt-hfp-hands-free",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [":bin_packaged_bin"],
+)
+
+rustc_test(
+    name = "bt_hfp_hands_free_bin_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":bin",
+    proc_macro_deps = ["//third_party/rust_crates/vendor:paste"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//src/connectivity/bluetooth/lib/async-helpers:async-test-helpers",
+        "//src/connectivity/bluetooth/lib/profile-client:test-profile-server",
+        "//src/connectivity/bluetooth/testing/bt-channel-test-support",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+fx_unittest_package(
+    name = "bt-hfp-hands-free-tests",
+    unit_tests = [":bt_hfp_hands_free_bin_test"],
+    visibility = ["//src/connectivity/bluetooth:__pkg__"],
 )
