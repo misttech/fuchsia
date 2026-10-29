@@ -44,10 +44,11 @@ const DISALLOWED_ALT_IMAGE_TEXT: [&str; 1] = [""];
 // TODO(https://fxbug.dev/42064332): disallow "drawing, "image" for alt text";
 
 /// List of active repos under fuchsia.googlesource.com which can be linked to.
-const VALID_PROJECTS: [&str; 22] = [
+const VALID_PROJECTS: [&str; 23] = [
     "", // root page of all projects
     "antlion",
     "cobalt",
+    "cobalt-registry",
     "drivers", // This is a family of projects.
     "experiences",
     "fargo",
@@ -1170,6 +1171,13 @@ mod tests {
 
             Some([DocCheckError::new_error(1, PathBuf::from("/docs/README.md"),
              "Obsolete or invalid project garnet: https://fuchsia.googlesource.com/garnet/+/HEAD/src/file.cc")].to_vec())
+        ),
+        (
+
+                PathBuf::from("/docs/README.md"),
+                "valid project link [cobalt-registry](https://fuchsia.googlesource.com/cobalt-registry)",
+
+            None,
         ),
         (
 
