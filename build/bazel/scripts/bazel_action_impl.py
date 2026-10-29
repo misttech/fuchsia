@@ -874,20 +874,6 @@ class BazelActionRunner(object):
             An AspectManifestOutputs instance.
         """
 
-        if self.global_args.quiet:
-            # Still capture stdout to print its content if there is an error
-            # running the build command below.
-            stdout_sink = stdio_redirection.BytesOutputSink()
-            stderr_sink = stdio_redirection.BytesOutputSink()
-            is_stdout_pty = False
-            is_stderr_pty = False
-        else:
-            # Send output to regular stdout / stderr instead.
-            stdout_sink = stdio_redirection.StdoutOutputSink()
-            stderr_sink = stdio_redirection.StderrOutputSink()
-            is_stdout_pty = os.isatty(sys.stdout.fileno())
-            is_stderr_pty = os.isatty(sys.stderr.fileno())
-
         with tempfile.NamedTemporaryFile(
             prefix="bazel_bep_",
             suffix=".json",
@@ -902,44 +888,35 @@ class BazelActionRunner(object):
             "--output_groups=+debug_symbol_manifest",
         ]
 
-        with stdio_redirection.PipeOutputSink(
-            stderr_sink, use_pty=is_stderr_pty
-        ) as pty_stderr:
-            # This makes mypy happy, as it can't detect the type correctly in the 'with' statement
-            assert isinstance(pty_stderr, stdio_redirection.PipeOutputSink)
-
+        time_profile.start("run_bazel_command", "Run the Bazel command.")
+        if self.global_args.quiet:
+            # Still capture output to print its content if there is an error
+            # running the build command below.
+            output_sink = stdio_redirection.BytesOutputSink()
             with stdio_redirection.PipeOutputSink(
-                stdout_sink, use_pty=is_stdout_pty
-            ) as pty_stdout:
+                output_sink, use_pty=False
+            ) as pipe_sink:
                 # This makes mypy happy, as it can't detect the type correctly in the 'with' statement
-                assert isinstance(pty_stdout, stdio_redirection.PipeOutputSink)
-
-                time_profile.start(
-                    "run_bazel_command", "Run the Bazel command."
-                )
+                assert isinstance(pipe_sink, stdio_redirection.PipeOutputSink)
                 ret = self.launcher.run_bazel_command(
                     cmd_args,
-                    stdout=pty_stdout.get_write_fd(),
-                    stderr=pty_stderr.get_write_fd(),
+                    stdout=pipe_sink.get_write_fd(),
+                    stderr=pipe_sink.get_write_fd(),
                 )
+        else:
+            # Inherit regular stdout / stderr directly from the parent process.
+            ret = self.launcher.run_bazel_command(
+                cmd_args,
+                stdout=None,
+                stderr=None,
+            )
 
         if ret.returncode != 0:
             bep_json_path.unlink(missing_ok=True)
             if self.global_args.quiet:
-                # Assert that the output sinks are the expected types for quiet mode.
-                assert isinstance(
-                    stdout_sink, stdio_redirection.BytesOutputSink
-                )
-                assert isinstance(
-                    stderr_sink, stdio_redirection.BytesOutputSink
-                )
-
                 # Print the captured outputs in quiet mode to help debugging build errors.
-                if stdout_sink.data:
-                    sys.stdout.buffer.write(stdout_sink.data)
-                    sys.stdout.flush()
-                if stderr_sink.data:
-                    sys.stderr.buffer.write(stderr_sink.data)
+                if output_sink.data:
+                    sys.stderr.buffer.write(output_sink.data)
                     sys.stderr.flush()
 
             # Detect the error message corresponding to a Bazel target
