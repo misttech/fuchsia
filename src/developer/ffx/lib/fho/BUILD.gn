@@ -62,10 +62,7 @@ if (is_host) {
     ]
     crate_name = "fho"
     edition = "2024"
-    proc_macro_deps = [
-      "//src/developer/ffx/lib/fho/macro:lib",
-      "//third_party/rust_crates:async-trait",
-    ]
+    proc_macro_deps = [ "//src/developer/ffx/lib/fho/macro:lib" ]
     test_deps = [
       "//src/lib/fuchsia",
       "//third_party/rust_crates:tempfile",

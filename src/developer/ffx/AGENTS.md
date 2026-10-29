@@ -301,5 +301,5 @@ While supporting both machine and human-readable output is the default expectati
   ```
 * **Why**: With Rust 2024 and modern editions, native `async fn in trait` is supported directly by the compiler. Using native async traits avoids macro overhead, improves compilation times, and eliminates unnecessary heap allocations (`Box<dyn Future>`) per invocation.
 * **Do NOT add `//third_party/rust_crates:async-trait` to `BUILD.gn` dependencies**.
-* **Dynamic Dispatch (`dyn Trait`) Exception**: The only exception where `#[async_trait(?Send)]` remains permissible is when a trait strictly requires dynamic dispatch (e.g., `Box<dyn MyTrait>`), because native `async fn in trait` is not yet dyn-compatible (RFC 3498). In all other cases (including `FfxMain`, `TryFromEnv`, and static dispatch traits), native async traits must be used.
+* **Dynamic Dispatch (`dyn Trait`) Pattern**: If a trait strictly requires dynamic dispatch (e.g., `Box<dyn MyTrait>`) where native RPITIT is not yet dyn-compatible, return an explicit boxed future (e.g., `Pin<Box<dyn Future<Output = ...> + ...>>` or `LocalBoxFuture` / `BoxFuture`) instead of using `#[async_trait]`. In all other cases (including `FfxMain`, `TryFromEnv`, and static dispatch traits), native async traits must be used.
 

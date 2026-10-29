@@ -4,7 +4,7 @@
 
 use crate::{FfxMain, FfxTool, FhoEnvironment, TryFromEnv};
 use argh::{ArgsInfo, FromArgs, SubCommand};
-use ffx_command::{Error, Result};
+use ffx_command::{Error, LocalBoxFuture, Result};
 use std::cell::RefCell;
 
 // We need this wrapper because we want to store the subtool as a dyn
@@ -12,12 +12,11 @@ use std::cell::RefCell;
 // way we want it to. For instance, you can't return a Box<dyn FfxTool>,
 // since the associated types have to be specified. Instead, we store a
 // Subtool<F: FfxTool>, which implements this trait.
-#[async_trait::async_trait(?Send)]
 pub trait SubtoolBox {
     fn supports_structured_output(&self) -> bool;
     fn has_schema(&self) -> bool;
-    async fn try_print_schema(&self, env: &FhoEnvironment) -> Result<()>;
-    async fn run(&self, env: FhoEnvironment) -> Result<()>;
+    fn try_print_schema<'a>(&'a self, env: &'a FhoEnvironment) -> LocalBoxFuture<'a, Result<()>>;
+    fn run<'a>(&'a self, env: FhoEnvironment) -> LocalBoxFuture<'a, Result<()>>;
 }
 
 /// A container for an `FfxTool` -- wrap the subcommand FfxTool in this
@@ -34,7 +33,6 @@ impl<T: FfxTool> Subtool<T> {
     }
 }
 
-#[async_trait::async_trait(?Send)]
 impl<T: FfxTool> SubtoolBox for Subtool<T> {
     fn supports_structured_output(&self) -> bool {
         self.tool.borrow().as_ref().expect("subtool is gone?").supports_structured_output()
@@ -42,24 +40,28 @@ impl<T: FfxTool> SubtoolBox for Subtool<T> {
     fn has_schema(&self) -> bool {
         self.tool.borrow().as_ref().expect("subtool is gone?").has_schema()
     }
-    async fn try_print_schema(&self, env: &FhoEnvironment) -> Result<()> {
-        let writer = <<T as FfxMain>::Writer as TryFromEnv>::try_from_env(env)
-            .await
-            .map_err(|e| ffx_command_error::Error::Unexpected(anyhow::Error::new(e)))?;
-        self.tool.borrow_mut().take().expect("subtool is gone?").try_print_schema(writer).await
+    fn try_print_schema<'a>(&'a self, env: &'a FhoEnvironment) -> LocalBoxFuture<'a, Result<()>> {
+        Box::pin(async move {
+            let writer = <<T as FfxMain>::Writer as TryFromEnv>::try_from_env(env)
+                .await
+                .map_err(|e| ffx_command_error::Error::Unexpected(anyhow::Error::new(e)))?;
+            self.tool.borrow_mut().take().expect("subtool is gone?").try_print_schema(writer).await
+        })
     }
 
-    async fn run(&self, env: FhoEnvironment) -> Result<()> {
-        let writer = <<T as FfxMain>::Writer as TryFromEnv>::try_from_env(&env)
-            .await
-            .map_err(|e| ffx_command_error::Error::Unexpected(anyhow::Error::new(e)))?;
-        self.tool
-            .borrow_mut()
-            .take()
-            .expect("subtool is gone?")
-            .main(writer)
-            .await
-            .map_err(|e| e.into())
+    fn run<'a>(&'a self, env: FhoEnvironment) -> LocalBoxFuture<'a, Result<()>> {
+        Box::pin(async move {
+            let writer = <<T as FfxMain>::Writer as TryFromEnv>::try_from_env(&env)
+                .await
+                .map_err(|e| ffx_command_error::Error::Unexpected(anyhow::Error::new(e)))?;
+            self.tool
+                .borrow_mut()
+                .take()
+                .expect("subtool is gone?")
+                .main(writer)
+                .await
+                .map_err(|e| e.into())
+        })
     }
 }
 

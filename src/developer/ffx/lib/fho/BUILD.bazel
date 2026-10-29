@@ -26,12 +26,11 @@ rustc_library(
     edition = "2024",
     proc_macro_deps = [
         "//src/developer/ffx/lib/fho/macro:lib",
-        "//third_party/rust_crates/vendor:async-trait",
     ],
     target_compatible_with = HOST_OS_CONSTRAINTS,
     test_deps = [
         "//src/lib/fuchsia",
-        "//third_party/rust_crates:tempfile",
+        "//third_party/rust_crates/vendor:tempfile",
     ],
     version = "0.1.0",
     with_host_unit_tests = True,
