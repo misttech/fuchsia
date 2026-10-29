@@ -38,6 +38,7 @@ rustc_binary("bin") {
     "//third_party/rust_crates:hex",
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:prost",
+    "//third_party/rust_crates:tar",
   ]
   test_deps = [ "//third_party/rust_crates:itertools" ]
 }

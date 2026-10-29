@@ -148,6 +148,17 @@ profile before being filed. If one needs a picture of the overall allocations of
 a process that spans multiple crash reports, one can similarly merge its partial
 profiles (discarding their residual allocations) with its final profile.
 
+Note: There is a hard limit on the number of attachments that can fit in a
+report. By default, `memory_sampler` adds profiles to a report as separate
+attachments, and merges profiles from the same process, but if more distinct
+processes than allowed attachments produce profiles within the same reporting
+interval, `memory_sampler` will merge the excess profiles into a single
+`combined_profiles.tar` archive (using the same `<process_name>_final_<n>.pb.gz`
+and `<process_name>_partial_<n>.pb.gz` entry names as individual
+attachments). Individual `.pb.gz` profiles can be extracted with `tar -xf
+combined_profiles.tar`, and `pprof` can merge multiple extracted profiles when
+passed together on the command line.
+
 ## Performance tuning
 
 Currently, `memory_sampler` hard-codes all its performance parameters; on a

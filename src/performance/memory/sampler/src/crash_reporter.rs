@@ -29,19 +29,11 @@ const CRASH_SIGNATURE: &str = "fuchsia-memory-profile";
 /// Profiles are `gzip`-compressed protocol buffers; see
 /// `profile_builder::profile_to_vmo`.
 const PROFILE_ATTACHMENT_EXTENSION: &str = ".pb.gz";
-/// The number of profiles held in the queue awaiting filing.
-///
-/// A report can carry at most `MAX_NUM_ATTACHMENTS_PER_CRASH_REPORT`
-/// profiles, so holding that many lets a single report be filled
-/// completely; below it, capacity is wasted.
-///
-/// This is deliberately a separate constant from the number of
-/// attachments per report, even though the two are currently equal:
-/// this one bounds memory, whereas the other is a property of the
-/// crash reporting API. It is sound to hold more profiles than a
-/// single report can carry, since the surplus is filed by the
-/// following report; what constrains it is the memory held by the
-/// queued profiles, not the capacity of a report.
+/// The attachment key used for the `.tar` archive bundling excess profiles
+/// when a report would otherwise exceed `MAX_NUM_ATTACHMENTS_PER_CRASH_REPORT`.
+const COMBINED_TAR_ATTACHMENT_KEY: &str = "combined_profiles.tar";
+/// The number of profiles held in the channel queue awaiting draining into
+/// `PendingReport`.
 ///
 /// Note: `futures::mpsc::channel` grants every sender a slot in
 /// addition to this shared buffer, so the effective bound is this
@@ -118,15 +110,8 @@ impl PendingReport {
     }
 
     fn can_accept(&self, incoming: &ProfileReport) -> bool {
-        if !self.is_empty()
-            && self.total_bytes.saturating_add(incoming.vmo_footprint()) > MAX_PENDING_REPORT_BYTES
-        {
-            return false;
-        }
-        if self.find_coalesce_target(incoming).is_some() {
-            return true;
-        }
-        self.profiles.len() < MAX_NUM_ATTACHMENTS_PER_CRASH_REPORT as usize
+        self.is_empty()
+            || self.total_bytes.saturating_add(incoming.vmo_footprint()) <= MAX_PENDING_REPORT_BYTES
     }
 
     fn push_or_coalesce(&mut self, incoming: ProfileReport) {
@@ -176,6 +161,75 @@ fn sanitize_for_attachment_key(name: &str) -> String {
     name.chars().map(|c| if c.is_ascii_graphic() && c != '/' { c } else { '_' }).collect()
 }
 
+/// Bundle multiple `Attachment`s into a single `.tar` archive attachment with
+/// key `COMBINED_TAR_ATTACHMENT_KEY`.
+///
+/// Any individual attachment whose VMO cannot be read or appended is logged and
+/// skipped. If the archive cannot be produced, returns the largest readable
+/// input attachment alongside the error so the caller can still fill the
+/// remaining attachment slot.
+fn tar_attachments(
+    attachments: Vec<Attachment>,
+) -> Result<Attachment, (Option<Attachment>, Error)> {
+    let mut builder = tar::Builder::new(Vec::new());
+    let mut written_count: usize = 0;
+    let mut fallback_attachment: Option<Attachment> = None;
+
+    for attachment in attachments {
+        let stream =
+            match zx::Stream::create(zx::StreamOptions::MODE_READ, &attachment.value.vmo, 0)
+                .context("Failed to create stream for source attachment VMO")
+            {
+                Ok(stream) => stream,
+                Err(err) => {
+                    log::warn!("Skipping attachment {} during tar: {:?}", attachment.key, err);
+                    continue;
+                }
+            };
+
+        let mut header = tar::Header::new_gnu();
+        header.set_size(attachment.value.size);
+        header.set_mode(0o644);
+
+        let append_res = builder
+            .append_data(&mut header, &attachment.key, stream)
+            .context("Failed to append attachment to tar archive");
+        if fallback_attachment
+            .as_ref()
+            .is_none_or(|existing| attachment.value.size > existing.value.size)
+        {
+            fallback_attachment = Some(attachment);
+        }
+        if let Err(err) = append_res {
+            log::warn!("Skipping attachment during tar: {:?}", err);
+            continue;
+        }
+        written_count += 1;
+    }
+
+    if written_count == 0 {
+        return Err((
+            fallback_attachment,
+            format_err!("No valid attachments to bundle into tar archive"),
+        ));
+    }
+
+    let archive_bytes = match builder.into_inner().context("Failed to finalize tar archive") {
+        Ok(bytes) => bytes,
+        Err(err) => return Err((fallback_attachment, err)),
+    };
+    let size = archive_bytes.len() as u64;
+    let vmo = match Vmo::create(size)
+        .and_then(|vmo| vmo.write(&archive_bytes, 0).map(|()| vmo))
+        .context("Failed to write tar archive to VMO")
+    {
+        Ok(vmo) => vmo,
+        Err(err) => return Err((fallback_attachment, err)),
+    };
+
+    Ok(Attachment { key: COMBINED_TAR_ATTACHMENT_KEY.to_string(), value: Buffer { vmo, size } })
+}
+
 /// File a crash report with the provided profiles attached to it.
 ///
 /// Warning: Care should be taken to not call this function too often,
@@ -191,18 +245,19 @@ fn sanitize_for_attachment_key(name: &str) -> String {
 /// will be named "process_1_final_0.pb.gz", "process_1_final_1.pb.gz"
 /// and "process_2_partial_0.pb.gz".
 ///
-/// Warning: panics if called with more than
-/// `MAX_NUM_ATTACHMENTS_PER_CRASH_REPORT` profiles.
+/// If more than `MAX_NUM_ATTACHMENTS_PER_CRASH_REPORT` profiles are
+/// provided, the `MAX_NUM_ATTACHMENTS_PER_CRASH_REPORT - 1` largest
+/// profiles are attached individually and the remaining smallest profiles
+/// are bundled into a single `COMBINED_TAR_ATTACHMENT_KEY` archive.
 async fn file_report(
     profiles: Vec<ProfileReport>,
     crash_reporter: &CrashReporterProxy,
 ) -> Result<(), Error> {
-    assert!(profiles.len() <= MAX_NUM_ATTACHMENTS_PER_CRASH_REPORT as usize);
     if profiles.is_empty() {
         return Ok(());
     }
     let mut counts: HashMap<String, usize> = HashMap::new();
-    let attachments: Vec<Attachment> = profiles
+    let mut attachments: Vec<Attachment> = profiles
         .into_iter()
         .map(|profile_report| {
             let (process_name, kind, profile, size) = match profile_report {
@@ -219,6 +274,30 @@ async fn file_report(
             Attachment { key, value: Buffer { vmo: profile, size } }
         })
         .collect();
+
+    let max_attachments = MAX_NUM_ATTACHMENTS_PER_CRASH_REPORT as usize;
+    if attachments.len() > max_attachments {
+        let num_to_tar = attachments.len() - (max_attachments - 1);
+        let mut indices: Vec<usize> = (0..attachments.len()).collect();
+        indices.sort_by_key(|&i| attachments[i].value.size);
+        indices.truncate(num_to_tar);
+        indices.sort_unstable_by(|a, b| b.cmp(a));
+        let mut to_tar = Vec::with_capacity(num_to_tar);
+        for idx in indices {
+            to_tar.push(attachments.remove(idx));
+        }
+        to_tar.reverse();
+        match tar_attachments(to_tar) {
+            Ok(tar_attachment) => attachments.push(tar_attachment),
+            Err((fallback, err)) => {
+                log::warn!("Failed to tar excess profile attachments: {:?}", err);
+                if let Some(largest) = fallback {
+                    attachments.push(largest);
+                }
+            }
+        }
+    }
+
     let crash_report = CrashReport {
         program_name: Some(CRASH_PROGRAM_NAME.to_string()),
         crash_signature: Some(CRASH_SIGNATURE.to_string()),
@@ -250,7 +329,10 @@ pub async fn register_crash_product() -> Result<(), Error> {
 ///
 /// While waiting for the next filing window, incoming `Partial` profiles
 /// for the same process are coalesced in place (and collapsed into `Final`
-/// if the process terminates), bounded by `MAX_PENDING_REPORT_BYTES`.
+/// if the process terminates), bounded by `MAX_PENDING_REPORT_BYTES`. When
+/// more than `MAX_NUM_ATTACHMENTS_PER_CRASH_REPORT` distinct profiles are
+/// ready at filing time, excess smallest profiles are bundled into a single
+/// `.tar` attachment.
 ///
 /// Note: the returned `Sender` is bounded: trying to queue a message
 /// when it is full will cause an error.
@@ -887,5 +969,203 @@ mod test {
         assert_eq!(2, attachments.len());
         assert_eq!("tainted_proc_[TAINTED:_BUFFER_OVERFLOW]_final_0.pb.gz", attachments[0].key);
         assert_eq!("_pkg_bin_my_proc_partial_0.pb.gz", attachments[1].key);
+    }
+
+    /// Parses a `.tar` archive attachment, returning its entries as individual
+    /// `Attachment`s.
+    fn unpack_tar_attachment(tar_attachment: &Attachment) -> Vec<Attachment> {
+        use std::io::Read;
+
+        assert_eq!(COMBINED_TAR_ATTACHMENT_KEY, tar_attachment.key);
+        let bytes = tar_attachment.value.vmo.read_to_vec(0, tar_attachment.value.size).unwrap();
+        let mut archive = tar::Archive::new(bytes.as_slice());
+        archive
+            .entries()
+            .unwrap()
+            .map(|entry| {
+                let mut entry = entry.unwrap();
+                let key = entry.path().unwrap().to_str().unwrap().to_string();
+                assert!(is_valid_feedback_attachment_key(&key));
+                let mut buf = Vec::new();
+                entry.read_to_end(&mut buf).unwrap();
+                let size = buf.len() as u64;
+                let vmo = Vmo::create(size).unwrap();
+                if size > 0 {
+                    vmo.write(&buf, 0).unwrap();
+                }
+                Attachment { key, value: Buffer { vmo, size } }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_excess_processes_bundled_into_tar_attachment() {
+        let mut executor = fuchsia_async::TestExecutor::new_with_fake_time();
+        let (client, mut request_stream) = create_proxy_and_stream::<CrashReporterMarker>();
+        let (mut sender, mut task) = setup_crash_reporter_task(client);
+
+        // File an initial report to start the 1-hour cooldown window.
+        let mut initial_builder = ProfileBuilder::default();
+        initial_builder.set_process_info(Some("initial_proc".to_string()), std::iter::empty());
+        sender.try_send(initial_builder.build().unwrap()).unwrap();
+        assert!(executor.run_until_stalled(&mut task).is_pending());
+        match executor.run_until_stalled(&mut request_stream.next()) {
+            Poll::Ready(Some(Ok(request))) => {
+                handle_crash_reporter_request(request);
+            }
+            _ => panic!("Expected initial report to be filed immediately."),
+        }
+
+        // During the 1-hour cooldown, 18 distinct processes (> 16 attachments limit)
+        // emit profiles. Make the first 3 profiles (`dup_proc`, `proc_01`, `dup_proc`)
+        // smaller than the remaining 15 (`proc_03..proc_17`) so those 3 are selected
+        // for `combined_profiles.tar` while the 15 largest remain individual.
+        let total_processes = (MAX_NUM_ATTACHMENTS_PER_CRASH_REPORT as usize) + 2;
+        for i in 0..total_processes {
+            let mut builder = ProfileBuilder::default();
+            let proc_name =
+                if i == 0 || i == 2 { "dup_proc".to_string() } else { format!("proc_{i:02}") };
+            builder.set_process_info(Some(proc_name), std::iter::empty());
+            builder.allocate_with_scale(0x1000, vec![0x2000], 64, 1.0);
+            if i >= 3 {
+                for extra in 0..16u64 {
+                    builder.allocate_with_scale(
+                        0x2000 + extra * 0x100,
+                        vec![0x3000 + extra],
+                        128,
+                        1.0,
+                    );
+                }
+            }
+            let report = if i == 1 || i == total_processes - 1 {
+                builder.build().unwrap()
+            } else {
+                builder.build_partial_profile().unwrap()
+            };
+            sender.try_send(report).unwrap();
+            assert!(executor.run_until_stalled(&mut task).is_pending());
+        }
+
+        // Advance time by 1 hour to trigger filing the pending report.
+        executor.set_fake_time(executor.now() + zx::MonotonicDuration::from_hours(1));
+        assert!(executor.wake_expired_timers());
+        assert!(executor.run_until_stalled(&mut task).is_pending());
+
+        let report = match executor.run_until_stalled(&mut request_stream.next()) {
+            Poll::Ready(Some(Ok(request))) => handle_crash_reporter_request(request),
+            _ => panic!("Expected report to be filed after 1 hour."),
+        };
+
+        let attachments = report.attachments.unwrap();
+        assert_eq!(MAX_NUM_ATTACHMENTS_PER_CRASH_REPORT as usize, attachments.len());
+
+        // The 15 largest profiles (`proc_03..proc_17`) remain individual attachments.
+        for i in 3..total_processes {
+            let expected_key = if i == total_processes - 1 {
+                format!("proc_{i:02}_final_0.pb.gz")
+            } else {
+                format!("proc_{i:02}_partial_0.pb.gz")
+            };
+            assert!(
+                attachments.iter().any(|a| a.key == expected_key),
+                "Missing individual attachment {expected_key}"
+            );
+        }
+
+        // The last attachment is `combined_profiles.tar` containing the 3 smallest
+        // profiles in their original relative order, with the two `dup_proc` partial
+        // profiles disambiguated as `dup_proc_partial_0.pb.gz` and `dup_proc_partial_1.pb.gz`.
+        let tar_att = &attachments[attachments.len() - 1];
+        let unpacked = unpack_tar_attachment(tar_att);
+        assert_eq!(
+            vec!["dup_proc_partial_0.pb.gz", "proc_01_final_0.pb.gz", "dup_proc_partial_1.pb.gz"],
+            unpacked.iter().map(|a| a.key.as_str()).collect::<Vec<_>>()
+        );
+        for entry in unpacked {
+            let profile = retrieve_profile_from_attachment(entry);
+            let (vmo, size) = match profile {
+                ProfileReport::Partial { profile, size, .. }
+                | ProfileReport::Final { profile, size, .. } => (profile, size),
+            };
+            let decoded = vmo_to_profile(&vmo, size).unwrap();
+            assert_eq!(1, decoded.sample.len());
+        }
+    }
+
+    #[fuchsia::test]
+    fn test_tar_attachments_skips_corrupted_entries_and_preserves_long_names() {
+        let mut valid_1 = ProfileBuilder::default();
+        let long_name = "a".repeat(120);
+        valid_1.set_process_info(Some(long_name), std::iter::empty());
+        valid_1.allocate_with_scale(0x1000, vec![0x2000], 64, 1.0);
+        let ProfileReport::Final { profile: vmo_1, size: size_1, .. } = valid_1.build().unwrap()
+        else {
+            panic!("Expected Final report");
+        };
+
+        // Create a corrupted attachment whose VMO lacks `ZX_RIGHT_READ`.
+        let unreadable_vmo = Vmo::create(64).unwrap().replace_handle(zx::Rights::NONE).unwrap();
+        let corrupted_att = Attachment {
+            key: "corrupted_proc_final_0.pb.gz".to_string(),
+            value: Buffer { vmo: unreadable_vmo, size: 64 },
+        };
+
+        // Create an attachment with an empty key, which `tar::Builder::append_data`
+        // rejects while its VMO remains readable as a fallback candidate.
+        let invalid_key_att = Attachment {
+            key: String::new(),
+            value: Buffer { vmo: create_vmo_with_some_data(128), size: 128 },
+        };
+
+        let mut valid_2 = ProfileBuilder::default();
+        valid_2.set_process_info(Some("valid_proc_2".to_string()), std::iter::empty());
+        valid_2.allocate_with_scale(0x3000, vec![0x4000], 128, 1.0);
+        let ProfileReport::Partial { profile: vmo_2, size: size_2, .. } =
+            valid_2.build_partial_profile().unwrap()
+        else {
+            panic!("Expected Partial report");
+        };
+
+        let long_key = format!("{}_final_0.pb.gz", "a".repeat(120));
+        let tar_att = tar_attachments(vec![
+            Attachment { key: long_key.clone(), value: Buffer { vmo: vmo_1, size: size_1 } },
+            corrupted_att,
+            invalid_key_att,
+            Attachment {
+                key: "valid_proc_2_partial_0.pb.gz".to_string(),
+                value: Buffer { vmo: vmo_2, size: size_2 },
+            },
+        ])
+        .expect("tar_attachments should skip invalid entries and succeed with valid entries");
+
+        let unpacked = unpack_tar_attachment(&tar_att);
+        assert_eq!(2, unpacked.len());
+        assert_eq!(long_key, unpacked[0].key);
+        assert_eq!("valid_proc_2_partial_0.pb.gz", unpacked[1].key);
+
+        for entry in unpacked {
+            let report = retrieve_profile_from_attachment(entry);
+            let (vmo, size) = match report {
+                ProfileReport::Partial { profile, size, .. }
+                | ProfileReport::Final { profile, size, .. } => (profile, size),
+            };
+            let decoded = vmo_to_profile(&vmo, size).unwrap();
+            assert_eq!(1, decoded.sample.len());
+        }
+
+        // When all entries fail to be written to the tar archive, `tar_attachments` returns
+        // the largest readable fallback entry (or `None` if all entries had unreadable VMOs).
+        let (fallback, _) = tar_attachments(vec![
+            Attachment {
+                key: String::new(),
+                value: Buffer { vmo: create_vmo_with_some_data(64), size: 64 },
+            },
+            Attachment {
+                key: "..".to_string(),
+                value: Buffer { vmo: create_vmo_with_some_data(256), size: 256 },
+            },
+        ])
+        .expect_err("Expected error when no entries have valid tar paths");
+        assert_eq!(256, fallback.unwrap().value.size);
     }
 }
