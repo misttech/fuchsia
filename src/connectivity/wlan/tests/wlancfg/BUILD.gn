@@ -304,9 +304,6 @@ python_mobly_test("wmm_test") {
 
 python_mobly_test("security_type_test") {
   main_source = "//src/connectivity/wlan/tests/wlancfg/SecurityTypeTest.py"
-
-  environments = wlan_ap_envs
-
   libraries = [
     "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_python",
     "//src/testing/end_to_end/honeydew",

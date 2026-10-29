@@ -181,7 +181,6 @@ python_mobly_test("wlan_driver_restart_test") {
 
 python_mobly_test("throughput_test") {
   main_source = "ThroughputTest.py"
-  environments = wlan_ap_iperf_envs
   package_deps = [ "//third_party/iperf:iperf3_pkg" ]
   libraries = [
     "//src/connectivity/wlan/tests/utils:wlan_test_utils",
