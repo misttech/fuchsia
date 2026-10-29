@@ -20,9 +20,9 @@ package(
 
 package_info(
     name = "package_info",
-    package_name = "num-iter",
-    package_url = "https://github.com/rust-num/num-iter",
-    package_version = "0.1.45",
+    package_name = "num-integer",
+    package_url = "https://github.com/rust-num/num-integer",
+    package_version = "0.1.47",
 )
 
 license(
@@ -35,7 +35,7 @@ license(
 )
 
 rust_library(
-    name = "num_iter",
+    name = "num_integer",
     srcs = glob(
         include = ["**/*.rs"],
         allow_empty = False,
@@ -52,15 +52,19 @@ rust_library(
             "WORKSPACE.bazel",
         ],
     ),
+    crate_features = [
+        "default",
+        "i128",
+        "std",
+    ],
     crate_root = "src/lib.rs",
     edition = "2018",
     rustc_flags = [
         "--cap-lints=allow",
-        "--cfg=has_i128",
     ],
     tags = [
         "cargo-bazel",
-        "crate-name=num-iter",
+        "crate-name=num-integer",
         "manual",
         "noclippy",
         "norustfmt",
@@ -73,9 +77,8 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.1.45",
+    version = "0.1.47",
     deps = [
-        "//third_party/rust_crates/vendor/num-integer-0.1.46:num_integer",
         "//third_party/rust_crates/vendor/num-traits-0.2.19:num_traits",
     ],
 )

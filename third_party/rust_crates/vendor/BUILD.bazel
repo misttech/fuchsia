@@ -1788,14 +1788,14 @@ alias(
 )
 
 alias(
-    name = "num-integer-0.1.46",
-    actual = "//third_party/rust_crates/vendor/num-integer-0.1.46:num_integer",
+    name = "num-integer-0.1.47",
+    actual = "//third_party/rust_crates/vendor/num-integer-0.1.47:num_integer",
     tags = ["manual"],
 )
 
 alias(
     name = "num-integer",
-    actual = "//third_party/rust_crates/vendor/num-integer-0.1.46:num_integer",
+    actual = "//third_party/rust_crates/vendor/num-integer-0.1.47:num_integer",
     tags = ["manual"],
 )
 

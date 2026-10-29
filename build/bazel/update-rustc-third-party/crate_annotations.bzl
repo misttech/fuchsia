@@ -274,22 +274,6 @@ CRATE_ANNOTATIONS = {
             ],
         ),
     ],
-    "num-integer": [
-        crate.annotation(
-            version = "0.1.46",
-            rustc_flags = [
-                "--cfg=has_i128",
-            ],
-        ),
-    ],
-    "num-iter": [
-        crate.annotation(
-            version = "0.1.45",
-            rustc_flags = [
-                "--cfg=has_i128",
-            ],
-        ),
-    ],
     "num-rational": [
         crate.annotation(
             version = "0.4.2",

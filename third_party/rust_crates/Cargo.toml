@@ -169,7 +169,7 @@ nom-language = "0.1.0"
 nom_locate = "5.0.0"
 num-bigint = "0.5.1"
 num-derive = "0.5.1"
-num-integer = "0.1.46"
+num-integer = "0.1.47"
 num-rational = { version = "0.4.2", default-features = false }
 num-traits = "0.2.19"
 omaha_client = "0.4.1"
@@ -915,12 +915,6 @@ rustflags = ["--cfg=has_i128"]
 # to first party code.
 visibility = [
   "//third_party/rust_crates/compat/icu:*", ":*" ]
-
-[gn.package.num-integer."0.1.46"]
-rustflags = ["--cfg=has_i128"]
-
-[gn.package.num-iter."0.1.45"]
-rustflags = ["--cfg=has_i128"]
 
 [gn.package.num-rational."0.4.2"]
 rustflags = ["--cfg=has_int_exp_fmt"]

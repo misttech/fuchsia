@@ -1324,11 +1324,11 @@ group("num-derive-0.5.1") {
 }
 
 group("num-integer") {
-  public_deps = [ ":num-integer-v0_1_46" ]
+  public_deps = [ ":num-integer-v0_1_47" ]
 }
 
-group("num-integer-0.1.46") {
-  public_deps = [ ":num-integer-v0_1_46" ]
+group("num-integer-0.1.47") {
+  public_deps = [ ":num-integer-v0_1_47" ]
 }
 
 group("num-rational") {
@@ -14469,7 +14469,7 @@ rustc_library("num-bigint-v0_5_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":num-integer-v0_1_46" ]
+  deps += [ ":num-integer-v0_1_47" ]
   deps += [ ":num-traits-v0_2_19" ]
 
   rustenv = []
@@ -14508,8 +14508,8 @@ rustc_library("num-bigint-dig-v0_8_6") {
   deps += [ ":zeroize-v1_9_0" ]
   deps += [ ":lazy_static-v1_5_1" ]
   deps += [ ":libm-v0_2_16" ]
-  deps += [ ":num-integer-v0_1_46" ]
-  deps += [ ":num-iter-v0_1_45" ]
+  deps += [ ":num-integer-v0_1_47" ]
+  deps += [ ":num-iter-v0_1_46" ]
   deps += [ ":num-traits-v0_2_19" ]
   deps += [ ":rand-v0_8_8" ]
   deps += [ ":smallvec-v1_16_2" ]
@@ -14639,18 +14639,18 @@ rustc_macro("num-derive-v0_5_1") {
   applicable_licenses = [ ":num-derive-v0_5_1.license" ]
 }
 
-license("num-integer-v0_1_46.license") {
+license("num-integer-v0_1_47.license") {
   public_package_name = "num_integer"
   license_files = [
-    "//third_party/rust_crates/vendor/num-integer-0.1.46/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/num-integer-0.1.46/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/num-integer-0.1.47/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/num-integer-0.1.47/LICENSE-MIT",
   ]
 }
 
-rustc_library("num-integer-v0_1_46") {
+rustc_library("num-integer-v0_1_47") {
   crate_name = "num_integer"
-  source_root = "//third_party/rust_crates/vendor/num-integer-0.1.46/src/lib.rs"
-  output_name = "num_integer-d8ba58f200c18754"
+  source_root = "//third_party/rust_crates/vendor/num-integer-0.1.47/src/lib.rs"
+  output_name = "num_integer-d5c5df9e219d6014"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -14663,52 +14663,50 @@ rustc_library("num-integer-v0_1_46") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=d8ba58f200c18754",
-    "-Cextra-filename=-d8ba58f200c18754",
+    "-Cmetadata=d5c5df9e219d6014",
+    "-Cextra-filename=-d5c5df9e219d6014",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"i128\"",
     "--cfg=feature=\"std\"",
-    "--cfg=has_i128",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":num-integer-v0_1_46.license" ]
+  applicable_licenses = [ ":num-integer-v0_1_47.license" ]
 }
 
-license("num-iter-v0_1_45.license") {
+license("num-iter-v0_1_46.license") {
   public_package_name = "num_iter"
   license_files = [
-    "//third_party/rust_crates/vendor/num-iter-0.1.45/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/num-iter-0.1.45/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/num-iter-0.1.46/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/num-iter-0.1.46/LICENSE-MIT",
   ]
 }
 
-rustc_library("num-iter-v0_1_45") {
+rustc_library("num-iter-v0_1_46") {
   crate_name = "num_iter"
-  source_root = "//third_party/rust_crates/vendor/num-iter-0.1.45/src/lib.rs"
-  output_name = "num_iter-afdb69516c40764a"
+  source_root = "//third_party/rust_crates/vendor/num-iter-0.1.46/src/lib.rs"
+  output_name = "num_iter-fd59e5fff7aa0fda"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":num-integer-v0_1_46" ]
+  deps += [ ":num-integer-v0_1_47" ]
   deps += [ ":num-traits-v0_2_19" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=afdb69516c40764a",
-    "-Cextra-filename=-afdb69516c40764a",
-    "--cfg=has_i128",
+    "-Cmetadata=fd59e5fff7aa0fda",
+    "-Cextra-filename=-fd59e5fff7aa0fda",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":num-iter-v0_1_45.license" ]
+  applicable_licenses = [ ":num-iter-v0_1_46.license" ]
 }
 
 license("num-modular-v0_6_5.license") {
@@ -14790,7 +14788,7 @@ rustc_library("num-rational-v0_4_2") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":num-integer-v0_1_46" ]
+  deps += [ ":num-integer-v0_1_47" ]
   deps += [ ":num-traits-v0_2_19" ]
 
   rustenv = []
@@ -18757,7 +18755,7 @@ rustc_library("rsa-v0_9_10") {
   deps += [ ":zeroize-v1_9_0" ]
   deps += [ ":const-oid-v0_9_6" ]
   deps += [ ":digest-v0_10_7" ]
-  deps += [ ":num-integer-v0_1_46" ]
+  deps += [ ":num-integer-v0_1_47" ]
   deps += [ ":num-traits-v0_2_19" ]
   deps += [ ":pkcs1-v0_7_5" ]
   deps += [ ":pkcs8-v0_10_2" ]

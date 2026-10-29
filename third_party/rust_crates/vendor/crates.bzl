@@ -436,7 +436,7 @@ _NORMAL_DEPENDENCIES = {
             "nom-language": Label("//third_party/rust_crates/vendor/nom-language-0.1.0:nom_language"),
             "nom_locate": Label("//third_party/rust_crates/vendor/nom_locate-5.0.0:nom_locate"),
             "num-bigint": Label("//third_party/rust_crates/vendor/num-bigint-0.5.1:num_bigint"),
-            "num-integer": Label("//third_party/rust_crates/vendor/num-integer-0.1.46:num_integer"),
+            "num-integer": Label("//third_party/rust_crates/vendor/num-integer-0.1.47:num_integer"),
             "num-rational": Label("//third_party/rust_crates/vendor/num-rational-0.4.2:num_rational"),
             "num-traits": Label("//third_party/rust_crates/vendor/num-traits-0.2.19:num_traits"),
             "omaha_client": Label("//third_party/rust_crates/vendor/omaha_client-0.4.1:omaha_client"),

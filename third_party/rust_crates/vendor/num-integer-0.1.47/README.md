@@ -1,11 +1,11 @@
-# num-iter
+# num-integer
 
-[![crate](https://img.shields.io/crates/v/num-iter.svg)](https://crates.io/crates/num-iter)
-[![documentation](https://docs.rs/num-iter/badge.svg)](https://docs.rs/num-iter)
+[![crate](https://img.shields.io/crates/v/num-integer.svg)](https://crates.io/crates/num-integer)
+[![documentation](https://docs.rs/num-integer/badge.svg)](https://docs.rs/num-integer)
 [![minimum rustc 1.31](https://img.shields.io/badge/rustc-1.31+-red.svg)](https://rust-lang.github.io/rfcs/2495-min-rust-version.html)
-[![build status](https://github.com/rust-num/num-iter/workflows/master/badge.svg)](https://github.com/rust-num/num-iter/actions)
+[![build status](https://github.com/rust-num/num-integer/actions/workflows/main.yaml/badge.svg)](https://github.com/rust-num/num-integer/actions/workflows/main.yaml)
 
-Generic `Range` iterators for Rust.
+`Integer` trait and functions for Rust.
 
 ## Usage
 
@@ -13,7 +13,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-num-iter = "0.1"
+num-integer = "0.1"
 ```
 
 ## Features
@@ -22,8 +22,8 @@ This crate can be used without the standard library (`#![no_std]`) by disabling
 the default `std` feature.  Use this in `Cargo.toml`:
 
 ```toml
-[dependencies.num-iter]
-version = "0.1.35"
+[dependencies.num-integer]
+version = "0.1.36"
 default-features = false
 ```
 
@@ -36,7 +36,7 @@ Release notes are available in [RELEASES.md](RELEASES.md).
 
 ## Compatibility
 
-The `num-iter` crate is tested for rustc 1.31 and greater.
+The `num-integer` crate is tested for rustc 1.31 and greater.
 
 ## License
 
