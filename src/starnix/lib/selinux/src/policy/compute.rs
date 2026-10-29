@@ -13,10 +13,12 @@ use super::{
     SELINUX_AVD_FLAGS_PERMISSIVE, SecurityContext, TypeId,
 };
 use crate::{InitialSid, NullessByteStr};
+use zerocopy::{Immutable, IntoBytes};
 
 /// Kind of extended permission, corresponding to the base permission that triggers a check of an
 /// extended permission.
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, IntoBytes, Immutable)]
+#[repr(u8)]
 pub enum XpermsKind {
     Ioctl,
     Nlmsg,

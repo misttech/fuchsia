@@ -15,6 +15,7 @@ use crate::security_server::SecurityServerBackend;
 use crate::{HashStats, SecurityId};
 use concurrent_access_cache::{ConcurrentSidCache, ConcurrentXpermsCache};
 use std::sync::Arc;
+use zerocopy::{ByteEq, Immutable, IntoBytes};
 
 pub use cache_stats::CacheStats;
 pub use concurrent_access_cache::{AccessCacheStorage, ConcurrentAccessCache};
@@ -61,7 +62,7 @@ pub(crate) trait Query {
     ) -> KernelXpermsAccessDecision;
 }
 
-#[derive(Clone, PartialEq, Eq, zerocopy::IntoBytes, zerocopy::Immutable)]
+#[derive(Clone, ByteEq, IntoBytes, Immutable)]
 #[repr(C)]
 pub struct AccessQueryArgs {
     pub source_sid: SecurityId,
@@ -69,12 +70,13 @@ pub struct AccessQueryArgs {
     pub target_class: KernelClass,
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, ByteEq, IntoBytes, Immutable)]
+#[repr(C)]
 struct XpermsAccessQueryArgs {
-    xperms_kind: XpermsKind,
     source_sid: SecurityId,
     target_sid: SecurityId,
     permission: KernelPermission,
+    xperms_kind: XpermsKind,
     xperms_prefix: u8,
 }
 

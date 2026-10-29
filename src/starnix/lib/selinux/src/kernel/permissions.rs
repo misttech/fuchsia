@@ -8,6 +8,7 @@ use fuchsia_rcu::RcuDroppable;
 use paste::paste;
 use std::ops::{BitOr, BitOrAssign};
 use strum_macros::VariantArray;
+use zerocopy::{ByteEq, ByteHash, Immutable, IntoBytes};
 
 /// Declares an `enum` with a `name()` method that returns the name for the given variant.
 macro_rules! named_enum {
@@ -78,13 +79,16 @@ macro_rules! declare_kernel_classes {
         $($(#[$variant_meta:meta])* $variant:ident ($variant_name:literal),)*
     }) => {
         named_enum! {
-            #[derive(VariantArray, zerocopy::IntoBytes, zerocopy::Immutable, RcuDroppable)]
+            #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, VariantArray, IntoBytes, Immutable, RcuDroppable)]
+            #[repr(u32)]
             $(#[$meta])* KernelClass {
                 $($(#[$variant_meta])* $variant ($variant_name),)*
             }
         }
 
         paste! {
+            #[derive(Clone, Copy, Debug, ByteEq, ByteHash, IntoBytes, Immutable)]
+            #[repr(u8)]
             $(#[$meta])*
             pub enum KernelPermission {
                 $($(#[$variant_meta])* $variant([<$variant Permission>]),)*
@@ -144,8 +148,6 @@ macro_rules! declare_kernel_classes {
 declare_kernel_classes! {
     /// Well-known class in SELinux policy that has a particular meaning in policy enforcement
     /// hooks.
-    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-    #[repr(u32)]
     {
         // keep-sorted start
         /// SELinux "anon_inode" object class.
@@ -582,7 +584,7 @@ macro_rules! class_permission_enum {
         $($(#[$variant_meta:meta])* $variant:ident ($variant_name:literal),)*
     }) => {
         named_enum! {
-            #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+            #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, IntoBytes, Immutable)]
             #[repr(u8)]
             $(#[$meta])* $name {
                 $($(#[$variant_meta])* $variant ($variant_name),)*

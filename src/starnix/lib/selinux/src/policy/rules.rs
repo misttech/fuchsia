@@ -10,6 +10,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use hashbrown::HashTable;
 use hashbrown::hash_table::Entry;
 use selinux_policy_derive::{Parse, Serialize, Validate};
+use zerocopy::{ByteEq, ByteHash, Immutable, IntoBytes};
 
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::parser::{Array, PolicyCursor, PolicyWriter};
@@ -350,7 +351,8 @@ impl XpermRule {
 }
 
 /// Lookup key for indexing and matching access vector rules by source domain, target domain, and class.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Validate)]
+#[derive(Clone, Copy, Debug, ByteEq, ByteHash, IntoBytes, Immutable, Validate)]
+#[repr(C)]
 pub struct RuleKey {
     source_type: TypeId,
     target_type: TypeId,
@@ -364,11 +366,9 @@ impl RuleKey {
     }
 
     /// Hashes this [`RuleKey`].
+    #[inline(always)]
     fn hash(&self) -> u64 {
-        let packed = (self.source_type.as_u16() as u64)
-            | ((self.target_type.as_u16() as u64) << 16)
-            | ((self.class.as_u16() as u64) << 32);
-        rapidhash::rapidhash(&packed.to_ne_bytes())
+        rapidhash::rapidhash(self.as_bytes())
     }
 
     /// Constructs a [`BinaryAccessVectorRuleHeader`] for this [`RuleKey`], [`RuleKind`], and enabled flag.

@@ -11,6 +11,7 @@ use starnix_logging::CATEGORY_STARNIX_SECURITY;
 use std::hint::cold_path;
 use std::mem::size_of;
 use std::sync::atomic::{AtomicU8, AtomicU16, AtomicU32, AtomicU64, Ordering, fence};
+use zerocopy::{Immutable, IntoBytes};
 
 /// Lock-free N-way associative cache with static capacity.
 ///
@@ -72,12 +73,15 @@ pub trait StorageStrategy<
 >
 {
     /// Type to be used as cache key.
-    type Key;
+    type Key: IntoBytes + Immutable;
     /// Type of values to be stored in the cache.
     type Value;
 
     /// Computes a hash of `key`.
-    fn hash_key(&self, key: &Self::Key) -> u64;
+    #[inline(always)]
+    fn hash_key(&self, key: &Self::Key) -> u64 {
+        rapidhash::rapidhash(key.as_bytes())
+    }
 
     /// Checks that the stored values match `key`.
     fn check_key(

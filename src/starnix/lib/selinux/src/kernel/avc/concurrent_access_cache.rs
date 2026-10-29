@@ -8,7 +8,6 @@ use crate::SecurityId;
 use crate::kernel::{ClassPermission, KernelAccessDecision, KernelXpermsAccessDecision};
 use crate::policy::{XpermsBitmap, XpermsKind};
 use std::sync::atomic::{AtomicU8, AtomicU16, AtomicU32, AtomicU64, Ordering};
-use zerocopy::IntoBytes;
 
 /// Cache for access decisions.
 /// This cache has 4 slots per bucket, with 25 bytes of inline storage. A bucket is 128 bytes.
@@ -63,11 +62,6 @@ impl
 {
     type Key = AccessQueryArgs;
     type Value = KernelAccessDecision;
-
-    #[inline(always)]
-    fn hash_key(&self, key: &Self::Key) -> u64 {
-        rapidhash::rapidhash(key.as_bytes())
-    }
 
     #[inline(always)]
     fn check_key(
@@ -193,14 +187,6 @@ impl
     type Value = KernelXpermsAccessDecision;
 
     #[inline(always)]
-    fn hash_key(&self, key: &Self::Key) -> u64 {
-        let (sids, class_and_prefix, perm_and_kind) = Self::pack_key(key);
-        let details = (class_and_prefix as u64) | ((perm_and_kind as u64) << 16);
-        let bytes = ((sids as u128) | ((details as u128) << 64)).to_ne_bytes();
-        rapidhash::rapidhash(&bytes)
-    }
-
-    #[inline(always)]
     fn check_key(
         &self,
         key: &Self::Key,
@@ -284,11 +270,6 @@ impl
 {
     type Key = AccessQueryArgs;
     type Value = SecurityId;
-
-    #[inline(always)]
-    fn hash_key(&self, key: &Self::Key) -> u64 {
-        rapidhash::rapidhash(key.as_bytes())
-    }
 
     #[inline(always)]
     fn check_key(
