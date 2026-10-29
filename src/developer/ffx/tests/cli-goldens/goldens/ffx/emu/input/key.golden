@@ -1,0 +1,66 @@
+{
+  "name": "key",
+  "description": "Press and release keys.",
+  "examples": [
+    "  $ ffx emu input key a\n  $ ffx emu input key ctrl+alt+delete\n  $ ffx emu input key shift+f10 ret\n  $ ffx emu input key --down shift\n  $ ffx emu input key --up shift"
+  ],
+  "flags": [
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--help",
+      "short": null,
+      "description": "display usage information",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "down"
+        }
+      },
+      "optionality": "optional",
+      "long": "--down",
+      "short": null,
+      "description": "press the keys of this combo without releasing them.",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "up"
+        }
+      },
+      "optionality": "optional",
+      "long": "--up",
+      "short": null,
+      "description": "release the keys of this combo, in reverse order, without pressing them.",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "key-duration"
+        }
+      },
+      "optionality": "optional",
+      "long": "--key-duration",
+      "short": null,
+      "description": "time in milliseconds between the last press and the first release of a combo. Defaults to 20.",
+      "hidden": false
+    }
+  ],
+  "notes": [
+    "Each combo is one or more QEMU QKeyCode names joined with '+'. Names are\ncase-sensitive and all lowercase, with no aliases: use `a`, not `A`, and `ret`\nfor the Enter/Return key. Common names:\n  a..z  0..9  ret  esc  spc  tab  backspace  delete  insert\n  shift  shift_r  ctrl  ctrl_r  alt  alt_r  meta_l  meta_r  menu\n  up  down  left  right  home  end  pgup  pgdn  caps_lock\n  f1..f24  kp_0..kp_9  kp_enter  minus  equal  comma  dot  slash\nAll names: https://www.qemu.org/docs/master/interop/qemu-qmp-ref.html#enum-QMP-ui.QKeyCode\n\nThe keys of a combo go down in the given order and come back up in reverse\norder. --down and --up send only the presses or only the releases. They can't\nbe combined with positional combos or with each other."
+  ],
+  "commands": [],
+  "positionals": [
+    {
+      "name": "combos",
+      "description": "key combos to press and release in turn, e.g. `a` or `ctrl+alt+delete`.",
+      "optionality": "repeating",
+      "hidden": false
+    }
+  ],
+  "error_codes": []
+}

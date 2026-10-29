@@ -7,15 +7,17 @@
 use emulator_instance::EmulatorInstances;
 use ffx_config::EnvironmentContext;
 use ffx_config::keys::EMU_INSTANCE_ROOT_DIR;
-use ffx_emulator_config::{EmulatorEngine, InputEvent, InputStep};
+use ffx_emulator_config::{EmulatorEngine, InputEvent, InputStep, PressState};
 use ffx_emulator_engines::EngineBuilder;
-use ffx_emulator_input_args::{InputCommand, InputSubCommand, RawCommand};
+use ffx_emulator_input_args::{InputCommand, InputSubCommand, KeyCommand, RawCommand};
 use ffx_writer::VerifiedMachineWriter;
 use fho::{FfxMain, FfxTool, Result as FhoResult, bug, return_user_error, user_error};
 use schemars::JsonSchema;
 use serde::Serialize;
 use std::path::PathBuf;
 use std::time::Duration;
+
+mod keymap;
 
 #[derive(Debug, PartialEq, Serialize, JsonSchema)]
 pub struct InputResult {
@@ -103,8 +105,58 @@ async fn send_steps(
 
 /// Builds the steps for the given command. Validates all of the input first.
 fn build_steps(cmd: &InputCommand) -> FhoResult<Vec<InputStep>> {
+    let interval = Duration::from_millis(cmd.interval);
     match &cmd.subcommand {
+        InputSubCommand::Key(key) => key_steps(key, interval),
         InputSubCommand::Raw(raw) => raw_steps(raw),
+    }
+}
+
+/// Steps that press `keys` in order. Only the last press is followed by `delay_after`.
+fn press_steps(keys: &[&'static str], delay_after: Duration) -> Vec<InputStep> {
+    keys.iter()
+        .enumerate()
+        .map(|(index, &qcode)| InputStep {
+            events: vec![InputEvent::Key { qcode, state: PressState::Down }],
+            delay_after: if index + 1 == keys.len() { delay_after } else { Duration::ZERO },
+        })
+        .collect()
+}
+
+/// Steps that release `keys` in reverse order. Only the last release is followed by
+/// `delay_after`.
+fn release_steps(keys: &[&'static str], delay_after: Duration) -> Vec<InputStep> {
+    keys.iter()
+        .rev()
+        .enumerate()
+        .map(|(index, &qcode)| InputStep {
+            events: vec![InputEvent::Key { qcode, state: PressState::Up }],
+            delay_after: if index + 1 == keys.len() { delay_after } else { Duration::ZERO },
+        })
+        .collect()
+}
+
+fn key_steps(cmd: &KeyCommand, interval: Duration) -> FhoResult<Vec<InputStep>> {
+    let parse_combo = |combo: &str| keymap::parse_combo(combo).map_err(|e| user_error!("{e}"));
+    match (cmd.combos.is_empty(), &cmd.down, &cmd.up) {
+        (false, None, None) => {
+            // Validate all combos before generating any steps.
+            let combos =
+                cmd.combos.iter().map(|combo| parse_combo(combo)).collect::<FhoResult<Vec<_>>>()?;
+            let key_duration = Duration::from_millis(cmd.key_duration);
+            let mut steps = Vec::new();
+            for keys in combos {
+                steps.extend(press_steps(&keys, key_duration));
+                steps.extend(release_steps(&keys, interval));
+            }
+            Ok(steps)
+        }
+        (true, Some(combo), None) => Ok(press_steps(&parse_combo(combo)?, Duration::ZERO)),
+        (true, None, Some(combo)) => Ok(release_steps(&parse_combo(combo)?, Duration::ZERO)),
+        (true, None, None) => return_user_error!(
+            "Specify the keys to press, e.g. `ffx emu input key a`, or use --down or --up."
+        ),
+        _ => return_user_error!("--down, --up and positional key combos can't be combined."),
     }
 }
 
@@ -133,14 +185,28 @@ mod tests {
     use ffx_emulator_config::BoxFuture;
     use ffx_writer::{Format, TestBuffers};
 
+    const INTERVAL: Duration = Duration::from_millis(20);
     const ZERO: Duration = Duration::ZERO;
 
     fn cmd(subcommand: InputSubCommand) -> InputCommand {
-        InputCommand { name: None, subcommand }
+        InputCommand { name: None, interval: 20, subcommand }
     }
 
     fn raw_cmd(json: &str) -> InputCommand {
         cmd(InputSubCommand::Raw(RawCommand { json: json.into() }))
+    }
+
+    fn key_cmd(combos: &[&str]) -> InputCommand {
+        cmd(InputSubCommand::Key(KeyCommand {
+            combos: combos.iter().map(|combo| combo.to_string()).collect(),
+            down: None,
+            up: None,
+            key_duration: 20,
+        }))
+    }
+
+    fn key(qcode: &'static str, state: PressState, delay_after: Duration) -> InputStep {
+        InputStep { events: vec![InputEvent::Key { qcode, state }], delay_after }
     }
 
     fn err_string(result: FhoResult<Vec<InputStep>>) -> String {
@@ -180,6 +246,89 @@ mod tests {
             let err = err_string(build_steps(&raw_cmd(json)));
             assert!(err.contains(expected), "{json}: {err}");
         }
+    }
+
+    #[test]
+    fn test_key_single() {
+        assert_eq!(
+            build_steps(&key_cmd(&["a"])).unwrap(),
+            vec![key("a", PressState::Down, INTERVAL), key("a", PressState::Up, INTERVAL)]
+        );
+    }
+
+    #[test]
+    fn test_key_chord_and_sequence() {
+        let mut command = key_cmd(&["ctrl+alt+delete", "ret"]);
+        command.interval = 50;
+        let InputSubCommand::Key(key_command) = &mut command.subcommand else { panic!() };
+        key_command.key_duration = 100;
+        let hold = Duration::from_millis(100);
+        let gap = Duration::from_millis(50);
+        assert_eq!(
+            build_steps(&command).unwrap(),
+            vec![
+                key("ctrl", PressState::Down, ZERO),
+                key("alt", PressState::Down, ZERO),
+                key("delete", PressState::Down, hold),
+                key("delete", PressState::Up, ZERO),
+                key("alt", PressState::Up, ZERO),
+                key("ctrl", PressState::Up, gap),
+                key("ret", PressState::Down, hold),
+                key("ret", PressState::Up, gap),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_key_down_up() {
+        let down = cmd(InputSubCommand::Key(KeyCommand {
+            combos: vec![],
+            down: Some("ctrl+shift".into()),
+            up: None,
+            key_duration: 20,
+        }));
+        assert_eq!(
+            build_steps(&down).unwrap(),
+            vec![key("ctrl", PressState::Down, ZERO), key("shift", PressState::Down, ZERO)]
+        );
+        let up = cmd(InputSubCommand::Key(KeyCommand {
+            combos: vec![],
+            down: None,
+            up: Some("ctrl+shift".into()),
+            key_duration: 20,
+        }));
+        assert_eq!(
+            build_steps(&up).unwrap(),
+            vec![key("shift", PressState::Up, ZERO), key("ctrl", PressState::Up, ZERO)]
+        );
+    }
+
+    #[test]
+    fn test_key_mode_errors() {
+        assert!(err_string(build_steps(&key_cmd(&[]))).contains("Specify the keys"));
+
+        let both = cmd(InputSubCommand::Key(KeyCommand {
+            combos: vec![],
+            down: Some("a".into()),
+            up: Some("a".into()),
+            key_duration: 20,
+        }));
+        assert!(err_string(build_steps(&both)).contains("can't be combined"));
+
+        let mixed = cmd(InputSubCommand::Key(KeyCommand {
+            combos: vec!["a".into()],
+            down: Some("b".into()),
+            up: None,
+            key_duration: 20,
+        }));
+        assert!(err_string(build_steps(&mixed)).contains("can't be combined"));
+    }
+
+    #[test]
+    fn test_key_unknown_name_rejected_before_any_step() {
+        // The first combo is valid, but the second isn't. No steps are generated.
+        let err = err_string(build_steps(&key_cmd(&["a", "ctrl+enter"])));
+        assert!(err.contains("unknown key name 'enter'"), "{err}");
     }
 
     struct StubEngine {

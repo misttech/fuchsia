@@ -17,9 +17,25 @@
 
 use std::time::Duration;
 
+/// Whether a key or button goes down (is pressed) or up (is released).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PressState {
+    Down,
+    Up,
+}
+
+impl PressState {
+    /// The value of the QMP `down` field.
+    fn is_down(self) -> bool {
+        self == PressState::Down
+    }
+}
+
 /// One QMP `InputEvent`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum InputEvent {
+    /// A key, identified by its QMP `QKeyCode` name.
+    Key { qcode: &'static str, state: PressState },
     /// A QMP `InputEvent` object, sent unchanged.
     Raw(serde_json::Value),
 }
@@ -28,6 +44,10 @@ impl InputEvent {
     /// Returns the QMP `InputEvent` JSON object for this event.
     pub fn to_qmp(&self) -> serde_json::Value {
         match self {
+            InputEvent::Key { qcode, state } => serde_json::json!({
+                "type": "key",
+                "data": { "key": { "type": "qcode", "data": qcode }, "down": state.is_down() }
+            }),
             InputEvent::Raw(value) => value.clone(),
         }
     }
@@ -56,6 +76,26 @@ impl InputStep {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_key_to_qmp() {
+        let event = InputEvent::Key { qcode: "a", state: PressState::Down };
+        assert_eq!(
+            event.to_qmp(),
+            serde_json::json!({
+                "type": "key",
+                "data": { "key": { "type": "qcode", "data": "a" }, "down": true }
+            })
+        );
+        let event = InputEvent::Key { qcode: "ctrl", state: PressState::Up };
+        assert_eq!(
+            event.to_qmp(),
+            serde_json::json!({
+                "type": "key",
+                "data": { "key": { "type": "qcode", "data": "ctrl" }, "down": false }
+            })
+        );
+    }
 
     #[test]
     fn test_raw_to_qmp() {

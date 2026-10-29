@@ -6,11 +6,17 @@ to check input driver changes on an emulator.
 ## Usage
 
 ```bash
+# Keys: QEMU QKeyCode names, joined with '+' for chords
+ffx emu input key a
+ffx emu input key ctrl+alt+delete
+ffx emu input key --down shift
+ffx emu input key --up shift
+
 # Raw: QMP InputEvent objects, sent unchanged in one input-send-event command
 ffx emu input raw '[{"type":"rel","data":{"axis":"x","value":7}}]'
 
-# Global options: pick an instance
-ffx emu input --name fuchsia-emulator raw '[{"type":"rel","data":{"axis":"x","value":7}}]'
+# Global options: pick an instance and set the gap between steps
+ffx emu input --name fuchsia-emulator --interval 100 key a b c
 ```
 
 See `ffx emu input --help` and the help of each subcommand for all options.
@@ -49,8 +55,6 @@ ffx target ssh -- print-input-report list   # lists the virtio input devices
 ffx target ssh -- print-input-report read --num-reads 2 --output json > /tmp/pir.json &
 sleep 3   # give the reader time to connect
 
-# A report with KEY_A pressed, then an empty one:
-ffx emu input raw '[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"a"}}}]'
-ffx emu input raw '[{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"a"}}}]'
+ffx emu input key a   # a report with KEY_A pressed, then an empty one
 wait; cat /tmp/pir.json
 ```
