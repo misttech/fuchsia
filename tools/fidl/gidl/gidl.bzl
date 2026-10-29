@@ -153,7 +153,7 @@ def _gidl_cc_source_set_impl(
         target_compatible_with,
         testonly,
         visibility):
-    out_cc = "gidl_generated_%s.cc" % name
+    out_cc = "%s_gidl_generated.cc" % name
 
     _gidl(
         name = "%s_gidl" % name,
