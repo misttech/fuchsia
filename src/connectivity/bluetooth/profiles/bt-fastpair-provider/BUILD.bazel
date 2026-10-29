@@ -1,0 +1,176 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load(
+    "//build/bazel/rules/components:structured_config.bzl",
+    "fuchsia_structured_config_rust_lib",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "bin",
+    srcs = [
+        "src/advertisement/bloom_filter.rs",
+        "src/advertisement/low_energy_advertiser.rs",
+        "src/advertisement/mod.rs",
+        "src/config.rs",
+        "src/fidl_client.rs",
+        "src/fidl_service.rs",
+        "src/gatt_service.rs",
+        "src/main.rs",
+        "src/message_stream.rs",
+        "src/pairing.rs",
+        "src/provider.rs",
+        "src/types/error.rs",
+        "src/types/keys.rs",
+        "src/types/mod.rs",
+        "src/types/packets.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate_name = "bt_fastpair_provider",
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        ":fastpair_provider_config",
+        "//sdk/fidl/fuchsia.bluetooth.bredr:fuchsia.bluetooth.bredr_rust",
+        "//sdk/fidl/fuchsia.bluetooth.fastpair:fuchsia.bluetooth.fastpair_rust",
+        "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth_rust",
+        "//sdk/fidl/fuchsia.bluetooth.gatt2:fuchsia.bluetooth.gatt2_rust",
+        "//sdk/fidl/fuchsia.bluetooth.le:fuchsia.bluetooth.le_rust",
+        "//sdk/fidl/fuchsia.bluetooth.sys:fuchsia.bluetooth.sys_rust",
+        "//sdk/rust/zx",
+        "//src/connectivity/bluetooth/lib/async-helpers",
+        "//src/connectivity/bluetooth/lib/bt-metrics",
+        "//src/connectivity/bluetooth/lib/fuchsia-bluetooth",
+        "//src/connectivity/bluetooth/lib/host-watcher",
+        "//src/connectivity/bluetooth/lib/packet-encoding",
+        "//src/connectivity/bluetooth/lib/profile-client",
+        "//src/lib/async-utils",
+        "//src/lib/diagnostics/inspect/contrib/rust",
+        "//src/lib/diagnostics/inspect/derive",
+        "//src/lib/diagnostics/inspect/runtime/rust",
+        "//src/lib/diagnostics/inspect/rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:aes",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:base64",
+        "//third_party/rust_crates/vendor:bitfield",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:hmac",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:lru",
+        "//third_party/rust_crates/vendor:p256",
+        "//third_party/rust_crates/vendor:rand",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:sha2",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+fx_packaged_binary(
+    name = "bin_packaged_bin",
+    binary = ":bin",
+    binary_name = "bt_fastpair_provider",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+)
+
+fx_component_manifest(
+    name = "manifest",
+    component_name = "bt-fastpair-provider",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+    ],
+    manifest = "meta/bt-fastpair-provider.cml",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//vendor/google:__subpackages__"],
+)
+
+fuchsia_structured_config_rust_lib(
+    name = "fastpair_provider_config",
+    cm_label = ":manifest",
+)
+
+fx_component(
+    name = "component",
+    compiled_manifest = ":manifest",
+    component_name = "bt-fastpair-provider",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//vendor/google:__subpackages__"],
+    deps = [":bin_packaged_bin"],
+)
+
+rustc_test(
+    name = "bt_fastpair_provider_bin_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":bin",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//src/connectivity/bluetooth/lib/async-helpers:async-test-helpers",
+        "//src/connectivity/bluetooth/testing/bt-channel-test-support",
+        "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+fx_packaged_binary(
+    name = "bt_fastpair_provider_bin_test_packaged_bin",
+    testonly = True,
+    binary = ":bt_fastpair_provider_bin_test",
+    binary_name = "bt_fastpair_provider_bin_test",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+)
+
+fx_component_manifest(
+    name = "bt-fastpair-provider-tests-manifest",
+    testonly = True,
+    component_name = "bt-fastpair-provider-tests",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/bt-fastpair-provider-tests.cml",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+)
+
+fx_test_component(
+    name = "bt-fastpair-provider-tests-component",
+    compiled_manifest = ":bt-fastpair-provider-tests-manifest",
+    component_name = "bt-fastpair-provider-tests",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [":bt_fastpair_provider_bin_test_packaged_bin"],
+)
+
+fx_package(
+    name = "bt-fastpair-provider-tests-package",
+    package_name = "bt-fastpair-provider-tests",
+    test_components = [":bt-fastpair-provider-tests-component"],
+)
+
+fx_test(
+    name = "bt-fastpair-provider-tests",
+    package = ":bt-fastpair-provider-tests-package",
+    visibility = ["//src/connectivity/bluetooth:__pkg__"],
+)

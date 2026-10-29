@@ -36,6 +36,7 @@ test_suite(
         "//src/connectivity/bluetooth/profiles/bt-avrcp:bt-avrcp-tests",
         "//src/connectivity/bluetooth/profiles/bt-avrcp-target:bt-avrcp-target-tests",
         "//src/connectivity/bluetooth/profiles/bt-device-id:bt-device-id-tests",
+        "//src/connectivity/bluetooth/profiles/bt-fastpair-provider:bt-fastpair-provider-tests",
         "//src/connectivity/bluetooth/profiles/bt-map-mce:bt-map-mce-unittests",
         "//src/connectivity/bluetooth/profiles/bt-peripheral-hub:bt-peripheral-hub-tests",
         "//src/connectivity/bluetooth/profiles/bt-rfcomm:bt-rfcomm-tests",
