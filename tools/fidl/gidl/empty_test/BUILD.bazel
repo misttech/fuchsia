@@ -1,0 +1,51 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+load("//src/tests/fidl/conformance_suite:gidl_conformance_suite.bzl", "CONFORMANCE_SUITE_FIDL_TARGET")
+load("//tools/fidl/gidl:gidl.bzl", "gidl")
+
+package(default_applicable_licenses = ["//:license"])
+
+# This file tests that GIDL backends produce valid code for an empty GIDL file.
+# This ensures we can always disable tests without causing build issues such as
+# unused imports, etc.
+
+# LINT.IfChange
+
+_RUST_EMPTY_GIDL_TEST_SOURCE = "rust/empty_conformance_test.rs"
+
+gidl(
+    name = "rust_empty_gidl",
+    fidl = CONFORMANCE_SUITE_FIDL_TARGET,
+    inputs = ["empty.gidl"],
+    language = "rust",
+    output = _RUST_EMPTY_GIDL_TEST_SOURCE,
+    type = "conformance",
+)
+
+rustc_test(
+    name = "rust_empty_gidl_test_bin",
+    srcs = [_RUST_EMPTY_GIDL_TEST_SOURCE],
+    crate_name = "rust_empty_gidl_tests",
+    crate_root = _RUST_EMPTY_GIDL_TEST_SOURCE,
+    edition = "2024",
+    deps = [
+        "//sdk/rust/zx-status",
+        "//sdk/rust/zx-types",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fidl/rust/gidl_util",
+        "//src/tests/fidl/conformance_suite:conformance_fidl_rust",
+        "//third_party/rust_crates/vendor:assert_matches",
+    ],
+)
+
+fx_unittest_package(
+    name = "rust_empty_gidl_tests",
+    unit_tests = [":rust_empty_gidl_test_bin"],
+    visibility = ["//tools/fidl/gidl:__pkg__"],
+)
+
+# LINT.ThenChange(//tools/fidl/gidl/empty_test/BUILD.gn)

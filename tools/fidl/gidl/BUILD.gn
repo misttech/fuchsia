@@ -7,6 +7,7 @@ import("//build/testing/golden_files.gni")
 import("//src/tests/fidl/conformance_suite/gidl-conformance-suite.gni")
 import("//tools/fidl/gidl/gidl.gni")
 
+# LINT.IfChange
 conformance_golden_items = [
   {
     language = "cpp"
@@ -67,6 +68,8 @@ golden_files("gidl_golden_tests") {
     ]
   }
 }
+
+# LINT.ThenChange(//tools/fidl/gidl/BUILD.bazel)
 
 group("tests") {
   testonly = true

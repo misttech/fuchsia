@@ -6,6 +6,7 @@ import("//build/python/python_library.gni")
 
 # This allows code call FIDL wire table constructors and setters rather than
 # using builders.
+# LINT.IfChange(fidl-wire-deprecated-mutable-tables)
 config("fidl-wire-deprecated-mutable-tables") {
   cflags_cc = [ "-DFIDL_WIRE_ALLOW_DEPRECATED_MUTABLE_TABLES" ]
 
@@ -377,6 +378,8 @@ config("fidl-wire-deprecated-mutable-tables") {
     #------------------
   ]
 }
+
+# LINT.ThenChange(BUILD.bazel:fidl-wire-deprecated-mutable-tables)
 
 if (is_host) {
   python_library("cpp") {
