@@ -175,22 +175,21 @@ void InstanceRequestor::EndOfMessage() {
     }
 
     // Something has changed.
-    std::vector<Mdns::Subscriber*> subscribers(subscribers_.begin(), subscribers_.end());
     if (instance_info.new_) {
       instance_info.new_ = false;
-      for (auto subscriber : subscribers) {
-        subscriber->InstanceDiscovered(
-            instance_info.service_name_, instance_info.instance_name_,
-            target_info.addresses_.AddressesWithPort(instance_info.port_), instance_info.text_,
-            instance_info.srv_priority_, instance_info.srv_weight_, instance_info.target_);
-      }
+      ForEachSubscriber([&instance_info, &target_info](Mdns::Subscriber& subscriber) {
+        subscriber.InstanceDiscovered(instance_info.service_name_, instance_info.instance_name_,
+                                      target_info.addresses_.AddressesWithPort(instance_info.port_),
+                                      instance_info.text_, instance_info.srv_priority_,
+                                      instance_info.srv_weight_, instance_info.target_);
+      });
     } else {
-      for (auto subscriber : subscribers) {
-        subscriber->InstanceChanged(instance_info.service_name_, instance_info.instance_name_,
-                                    target_info.addresses_.AddressesWithPort(instance_info.port_),
-                                    instance_info.text_, instance_info.srv_priority_,
-                                    instance_info.srv_weight_, instance_info.target_);
-      }
+      ForEachSubscriber([&instance_info, &target_info](Mdns::Subscriber& subscriber) {
+        subscriber.InstanceChanged(instance_info.service_name_, instance_info.instance_name_,
+                                   target_info.addresses_.AddressesWithPort(instance_info.port_),
+                                   instance_info.text_, instance_info.srv_priority_,
+                                   instance_info.srv_weight_, instance_info.target_);
+      });
     }
 
     instance_info.dirty_ = false;
@@ -241,12 +240,7 @@ void InstanceRequestor::ReportAllDiscoveries(Mdns::Subscriber* subscriber) {
 
 void InstanceRequestor::SendQuery() {
   SendQuestion(question_, ReplyAddress::Multicast(media_, ip_versions_));
-  // |Query| may delete the subscriber synchronously (removing it from |subscribers_|), so
-  // iterate over a snapshot to keep the loop iterator valid.
-  std::vector<Mdns::Subscriber*> subscribers(subscribers_.begin(), subscribers_.end());
-  for (const auto& subscriber : subscribers) {
-    subscriber->Query(question_->type_);
-  }
+  ForEachSubscriber([this](Mdns::Subscriber& subscriber) { subscriber.Query(question_->type_); });
 
   if (query_delay_ == zx::sec(0)) {
     query_delay_ = zx::sec(1);
@@ -415,28 +409,36 @@ void InstanceRequestor::RemoveInstance(const DnsName& instance_full_name) {
       return;
     }
 
-    // |InstanceLost| may delete the subscriber synchronously (removing it from |subscribers_|),
-    // so iterate over a snapshot to keep the loop iterator valid.
-    std::vector<Mdns::Subscriber*> subscribers(subscribers_.begin(), subscribers_.end());
-    for (auto subscriber : subscribers) {
-      subscriber->InstanceLost(iter->second.service_name_, iter->second.instance_name_);
-    }
+    // Retain the service and instance names and erase the entry before calling `InstanceLost`.
+    // This accommodates the unlikely case in which `InstanceLost` adds a new subscriber.
+    auto service_name = iter->second.service_name_;
+    auto instance_name = iter->second.instance_name_;
 
     instance_infos_by_full_name_.erase(iter);
+
+    // `InstanceLost` may delete the subscriber synchronously (removing it from |subscribers_|),
+    // so use `ForEachSubscriber` to keep the loop iterator valid.
+    ForEachSubscriber([service_name, instance_name](Mdns::Subscriber& subscriber) {
+      subscriber.InstanceLost(service_name, instance_name);
+    });
   }
 }
 
 void InstanceRequestor::RemoveLocalInstance(const DnsName& instance_full_name) {
   auto iter = instance_infos_by_full_name_.find(instance_full_name);
   if (iter != instance_infos_by_full_name_.end()) {
-    // |InstanceLost| may delete the subscriber synchronously (removing it from |subscribers_|),
-    // so iterate over a snapshot to keep the loop iterator valid.
-    std::vector<Mdns::Subscriber*> subscribers(subscribers_.begin(), subscribers_.end());
-    for (auto subscriber : subscribers) {
-      subscriber->InstanceLost(iter->second.service_name_, iter->second.instance_name_);
-    }
+    // Retain the service and instance names and erase the entry before calling `InstanceLost`.
+    // This accommodates the unlikely case in which `InstanceLost` adds a new subscriber.
+    auto service_name = iter->second.service_name_;
+    auto instance_name = iter->second.instance_name_;
 
     instance_infos_by_full_name_.erase(iter);
+
+    // `InstanceLost` may delete the subscriber synchronously (removing it from |subscribers_|),
+    // so use `ForEachSubscriber` to keep the loop iterator valid.
+    ForEachSubscriber([service_name, instance_name](Mdns::Subscriber& subscriber) {
+      subscriber.InstanceLost(service_name, instance_name);
+    });
   }
 }
 

@@ -4,6 +4,7 @@
 
 #include "src/connectivity/network/mdns/service/agents/instance_requestor.h"
 
+#include <lib/fit/function.h>
 #include <lib/zx/time.h>
 
 #include <gmock/gmock.h>
@@ -96,6 +97,76 @@ class InstanceRequestorTest : public AgentTest {
     std::unique_ptr<InstanceId> instance_lost_params_;
     DnsType query_param_ = DnsType::kInvalid;
   };
+
+  class ActionSubscriber : public Subscriber {
+   public:
+    void SetOnInstanceDiscovered(fit::closure action) {
+      on_instance_discovered_ = std::move(action);
+    }
+    void SetOnInstanceChanged(fit::closure action) { on_instance_changed_ = std::move(action); }
+    void SetOnInstanceLost(fit::closure action) { on_instance_lost_ = std::move(action); }
+    void SetOnQuery(fit::closure action) { on_query_ = std::move(action); }
+
+    size_t instance_discovered_count() const { return instance_discovered_count_; }
+
+    void InstanceDiscovered(const DnsName& service, const DnsLabel& instance,
+                            const std::vector<inet::SocketAddress>& addresses,
+                            const std::vector<std::vector<uint8_t>>& text, uint16_t srv_priority,
+                            uint16_t srv_weight, const DnsName& target) override {
+      ++instance_discovered_count_;
+      Subscriber::InstanceDiscovered(service, instance, addresses, text, srv_priority, srv_weight,
+                                     target);
+      if (auto action = std::move(on_instance_discovered_)) {
+        action();
+      }
+    }
+
+    void InstanceChanged(const DnsName& service, const DnsLabel& instance,
+                         const std::vector<inet::SocketAddress>& addresses,
+                         const std::vector<std::vector<uint8_t>>& text, uint16_t srv_priority,
+                         uint16_t srv_weight, const DnsName& target) override {
+      Subscriber::InstanceChanged(service, instance, addresses, text, srv_priority, srv_weight,
+                                  target);
+      if (auto action = std::move(on_instance_changed_)) {
+        action();
+      }
+    }
+
+    void InstanceLost(const DnsName& service, const DnsLabel& instance) override {
+      Subscriber::InstanceLost(service, instance);
+      if (auto action = std::move(on_instance_lost_)) {
+        action();
+      }
+    }
+
+    void Query(DnsType type_queried) override {
+      Subscriber::Query(type_queried);
+      if (auto action = std::move(on_query_)) {
+        action();
+      }
+    }
+
+   private:
+    fit::closure on_instance_discovered_;
+    fit::closure on_instance_changed_;
+    fit::closure on_instance_lost_;
+    fit::closure on_query_;
+    size_t instance_discovered_count_ = 0;
+  };
+
+  // Returns a closure that increments |callback_count|, unsubscribes both |self| and |other|
+  // from |requestor|, and destroys |other|.
+  static fit::closure RemoveBothAndDestroyOther(InstanceRequestor& requestor,
+                                                size_t& callback_count,
+                                                std::unique_ptr<ActionSubscriber>& self,
+                                                std::unique_ptr<ActionSubscriber>& other) {
+    return [&requestor, &callback_count, &self, &other]() {
+      ++callback_count;
+      requestor.RemoveSubscriber(self.get());
+      requestor.RemoveSubscriber(other.get());
+      other.reset();
+    };
+  }
 
   void ReceivePublication(InstanceRequestor& under_test, const DnsName& host_full_name,
                           const DnsName& service_name, const DnsLabel& instance_name,
@@ -1381,6 +1452,357 @@ TEST_F(InstanceRequestorTest, ResponseSansAddressesV6) {
       *params);
 
   subscriber.ExpectNoOther();
+}
+
+// Tests that removing and destroying another subscriber synchronously during |Query| skips the
+// removed subscriber and quits the agent when no subscribers remain.
+TEST_F(InstanceRequestorTest, SubscriberRemovesOtherDuringQuery) {
+  // Need to |make_shared|, because the code under test expects agents to be managed
+  // by shared pointers. It may call `shared_from_this`, for example.
+  auto under_test = std::make_shared<InstanceRequestor>(
+      this, kServiceName, Media::kBoth, IpVersions::kBoth, kExcludeLocal, kExcludeLocalProxies);
+  SetAgent(*under_test);
+
+  size_t callback_count = 0;
+  auto subscriber_a = std::make_unique<ActionSubscriber>();
+  auto subscriber_b = std::make_unique<ActionSubscriber>();
+  subscriber_a->SetOnQuery(
+      RemoveBothAndDestroyOther(*under_test, callback_count, subscriber_a, subscriber_b));
+  subscriber_b->SetOnQuery(
+      RemoveBothAndDestroyOther(*under_test, callback_count, subscriber_b, subscriber_a));
+  under_test->AddSubscriber(subscriber_a.get());
+  under_test->AddSubscriber(subscriber_b.get());
+
+  under_test->Start(kLocalHostFullName);
+
+  EXPECT_EQ(1u, callback_count);
+  ASSERT_TRUE(subscriber_a || subscriber_b);
+  EXPECT_FALSE(subscriber_a && subscriber_b);
+  auto& survivor = subscriber_a ? *subscriber_a : *subscriber_b;
+  survivor.ExpectQueryCalled(DnsType::kPtr);
+  survivor.ExpectNoOther();
+
+  auto message = ExpectOutboundMessage(ReplyAddress::Multicast(Media::kBoth, IpVersions::kBoth));
+  ExpectQuestion(message.get(), kServiceFullName, DnsType::kPtr);
+  ExpectNoOtherQuestionOrResource(message.get());
+
+  // Removing the last subscriber during |SendQuery| posts the quit task before |SendQuery| posts
+  // the next scheduled query task.
+  auto [quit_task, _] = ExpectPostTaskForTime(zx::sec(0), zx::sec(0));
+  ExpectPostTaskForTime(kMinDelay, kMinDelay);
+  ExpectNoOther();
+
+  quit_task();
+  ExpectRemoveAgentCall();
+  ExpectNoOther();
+}
+
+// Tests that removing and destroying another subscriber synchronously during |InstanceDiscovered|
+// in |EndOfMessage| skips the removed subscriber and quits the agent when no subscribers remain.
+TEST_F(InstanceRequestorTest, SubscriberRemovesOtherDuringInstanceDiscovered) {
+  // Need to |make_shared|, because the code under test expects agents to be managed
+  // by shared pointers. It may call `shared_from_this`, for example.
+  auto under_test = std::make_shared<InstanceRequestor>(
+      this, kServiceName, Media::kBoth, IpVersions::kBoth, kExcludeLocal, kExcludeLocalProxies);
+  SetAgent(*under_test);
+
+  size_t callback_count = 0;
+  auto subscriber_a = std::make_unique<ActionSubscriber>();
+  auto subscriber_b = std::make_unique<ActionSubscriber>();
+  subscriber_a->SetOnInstanceDiscovered(
+      RemoveBothAndDestroyOther(*under_test, callback_count, subscriber_a, subscriber_b));
+  subscriber_b->SetOnInstanceDiscovered(
+      RemoveBothAndDestroyOther(*under_test, callback_count, subscriber_b, subscriber_a));
+  under_test->AddSubscriber(subscriber_a.get());
+  under_test->AddSubscriber(subscriber_b.get());
+
+  under_test->Start(kLocalHostFullName);
+
+  auto message = ExpectOutboundMessage(ReplyAddress::Multicast(Media::kBoth, IpVersions::kBoth));
+  ExpectQuestion(message.get(), kServiceFullName, DnsType::kPtr);
+  ExpectNoOtherQuestionOrResource(message.get());
+  ExpectPostTaskForTime(kMinDelay, kMinDelay);
+  ExpectNoOther();
+
+  subscriber_a->ExpectQueryCalled(DnsType::kPtr);
+  subscriber_b->ExpectQueryCalled(DnsType::kPtr);
+
+  ReplyAddress sender_address(
+      inet::SocketAddress(192, 168, 1, 1, inet::IpPort::From_uint16_t(5353)),
+      inet::IpAddress(192, 168, 1, 100), 1, Media::kWireless, IpVersions::kV4);
+  ReceivePublication(*under_test, kHostFullName, kServiceName, kInstanceName, kPort, kText,
+                     sender_address);
+
+  EXPECT_EQ(1u, callback_count);
+  ASSERT_TRUE(subscriber_a || subscriber_b);
+  EXPECT_FALSE(subscriber_a && subscriber_b);
+  auto& survivor = subscriber_a ? *subscriber_a : *subscriber_b;
+  auto params = survivor.ExpectInstanceDiscoveredCalled();
+  ASSERT_NE(nullptr, params);
+  EXPECT_EQ(ServiceInstance(kServiceName, kInstanceName, kHostName,
+                            {inet::SocketAddress(sender_address.socket_address().address(), kPort)},
+                            kText, 0, 0),
+            *params);
+  survivor.ExpectNoOther();
+
+  ExpectRenewCall(DnsResource(kServiceFullName, DnsType::kPtr));
+  ExpectRenewCall(DnsResource(kInstanceFullName, DnsType::kSrv));
+  ExpectRenewCall(DnsResource(kInstanceFullName, DnsType::kTxt));
+  ExpectRenewCall(DnsResource(kHostFullName, sender_address.socket_address().address()));
+  // Expect the quit task to be posted.
+  ExpectPostTaskForTimeAndInvoke(zx::sec(0), zx::sec(0));
+  ExpectRemoveAgentCall();
+  ExpectNoOther();
+}
+
+// Tests that removing and destroying another subscriber synchronously during |InstanceChanged| in
+// |EndOfMessage| skips the removed subscriber and quits the agent when no subscribers remain.
+TEST_F(InstanceRequestorTest, SubscriberRemovesOtherDuringInstanceChanged) {
+  // Need to |make_shared|, because the code under test expects agents to be managed
+  // by shared pointers. It may call `shared_from_this`, for example.
+  auto under_test = std::make_shared<InstanceRequestor>(
+      this, kServiceName, Media::kBoth, IpVersions::kBoth, kExcludeLocal, kExcludeLocalProxies);
+  SetAgent(*under_test);
+
+  size_t callback_count = 0;
+  auto subscriber_a = std::make_unique<ActionSubscriber>();
+  auto subscriber_b = std::make_unique<ActionSubscriber>();
+  subscriber_a->SetOnInstanceChanged(
+      RemoveBothAndDestroyOther(*under_test, callback_count, subscriber_a, subscriber_b));
+  subscriber_b->SetOnInstanceChanged(
+      RemoveBothAndDestroyOther(*under_test, callback_count, subscriber_b, subscriber_a));
+  under_test->AddSubscriber(subscriber_a.get());
+  under_test->AddSubscriber(subscriber_b.get());
+
+  under_test->Start(kLocalHostFullName);
+
+  auto message = ExpectOutboundMessage(ReplyAddress::Multicast(Media::kBoth, IpVersions::kBoth));
+  ExpectQuestion(message.get(), kServiceFullName, DnsType::kPtr);
+  ExpectNoOtherQuestionOrResource(message.get());
+  ExpectPostTaskForTime(kMinDelay, kMinDelay);
+  ExpectNoOther();
+
+  subscriber_a->ExpectQueryCalled(DnsType::kPtr);
+  subscriber_b->ExpectQueryCalled(DnsType::kPtr);
+
+  ReplyAddress sender_address(
+      inet::SocketAddress(192, 168, 1, 1, inet::IpPort::From_uint16_t(5353)),
+      inet::IpAddress(192, 168, 1, 100), 1, Media::kWireless, IpVersions::kV4);
+  ReceivePublication(*under_test, kHostFullName, kServiceName, kInstanceName, kPort, kText,
+                     sender_address);
+
+  subscriber_a->ExpectInstanceDiscoveredCalled();
+  subscriber_b->ExpectInstanceDiscoveredCalled();
+  ExpectRenewCall(DnsResource(kServiceFullName, DnsType::kPtr));
+  ExpectRenewCall(DnsResource(kInstanceFullName, DnsType::kSrv));
+  ExpectRenewCall(DnsResource(kInstanceFullName, DnsType::kTxt));
+  ExpectRenewCall(DnsResource(kHostFullName, sender_address.socket_address().address()));
+  ExpectNoOther();
+
+  // Send updated TXT record to trigger |InstanceChanged|.
+  ReceiveTxt(*under_test, kServiceName, kInstanceName, kAltText, sender_address);
+
+  EXPECT_EQ(1u, callback_count);
+  ASSERT_TRUE(subscriber_a || subscriber_b);
+  EXPECT_FALSE(subscriber_a && subscriber_b);
+  auto& survivor = subscriber_a ? *subscriber_a : *subscriber_b;
+  auto params = survivor.ExpectInstanceChangedCalled();
+  ASSERT_NE(nullptr, params);
+  EXPECT_EQ(ServiceInstance(kServiceName, kInstanceName, kHostName,
+                            {inet::SocketAddress(sender_address.socket_address().address(), kPort)},
+                            kAltText, 0, 0),
+            *params);
+  survivor.ExpectNoOther();
+
+  ExpectRenewCall(DnsResource(kInstanceFullName, DnsType::kTxt));
+  // Expect the quit task to be posted.
+  ExpectPostTaskForTimeAndInvoke(zx::sec(0), zx::sec(0));
+  ExpectRemoveAgentCall();
+  ExpectNoOther();
+}
+
+// Tests that removing and destroying another subscriber synchronously during |InstanceLost| in
+// |RemoveInstance| skips the removed subscriber and quits the agent when no subscribers remain.
+TEST_F(InstanceRequestorTest, SubscriberRemovesOtherDuringInstanceLost) {
+  // Need to |make_shared|, because the code under test expects agents to be managed
+  // by shared pointers. It may call `shared_from_this`, for example.
+  auto under_test = std::make_shared<InstanceRequestor>(
+      this, kServiceName, Media::kBoth, IpVersions::kBoth, kExcludeLocal, kExcludeLocalProxies);
+  SetAgent(*under_test);
+
+  size_t callback_count = 0;
+  auto subscriber_a = std::make_unique<ActionSubscriber>();
+  auto subscriber_b = std::make_unique<ActionSubscriber>();
+  subscriber_a->SetOnInstanceLost(
+      RemoveBothAndDestroyOther(*under_test, callback_count, subscriber_a, subscriber_b));
+  subscriber_b->SetOnInstanceLost(
+      RemoveBothAndDestroyOther(*under_test, callback_count, subscriber_b, subscriber_a));
+  under_test->AddSubscriber(subscriber_a.get());
+  under_test->AddSubscriber(subscriber_b.get());
+
+  under_test->Start(kLocalHostFullName);
+
+  auto message = ExpectOutboundMessage(ReplyAddress::Multicast(Media::kBoth, IpVersions::kBoth));
+  ExpectQuestion(message.get(), kServiceFullName, DnsType::kPtr);
+  ExpectNoOtherQuestionOrResource(message.get());
+  ExpectPostTaskForTime(kMinDelay, kMinDelay);
+  ExpectNoOther();
+
+  subscriber_a->ExpectQueryCalled(DnsType::kPtr);
+  subscriber_b->ExpectQueryCalled(DnsType::kPtr);
+
+  ReplyAddress sender_address(
+      inet::SocketAddress(192, 168, 1, 1, inet::IpPort::From_uint16_t(5353)),
+      inet::IpAddress(192, 168, 1, 100), 1, Media::kWireless, IpVersions::kV4);
+  ReceivePtr(*under_test, kServiceName, kInstanceName, sender_address);
+  ExpectQueryCall(DnsType::kSrv, MdnsNames::InstanceFullName(kInstanceName, kServiceName),
+                  Media::kBoth, IpVersions::kBoth, now(), kAdditionalInterval,
+                  kAdditionalIntervalMultiplier, kAdditionalMaxQueries, true);
+  ExpectRenewCall(DnsResource(kServiceFullName, DnsType::kPtr));
+  ExpectNoOther();
+
+  DnsResource ptr_resource(kServiceFullName, DnsType::kPtr);
+  ptr_resource.ptr_.pointer_domain_name_ = DnsName(kInstanceFullName);
+  ptr_resource.time_to_live_ = 0;
+  under_test->ReceiveResource(ptr_resource, MdnsResourceSection::kExpired, sender_address);
+
+  EXPECT_EQ(1u, callback_count);
+  ASSERT_TRUE(subscriber_a || subscriber_b);
+  EXPECT_FALSE(subscriber_a && subscriber_b);
+  auto& survivor = subscriber_a ? *subscriber_a : *subscriber_b;
+  auto instance_id = survivor.ExpectInstanceLostCalled();
+  ASSERT_NE(nullptr, instance_id);
+  EXPECT_EQ(kServiceName, instance_id->service_);
+  EXPECT_EQ(kInstanceName, instance_id->instance_);
+  survivor.ExpectNoOther();
+
+  // Expect the quit task to be posted.
+  ExpectPostTaskForTimeAndInvoke(zx::sec(0), zx::sec(0));
+  ExpectRemoveAgentCall();
+  ExpectNoOther();
+}
+
+// Tests that removing and destroying another subscriber synchronously during |InstanceLost| in
+// |RemoveLocalInstance| skips the removed subscriber and quits the agent when no subscribers
+// remain.
+TEST_F(InstanceRequestorTest, SubscriberRemovesOtherDuringLocalInstanceLost) {
+  // Need to |make_shared|, because the code under test expects agents to be managed
+  // by shared pointers. It may call `shared_from_this`, for example.
+  auto under_test = std::make_shared<InstanceRequestor>(
+      this, kServiceName, Media::kBoth, IpVersions::kBoth, kIncludeLocal, kExcludeLocalProxies);
+  SetAgent(*under_test);
+  SetLocalHostAddresses(kHostAddresses);
+
+  size_t callback_count = 0;
+  auto subscriber_a = std::make_unique<ActionSubscriber>();
+  auto subscriber_b = std::make_unique<ActionSubscriber>();
+  subscriber_a->SetOnInstanceLost(
+      RemoveBothAndDestroyOther(*under_test, callback_count, subscriber_a, subscriber_b));
+  subscriber_b->SetOnInstanceLost(
+      RemoveBothAndDestroyOther(*under_test, callback_count, subscriber_b, subscriber_a));
+  under_test->AddSubscriber(subscriber_a.get());
+  under_test->AddSubscriber(subscriber_b.get());
+
+  under_test->Start(kLocalHostFullName);
+
+  auto message = ExpectOutboundMessage(ReplyAddress::Multicast(Media::kBoth, IpVersions::kBoth));
+  ExpectQuestion(message.get(), kServiceFullName, DnsType::kPtr);
+  ExpectNoOtherQuestionOrResource(message.get());
+  ExpectPostTaskForTime(kMinDelay, kMinDelay);
+  ExpectNoOther();
+
+  subscriber_a->ExpectQueryCalled(DnsType::kPtr);
+  subscriber_b->ExpectQueryCalled(DnsType::kPtr);
+
+  under_test->OnAddLocalServiceInstance(
+      ServiceInstance(kServiceName, kInstanceName, kLocalHostName, kSocketAddresses, kText),
+      kFromLocalHost);
+  subscriber_a->ExpectInstanceDiscoveredCalled();
+  subscriber_b->ExpectInstanceDiscoveredCalled();
+  ExpectNoOther();
+
+  under_test->OnRemoveLocalServiceInstance(kServiceName, kInstanceName, kFromLocalHost);
+
+  EXPECT_EQ(1u, callback_count);
+  ASSERT_TRUE(subscriber_a || subscriber_b);
+  EXPECT_FALSE(subscriber_a && subscriber_b);
+  auto& survivor = subscriber_a ? *subscriber_a : *subscriber_b;
+  auto instance_id = survivor.ExpectInstanceLostCalled();
+  ASSERT_NE(nullptr, instance_id);
+  EXPECT_EQ(kServiceName, instance_id->service_);
+  EXPECT_EQ(kInstanceName, instance_id->instance_);
+  survivor.ExpectNoOther();
+
+  // Expect the quit task to be posted.
+  ExpectPostTaskForTimeAndInvoke(zx::sec(0), zx::sec(0));
+  ExpectRemoveAgentCall();
+  ExpectNoOther();
+}
+
+// Tests that adding subscribers synchronously during |InstanceDiscovered| does not invalidate
+// iteration and reports the instance exactly once to both existing and newly added subscribers.
+TEST_F(InstanceRequestorTest, SubscriberAddsSubscribersDuringInstanceDiscovered) {
+  InstanceRequestor under_test(this, kServiceName, Media::kBoth, IpVersions::kBoth, kIncludeLocal,
+                               kExcludeLocalProxies);
+  SetAgent(under_test);
+  SetLocalHostAddresses(kHostAddresses);
+
+  // Create an arbitrary number of subscribers to add during |InstanceDiscovered| callbacks.
+  constexpr size_t kAddedSubscriberCount = 32;
+  std::vector<std::unique_ptr<ActionSubscriber>> added_subscribers;
+  added_subscribers.reserve(kAddedSubscriberCount);
+  for (size_t i = 0; i < kAddedSubscriberCount; ++i) {
+    added_subscribers.push_back(std::make_unique<ActionSubscriber>());
+  }
+
+  bool added = false;
+  auto add_all_new_subscribers = [&under_test, &added_subscribers, &added]() {
+    if (added) {
+      return;
+    }
+    added = true;
+    for (auto& subscriber : added_subscribers) {
+      under_test.AddSubscriber(subscriber.get());
+    }
+  };
+
+  ActionSubscriber subscriber_a;
+  ActionSubscriber subscriber_b;
+  subscriber_a.SetOnInstanceDiscovered(add_all_new_subscribers);
+  subscriber_b.SetOnInstanceDiscovered(add_all_new_subscribers);
+  under_test.AddSubscriber(&subscriber_a);
+  under_test.AddSubscriber(&subscriber_b);
+
+  under_test.Start(kLocalHostFullName);
+
+  auto message = ExpectOutboundMessage(ReplyAddress::Multicast(Media::kBoth, IpVersions::kBoth));
+  ExpectQuestion(message.get(), kServiceFullName, DnsType::kPtr);
+  ExpectNoOtherQuestionOrResource(message.get());
+  ExpectPostTaskForTime(kMinDelay, kMinDelay);
+  ExpectNoOther();
+
+  subscriber_a.ExpectQueryCalled(DnsType::kPtr);
+  subscriber_b.ExpectQueryCalled(DnsType::kPtr);
+
+  under_test.OnAddLocalServiceInstance(
+      ServiceInstance(kServiceName, kInstanceName, kLocalHostName, kSocketAddresses, kText),
+      kFromLocalHost);
+
+  EXPECT_TRUE(added);
+  EXPECT_EQ(1u, subscriber_a.instance_discovered_count());
+  EXPECT_EQ(1u, subscriber_b.instance_discovered_count());
+  subscriber_a.ExpectInstanceDiscoveredCalled();
+  subscriber_a.ExpectNoOther();
+  subscriber_b.ExpectInstanceDiscoveredCalled();
+  subscriber_b.ExpectNoOther();
+
+  for (auto& subscriber : added_subscribers) {
+    EXPECT_EQ(1u, subscriber->instance_discovered_count());
+    subscriber->ExpectInstanceDiscoveredCalled();
+    subscriber->ExpectNoOther();
+  }
+
+  ExpectNoOther();
 }
 
 // Tests that loopback A and AAAA records received from the wire are ignored.

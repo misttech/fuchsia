@@ -7,12 +7,10 @@
 
 #include <lib/zx/time.h>
 
-#include <algorithm>
 #include <memory>
-#include <queue>
-#include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 #include "src/connectivity/network/mdns/service/agents/mdns_agent.h"
 #include "src/connectivity/network/mdns/service/mdns.h"
@@ -57,6 +55,18 @@ class InstanceRequestor : public MdnsAgent {
                                     bool from_proxy) override;
 
  private:
+  // Calls |action| for each subscriber, iterating over a snapshot so subscribers may
+  // safely add or remove subscribers synchronously during callbacks.
+  template <typename Callable>
+  void ForEachSubscriber(Callable action) {
+    std::vector<Mdns::Subscriber*> subscribers(subscribers_.begin(), subscribers_.end());
+    for (const auto& subscriber : subscribers) {
+      if (subscribers_.find(subscriber) != subscribers_.end()) {
+        action(*subscriber);
+      }
+    }
+  }
+
   // Set of socket addresses associated with a target.
   class TargetAddressSet {
    public:
