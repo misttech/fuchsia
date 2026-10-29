@@ -1,0 +1,25 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "include",
+    hdrs = [
+        "magma_intel_gen_defs.h",
+        "magma_intel_gen_vendor_id.h",
+    ],
+    includes = ["."],
+    public_configs = [":msd_include_config"],
+    visibility = [
+        "//src/graphics/drivers/msd-intel-gen:__subpackages__",
+        "//src/graphics/magma/tests/msd_conformance_tests:__pkg__",
+        "//third_party/mesa-migrating/build/src/intel/common:__pkg__",
+        "//third_party/mesa-migrating/build/src/intel/vulkan:__pkg__",
+    ],
+    deps = ["//sdk/lib/magma_common"],
+    alwayslink = True,
+)
