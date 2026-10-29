@@ -17,6 +17,8 @@ mod cache_ffi;
 pub mod cpuid;
 mod crashlog;
 mod crashlog_ffi;
+mod descriptor;
+mod descriptor_ffi;
 pub mod fake_msr_access;
 pub mod feature;
 pub mod hwp;
@@ -36,13 +38,13 @@ pub mod mp;
 mod mp_ffi;
 mod msr;
 #[cfg(console_enabled)]
-pub mod msr_bench;
-#[cfg(console_enabled)]
-mod msr_bench_ffi;
+mod msr_bench;
 mod msr_ffi;
 pub mod platform_access;
 pub mod pv;
 pub mod registers;
+mod spinlock;
+mod spinlock_ffi;
 pub mod system_topology;
 mod timer_freq;
 pub mod vm;

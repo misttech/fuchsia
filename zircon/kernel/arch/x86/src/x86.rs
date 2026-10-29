@@ -517,3 +517,138 @@ pub unsafe fn wbinvd() {
         core::arch::asm!("wbinvd", options(nostack, preserves_flags),);
     }
 }
+
+/// Loads the Task Register (`TR`) with the TSS segment selector `sel` (`ltr`).
+///
+/// # Safety
+///
+/// The caller must ensure that the current privilege level is CPL 0 and `sel` selects a valid,
+/// non-busy 64-bit TSS descriptor in the current GDT whose backing `Tss64` remains valid while
+/// loaded.
+#[inline]
+pub unsafe fn x86_ltr(sel: u16) {
+    // SAFETY: Caller guarantees `sel` is a valid non-busy TSS selector in the current GDT.
+    unsafe {
+        core::arch::asm!(
+            "ltr ax",
+            in("ax") sel,
+            options(nostack, preserves_flags),
+        );
+    }
+}
+
+/// Offset of `direct` (`x86_percpu*`) in `x86_percpu` (`arch/x86/mp.h`).
+pub const PERCPU_DIRECT_OFFSET: usize = 0x0;
+/// Offset of `cpu_num` (`cpu_num_t`) in `x86_percpu` (`arch/x86/mp.h`).
+pub const PERCPU_CPU_NUM_OFFSET: usize = 0x58;
+/// Offset of `num_spinlocks` (`uint32_t`) in `x86_percpu` (`arch/x86/mp.h`).
+pub const PERCPU_NUM_SPINLOCKS_OFFSET: usize = 0x5c;
+/// Offset of `default_tss` (`tss_t`) in `x86_percpu` (`arch/x86/mp.h`).
+pub const PERCPU_DEFAULT_TSS_OFFSET: usize = 0x70;
+/// Offset of `default_tss.rsp0` (`PERCPU_KERNEL_SP_OFFSET`) in `x86_percpu` (`arch/x86/mp.h`).
+pub const PERCPU_KERNEL_SP_OFFSET: usize = 0x74;
+/// Offset of `interrupt_stacks.nmi` in `x86_percpu` (`arch/x86/mp.h`).
+pub const PERCPU_INTERRUPT_STACKS_NMI_OFFSET: usize = 0x20e0;
+
+/// Reads a 64-bit value from `%gs:[OFFSET]`.
+///
+/// # Safety
+///
+/// The caller must ensure that `%gs.base` is initialized to a valid `x86_percpu` structure and
+/// `OFFSET` is a valid 8-byte aligned field offset within `x86_percpu`.
+#[inline(always)]
+pub unsafe fn x86_read_gs_offset64<const OFFSET: usize>() -> u64 {
+    let ret: u64;
+    // SAFETY: Caller guarantees `%gs:[OFFSET]` is a valid 64-bit per-CPU field.
+    unsafe {
+        core::arch::asm!(
+            "mov {}, gs:[{offset}]",
+            out(reg) ret,
+            offset = const OFFSET,
+            options(nostack, preserves_flags),
+        );
+    }
+    ret
+}
+
+/// Writes a 64-bit value to `%gs:[OFFSET]`.
+///
+/// # Safety
+///
+/// The caller must ensure that `%gs.base` is initialized to a valid `x86_percpu` structure and
+/// `OFFSET` is a valid 64-bit field offset within `x86_percpu` that is safe to overwrite with
+/// `val`.
+#[inline(always)]
+pub unsafe fn x86_write_gs_offset64<const OFFSET: usize>(val: u64) {
+    // SAFETY: Caller guarantees `%gs:[OFFSET]` is a valid 64-bit per-CPU field.
+    unsafe {
+        core::arch::asm!(
+            "mov gs:[{offset}], {}",
+            in(reg) val,
+            offset = const OFFSET,
+            options(nostack, preserves_flags),
+        );
+    }
+}
+
+/// Reads a 32-bit value from `%gs:[OFFSET]`.
+///
+/// # Safety
+///
+/// The caller must ensure that `%gs.base` is initialized to a valid `x86_percpu` structure and
+/// `OFFSET` is a valid 4-byte aligned field offset within `x86_percpu`.
+#[inline(always)]
+pub unsafe fn x86_read_gs_offset32<const OFFSET: usize>() -> u32 {
+    let ret: u32;
+    // SAFETY: Caller guarantees `%gs:[OFFSET]` is a valid 32-bit per-CPU field.
+    unsafe {
+        core::arch::asm!(
+            "mov {:e}, gs:[{offset}]",
+            out(reg) ret,
+            offset = const OFFSET,
+            options(nostack, preserves_flags),
+        );
+    }
+    ret
+}
+
+/// Writes a 32-bit value to `%gs:[OFFSET]`.
+///
+/// # Safety
+///
+/// The caller must ensure that `%gs.base` is initialized to a valid `x86_percpu` structure and
+/// `OFFSET` is a valid 4-byte aligned field offset within `x86_percpu` that is safe to overwrite
+/// with `val`.
+#[inline(always)]
+pub unsafe fn x86_write_gs_offset32<const OFFSET: usize>(val: u32) {
+    // SAFETY: Caller guarantees `%gs:[OFFSET]` is a valid 32-bit per-CPU field.
+    unsafe {
+        core::arch::asm!(
+            "mov gs:[{offset}], {:e}",
+            in(reg) val,
+            offset = const OFFSET,
+            options(nostack, preserves_flags),
+        );
+    }
+}
+
+/// Adds `DELTA` to the 32-bit value at `%gs:[OFFSET]`.
+///
+/// # Safety
+///
+/// The caller must ensure that `%gs.base` is initialized to a valid `x86_percpu` structure,
+/// interrupts are disabled on the calling CPU, and `OFFSET` is a valid 4-byte aligned field offset
+/// within `x86_percpu` that is safe to modify.
+#[inline(always)]
+pub unsafe fn x86_add_gs_offset32<const OFFSET: usize, const DELTA: i32>() {
+    // SAFETY: Caller guarantees `%gs:[OFFSET]` is a valid 32-bit per-CPU field with exclusive
+    // access on the current CPU.
+    unsafe {
+        core::arch::asm!(
+            "add dword ptr gs:[{offset}], {delta}",
+            offset = const OFFSET,
+            delta = const DELTA,
+            options(nostack),
+        );
+    }
+}

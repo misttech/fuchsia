@@ -28,7 +28,7 @@
 /* 0x40 is used by the second half of the first TSS descriptor */
 
 /* selector priviledge level */
-#define SELECTOR_PL(s) ((s)&0x3)
+#define SELECTOR_PL(s) ((s) & 0x3)
 
 /*
  * Descriptor Types
@@ -46,21 +46,20 @@
 #include <zircon/compiler.h>
 
 #include <arch/aspace.h>
+#include <arch/x86.h>
 #include <arch/x86/ioport.h>
 
 void x86_set_tss_io_bitmap(IoBitmap& bitmap);
 void x86_clear_tss_io_bitmap(IoBitmap& bitmap);
-void x86_reset_tss_io_bitmap();
 
 typedef uint16_t seg_sel_t;
 
-/* fill in a descriptor in the GDT */
-void set_global_desc_64(seg_sel_t sel, uint64_t base, uint32_t limit, uint8_t present, uint8_t ring,
-                        uint8_t sys, uint8_t type, uint8_t gran, uint8_t bits);
+__BEGIN_CDECLS
+
+void x86_reset_tss_io_bitmap();
 
 /* tss stuff */
 void x86_initialize_percpu_tss();
-
 void x86_set_tss_sp(vaddr_t sp);
 void x86_clear_tss_busy(seg_sel_t sel);
 
@@ -80,6 +79,8 @@ static inline void gdt_load(uintptr_t base) {
 
 void gdt_setup();
 uintptr_t gdt_get();
+
+__END_CDECLS
 
 #endif
 

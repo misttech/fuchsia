@@ -19,6 +19,7 @@
 #define PERCPU_IN_RESTRICTED_MODE 0x28
 #define PERCPU_GPF_RETURN_OFFSET 0x50
 #define PERCPU_CPU_NUM_OFFSET 0x58
+#define PERCPU_NUM_SPINLOCKS_OFFSET 0x5c  // NOLINT(modernize-macro-to-enum)
 #define PERCPU_HIGH_LEVEL_PERCPU_OFFSET 0x68
 #define PERCPU_DEFAULT_TSS_OFFSET 0x70
 #define PERCPU_INTERRUPT_STACKS_NMI_OFFSET 0x20e0
@@ -118,6 +119,7 @@ static_assert(__offsetof(x86_percpu, kernel_unsafe_sp) == ZX_TLS_UNSAFE_SP_OFFSE
 static_assert(__offsetof(x86_percpu, saved_user_sp) == PERCPU_SAVED_USER_SP_OFFSET);
 static_assert(__offsetof(x86_percpu, gpf_return_target) == PERCPU_GPF_RETURN_OFFSET);
 static_assert(__offsetof(x86_percpu, cpu_num) == PERCPU_CPU_NUM_OFFSET);
+static_assert(__offsetof(x86_percpu, num_spinlocks) == PERCPU_NUM_SPINLOCKS_OFFSET);
 static_assert(__offsetof(x86_percpu, high_level_percpu) == PERCPU_HIGH_LEVEL_PERCPU_OFFSET);
 static_assert(__offsetof(x86_percpu, default_tss) == PERCPU_DEFAULT_TSS_OFFSET);
 static_assert(__offsetof(x86_percpu, default_tss.rsp0) == PERCPU_KERNEL_SP_OFFSET);

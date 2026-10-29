@@ -468,8 +468,6 @@ zx_status_t cpp_x86_request_context(cpu_num_t target_cpu, zx_duration_mono_t tim
 void cpp_x86_backtrace_print(const Backtrace* bt);
 void cpp_x86_print_frame(const iframe_t* frame);
 void cpp_x86_feature_debug();
-int cpp_x86_benchmark_state_run(void* state);
-void cpp_x86_benchmark_state_destroy(void* state);
 }  // extern "C"
 
 #endif  // ZIRCON_KERNEL_ARCH_X86_INCLUDE_ARCH_X86_H_
