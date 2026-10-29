@@ -106,7 +106,7 @@ pub static mut arm64_dcache_size: u32 = 32;
 
 /// MPIDR_EL1, read as a plain `u64`: only Aff0-Aff3 and bit 0 are used, and
 /// `MultiprocessorAffinityRegister::from` would debug-assert the RES1 bit 31.
-const MPIDR_EL1_RAW: SysReg<spec::MPIDR_EL1, u64> = SysReg::new();
+pub(super) const MPIDR_EL1_RAW: SysReg<spec::MPIDR_EL1, u64> = SysReg::new();
 
 /// `MPIDR_MT` from `<arch/arm64/mp.h>`, which is defined as `(0x1ULL < 24)`: a comparison, so 1.
 const MPIDR_MT: u64 = 1;

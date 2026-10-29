@@ -100,7 +100,6 @@ if (toolchain_environment == "kernel.phys" ||
       "exceptions_c.cc",
       "fpu_asm.S",
       "handoff.cc",
-      "mp.cc",
       "perf_mon.cc",
       "registers.cc",
       "secondary.S",
@@ -276,7 +275,10 @@ if (toolchain_environment == "kernel.phys" ||
     raw_lines = [ "#![no_std]" ]
     explicit_padding = false
     type_allowlist = [ "arm64_percpu" ]
-    var_allowlist = [ "PERCPU_IN_RESTRICTED_MODE" ]
+    var_allowlist = [
+      "ARM64_MPIDR_MASK",
+      "PERCPU_IN_RESTRICTED_MODE",
+    ]
     expect_lints = [
       "non_camel_case_types",
       "non_upper_case_globals",

@@ -7,18 +7,11 @@
 #include <lib/arch/intrin.h>
 
 #include <arch/arm64/arm64_ffi.h>
-#include <arch/arm64/mp.h>
 #include <arch/debugger.h>
-#include <kernel/cpu.h>
 #include <kernel/ffi.h>
 #include <kernel/thread.h>
 
 extern "C" {
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE uint64_t cpp_arm64_cpu_num_to_mpidr(cpu_num_t cpu_num) {
-  return arch_cpu_num_to_mpidr(cpu_num);
-}
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_arm64_get_tpidr_regs(uint64_t* tpidr_el0, uint64_t* tpidrro_el0) {

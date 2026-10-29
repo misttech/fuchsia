@@ -11,11 +11,7 @@
 #include <zircon/syscalls/debug.h>
 #include <zircon/types.h>
 
-#include <kernel/cpu.h>
-
 extern "C" {
-
-uint64_t cpp_arm64_cpu_num_to_mpidr(cpu_num_t cpu_num);
 
 void cpp_arm64_get_tpidr_regs(uint64_t* tpidr_el0, uint64_t* tpidrro_el0);
 void cpp_arm64_set_tpidr_regs(uint64_t tpidr_el0, uint64_t tpidrro_el0);

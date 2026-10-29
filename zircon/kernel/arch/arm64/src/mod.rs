@@ -24,32 +24,17 @@ mod uarch;
 mod user_copy;
 pub mod vm;
 
-use crate::kernel::types::cpu_num_t;
 use arch_arm64_aspace_bindings as aspace_bindings;
-
-unsafe extern "C" {
-    fn cpp_arm64_cpu_num_to_mpidr(cpu_num: cpu_num_t) -> u64;
-}
 
 /// The maximum cache line seen on any known ARM hardware.
 pub const MAX_CACHE_LINE: usize = 64;
 #[repr(align(64))]
 pub struct CpuAlignMarker;
 
-/// Translates a CPU number back to the MPIDR of that CPU.
-///
-/// Mirrors `arch_cpu_num_to_mpidr()` from
-/// `zircon/kernel/arch/arm64/include/arch/arm64/mp.h`.
-#[inline]
-pub fn cpu_num_to_mpidr(cpu_num: cpu_num_t) -> u64 {
-    // SAFETY: `cpp_arm64_cpu_num_to_mpidr` is a read-only FFI call into the arm64 percpu
-    // topology table with no side effects. Out of range CPU numbers are handled by the C++
-    // implementation.
-    unsafe { cpp_arm64_cpu_num_to_mpidr(cpu_num) }
-}
-
 pub use cache::clean_dcache_range;
 pub use libarch::arm64::{device_memory_barrier, isb, thread_memory_barrier, wfi, r#yield};
+/// Translates a CPU number back to the MPIDR of that CPU.
+pub use mp::arch_cpu_num_to_mpidr as cpu_num_to_mpidr;
 pub use periphmap::{periph_paddr_to_vaddr, periph_vaddr_to_paddr};
 pub use user_copy::{
     arch_copy_from_user, arch_copy_from_user_capture_faults, arch_copy_to_user,
