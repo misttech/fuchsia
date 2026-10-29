@@ -1,0 +1,60 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "scope_dispatcher",
+    srcs = [
+        "src/lib.rs",
+        "src/ops.rs",
+        "src/ops/v1.rs",
+        "src/ops/v1/tasks.rs",
+        "src/ops/v1/waits.rs",
+        "src/ops/v2.rs",
+        "src/ops/v2/irqs.rs",
+        "src/ops/v3.rs",
+        "src/ops/v4.rs",
+        "src/scope_dispatcher.rs",
+    ],
+    crate_name = "libasync_scope_dispatcher",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    visibility = [
+        "//sdk/lib/driver/metadata/rust:__pkg__",
+        "//src/devices/bin/driver-host:__pkg__",
+        "//src/starnix/kernel:__pkg__",
+        "//src/starnix/runner:__pkg__",
+        "//src/sys/test_runners/starnix:__pkg__",
+    ],
+    deps = [
+        "//sdk/lib/async/rust/dispatcher",
+        "//sdk/lib/async/rust/sys",
+        "//sdk/rust/zx",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:pin-project-lite",
+    ],
+)
+
+rustc_test(
+    name = "libasync_scope_dispatcher_lib_test",
+    crate = ":scope_dispatcher",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    deps = [
+        "//sdk/lib/async/rust",
+        "//src/lib/fuchsia",
+    ],
+)
+
+fx_unittest_package(
+    name = "libasync_scope_dispatcher_tests",
+    unit_tests = [":libasync_scope_dispatcher_lib_test"],
+    visibility = ["//sdk/lib:__pkg__"],
+)

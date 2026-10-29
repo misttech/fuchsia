@@ -8,6 +8,8 @@ test_suite(
     name = "target_tests",
     target_compatible_with = ["@platforms//os:fuchsia"],
     tests = [
+        "//sdk/lib/async/rust/scope_dispatcher:libasync_scope_dispatcher_tests",
+        "//sdk/lib/driver/debug/rust:driver_debug_tests",
         "//sdk/lib/power/state_recorder/rust:power_state_recorder_rust_unittests",
     ],
 )

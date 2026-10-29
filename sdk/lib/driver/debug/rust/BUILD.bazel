@@ -1,0 +1,37 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "rust",
+    srcs = ["src/lib.rs"],
+    crate_name = "driver_debug",
+    edition = "2024",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//sdk/fidl/fuchsia.driver.debug:fuchsia.driver.debug_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:argh",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+rustc_test(
+    name = "driver_debug_lib_test",
+    crate = ":rust",
+    deps = ["//src/lib/fuchsia-async"],
+)
+
+fx_unittest_package(
+    name = "driver_debug_tests",
+    unit_tests = [":driver_debug_lib_test"],
+    visibility = ["//sdk/lib:__pkg__"],
+)
