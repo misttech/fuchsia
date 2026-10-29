@@ -15,5 +15,8 @@ test_suite(
     tests = [
         "//src/camera/bin/camera-gym/controller_error:camera_gym_controller_error_unittest",
         "//src/camera/bin/camera-gym/controller_parser:camera_gym_controller_parser_unittest",
+        "//src/camera/lib/actor:actor_base_unittest",
+        "//src/camera/lib/fake_camera:fake_camera_unittest_test",
+        "//src/camera/lib/tokens:tokens-unittest",
     ],
 )

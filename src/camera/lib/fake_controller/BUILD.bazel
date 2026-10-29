@@ -1,0 +1,35 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "fake_controller",
+    testonly = True,
+    srcs = ["fake_controller.cc"],
+    hdrs = ["fake_controller.h"],
+    implementation_deps = [
+        "//sdk/lib/async:async-cpp",
+        "//sdk/lib/syslog/cpp",
+        "//src/camera/lib/fake_stream:impl_header",
+        "//zircon/system/ulib/fzl",
+    ],
+    visibility = [
+        "//src/camera/bin/device:__pkg__",
+        "//src/camera/bin/usb_device:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.camera2.hal:fuchsia.camera2.hal_hlcpp",
+        "//sdk/fidl/fuchsia.camera3:fuchsia.camera3_hlcpp",
+        "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_hlcpp",
+        "//sdk/lib/async-loop:async-loop-cpp",
+        "//sdk/lib/async-loop:async-loop-default",
+        "//sdk/lib/fit-promise",
+        "//src/camera/lib/fake_legacy_stream",
+        "//src/camera/lib/fake_stream",
+    ],
+    alwayslink = True,
+)

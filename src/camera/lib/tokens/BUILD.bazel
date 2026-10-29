@@ -1,0 +1,39 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "tokens",
+    hdrs = ["tokens.h"],
+    visibility = ["//src/camera/drivers/controller:__pkg__"],
+    deps = [
+        "//sdk/lib/async:async-cpp",
+        "//sdk/lib/async-default",
+    ],
+    alwayslink = True,
+)
+
+fx_cc_binary(
+    name = "tokens-unittest-bin",
+    testonly = True,
+    srcs = ["tokens-unittest.cc"],
+    tags = ["manual"],
+    deps = [
+        ":tokens",
+        "//sdk/lib/async-loop:async-loop-cpp",
+        "//sdk/lib/async-loop:async-loop-default",
+        "//src/lib/fxl/test:gtest_main",
+    ],
+)
+
+fx_unittest_package(
+    name = "tokens-unittest",
+    unit_tests = [":tokens-unittest-bin"],
+    visibility = ["//src/camera:__pkg__"],
+)

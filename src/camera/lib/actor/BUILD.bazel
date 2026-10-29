@@ -1,0 +1,48 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "actor_base",
+    hdrs = ["actor_base.h"],
+    visibility = [
+        "//src/camera:__subpackages__",
+        "//src/sensors/playback:__pkg__",
+    ],
+    deps = [
+        "//sdk/lib/async:async-cpp",
+        "//sdk/lib/async-loop:async-loop-cpp",
+        "//sdk/lib/async-loop:async-loop-default",
+        "//sdk/lib/fit",
+        "//sdk/lib/fit-promise",
+    ],
+    alwayslink = True,
+)
+
+fx_cc_binary(
+    name = "actor_base_unittest_bin",
+    testonly = True,
+    srcs = ["actor_base_unittest.cc"],
+    tags = ["manual"],
+    deps = [
+        ":actor_base",
+        "//sdk/lib/async:async-cpp",
+        "//sdk/lib/async-loop:async-loop-cpp",
+        "//sdk/lib/async-loop:async-loop-default",
+        "//sdk/lib/fit-promise",
+        "//src/lib/fxl/test:gtest_main",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+fx_unittest_package(
+    name = "actor_base_unittest",
+    unit_tests = [":actor_base_unittest_bin"],
+    visibility = ["//src/camera:__pkg__"],
+)

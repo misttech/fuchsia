@@ -1,0 +1,96 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "fake_camera",
+    srcs = [
+        "fake_camera_impl.cc",
+        "fake_camera_impl.h",
+    ],
+    hdrs = ["fake_camera.h"],
+    implementation_deps = [
+        "//sdk/lib/async:async-cpp",
+        "//sdk/lib/async-loop:async-loop-cpp",
+        "//sdk/lib/async-loop:async-loop-default",
+        "//sdk/lib/syslog/cpp",
+        "//src/camera/lib/fake_stream:impl_header",
+        "//zircon/system/ulib/fzl",
+    ],
+    visibility = ["//src/camera/lib:__subpackages__"],
+    deps = [
+        "//sdk/fidl/fuchsia.camera3:fuchsia.camera3_hlcpp",
+        "//sdk/lib/fit-promise",
+        "//src/camera/lib/fake_stream",
+    ],
+    alwayslink = True,
+)
+
+fx_cc_binary(
+    name = "fake_camera_unittest_bin",
+    testonly = True,
+    srcs = ["fake_camera_unittest.cc"],
+    tags = ["manual"],
+    deps = [
+        ":fake_camera",
+        "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_hlcpp",
+        "//sdk/lib/sys/cpp",
+        "//src/lib/fsl",
+        "//src/lib/fxl/test:gtest_main",
+        "//src/lib/testing/loop_fixture",
+    ],
+)
+
+fx_packaged_binary(
+    name = "fake_camera_unittest_packaged_bin",
+    testonly = True,
+    binary = ":fake_camera_unittest_bin",
+    binary_name = "fake_camera_unittest_bin",
+)
+
+fx_component_manifest(
+    name = "fake_camera_unittest_manifest",
+    testonly = True,
+    component_name = "fake_camera_unittest",
+    includes = [
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/gtest:default.shard.cml",
+    ],
+    manifest = "meta/fake_camera_unittest.cml",
+)
+
+fx_test_component(
+    name = "fake_camera_unittest_component",
+    compiled_manifest = ":fake_camera_unittest_manifest",
+    component_name = "fake_camera_unittest",
+    deps = [":fake_camera_unittest_packaged_bin"],
+)
+
+fx_package(
+    name = "fake_camera_unittest",
+    package_name = "fake_camera_unittest",
+    test_components = [":fake_camera_unittest_component"],
+)
+
+fx_test(
+    name = "fake_camera_unittest_test",
+    package = ":fake_camera_unittest",
+    test_type = "system",
+    visibility = ["//src/camera:__pkg__"],
+)

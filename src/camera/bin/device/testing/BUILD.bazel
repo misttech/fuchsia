@@ -1,0 +1,24 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "testing",
+    testonly = True,
+    srcs = [
+        "fake_device_listener_registry.cc",
+    ],
+    hdrs = [
+        "fake_device_listener_registry.h",
+    ],
+    visibility = ["//src/camera/bin/device:__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.ui.policy:fuchsia.ui.policy_hlcpp",
+        "//sdk/lib/syslog/cpp",
+    ],
+    alwayslink = True,
+)
