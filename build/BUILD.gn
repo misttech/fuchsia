@@ -188,6 +188,7 @@ if (is_host) {
       "sdk/compute_atom_api.py",
       "sdk/filter_host_tools_from_sdk_api.py",
       "sdk/generate_prebuild_idk/generate_prebuild_idk_validation.py",
+      "sdk/generate_sysroot_idk_atom.py",
       "sdk/verify_final_manifest.py",
       "subbuild.py",
       "testing/boot_tests/create_efi_partition_config.py",

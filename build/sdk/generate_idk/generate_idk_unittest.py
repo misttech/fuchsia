@@ -355,6 +355,68 @@ class GenerateIdkTests(unittest.TestCase):
             ),
         )
 
+    def test_sysroot_multi_variant_get_file_list(self) -> None:
+        sysroot_meta = {
+            "name": "sysroot",
+            "type": "sysroot",
+            "ifs_files": ["pkg/sysroot/libc.ifs", "pkg/sysroot/zircon.ifs"],
+            "versions": {
+                "arm64": {
+                    "root": "arch/arm64/sysroot",
+                    "include_dir": "arch/arm64/sysroot/include",
+                    "dist_dir": "arch/arm64/sysroot",
+                    "link_libs": ["arch/arm64/sysroot/lib/libc.so"],
+                    "dist_libs": ["arch/arm64/sysroot/dist/lib/ld.so.1"],
+                    "debug_libs": ["arch/arm64/sysroot/debug/libc.so"],
+                },
+                "x64": {
+                    "root": "arch/x64/sysroot",
+                    "include_dir": "arch/x64/sysroot/include",
+                    "dist_dir": "arch/x64/sysroot",
+                    "link_libs": ["arch/x64/sysroot/lib/libc.so"],
+                    "dist_libs": ["arch/x64/sysroot/dist/lib/ld.so.1"],
+                    "debug_libs": ["arch/x64/sysroot/debug/libc.so"],
+                },
+            },
+            "variants": [
+                {
+                    "constraints": {"api_level": "27", "arch": "arm64"},
+                    "values": {
+                        "root": "obj/arm64-api-27/sysroot",
+                        "include_dir": "obj/arm64-api-27/sysroot/include",
+                        "sysroot_dir": "obj/arm64-api-27/sysroot",
+                        "link_libs": ["obj/arm64-api-27/sysroot/lib/libc.so"],
+                        "dist_libs": [
+                            "obj/arm64-api-27/sysroot/dist/lib/ld.so.1"
+                        ],
+                        "debug_libs": [
+                            "obj/arm64-api-27/sysroot/debug/libc.so"
+                        ],
+                    },
+                },
+                {
+                    "constraints": {"api_level": "27", "arch": "x64"},
+                    "values": {
+                        "root": "obj/x64-api-27/sysroot",
+                        "include_dir": "obj/x64-api-27/sysroot/include",
+                        "sysroot_dir": "obj/x64-api-27/sysroot",
+                        "link_libs": ["obj/x64-api-27/sysroot/lib/libc.so"],
+                        "dist_libs": [
+                            "obj/x64-api-27/sysroot/dist/lib/ld.so.1"
+                        ],
+                        "debug_libs": ["obj/x64-api-27/sysroot/debug/libc.so"],
+                    },
+                },
+            ],
+        }
+        files = generate_idk.PartialIDK._get_file_list("sysroot", sysroot_meta)
+        self.assertEqual(files.count("pkg/sysroot/libc.ifs"), 1)
+        self.assertEqual(files.count("pkg/sysroot/zircon.ifs"), 1)
+        self.assertIn("arch/arm64/sysroot/lib/libc.so", files)
+        self.assertIn("arch/x64/sysroot/lib/libc.so", files)
+        self.assertIn("obj/arm64-api-27/sysroot/lib/libc.so", files)
+        self.assertIn("obj/x64-api-27/sysroot/lib/libc.so", files)
+
     def test_merge_variants_cc_prebuilt_library_pass(self) -> None:
         meta_a: generate_idk.CCPrebuiltLibraryMeta = {
             "name": "fallback",

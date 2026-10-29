@@ -302,7 +302,7 @@ if (current_toolchain == default_toolchain) {
       # )
     }
   }
-} else if (toolchain_variant.base == "//sdk/lib/c:user.libc_$target_cpu") {
+} else if (toolchain_environment == "user.libc") {
   config("libc_config") {
     configs = [
       "//build/config/zircon:user-link",
@@ -362,12 +362,18 @@ if (current_toolchain == default_toolchain) {
 
 # When in a toolchain variant of the Fuchsia base toolchain, find the
 # corresponding toolchain variant of user.libc_$target_cpu to build
-# the C library with it.
-libc_toolchain = sysroot_libc_base_toolchain
-if (toolchain_variant.suffix != "") {
-  libc_toolchain += string_replace(toolchain_variant.suffix, "-fuzzer", "")
+# the C library with it. If already in a user.libc toolchain (e.g. when building
+# libc for a non-default target architecture), libc_toolchain is the current
+# toolchain itself.
+if (toolchain_environment == "user.libc") {
+  libc_toolchain = current_toolchain
 } else {
-  libc_toolchain = system_libc_toolchain
+  libc_toolchain = sysroot_libc_base_toolchain
+  if (toolchain_variant.suffix != "") {
+    libc_toolchain += string_replace(toolchain_variant.suffix, "-fuzzer", "")
+  } else {
+    libc_toolchain = system_libc_toolchain
+  }
 }
 
 if (current_toolchain == libc_toolchain) {

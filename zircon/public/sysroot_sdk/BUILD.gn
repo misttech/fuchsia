@@ -240,3 +240,203 @@ generated_file("sysroot_for_fuchsia_platform") {
   # LINT.ThenChange(//build/regenerator.py:sysroot_for_fuchsia_platform_json)
   output_conversion = "json"
 }
+
+import("//build/config/zircon/standard.gni")
+
+# Per-CPU target aggregator: directly references toolchains for each CPU
+template("sysroot_cpu_artifacts") {
+  _cpu = invoker.cpu
+  _variants = [
+    "",
+    "asan",
+  ]
+  if (_cpu == "arm64") {
+    _variants += [ "hwasan" ]
+  }
+
+  group(target_name) {
+    deps = [
+      # 1. Startup object Scrt1.o compiled in user.basic toolchain for this CPU:
+      "//sdk/lib/c/startup:startfiles(//build/toolchain/zircon:user.basic_${_cpu})",
+
+      # 2. Linker stubs (llvm-ifs) for libc.so and libzircon.so:
+      "//sdk/lib/c:c.stub.${_cpu}",
+      "//src/zircon/lib/zircon:zircon.stub.${_cpu}",
+    ]
+
+    # 3. Stripped dynamic linker (dist/lib/ld.so.1) and debug symbols (debug/libc.so)
+    # for all sanitizer variants for this CPU:
+    foreach(variant, _variants) {
+      if (variant == "") {
+        _libc_toolchain = "//sdk/lib/c:user.libc_${_cpu}"
+      } else {
+        _libc_toolchain = "//sdk/lib/c:user.libc_${_cpu}-${variant}"
+      }
+      deps += [ "//sdk/lib/c:libc($_libc_toolchain)" ]
+    }
+  }
+}
+
+foreach(cpu, standard_fuchsia_cpus) {
+  sysroot_cpu_artifacts("sysroot_artifacts_${cpu}") {
+    cpu = cpu
+  }
+}
+
+group("sysroot_artifacts_all_cpus") {
+  deps = []
+  foreach(cpu, standard_fuchsia_cpus) {
+    deps += [ ":sysroot_artifacts_${cpu}" ]
+  }
+}
+
+import("//build/config/fuchsia/platform_version.gni")
+import("//build/sdk/config.gni")
+
+_manifest_file = "$target_gen_dir/sysroot_manifest_inputs.json"
+
+_sysroot_headers = []
+foreach(entry, sysroot_entries) {
+  if (defined(entry.sdk)) {
+    _sdk = {
+    }
+    _sdk = entry.sdk
+    if (defined(_sdk.headers)) {
+      rebased_include_dir =
+          rebase_path(_sdk.include_dir, root_build_dir, root_build_dir)
+      dir = rebase_path(rebased_include_dir, "", root_build_dir)
+      foreach(file, _sdk.headers) {
+        if (!defined(_sdk.no_export) || !_sdk.no_export) {
+          _sysroot_headers += [
+            {
+              source = "$dir/$file"
+              dest = "include/$file"
+            },
+          ]
+        }
+      }
+    }
+  }
+}
+
+_manifest_cpus = []
+foreach(cpu, idk_buildable_cpus) {
+  _clang_cpu = cpu
+  foreach(translation, clang_cpu_translations) {
+    if (cpu == translation.gn) {
+      _clang_cpu = translation.clang
+    }
+  }
+
+  _dist_libs = {
+  }
+  _dist_libs = {
+    ld_so = "user.libc_${cpu}/libc.so"
+    asan_ld_so = "user.libc_${cpu}-asan/libc.so"
+    if (cpu == "arm64") {
+      hwasan_ld_so = "user.libc_${cpu}-hwasan/libc.so"
+    }
+  }
+
+  _debug_libs = {
+  }
+  _debug_libs = {
+    libc_so = "user.libc_${cpu}/libc.so.debug"
+    asan_libc_so = "user.libc_${cpu}-asan/libc.so.debug"
+    if (cpu == "arm64") {
+      hwasan_libc_so = "user.libc_${cpu}-hwasan/libc.so.debug"
+    }
+  }
+
+  _manifest_cpus += [
+    {
+      cpu = cpu
+      stubs = {
+        libc = "gen/sdk/lib/c/c.${_clang_cpu}/libc.so"
+        libzircon =
+            "gen/src/zircon/lib/zircon/zircon.${_clang_cpu}/libzircon.so"
+      }
+      startfiles = {
+        scrt1 = "user.basic_${cpu}/gen/zircon/public/sysroot/lib/Scrt1.o"
+      }
+      dist_libs = _dist_libs
+      debug_libs = _debug_libs
+    },
+  ]
+}
+
+_manifest_contents = {
+  headers = _sysroot_headers
+  ifs_files = {
+    libc = rebase_path("//sdk/lib/c/libc.ifs", root_build_dir)
+    zircon = rebase_path("//src/zircon/lib/zircon/zircon.ifs", root_build_dir)
+  }
+  musl_lib_ld =
+      rebase_path("//zircon/third_party/ulib/musl/lib.ld", root_build_dir)
+  cpus = _manifest_cpus
+}
+
+generated_file("sysroot_manifest_inputs") {
+  outputs = [ _manifest_file ]
+  contents = _manifest_contents
+  output_conversion = "json"
+}
+
+action("sysroot_sdk_export") {
+  script = "//build/sdk/generate_sysroot_idk_atom.py"
+  _export_dir = "$root_build_dir/sysroot_idk_export"
+  _meta_json = "$_export_dir/pkg/sysroot/meta.json"
+  _stamp_file = "$target_gen_dir/$target_name.stamp"
+  _depfile = "$target_gen_dir/$target_name.d"
+  _validator_tool =
+      "//build/tools/json_validator:json_validator_valico($host_toolchain)"
+  _validator_path = "$host_out_dir/json_validator_valico"
+  _schema = "//build/sdk/meta/sysroot.json"
+  _manifest_schema = "//build/sdk/meta/manifest.json"
+
+  inputs = [
+    _manifest_file,
+    _schema,
+    _manifest_schema,
+    _validator_path,
+  ]
+
+  outputs = [
+    _meta_json,
+    _stamp_file,
+  ]
+
+  depfile = _depfile
+
+  args = [
+    "--manifest",
+    rebase_path(_manifest_file, root_build_dir),
+    "--output-dir",
+    rebase_path(_export_dir, root_build_dir),
+    "--json-validator",
+    rebase_path(_validator_path, root_build_dir),
+    "--schema",
+    rebase_path(_schema, root_build_dir),
+    "--manifest-schema",
+    rebase_path(_manifest_schema, root_build_dir),
+    "--meta-manifest-id",
+    "fuchsia_idk_sysroot",
+    "--stamp-file",
+    rebase_path(_stamp_file, root_build_dir),
+    "--depfile",
+    rebase_path(_depfile, root_build_dir),
+    "--target-cpus",
+  ]
+  args += idk_buildable_cpus
+
+  args += [ "--api-levels" ]
+  foreach(level, idk_buildable_api_levels) {
+    args += [ "$level" ]
+  }
+
+  deps = [
+    ":sysroot_artifacts_all_cpus",
+    ":sysroot_manifest_inputs",
+    _validator_tool,
+  ]
+}
