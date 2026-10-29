@@ -12,14 +12,56 @@
 #include <zircon/syscalls/exception.h>
 #include <zircon/syscalls/object.h>
 
+#include <format>
+#include <iterator>
 #include <ostream>
 #include <print>
+#include <string>
+#include <string_view>
 #include <vector>
 
 #include "object-utils.h"
 #include "vmo-utils.h"
 
 namespace {
+
+std::string EscapeJsonString(std::string_view raw) {
+  std::string escaped;
+  escaped.reserve(raw.size());
+  for (const char c : raw) {
+    switch (c) {
+      case '"':
+        escaped += "\\\"";
+        break;
+      case '\\':
+        escaped += "\\\\";
+        break;
+      case '\b':
+        escaped += "\\b";
+        break;
+      case '\f':
+        escaped += "\\f";
+        break;
+      case '\n':
+        escaped += "\\n";
+        break;
+      case '\r':
+        escaped += "\\r";
+        break;
+      case '\t':
+        escaped += "\\t";
+        break;
+      default:
+        if (const auto byte = static_cast<unsigned char>(c); byte < 0x20) {
+          std::format_to(std::back_inserter(escaped), "\\u{:04x}", byte);
+        } else {
+          escaped += c;
+        }
+        break;
+    }
+  }
+  return escaped;
+}
 
 // Prints info about VMOs and their relationship to a process.
 // Assumes we're in the middle of dumping a process.
@@ -40,7 +82,7 @@ void print_vmos(std::ostream& out, const zx_info_vmo_t* vmos, size_t count) {
     std::println(out,
                  "      {{"
                  "\"koid\": {}, "
-                 "\"name\": \"{}\", "  // TODO(https://fxbug.dev/575725855): Escape quotes
+                 "\"name\": \"{}\", "
                  "\"size_bytes\": {}, "
                  "\"parent_koid\": {}, "
                  "\"num_children\": {}, "
@@ -49,7 +91,7 @@ void print_vmos(std::ostream& out, const zx_info_vmo_t* vmos, size_t count) {
                  // TODO(https://fxbug.dev/575725855): copy-on-write? phys/paged?
                  "\"committed_bytes\": {}, "
                  "\"committed_scaled_bytes\": {}}}{}",
-                 vmo->koid, static_cast<const char*>(vmo->name), vmo->size_bytes, vmo->parent_koid,
+                 vmo->koid, EscapeJsonString(vmo->name), vmo->size_bytes, vmo->parent_koid,
                  vmo->num_children, vmo->num_mappings, vmo->share_count, vmo->committed_bytes,
                  vmo->committed_scaled_bytes, delim);
   }
@@ -110,16 +152,17 @@ void print_vmos(std::ostream& out, const zx_info_vmo_t* vmos, size_t count) {
   std::print(out, "   ]");
 }
 
-void GetTaskName(zx_handle_t task, zx_koid_t koid, char out_name[ZX_MAX_NAME_LEN]) {
-  zx_status_t s = zx_object_get_property(task, ZX_PROP_NAME, out_name, ZX_MAX_NAME_LEN);
+std::string GetTaskName(zx_handle_t task, zx_koid_t koid) {
+  char name[ZX_MAX_NAME_LEN];
+  zx_status_t s = zx_object_get_property(task, ZX_PROP_NAME, name, sizeof(name));
   if (s != ZX_OK) {
     std::println(stderr, "WARNING: failed to get name of task {}: {} ({})", koid,
                  zx_status_get_string(s), s);
-    snprintf(out_name, ZX_MAX_NAME_LEN, "<UNKNOWN>");
     // This is unfortunate, but not worth a partial failure
     // since the overall structure of the output is still intact.
+    return "<UNKNOWN>";
   }
-  // TODO(https://fxbug.dev/575725855): Escape quotes in name
+  return EscapeJsonString(name);
 }
 
 }  // namespace
@@ -144,8 +187,7 @@ bool JsonTaskEnumerator::has_on_thread() const { return show_threads_; }
 
 zx_status_t JsonTaskEnumerator::OnJob(int depth, zx_handle_t job, zx_koid_t koid,
                                       zx_koid_t parent_koid) {
-  char name[ZX_MAX_NAME_LEN];
-  GetTaskName(job, koid, name);
+  std::string name = GetTaskName(job, koid);
 
   char parent_id[ZX_MAX_NAME_LEN + 16];
   if (parent_koid == 0) {
@@ -164,15 +206,14 @@ zx_status_t JsonTaskEnumerator::OnJob(int depth, zx_handle_t job, zx_koid_t koid
                "\"parent\": \"{}\", "
                "\"name\": \"{}\""
                "}},",
-               koid, koid, static_cast<const char*>(parent_id), static_cast<const char*>(name));
+               koid, koid, static_cast<const char*>(parent_id), name);
 
   return ZX_OK;
 }
 
 zx_status_t JsonTaskEnumerator::OnProcess(int depth, zx_handle_t process, zx_koid_t koid,
                                           zx_koid_t parent_koid) {
-  char name[ZX_MAX_NAME_LEN];
-  GetTaskName(process, koid, name);
+  std::string name = GetTaskName(process, koid);
 
   // Print basic info.
   std::print(out_,
@@ -182,7 +223,7 @@ zx_status_t JsonTaskEnumerator::OnProcess(int depth, zx_handle_t process, zx_koi
              "\"koid\": {}, "
              "\"parent\": \"j/{}\", "
              "\"name\": \"{}\"",
-             koid, koid, parent_koid, static_cast<const char*>(name));
+             koid, koid, parent_koid, name);
 
   // Print memory usage summaries.
   zx_info_task_stats_t info;
@@ -265,8 +306,7 @@ zx_status_t JsonTaskEnumerator::OnProcess(int depth, zx_handle_t process, zx_koi
 
 zx_status_t JsonTaskEnumerator::OnThread(int depth, zx_handle_t thread, zx_koid_t koid,
                                          zx_koid_t parent_koid) {
-  char name[ZX_MAX_NAME_LEN];
-  GetTaskName(thread, koid, name);
+  std::string name = GetTaskName(thread, koid);
 
   // Print basic info.
   std::print(out_,
@@ -276,7 +316,7 @@ zx_status_t JsonTaskEnumerator::OnThread(int depth, zx_handle_t thread, zx_koid_
              "\"koid\": {}, "
              "\"parent\": \"p/{}\", "
              "\"name\": \"{}\"",
-             koid, koid, parent_koid, static_cast<const char*>(name));
+             koid, koid, parent_koid, name);
 
   // Print state.
   zx_info_thread_t info;

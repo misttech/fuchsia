@@ -335,4 +335,74 @@ TEST(PsUtilsMemgraph, WalkJobTree) {
   EXPECT_FALSE(without_threads_output.str().contains("\"type\": \"t\""));
 }
 
+TEST(PsUtilsMemgraph, EscapesSpecialCharactersInTaskAndVmoNames) {
+  static constexpr char kRawName[] = "a\"b\\c\bd\fe\nf\rg\th\x01\x1f";
+  static constexpr char kExpectedNameField[] =
+      "\"name\": \"a\\\"b\\\\c\\bd\\fe\\nf\\rg\\th\\u0001\\u001f\"";
+  static_assert(sizeof(kRawName) <= ZX_MAX_NAME_LEN);
+
+  zx::job job;
+  ASSERT_OK(zx::job::create(*zx::job::default_job(), 0u, &job));
+  ASSERT_OK(job.set_property(ZX_PROP_NAME, kRawName, sizeof(kRawName) - 1));
+  zx_info_handle_basic_t job_info = {};
+  ASSERT_OK(job.get_info(ZX_INFO_HANDLE_BASIC, &job_info, sizeof(job_info), nullptr, nullptr));
+
+  std::ostringstream job_output;
+  JsonTaskEnumerator job_enumerator(/*self_koid=*/0, /*show_threads=*/false,
+                                    /*show_vmos=*/false, /*show_handle_stats=*/false, job_output);
+  EXPECT_OK(job_enumerator.OnJob(/*depth=*/1, job.get(), job_info.koid, job_info.related_koid));
+  EXPECT_TRUE(job_enumerator.partial_failures().empty());
+  EXPECT_TRUE(job_output.str().contains(kExpectedNameField));
+
+  zx::process process;
+  zx::vmar vmar;
+  ASSERT_OK(zx::process::create(job, kRawName, sizeof(kRawName) - 1, 0u, &process, &vmar));
+  zx_info_handle_basic_t process_info = {};
+  ASSERT_OK(process.get_info(ZX_INFO_HANDLE_BASIC, &process_info, sizeof(process_info), nullptr,
+                             nullptr));
+
+  std::ostringstream process_output;
+  JsonTaskEnumerator process_enumerator(/*self_koid=*/0, /*show_threads=*/false,
+                                        /*show_vmos=*/false, /*show_handle_stats=*/false,
+                                        process_output);
+  EXPECT_OK(process_enumerator.OnProcess(/*depth=*/1, process.get(), process_info.koid,
+                                         process_info.related_koid));
+  EXPECT_TRUE(process_enumerator.partial_failures().empty());
+  EXPECT_TRUE(process_output.str().contains(kExpectedNameField));
+
+  zx::thread thread;
+  ASSERT_OK(zx::thread::create(*zx::process::self(), kRawName, sizeof(kRawName) - 1, 0u, &thread));
+  zx_info_handle_basic_t thread_info = {};
+  ASSERT_OK(
+      thread.get_info(ZX_INFO_HANDLE_BASIC, &thread_info, sizeof(thread_info), nullptr, nullptr));
+
+  std::ostringstream thread_output;
+  JsonTaskEnumerator thread_enumerator(/*self_koid=*/0, /*show_threads=*/true,
+                                       /*show_vmos=*/false, /*show_handle_stats=*/false,
+                                       thread_output);
+  EXPECT_OK(thread_enumerator.OnThread(/*depth=*/2, thread.get(), thread_info.koid,
+                                       thread_info.related_koid));
+  EXPECT_TRUE(thread_enumerator.partial_failures().empty());
+  EXPECT_TRUE(thread_output.str().contains(kExpectedNameField));
+
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0u, &vmo));
+  ASSERT_OK(vmo.set_property(ZX_PROP_NAME, kRawName, sizeof(kRawName) - 1));
+  zx_info_vmo_t vmo_info = {};
+  ASSERT_OK(vmo.get_info(ZX_INFO_VMO, &vmo_info, sizeof(vmo_info), nullptr, nullptr));
+
+  zx_info_handle_basic_t self_info = {};
+  ASSERT_OK(zx::process::self()->get_info(ZX_INFO_HANDLE_BASIC, &self_info, sizeof(self_info),
+                                          nullptr, nullptr));
+
+  std::ostringstream vmo_output;
+  JsonTaskEnumerator vmo_enumerator(/*self_koid=*/0, /*show_threads=*/false,
+                                    /*show_vmos=*/true, /*show_handle_stats=*/false, vmo_output);
+  EXPECT_OK(vmo_enumerator.OnProcess(/*depth=*/1, zx::process::self()->get(), self_info.koid,
+                                     self_info.related_koid));
+  EXPECT_TRUE(vmo_enumerator.partial_failures().empty());
+  EXPECT_TRUE(vmo_output.str().contains(
+      std::format("\"koid\": {}, {}", vmo_info.koid, kExpectedNameField)));
+}
+
 }  // namespace
