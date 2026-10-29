@@ -5,7 +5,7 @@ library fuchsia.sysmem;
 
 using zx;
 
-@available(added=7, deprecated=23, note="use fuchsia.sysmem2")
+@available(added=7, deprecated=23, removed=NEXT, note="use fuchsia.sysmem2")
 const MAX_COUNT_DUPLICATES uint32 = 64;
 
 /// Actually creating this many children isn't recommended in most typical
@@ -16,14 +16,14 @@ const MAX_COUNT_DUPLICATES uint32 = 64;
 /// settable via these protocols.  The maximum number of total nodes in a sysmem
 /// token tree is limited to a separate maximum that is not settable via these
 /// protocols.
-@available(added=9, deprecated=23, note="use fuchsia.sysmem2")
+@available(added=9, deprecated=23, removed=NEXT, note="use fuchsia.sysmem2")
 const MAX_COUNT_CREATE_CHILDREN int32 = 64;
 
 // A protocol mixin for all nodes in the tree established by
 // BufferCollectionToken creation and BufferCollectionTokenGroup creation,
 // including BufferCollectionToken(s) which have since been converted to a
 // BufferCollection channel.
-@available(added=9, deprecated=23, note="use fuchsia.sysmem2")
+@available(added=9, deprecated=23, removed=NEXT, note="use fuchsia.sysmem2")
 closed protocol Node {
     // Sync()
     //
@@ -295,17 +295,11 @@ closed protocol Node {
 /// (pair) because this way we can detect error conditions like a participant
 /// dying mid-create.
 ///
-/// The fuchsia.sysmem.BufferCollectionToken type is not yet deprecated due to
-/// its use in some other protocols (for now), but all the internals of
-/// fuchsia.sysmem.BufferCollectionToken are deprecated. Token channels serve
-/// both fuchsia.sysmem.BufferCollectionToken and
-/// fuchsia.sysmem2.BufferCollectionToken.
-///
-/// This protocol will be deprecated once other protocols have switched their
-/// token fields to fuchsia.sysmem2.BufferCollectionToken.
+/// Token channels serve both fuchsia.sysmem.BufferCollectionToken (at supported
+/// API levels) and fuchsia.sysmem2.BufferCollectionToken.
 //
 // LINT.IfChange
-@available(added=7)
+@available(added=7, removed=NEXT)
 closed protocol BufferCollectionToken {
     @available(added=9, deprecated=23, note="use fuchsia.sysmem2")
     compose Node;
@@ -496,7 +490,7 @@ closed protocol BufferCollectionToken {
         group_request server_end:BufferCollectionTokenGroup;
     });
 };
-// LINT.ThenChange(//src/sysmem/drivers/sysmem/combined_token.fidl)
+// LINT.ThenChange(//src/sysmem/server/combined_token.fidl)
 
 /// BufferCollection is a connection directly from a participant to sysmem re.
 /// a logical BufferCollection; typically the logical BufferCollection is shared
@@ -526,7 +520,7 @@ closed protocol BufferCollectionToken {
 /// memory fragmentation and avoid overlap of buffer allocation lifetimes for
 /// the old and new collections. Collections can be large enough that it's worth
 /// avoiding allocation overlap (in time).
-@available(added=7, deprecated=23, note="use fuchsia.sysmem2.BufferCollection")
+@available(added=7, deprecated=23, removed=NEXT, note="use fuchsia.sysmem2.BufferCollection")
 closed protocol BufferCollection {
     @available(added=9)
     compose Node;
@@ -862,7 +856,7 @@ closed protocol BufferCollection {
 /// SetDispensable() or AttachToken() and the BufferCollectionTokenGroup is part
 /// of a sub-tree under such a node that doesn't propagate failure to its
 /// parent).
-@available(added=9, deprecated=23, note="use fuchsia.sysmem2")
+@available(added=9, deprecated=23, removed=NEXT, note="use fuchsia.sysmem2")
 closed protocol BufferCollectionTokenGroup {
     compose Node;
 

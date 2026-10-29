@@ -4,7 +4,6 @@
 @available(added=HEAD)
 library fuchsia.sysmem2.internal;
 
-using fuchsia.sysmem;
 using fuchsia.sysmem2;
 using zx;
 
@@ -70,27 +69,26 @@ open protocol CombinedBufferCollectionToken {
         is_alternate bool;
     }) error zx.Status;
 
+    /// DuplicateSyncV1, DuplicateV1, and CreateBufferCollectionTokenGroupV1 use
+    /// `zx.Handle:<CHANNEL, zx.DEFAULT_CHANNEL_RIGHTS>` because `fuchsia.sysmem2.internal` is
+    /// `@available(added=HEAD)` and cannot reference `fuchsia.sysmem` protocols marked
+    /// `removed=NEXT`, while sysmem still serves v1 at runtime for supported API levels.
     @selector("fuchsia.sysmem/BufferCollectionToken.DuplicateSync")
     strict DuplicateSyncV1(struct {
         rights_attenuation_masks vector<zx.Rights>:MAX_COUNT_DUPLICATES_V1;
     }) -> (resource struct {
-        tokens vector<client_end:fuchsia.sysmem.BufferCollectionToken>:MAX_COUNT_DUPLICATES_V1;
+        tokens vector<zx.Handle:<CHANNEL, zx.DEFAULT_CHANNEL_RIGHTS>>:MAX_COUNT_DUPLICATES_V1;
     });
     @selector("fuchsia.sysmem/BufferCollectionToken.Duplicate")
     strict DuplicateV1(resource struct {
         rights_attenuation_mask uint32;
-        token_request server_end:fuchsia.sysmem.BufferCollectionToken;
+        token_request zx.Handle:<CHANNEL, zx.DEFAULT_CHANNEL_RIGHTS>;
     });
     @selector("fuchsia.sysmem/BufferCollectionToken.SetDispensable")
     strict SetDispensableV1();
     @selector("fuchsia.sysmem/BufferCollectionToken.CreateBufferCollectionTokenGroup")
     strict CreateBufferCollectionTokenGroupV1(resource struct {
-        // This `deprecated` annotation is required in order to avoid fidlc errors
-        // due to use of types that are deprecated in an SDK library.
-        // TODO(https://fxbug.dev/360409878): Remove the available annotation
-        // the bug is fixed or V1 support is no longer needed.
-        @available(deprecated=HEAD, note="use fuchsia.sysmem2")
-        group_request server_end:fuchsia.sysmem.BufferCollectionTokenGroup;
+        group_request zx.Handle:<CHANNEL, zx.DEFAULT_CHANNEL_RIGHTS>;
     });
 
     // fuchsia.sysmem2/Node, with de-conflicted names:

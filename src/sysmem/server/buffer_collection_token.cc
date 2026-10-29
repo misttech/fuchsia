@@ -100,7 +100,7 @@ void BufferCollectionToken::CombinedTokenServer::DuplicateSyncV1(
                      "BufferCollectionToken::DuplicateSync() attempted when is_done_");
     return;
   }
-  std::vector<fidl::ClientEnd<fuchsia_sysmem::BufferCollectionToken>> new_tokens;
+  std::vector<zx::channel> new_tokens;
 
   for (auto& rights_attenuation_mask : request.rights_attenuation_masks()) {
     if (rights_attenuation_mask == 0) {
@@ -128,7 +128,7 @@ void BufferCollectionToken::CombinedTokenServer::DuplicateSyncV1(
     parent_.logical_buffer_collection().CreateBufferCollectionTokenV1(
         parent_.shared_logical_buffer_collection(), new_node_properties,
         std::move(token_endpoints->server));
-    new_tokens.push_back(std::move(token_endpoints->client));
+    new_tokens.push_back(token_endpoints->client.TakeChannel());
   }
 
   fuchsia_sysmem2_internal::CombinedBufferCollectionTokenDuplicateSyncV1Response response;
@@ -227,7 +227,7 @@ void BufferCollectionToken::CombinedTokenServer::DuplicateV1(
   }
   parent_.logical_buffer_collection().CreateBufferCollectionTokenV1(
       parent_.shared_logical_buffer_collection(), new_node_properties,
-      std::move(request.token_request()));
+      fidl::ServerEnd<fuchsia_sysmem::BufferCollectionToken>(std::move(request.token_request())));
 }
 
 void BufferCollectionToken::CombinedTokenServer::DuplicateV2(
@@ -401,7 +401,8 @@ void BufferCollectionToken::CombinedTokenServer::CreateBufferCollectionTokenGrou
   }
   parent_.logical_buffer_collection().CreateBufferCollectionTokenGroupV1(
       parent_.shared_logical_buffer_collection(), new_node_properties,
-      std::move(request.group_request()));
+      fidl::ServerEnd<fuchsia_sysmem::BufferCollectionTokenGroup>(
+          std::move(request.group_request())));
 }
 
 void BufferCollectionToken::CombinedTokenServer::CreateBufferCollectionTokenGroupV2(

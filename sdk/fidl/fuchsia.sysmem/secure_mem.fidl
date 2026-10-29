@@ -23,7 +23,7 @@ using zx;
 /// TEE, as the plumbing goes from the bootloader to the TEE.  However, this
 /// protocol intentionally doesn't care which heaps are dynamically-allocated
 /// and which are fixed-location.
-@available(added=7, deprecated=23)
+@available(added=7, deprecated=23, removed=NEXT)
 closed protocol SecureMem {
     /// Gets the physical address and length of any secure heap whose physical
     /// range is configured via the TEE.

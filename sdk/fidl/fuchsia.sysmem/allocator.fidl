@@ -8,7 +8,7 @@ using zx;
 
 /// Allocates system memory buffers.
 ///
-@available(added=7, deprecated=23, note="use fuchsia.sysmem2.Allocator")
+@available(added=7, deprecated=23, removed=NEXT, note="use fuchsia.sysmem2.Allocator")
 @discoverable(server="platform")
 closed protocol Allocator {
     /// Allocates a BufferCollection on behalf of a single client (aka initiator)
