@@ -129,19 +129,14 @@ class OdpmPowerMetricsTest(unittest.TestCase):
         processor = odpm_power.OdpmPowerMetricsProcessor(
             rails=["gpu", "cpu_big"]
         )
-        self.assertEqual(
-            processor.event_patterns, {"gpu_odpm_rail", "cpu_big_odpm_rail"}
-        )
+        self.assertEqual(processor.event_patterns, {r".*_odpm_rail"})
         self.assertEqual(processor.category_names, set())
 
         sum_rails_processor = odpm_power.OdpmPowerMetricsProcessor(
             rails=["wlan_bt"],
             sum_rails={"compute": ["cpu_big", "gpu"]},
         )
-        self.assertEqual(
-            sum_rails_processor.event_patterns,
-            {"wlan_bt_odpm_rail", "cpu_big_odpm_rail", "gpu_odpm_rail"},
-        )
+        self.assertEqual(sum_rails_processor.event_patterns, {r".*_odpm_rail"})
         self.assertEqual(sum_rails_processor.category_names, set())
 
         all_rails_processor = odpm_power.OdpmPowerMetricsProcessor(
@@ -474,3 +469,313 @@ class OdpmPowerMetricsTest(unittest.TestCase):
             odpm_power.OdpmPowerMetricsProcessor(rails="gpu")
         with self.assertRaises(ValueError):
             odpm_power.OdpmPowerMetricsProcessor(sum_rails={"total": "cpu"})
+
+    def test_aggregates_only_and_freeform_duration_weighted(self) -> None:
+        # Verifies duration-weighted PowerAverage metrics and freeform breakdown.
+        # Non-uniform timestamps (in microseconds):
+        #   t=1000us: battery = 1000mW (1.0W), cpu_big = 200mW (0.2W),
+        #     gpu = 300mW (0.3W)
+        #   t=2000us (dt=1000us): battery = 2000mW (2.0W), cpu_big = 400mW (0.4W),
+        #     gpu = 600mW (0.6W)
+        #   t=5000us (dt=3000us): battery = 4000mW (4.0W), cpu_big = 800mW (0.8W),
+        #     gpu = 1200mW (1.2W)
+        # Duration-weighted battery average:
+        #   (2.0W * 1000us + 4.0W * 3000us) / 4000us = 14.0 / 4.0 = 3.5W
+        # Duration-weighted cpu_big average:
+        #   (0.4W * 1000us + 0.8W * 3000us) / 4000us = 2.8 / 4.0 = 0.7W
+        # Duration-weighted gpu average:
+        #   (0.6W * 1000us + 1.2W * 3000us) / 4000us = 4.2 / 4.0 = 1.05W
+        # Duration-weighted all_rails_except_battery (cpu_big + gpu) average:
+        #   (1.0W * 1000us + 2.0W * 3000us) / 4000us = 7.0 / 4.0 = 1.75W
+        events: list[trace_model.Event] = [
+            trace_model.CounterEvent.consume_dict(
+                {
+                    "cat": "power",
+                    "name": "battery_odpm_rail",
+                    "ts": 5000,
+                    "pid": 100,
+                    "tid": 101,
+                    "args": {"mW": 4000.0},
+                }
+            ),
+            trace_model.CounterEvent.consume_dict(
+                {
+                    "cat": "power",
+                    "name": "battery_odpm_rail",
+                    "ts": 1000,
+                    "pid": 100,
+                    "tid": 101,
+                    "args": {"mW": 1000.0},
+                }
+            ),
+            trace_model.CounterEvent.consume_dict(
+                {
+                    "cat": "power",
+                    "name": "battery_odpm_rail",
+                    "ts": 2000,
+                    "pid": 100,
+                    "tid": 101,
+                    "args": {"mW": 2000.0},
+                }
+            ),
+            trace_model.CounterEvent.consume_dict(
+                {
+                    "cat": "power",
+                    "name": "cpu_big_odpm_rail",
+                    "ts": 1000,
+                    "pid": 100,
+                    "tid": 101,
+                    "args": {"mW": 200.0},
+                }
+            ),
+            trace_model.CounterEvent.consume_dict(
+                {
+                    "cat": "power",
+                    "name": "cpu_big_odpm_rail",
+                    "ts": 2000,
+                    "pid": 100,
+                    "tid": 101,
+                    "args": {"mW": 400.0},
+                }
+            ),
+            trace_model.CounterEvent.consume_dict(
+                {
+                    "cat": "power",
+                    "name": "cpu_big_odpm_rail",
+                    "ts": 5000,
+                    "pid": 100,
+                    "tid": 101,
+                    "args": {"mW": 800.0},
+                }
+            ),
+            trace_model.CounterEvent.consume_dict(
+                {
+                    "cat": "power",
+                    "name": "gpu_odpm_rail",
+                    "ts": 1000,
+                    "pid": 100,
+                    "tid": 101,
+                    "args": {"mW": 300.0},
+                }
+            ),
+            trace_model.CounterEvent.consume_dict(
+                {
+                    "cat": "power",
+                    "name": "gpu_odpm_rail",
+                    "ts": 2000,
+                    "pid": 100,
+                    "tid": 101,
+                    "args": {"mW": 600.0},
+                }
+            ),
+            trace_model.CounterEvent.consume_dict(
+                {
+                    "cat": "power",
+                    "name": "gpu_odpm_rail",
+                    "ts": 5000,
+                    "pid": 100,
+                    "tid": 101,
+                    "args": {"mW": 1200.0},
+                }
+            ),
+        ]
+        odpm_process = trace_model.Process(
+            100,
+            "odpm.cm",
+            [trace_model.Thread(101, "fdf-dispatcher-thread-0", events)],
+        )
+        model = trace_model.Model([odpm_process], {})
+
+        processor = odpm_power.OdpmPowerMetricsProcessor(
+            rails=["battery"],
+            sum_rails={"all_rails_except_battery": lambda r: r != "battery"},
+            aggregates_only=True,
+        )
+        results = processor.process_metrics(model)
+        filename, freeform = processor.process_freeform_metrics(model)
+
+        self.assertEqual(
+            results,
+            [
+                TestCaseResult(
+                    label="PowerAverage_rail_battery",
+                    unit=U.watts,
+                    values=[3.5],
+                    doc="ODPM average power usage for rail battery",
+                ),
+                TestCaseResult(
+                    label="PowerAverage_all_rails_except_battery",
+                    unit=U.watts,
+                    values=[1.75],
+                    doc="ODPM average power usage for rails cpu_big, gpu",
+                ),
+            ],
+        )
+        self.assertEqual(filename, "odpm_power")
+        self.assertIsInstance(freeform, dict)
+        assert isinstance(freeform, dict)
+        self.assertEqual(
+            list(freeform.keys()),
+            ["all_rails_except_battery", "battery", "cpu_big", "gpu"],
+        )
+        non_battery_stats = freeform["all_rails_except_battery"]
+        self.assertIsInstance(non_battery_stats, dict)
+        assert isinstance(non_battery_stats, dict)
+        self.assertAlmostEqual(non_battery_stats["average"], 1.75)
+        self.assertAlmostEqual(non_battery_stats["min"], 0.5)
+        self.assertAlmostEqual(non_battery_stats["max"], 2.0)
+        battery_stats = freeform["battery"]
+        self.assertIsInstance(battery_stats, dict)
+        assert isinstance(battery_stats, dict)
+        self.assertAlmostEqual(battery_stats["average"], 3.5)
+        self.assertAlmostEqual(battery_stats["min"], 1.0)
+        self.assertAlmostEqual(battery_stats["max"], 4.0)
+        cpu_stats = freeform["cpu_big"]
+        self.assertIsInstance(cpu_stats, dict)
+        assert isinstance(cpu_stats, dict)
+        self.assertAlmostEqual(cpu_stats["average"], 0.7)
+        self.assertAlmostEqual(cpu_stats["min"], 0.2)
+        self.assertAlmostEqual(cpu_stats["max"], 0.8)
+        gpu_stats = freeform["gpu"]
+        self.assertIsInstance(gpu_stats, dict)
+        assert isinstance(gpu_stats, dict)
+        self.assertAlmostEqual(gpu_stats["average"], 1.05)
+        self.assertAlmostEqual(gpu_stats["min"], 0.3)
+        self.assertAlmostEqual(gpu_stats["max"], 1.2)
+
+    def test_aggregates_only_single_sample(self) -> None:
+        """Verifies single-sample fallback for aggregate metrics."""
+        single_event = trace_model.CounterEvent.consume_dict(
+            {
+                "cat": "power",
+                "name": "battery_odpm_rail",
+                "ts": 1000,
+                "pid": 100,
+                "tid": 101,
+                "args": {"mW": 2500.0},
+            }
+        )
+        single_model = trace_model.Model(
+            [
+                trace_model.Process(
+                    100,
+                    "odpm.cm",
+                    [trace_model.Thread(101, "t0", [single_event])],
+                )
+            ],
+            {},
+        )
+        processor = odpm_power.OdpmPowerMetricsProcessor(
+            rails=["battery"],
+            aggregates_only=True,
+        )
+        results = processor.process_metrics(single_model)
+        _, freeform = processor.process_freeform_metrics(single_model)
+
+        self.assertEqual(len(results), 1)
+        self.assertAlmostEqual(results[0].values[0], 2.5)
+        self.assertEqual(
+            freeform,
+            {"battery": {"average": 2.5, "min": 2.5, "max": 2.5}},
+        )
+
+    def test_aggregates_only_zero_duration_samples(self) -> None:
+        # Verifies arithmetic mean fallback when samples share identical timestamps.
+        events: list[trace_model.Event] = [
+            trace_model.CounterEvent.consume_dict(
+                {
+                    "cat": "power",
+                    "name": "battery_odpm_rail",
+                    "ts": 1000,
+                    "pid": 100,
+                    "tid": 101,
+                    "args": {"mW": 1000.0},
+                }
+            ),
+            trace_model.CounterEvent.consume_dict(
+                {
+                    "cat": "power",
+                    "name": "battery_odpm_rail",
+                    "ts": 1000,
+                    "pid": 100,
+                    "tid": 101,
+                    "args": {"mW": 3000.0},
+                }
+            ),
+        ]
+        model = trace_model.Model(
+            [
+                trace_model.Process(
+                    100,
+                    "odpm.cm",
+                    [trace_model.Thread(101, "t0", events)],
+                )
+            ],
+            {},
+        )
+        processor = odpm_power.OdpmPowerMetricsProcessor(
+            rails=["battery"],
+            aggregates_only=True,
+        )
+        results = processor.process_metrics(model)
+        _, freeform = processor.process_freeform_metrics(model)
+
+        self.assertEqual(len(results), 1)
+        self.assertAlmostEqual(results[0].values[0], 2.0)
+        self.assertEqual(
+            freeform,
+            {"battery": {"average": 2.0, "min": 1.0, "max": 3.0}},
+        )
+
+    def test_aggregates_only_empty_model(self) -> None:
+        """Verifies missing rail handling on an empty trace model."""
+        processor = odpm_power.OdpmPowerMetricsProcessor(
+            rails=["battery"],
+            aggregates_only=True,
+        )
+        empty_model = trace_model.Model([], {})
+
+        self.assertEqual(processor.process_metrics(empty_model), [])
+        self.assertEqual(
+            processor.process_freeform_metrics(empty_model),
+            ("odpm_power", {}),
+        )
+
+    def test_freeform_metrics_skips_missing_sum_rails(self) -> None:
+        # Verifies process_freeform_metrics skips sum_rails groups with missing rails.
+        single_event = trace_model.CounterEvent.consume_dict(
+            {
+                "cat": "power",
+                "name": "battery_odpm_rail",
+                "ts": 1000,
+                "pid": 100,
+                "tid": 101,
+                "args": {"mW": 2500.0},
+            }
+        )
+        model = trace_model.Model(
+            [
+                trace_model.Process(
+                    100,
+                    "odpm.cm",
+                    [trace_model.Thread(101, "t0", [single_event])],
+                )
+            ],
+            {},
+        )
+        processor = odpm_power.OdpmPowerMetricsProcessor(
+            rails=["battery"],
+            sum_rails={
+                "explicit_group": ["battery", "cpu_big"],
+                "predicate_group": lambda r: r != "battery",
+            },
+            aggregates_only=True,
+        )
+
+        self.assertEqual(
+            processor.process_freeform_metrics(model),
+            (
+                "odpm_power",
+                {"battery": {"average": 2.5, "min": 2.5, "max": 2.5}},
+            ),
+        )
