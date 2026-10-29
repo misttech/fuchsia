@@ -7,7 +7,8 @@ use bt_rfcomm::ServerChannel;
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_bluetooth_bredr as bredr;
 use fuchsia_bluetooth::profile::{
-    ChannelParameters, Psm, ServiceDefinition, combine_channel_parameters,
+    ChannelParameters, Psm, SecurityRequirements, ServiceDefinition, combine_channel_parameters,
+    combine_security_requirements,
 };
 use fuchsia_bluetooth::types::PeerId;
 use std::collections::{BTreeMap, HashSet};
@@ -102,6 +103,17 @@ impl Services {
         }
 
         Some(AdvertiseParams { services, parameters })
+    }
+
+    /// Returns the combined `SecurityRequirements` across all registered services.
+    pub fn security_requirements(&self) -> Option<SecurityRequirements> {
+        self.groups
+            .values()
+            .filter_map(|group| group.channel_parameters().security_requirements.as_ref())
+            .fold(None, |acc, reqs| match acc {
+                Some(acc_reqs) => Some(combine_security_requirements(&acc_reqs, reqs)),
+                None => Some(reqs.clone()),
+            })
     }
 }
 
@@ -354,6 +366,53 @@ pub(crate) mod tests {
         expected_adv_params.services = defs1;
         expected_adv_params.parameters = ChannelParameters::default();
         assert_eq!(services.build_registration(), Some(expected_adv_params));
+    }
+
+    #[test]
+    fn test_services_security_requirements() {
+        let _exec = fasync::TestExecutor::new();
+        let mut services = Services::new();
+        assert_eq!(services.security_requirements(), None);
+
+        // Group with no security requirements yields `None`.
+        let (group1, _server1) = build_service_group();
+        let handle1 = services.insert(group1);
+        assert_eq!(services.security_requirements(), None);
+
+        // Group requiring authentication yields `authentication_required: Some(true)`.
+        let (mut group2, _server2) = build_service_group();
+        let auth_reqs = SecurityRequirements {
+            authentication_required: Some(true),
+            secure_connections_required: None,
+        };
+        group2.channel_parameters.security_requirements = Some(auth_reqs.clone());
+        let handle2 = services.insert(group2);
+        assert_eq!(services.security_requirements(), Some(auth_reqs.clone()));
+
+        // Group requiring secure connections combines with existing requirements.
+        let (mut group3, _server3) = build_service_group();
+        group3.channel_parameters.security_requirements = Some(SecurityRequirements {
+            authentication_required: Some(false),
+            secure_connections_required: Some(true),
+        });
+        let handle3 = services.insert(group3);
+        assert_eq!(
+            services.security_requirements(),
+            Some(SecurityRequirements {
+                authentication_required: Some(true),
+                secure_connections_required: Some(true),
+            })
+        );
+
+        // Removing group3 reverts combined requirements to group2's requirements.
+        let _ = services.remove(handle3);
+        assert_eq!(services.security_requirements(), Some(auth_reqs));
+
+        // Removing group2 and group1 reverts to `None`.
+        let _ = services.remove(handle2);
+        assert_eq!(services.security_requirements(), None);
+        let _ = services.remove(handle1);
+        assert_eq!(services.security_requirements(), None);
     }
 
     #[test]

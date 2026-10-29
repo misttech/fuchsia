@@ -233,6 +233,30 @@ pub fn combine_security_requirements(
     SecurityRequirements { authentication_required, secure_connections_required }
 }
 
+/// Returns true if the `established` security requirements satisfy the `required` security
+/// requirements.
+/// `established` satisfies `required` if every requirement set to `Some(true)` in `required` is
+/// also `Some(true)` in `established`.
+pub fn security_requirements_satisfied(
+    established: Option<&SecurityRequirements>,
+    required: Option<&SecurityRequirements>,
+) -> bool {
+    let Some(req) = required else {
+        return true;
+    };
+    if req.authentication_required == Some(true)
+        && established.and_then(|e| e.authentication_required) != Some(true)
+    {
+        return false;
+    }
+    if req.secure_connections_required == Some(true)
+        && established.and_then(|e| e.secure_connections_required) != Some(true)
+    {
+        return false;
+    }
+    true
+}
+
 /// Given two ChannelParameters, combines both into a set of ChannelParameters
 /// with the least requesting of resources.
 /// This is defined as:
@@ -469,10 +493,19 @@ pub fn l2cap_connect_parameters(
     psm: Psm,
     mode: fidl_bt::ChannelMode,
 ) -> fidl_bredr::ConnectParameters {
+    l2cap_connect_parameters_with_security(psm, mode, None)
+}
+
+pub fn l2cap_connect_parameters_with_security(
+    psm: Psm,
+    mode: fidl_bt::ChannelMode,
+    security_requirements: Option<fidl_bt::SecurityRequirements>,
+) -> fidl_bredr::ConnectParameters {
     fidl_bredr::ConnectParameters::L2cap(fidl_bredr::L2capParameters {
         psm: Some(psm.into()),
         parameters: Some(fidl_bt::ChannelParameters {
             channel_mode: Some(mode),
+            security_requirements,
             ..fidl_bt::ChannelParameters::default()
         }),
         ..fidl_bredr::L2capParameters::default()
@@ -1416,6 +1449,54 @@ mod tests {
             secure_connections_required: Some(true),
         };
         assert_eq!(combine_security_requirements(&req1, &req2), expected);
+    }
+
+    #[test]
+    fn test_security_requirements_satisfied() {
+        let none_reqs = SecurityRequirements {
+            authentication_required: None,
+            secure_connections_required: None,
+        };
+        let false_reqs = SecurityRequirements {
+            authentication_required: Some(false),
+            secure_connections_required: Some(false),
+        };
+        let auth_only = SecurityRequirements {
+            authentication_required: Some(true),
+            secure_connections_required: None,
+        };
+        let sc_only = SecurityRequirements {
+            authentication_required: None,
+            secure_connections_required: Some(true),
+        };
+        let auth_and_sc = SecurityRequirements {
+            authentication_required: Some(true),
+            secure_connections_required: Some(true),
+        };
+
+        // No required security is always satisfied.
+        assert!(security_requirements_satisfied(None, None));
+        assert!(security_requirements_satisfied(None, Some(&none_reqs)));
+        assert!(security_requirements_satisfied(None, Some(&false_reqs)));
+
+        // Authentication required.
+        assert!(!security_requirements_satisfied(None, Some(&auth_only)));
+        assert!(!security_requirements_satisfied(Some(&false_reqs), Some(&auth_only)));
+        assert!(!security_requirements_satisfied(Some(&sc_only), Some(&auth_only)));
+        assert!(security_requirements_satisfied(Some(&auth_only), Some(&auth_only)));
+        assert!(security_requirements_satisfied(Some(&auth_and_sc), Some(&auth_only)));
+
+        // Secure connections required.
+        assert!(!security_requirements_satisfied(None, Some(&sc_only)));
+        assert!(!security_requirements_satisfied(Some(&false_reqs), Some(&sc_only)));
+        assert!(!security_requirements_satisfied(Some(&auth_only), Some(&sc_only)));
+        assert!(security_requirements_satisfied(Some(&sc_only), Some(&sc_only)));
+        assert!(security_requirements_satisfied(Some(&auth_and_sc), Some(&sc_only)));
+
+        // Both authentication and secure connections required.
+        assert!(!security_requirements_satisfied(Some(&auth_only), Some(&auth_and_sc)));
+        assert!(!security_requirements_satisfied(Some(&sc_only), Some(&auth_and_sc)));
+        assert!(security_requirements_satisfied(Some(&auth_and_sc), Some(&auth_and_sc)));
     }
 
     #[test]

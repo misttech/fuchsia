@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use bt_rfcomm::DLCI;
+use async_utils::PollExt;
 use bt_rfcomm::frame::mux_commands::MuxCommandMarker;
 use bt_rfcomm::frame::{Frame, FrameData, UIHData, UserData};
+use bt_rfcomm::{DLCI, Role};
 use fuchsia_async as fasync;
 use fuchsia_bluetooth::types::Channel;
 use futures::channel::mpsc;
@@ -24,6 +25,17 @@ pub fn send_peer_frame(exec: &mut fasync::TestExecutor, remote: &mut Channel, fr
         Poll::Ready(Ok(())) => {}
         x => panic!("Expected write to complete successfully, got {:?}", x),
     }
+}
+
+/// Expects a frame to be received by the peer and returns the parsed `Frame`.
+#[track_caller]
+pub fn expect_peer_frame(exec: &mut fasync::TestExecutor, remote: &mut Channel) -> Frame {
+    let bytes = exec
+        .run_until_stalled(&mut remote.next())
+        .expect("frame ready")
+        .expect("some bytes")
+        .expect("ok bytes");
+    Frame::parse(Role::Responder, false, &bytes).expect("valid frame")
 }
 
 /// Expects a frame to be received by the peer. This expectation does not validate the

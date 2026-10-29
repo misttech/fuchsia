@@ -16,6 +16,6 @@ mod types;
 
 /// Common helpers used in unit tests.
 #[cfg(test)]
-mod test_util;
+pub(crate) mod test_util;
 
 pub use crate::rfcomm::server::RfcommServer;

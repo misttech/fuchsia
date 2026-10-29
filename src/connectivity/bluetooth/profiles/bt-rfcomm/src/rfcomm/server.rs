@@ -11,6 +11,7 @@ use fidl_fuchsia_bluetooth_bredr as bredr;
 use fidl_fuchsia_bluetooth_rfcomm_test::RfcommTestRequest;
 use fuchsia_async as fasync;
 use fuchsia_bluetooth::detachable_map::DetachableMap;
+use fuchsia_bluetooth::profile::{SecurityRequirements, security_requirements_satisfied};
 use fuchsia_bluetooth::types::{Channel, PeerId};
 use fuchsia_inspect as inspect;
 use fuchsia_inspect_derive::{AttachError, Inspect};
@@ -28,6 +29,8 @@ use crate::rfcomm::types::{SignaledTask, status_to_rls_error};
 struct RegisteredClient {
     /// The proxy used to relay RFCOMM channels to the client.
     connection_receiver: bredr::ConnectionReceiverProxy,
+    /// The security requirements associated with the client's registration.
+    security_requirements: Option<SecurityRequirements>,
     /// The channel number associated with the registration.
     _channel_number: inspect::UintProperty,
 }
@@ -79,7 +82,11 @@ impl Clients {
     /// Reserves the next available ServerChannel for a client represented by a `proxy`.
     ///
     /// If allocated, returns the ServerChannel assigned to the client, None otherwise.
-    pub async fn new_client(&self, proxy: bredr::ConnectionReceiverProxy) -> Option<ServerChannel> {
+    pub async fn new_client(
+        &self,
+        proxy: bredr::ConnectionReceiverProxy,
+        security_requirements: Option<SecurityRequirements>,
+    ) -> Option<ServerChannel> {
         let mut inner = self.inner.lock().await;
         let new_channel =
             ServerChannel::all().find(|sc| !inner.channel_receivers.contains_key(&sc));
@@ -87,6 +94,7 @@ impl Clients {
             trace!(server_channel:% = channel; "Reserving RFCOMM channel");
             let tagged_client = RegisteredClient {
                 connection_receiver: proxy,
+                security_requirements,
                 _channel_number: inner
                     .inspect_node
                     .create_uint(inspect::unique_name("channel_number"), u8::from(channel) as u64),
@@ -97,12 +105,14 @@ impl Clients {
     }
 
     /// Delivers the `channel` to the client that has registered the `server_channel`.
-    /// Returns an error if delivery fails or if there is no such client.
+    /// Returns an error if delivery fails, if there is no such client, or if `session_security`
+    /// does not satisfy the client's registered security requirements.
     pub async fn deliver_channel(
         &self,
         peer_id: PeerId,
         server_channel: ServerChannel,
         channel: Channel,
+        session_security: Option<&SecurityRequirements>,
     ) -> Result<(), Error> {
         trace!(peer_id:%, server_channel:%; "Delivering RFCOMM channel to client");
         let inner = self.inner.lock().await;
@@ -110,6 +120,14 @@ impl Clients {
             .channel_receivers
             .get(&server_channel)
             .ok_or_else(|| format_err!("{server_channel:?} not registered"))?;
+        if !security_requirements_satisfied(session_security, client.security_requirements.as_ref())
+        {
+            return Err(format_err!(
+                "Session security {:?} does not satisfy requirements {:?} for {server_channel:?}",
+                session_security,
+                client.security_requirements
+            ));
+        }
         // Build the RFCOMM protocol descriptor and relay the channel.
         let protocol: Vec<bredr::ProtocolDescriptor> =
             build_rfcomm_protocol(server_channel).iter().map(Into::into).collect();
@@ -184,8 +202,9 @@ impl RfcommServer {
     pub async fn allocate_server_channel(
         &mut self,
         proxy: bredr::ConnectionReceiverProxy,
+        security_requirements: Option<SecurityRequirements>,
     ) -> Option<ServerChannel> {
-        self.clients.new_client(proxy).await
+        self.clients.new_client(proxy, security_requirements).await
     }
 
     /// Opens an RFCOMM channel specified by `server_channel` with the remote peer.
@@ -221,7 +240,12 @@ impl RfcommServer {
     ///
     /// Creates and stores a new RFCOMM Session for the provided `l2cap` channel.
     /// Returns Error if an active session already exists for the peer `id`.
-    pub fn new_l2cap_connection(&mut self, peer_id: PeerId, l2cap: Channel) -> Result<(), Error> {
+    pub fn new_l2cap_connection(
+        &mut self,
+        peer_id: PeerId,
+        l2cap: Channel,
+        security_requirements: Option<SecurityRequirements>,
+    ) -> Result<(), Error> {
         if self.is_active_session(&peer_id) {
             return Err(format_err!("RFCOMM Session already exists with peer {peer_id}"));
         }
@@ -234,7 +258,13 @@ impl RfcommServer {
         let channel_opened_callback = Box::new(move |server_channel, channel| {
             let peer_id = peer_id;
             let clients = clients.clone();
-            async move { clients.deliver_channel(peer_id, server_channel, channel).await }.boxed()
+            let session_security = security_requirements.clone();
+            async move {
+                clients
+                    .deliver_channel(peer_id, server_channel, channel, session_security.as_ref())
+                    .await
+            }
+            .boxed()
         });
         let mut session = Session::create(peer_id, l2cap, channel_opened_callback);
         let _ = session.iattach(self.inspect.peers(), peer_id.to_string());
@@ -326,18 +356,18 @@ mod tests {
         // Allocating a server channel should be OK.
         let (c, _s) = create_proxy::<ConnectionReceiverMarker>();
         let first_channel =
-            rfcomm.allocate_server_channel(c.clone()).await.expect("should allocate");
+            rfcomm.allocate_server_channel(c.clone(), None).await.expect("should allocate");
 
         // Allocate the remaining n-1 channels.
         let mut n = expected_free_channels - 1;
         while n > 0 {
-            assert!(rfcomm.allocate_server_channel(c.clone()).await.is_some());
+            assert!(rfcomm.allocate_server_channel(c.clone(), None).await.is_some());
             n -= 1;
         }
 
         // Allocating another should fail.
         assert_eq!(rfcomm.available_server_channels().await, 0);
-        assert!(rfcomm.allocate_server_channel(c.clone()).await.is_none());
+        assert!(rfcomm.allocate_server_channel(c.clone(), None).await.is_none());
 
         // De-allocating should work.
         let single_channel = vec![first_channel].into_iter().collect();
@@ -345,7 +375,7 @@ mod tests {
 
         // We should be able to allocate another now that space has freed.
         let (c, _s) = create_proxy::<ConnectionReceiverMarker>();
-        assert!(rfcomm.allocate_server_channel(c).await.is_some());
+        assert!(rfcomm.allocate_server_channel(c, None).await.is_some());
     }
 
     #[test_case(Transport::Socket ; "socket")]
@@ -356,7 +386,7 @@ mod tests {
 
         let id = PeerId(123);
         let (mut remote, channel) = create_test_channels(transport);
-        assert!(rfcomm.new_l2cap_connection(id, channel).is_ok());
+        assert!(rfcomm.new_l2cap_connection(id, channel, None).is_ok());
 
         // The Session should still be active.
         assert!(rfcomm.is_active_session(&id));
@@ -387,7 +417,7 @@ mod tests {
         // Profile-client reserves a server channel.
         let (c, mut s) = create_proxy_and_stream::<ConnectionReceiverMarker>();
         let first_channel = {
-            let fut = rfcomm.allocate_server_channel(c.clone());
+            let fut = rfcomm.allocate_server_channel(c.clone(), None);
             let mut fut = pin!(fut);
             match exec.run_until_stalled(&mut fut) {
                 Poll::Ready(Some(sc)) => sc,
@@ -403,7 +433,7 @@ mod tests {
         // Start up a session with remote peer.
         let id = PeerId(1);
         let (local, mut remote) = create_test_channels(transport);
-        assert!(rfcomm.new_l2cap_connection(id, local).is_ok());
+        assert!(rfcomm.new_l2cap_connection(id, local, None).is_ok());
         assert!(rfcomm.is_active_session(&id));
 
         // Remote peer requests to start up session multiplexer.
@@ -444,23 +474,46 @@ mod tests {
             let random_server_channel = ServerChannel::try_from(10).unwrap();
             let (local, _remote) = create_test_channels(transport);
             assert!(
-                clients.deliver_channel(PeerId(1), random_server_channel, local).await.is_err()
+                clients
+                    .deliver_channel(PeerId(1), random_server_channel, local, None)
+                    .await
+                    .is_err()
             );
 
             // Registering a new client should be OK.
             let (c, s) = create_proxy_and_stream::<ConnectionReceiverMarker>();
-            let server_channel = clients.new_client(c).await.unwrap();
+            let server_channel = clients.new_client(c, None).await.unwrap();
             expected_space -= 1;
             assert_eq!(clients.available_space().await, expected_space);
 
             // Delivering channel to registered client should be OK.
             let (local, _remote) = create_test_channels(transport);
-            assert!(clients.deliver_channel(PeerId(1), server_channel, local).await.is_ok());
+            assert!(clients.deliver_channel(PeerId(1), server_channel, local, None).await.is_ok());
 
             // Client disconnects - delivering a new channel should fail.
             drop(s);
             let (local, _remote) = create_test_channels(transport);
-            assert!(clients.deliver_channel(PeerId(1), server_channel, local).await.is_err());
+            assert!(clients.deliver_channel(PeerId(1), server_channel, local, None).await.is_err());
+
+            // Registering a client with security requirements enforces session security on delivery.
+            let (c_sec, mut s_sec) = create_proxy_and_stream::<ConnectionReceiverMarker>();
+            let reqs = SecurityRequirements {
+                authentication_required: Some(true),
+                secure_connections_required: Some(true),
+            };
+            let sec_channel = clients.new_client(c_sec, Some(reqs.clone())).await.unwrap();
+            let (local, _remote) = create_test_channels(transport);
+            assert!(clients.deliver_channel(PeerId(1), sec_channel, local, None).await.is_err());
+            assert!(s_sec.next().now_or_never().is_none());
+
+            let (local, _remote) = create_test_channels(transport);
+            assert!(
+                clients.deliver_channel(PeerId(1), sec_channel, local, Some(&reqs)).await.is_ok()
+            );
+            assert_matches!(
+                s_sec.next().await,
+                Some(Ok(bredr::ConnectionReceiverRequest::Connected { .. }))
+            );
         })
     }
 
@@ -479,7 +532,7 @@ mod tests {
 
         // New client is ok.
         let (c1, _s1) = create_proxy_and_stream::<ConnectionReceiverMarker>();
-        let ch_number1 = clients.new_client(c1).await.expect("valid client");
+        let ch_number1 = clients.new_client(c1, None).await.expect("valid client");
         let ch_number_raw1 = u8::from(ch_number1) as u64;
         assert_data_tree!(inspect, root: {
             advertised_channels: {
@@ -489,7 +542,7 @@ mod tests {
 
         // Multiple clients is ok.
         let (c2, _s2) = create_proxy_and_stream::<ConnectionReceiverMarker>();
-        let ch_number2 = clients.new_client(c2).await.expect("valid client");
+        let ch_number2 = clients.new_client(c2, None).await.expect("valid client");
         let ch_number_raw2 = u8::from(ch_number2) as u64;
         assert_data_tree!(inspect, root: {
             advertised_channels: {
@@ -541,7 +594,7 @@ mod tests {
         let local_max_packet_size = 700;
         let (local, mut remote) =
             create_test_channels_with_max_tx(transport, local_max_packet_size as usize);
-        assert!(rfcomm.new_l2cap_connection(id, local).is_ok());
+        assert!(rfcomm.new_l2cap_connection(id, local, None).is_ok());
 
         // Simulate a client connect request.
         let (responder, connect_request_fut) = make_client_connect_request(&mut exec, id);
@@ -622,7 +675,7 @@ mod tests {
         // Start up a session with remote peer.
         let id = PeerId(1);
         let (local, _remote) = create_test_channels(transport);
-        assert!(rfcomm.new_l2cap_connection(id, local).is_ok());
+        assert!(rfcomm.new_l2cap_connection(id, local, None).is_ok());
 
         assert_data_tree!(@executor exec, inspect, root: {
             rfcomm_server: {
