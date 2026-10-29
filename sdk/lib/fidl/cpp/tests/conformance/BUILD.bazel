@@ -2,7 +2,16 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
 load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/host_tests:host_cc_test.bzl", "host_cc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+load(
+    "//src/tests/fidl/conformance_suite:gidl_conformance_suite.bzl",
+    "CONFORMANCE_SUITE_FIDL_TARGET",
+    "CONFORMANCE_SUITE_GIDL_FILES",
+)
+load("//tools/fidl/gidl:gidl.bzl", "gidl_cpp_conformance")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -14,9 +23,67 @@ fx_cc_library(
     deps = [
         "//sdk/lib/fidl/cpp/wire",
         "//sdk/lib/fidl_base",
-        "//zircon/system/public",
+        "//src/zircon/lib/zircon",
         "//zircon/system/ulib/zx",
         "//zircon/system/ulib/zxtest",
     ],
     alwayslink = True,
 )
+
+# LINT.IfChange
+
+# @bazel2gn:skip
+_GIDL_OUTPUT_PREFIX = "conformance_suite__"
+
+# @bazel2gn:skip
+_GIDL_DEPS = [
+    ":%s%s" % (
+        _GIDL_OUTPUT_PREFIX,
+        gidl_file.split(":")[1].removesuffix(".gidl"),
+    )
+    for gidl_file in CONFORMANCE_SUITE_GIDL_FILES
+]
+
+# @bazel2gn:skip
+[
+    gidl_cpp_conformance(
+        name = "%s%s" % (
+            _GIDL_OUTPUT_PREFIX,
+            gidl_file.split(":")[1].removesuffix(".gidl"),
+        ),
+        testonly = True,
+        fidl = CONFORMANCE_SUITE_FIDL_TARGET,
+        inputs = [gidl_file],
+        deps = [
+            ":conformance_utils",
+            "//zircon/system/ulib/zxtest",
+        ],
+    )
+    for gidl_file in CONFORMANCE_SUITE_GIDL_FILES
+]
+
+# @bazel2gn:skip
+fx_cc_binary(
+    name = "fidl_cpp_conformance_tests_bin",
+    testonly = True,
+    deps = [
+        "//sdk/lib/fdio",
+        "//src/tests/fidl/conformance_suite:conformance_fidl_cpp",
+    ] + _GIDL_DEPS,
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "fidl_cpp_conformance_tests",
+    unit_tests = [":fidl_cpp_conformance_tests_bin"],
+    visibility = ["//sdk/lib/fidl/cpp/tests:__pkg__"],
+)
+
+# @bazel2gn:skip
+host_cc_test(
+    name = "fidl_cpp_conformance_tests_host",
+    visibility = ["//sdk/lib/fidl/cpp/tests:__pkg__"],
+    deps = ["//src/tests/fidl/conformance_suite:conformance_fidl_cpp"] + _GIDL_DEPS,
+)
+
+# LINT.ThenChange(//sdk/lib/fidl/cpp/tests/conformance/BUILD.gn)
