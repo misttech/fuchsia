@@ -445,6 +445,11 @@ mod arm64 {
         }
 
         /// Performs SHA-256 transformation directly on vector registers.
+        ///
+        /// Pass a separate value for each of `w0`..`w3`, even if they are equal: they are tied to
+        /// fixed registers, and LLVM's fast register allocator (-O0) miscompiles a tied
+        /// fixed-register input whose value is also used elsewhere
+        /// TODO(https://fxbug.dev/578328881): Revert the zero_vec hack.
         #[inline(always)]
         fn transform_words(
             &mut self,
@@ -554,7 +559,7 @@ mod arm64 {
                 (w3_bytes.as_mut_ptr().add(8) as *mut u64).write_unaligned(TOTAL_BITS_8K.to_be());
                 let zero_vec = vdupq_n_u8(0);
                 let w3 = vld1q_u8(w3_bytes.as_ptr());
-                state.transform_words(ktable, w0, zero_vec, zero_vec, w3);
+                state.transform_words(ktable, w0, zero_vec, vdupq_n_u8(0), w3);
             }
         }
 
@@ -584,7 +589,7 @@ mod arm64 {
             unsafe {
                 let w0 = load_12b_padded(data.as_ptr().add(4084), 0x00);
                 let zero_vec = vdupq_n_u8(0);
-                state.transform_words(&ktable, w0, zero_vec, zero_vec, zero_vec);
+                state.transform_words(&ktable, w0, zero_vec, vdupq_n_u8(0), vdupq_n_u8(0));
             }
 
             // Remaining 63 blocks (4096 - 52 bytes) of zeros
