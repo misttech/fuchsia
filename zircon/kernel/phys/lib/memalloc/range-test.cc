@@ -20,7 +20,7 @@ using Type = memalloc::Type;
 constexpr uint64_t kChunkSize = 0x1000;
 
 TEST(MemallocRangeTests, NormalizeRanges) {
-  constexpr Range kRanges[] = {
+  static constexpr Range kRanges[] = {
       // RAM: [0, kChunkSize)
       {
           .addr = 0,
@@ -165,6 +165,19 @@ TEST(MemallocRangeTests, NormalizeRanges) {
         },
     };
     memalloc::testing::CompareRanges(std::span{kExpected}, {normalized});
+  }
+
+  // Verify constexpr evaluation.
+  {
+    constexpr auto count_ram_ranges = [] {
+      size_t count = 0;
+      memalloc::NormalizeRam(std::span{kRanges}, [&count](const Range&) {
+        ++count;
+        return true;
+      });
+      return count;
+    };
+    static_assert(count_ram_ranges() == 2);
   }
 }
 

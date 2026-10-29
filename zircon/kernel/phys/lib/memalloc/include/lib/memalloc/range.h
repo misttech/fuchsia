@@ -212,9 +212,15 @@ std::span<Range> AsRanges(std::span<zbi_mem_range_t> ranges);
 // Gives a custom, normalized view of a container of ranges, `Ranges`.
 // `NormalizeTypeFn` is a callable with signature `std::optional<Type>(Type)`:
 // std::nullopt indicates that ranges of this type should not be passed to the
-// callback; otherwise, the returned type is indicates how the input type should
+// callback; otherwise, the returned type indicates how the input type should
 // be normalized. Adjacent ranges of the same normalized type are merged before
 // being passed to the callback.
+//
+// The input ranges are expected to be sorted and mutually disjoint. The
+// callback is permitted to mutate `ranges` (e.g., allocating from a
+// `memalloc::Pool` while iterating over its normalized RAM ranges) provided
+// that `ranges` remains sorted and disjoint; iteration resumes from the
+// address reached prior to the callback.
 //
 // The callback itself is expected to return a boolean indicating whether it
 // should continue to be called.
@@ -229,23 +235,41 @@ constexpr void NormalizeRanges(Ranges&& ranges, RangeCallback&& cb,
   static_assert(std::is_invocable_r_v<std::optional<Type>, NormalizeTypeFn, Type>);
 
   std::optional<Range> prev;
-  for (const Range& range : ranges) {
-    std::optional<Type> normalized_type = normalize_type(range.type);
-    if (!normalized_type) {
+  uint64_t min_addr = 0;
+  for (auto it = ranges.begin(); it != ranges.end();) {
+    Range current = *it;
+    if (current.size == 0 || current.end() <= min_addr) {
+      ++it;
       continue;
     }
-    Range normalized = range;
-    normalized.type = *normalized_type;
-    if (!prev) {
-      prev = normalized;
-    } else if (prev->end() == normalized.addr && prev->type == normalized.type) {
-      prev->size += normalized.size;
-    } else {
-      if (!cb(*prev)) {
-        return;
-      }
-      prev = normalized;
+    if (current.addr < min_addr) {
+      current.size -= min_addr - current.addr;
+      current.addr = min_addr;
     }
+
+    std::optional<Type> normalized_type = normalize_type(current.type);
+    if (!normalized_type) {
+      ++it;
+      continue;
+    }
+    current.type = *normalized_type;
+    if (!prev) {
+      prev = current;
+      ++it;
+      continue;
+    }
+    if (prev->end() == current.addr && prev->type == current.type) {
+      prev->size += current.size;
+      ++it;
+      continue;
+    }
+
+    min_addr = current.addr;
+    if (!cb(*prev)) {
+      return;
+    }
+    prev = std::nullopt;
+    it = ranges.begin();
   }
   if (prev) {
     cb(*prev);

@@ -3072,6 +3072,333 @@ TEST(MemallocPoolTests, CoalescePeripheralMultipleRuns) {
   TestPoolContents(ctx.pool, kExpected);
 }
 
+TEST(MemallocPoolTests, NormalizeRangesDuringMutation) {
+  // Regression test for https://fxbug.dev/564567149: simulates the UEFI/NUC
+  // physical memory layout where NormalizeRam() maps the physmap while its
+  // callback allocates page tables from the same Pool. When only two free pages
+  // remain before a reserved firmware hole and the first node after the hole is
+  // already kKernelPageTables, the third page-table allocation spills past the
+  // hole and coalesces with that node, unlinking it onto unused_.
+  {
+    PoolContext ctx;
+    Range ranges[] = {
+        // Low 1 MiB reserved memory on PC/UEFI.
+        {
+            .addr = 0,
+            .size = 0x100000,
+            .type = Type::kReserved,
+        },
+        // Early phys/kernel allocations leaving 3 pages before the hole (1 page
+        // for initial Pool bookkeeping + 2 free pages).
+        {
+            .addr = 0x100000,
+            .size = 0x765000,
+            .type = Type::kPhysKernel,
+        },
+        {
+            .addr = 0x865000,
+            .size = 3 * kChunkSize,
+            .type = Type::kFreeRam,
+        },
+        // Reserved UEFI firmware hole: [0x868000, 0x870000).
+        {
+            .addr = 0x868000,
+            .size = 0x8000,
+            .type = Type::kReserved,
+        },
+        // Existing page-table page followed by 2 free pages, another reserved
+        // hole, and remaining free RAM.
+        {
+            .addr = 0x870000,
+            .size = kChunkSize,
+            .type = Type::kKernelPageTables,
+        },
+        {
+            .addr = 0x871000,
+            .size = 2 * kChunkSize,
+            .type = Type::kFreeRam,
+        },
+        {
+            .addr = 0x873000,
+            .size = kChunkSize,
+            .type = Type::kReserved,
+        },
+        {
+            .addr = 0x874000,
+            .size = 0x8c000,
+            .type = Type::kFreeRam,
+        },
+    };
+    ASSERT_NO_FATAL_FAILURE(TestPoolInit(ctx.pool, {ranges}));
+
+    std::vector<Range> normalized;
+    memalloc::NormalizeRam(ctx.pool, [&](const Range& range) {
+      normalized.push_back(range);
+      // Allocate three 4 KiB page tables per normalized RAM region, matching
+      // ConstructKernelAddressSpace() mapping the physmap.
+      for (int i = 0; i < 3; ++i) {
+        EXPECT_TRUE(ctx.pool.Allocate(Type::kKernelPageTables, kChunkSize, kChunkSize).is_ok());
+      }
+      return true;
+    });
+
+    constexpr Range kExpectedNormalized[] = {
+        {
+            .addr = 0x100000,
+            .size = 0x768000,
+            .type = Type::kFreeRam,
+        },
+        {
+            .addr = 0x870000,
+            .size = 3 * kChunkSize,
+            .type = Type::kFreeRam,
+        },
+        {
+            .addr = 0x874000,
+            .size = 0x8c000,
+            .type = Type::kFreeRam,
+        },
+    };
+    memalloc::testing::CompareRanges(std::span{kExpectedNormalized}, {normalized});
+
+    constexpr Range kExpectedPool[] = {
+        {
+            .addr = 0x100000,
+            .size = 0x765000,
+            .type = Type::kPhysKernel,
+        },
+        {
+            .addr = 0x865000,
+            .size = kChunkSize,
+            .type = Type::kPoolBookkeeping,
+        },
+        {
+            .addr = 0x866000,
+            .size = 2 * kChunkSize,
+            .type = Type::kKernelPageTables,
+        },
+        {
+            .addr = 0x870000,
+            .size = 3 * kChunkSize,
+            .type = Type::kKernelPageTables,
+        },
+        {
+            .addr = 0x874000,
+            .size = 5 * kChunkSize,
+            .type = Type::kKernelPageTables,
+        },
+        {
+            .addr = 0x879000,
+            .size = 0x87000,
+            .type = Type::kFreeRam,
+        },
+    };
+    TestPoolContents(ctx.pool, kExpectedPool);
+  }
+
+  // Right-neighbor coalescing: allocating immediately before the paused node
+  // retypes the preceding free page in place and unlinks the paused node via
+  // Coalesce()'s `next` branch.
+  {
+    PoolContext ctx;
+    Range ranges[] = {
+        {
+            .addr = 0x1000,
+            .size = kChunkSize,
+            .type = Type::kFreeRam,
+        },
+        {
+            .addr = 0x2000,
+            .size = kChunkSize,
+            .type = Type::kKernelPageTables,
+        },
+        {
+            .addr = 0x4000,
+            .size = kChunkSize,
+            .type = Type::kFreeRam,
+        },
+        {
+            .addr = 0x5000,
+            .size = kChunkSize,
+            .type = Type::kKernelPageTables,
+        },
+    };
+    ASSERT_NO_FATAL_FAILURE(TestPoolInit(ctx.pool, {ranges}));
+
+    std::vector<Range> normalized;
+    memalloc::NormalizeRanges(
+        ctx.pool,
+        [&](const Range& range) {
+          normalized.push_back(range);
+          if (range.addr == 0x2000) {
+            EXPECT_TRUE(ctx.pool.Allocate(Type::kKernelPageTables, kChunkSize, kChunkSize).is_ok());
+          }
+          return true;
+        },
+        [](Type type) {
+          return type == Type::kKernelPageTables ? std::make_optional(type) : std::nullopt;
+        });
+
+    constexpr Range kExpectedNormalized[] = {
+        {
+            .addr = 0x2000,
+            .size = kChunkSize,
+            .type = Type::kKernelPageTables,
+        },
+        {
+            .addr = 0x5000,
+            .size = kChunkSize,
+            .type = Type::kKernelPageTables,
+        },
+    };
+    memalloc::testing::CompareRanges(std::span{kExpectedNormalized}, {normalized});
+  }
+
+  // Mid-node split: an aligned allocation splits an unaligned free RAM node
+  // that the walk reached after a gap. The region must still be emitted once
+  // without overlapping duplicates.
+  {
+    PoolContext ctx;
+    Range ranges[] = {
+        {
+            .addr = 0x1000,
+            .size = kChunkSize,
+            .type = Type::kFreeRam,
+        },
+        {
+            .addr = 0x2000,
+            .size = kChunkSize,
+            .type = Type::kPhysKernel,
+        },
+        {
+            .addr = 0x4800,
+            .size = 0x3800,
+            .type = Type::kFreeRam,
+        },
+    };
+    ASSERT_NO_FATAL_FAILURE(TestPoolInit(ctx.pool, {ranges}));
+
+    std::vector<Range> normalized;
+    memalloc::NormalizeRam(ctx.pool, [&](const Range& range) {
+      normalized.push_back(range);
+      if (range.addr == 0x1000) {
+        EXPECT_TRUE(ctx.pool.Allocate(Type::kKernelPageTables, kChunkSize, kChunkSize).is_ok());
+      }
+      return true;
+    });
+
+    constexpr Range kExpectedNormalized[] = {
+        {
+            .addr = 0x1000,
+            .size = 2 * kChunkSize,
+            .type = Type::kFreeRam,
+        },
+        {
+            .addr = 0x4800,
+            .size = 0x3800,
+            .type = Type::kFreeRam,
+        },
+    };
+    memalloc::testing::CompareRanges(std::span{kExpectedNormalized}, {normalized});
+  }
+
+  // Backward coalescing across the resume address: freeing the tail of an
+  // already-emitted range so it merges with the adjacent kFreeRam range must
+  // not re-emit the freed tail.
+  {
+    PoolContext ctx;
+    Range ranges[] = {
+        {
+            .addr = 0x1000,
+            .size = kChunkSize,
+            .type = Type::kFreeRam,
+        },
+        {
+            .addr = 0x2000,
+            .size = 2 * kChunkSize,
+            .type = Type::kPoolTestPayload,
+        },
+        {
+            .addr = 0x4000,
+            .size = 2 * kChunkSize,
+            .type = Type::kFreeRam,
+        },
+    };
+    ASSERT_NO_FATAL_FAILURE(TestPoolInit(ctx.pool, {ranges}));
+
+    std::vector<Range> normalized;
+    memalloc::NormalizeRanges(
+        ctx.pool,
+        [&](const Range& range) {
+          normalized.push_back(range);
+          if (range.addr == 0x2000) {
+            EXPECT_TRUE(ctx.pool.Free(0x3000, kChunkSize).is_ok());
+          }
+          return true;
+        },
+        [](Type type) { return std::make_optional(type); });
+
+    constexpr Range kExpectedNormalized[] = {
+        {
+            .addr = 0x1000,
+            .size = kChunkSize,
+            .type = Type::kPoolBookkeeping,
+        },
+        {
+            .addr = 0x2000,
+            .size = 2 * kChunkSize,
+            .type = Type::kPoolTestPayload,
+        },
+        {
+            .addr = 0x4000,
+            .size = 2 * kChunkSize,
+            .type = Type::kFreeRam,
+        },
+    };
+    memalloc::testing::CompareRanges(std::span{kExpectedNormalized}, {normalized});
+  }
+
+  // Early termination after mutating the pool.
+  {
+    PoolContext ctx;
+    Range ranges[] = {
+        {
+            .addr = 0x1000,
+            .size = 2 * kChunkSize,
+            .type = Type::kFreeRam,
+        },
+        {
+            .addr = 0x4000,
+            .size = kChunkSize,
+            .type = Type::kKernelPageTables,
+        },
+        {
+            .addr = 0x5000,
+            .size = kChunkSize,
+            .type = Type::kFreeRam,
+        },
+    };
+    ASSERT_NO_FATAL_FAILURE(TestPoolInit(ctx.pool, {ranges}));
+
+    std::vector<Range> normalized;
+    memalloc::NormalizeRam(ctx.pool, [&](const Range& range) {
+      normalized.push_back(range);
+      EXPECT_TRUE(ctx.pool.Allocate(Type::kKernelPageTables, kChunkSize, kChunkSize).is_ok());
+      EXPECT_TRUE(ctx.pool.Allocate(Type::kKernelPageTables, kChunkSize, kChunkSize).is_ok());
+      return false;
+    });
+
+    constexpr Range kExpectedNormalized[] = {
+        {
+            .addr = 0x1000,
+            .size = 2 * kChunkSize,
+            .type = Type::kFreeRam,
+        },
+    };
+    memalloc::testing::CompareRanges(std::span{kExpectedNormalized}, {normalized});
+  }
+}
+
 TEST(RangeTest, IntersectsWith) {
   Range a = {
       .addr = 0,
