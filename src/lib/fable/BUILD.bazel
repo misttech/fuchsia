@@ -1,0 +1,37 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "fable-lib",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    visibility = [
+        "//src/intl/time_zone_info_service/tests:__pkg__",
+    ],
+)
+
+# Runs only in Bazel: only GN test groups used the old GN test, and the GN
+# copy of :fable-lib is a 1:1 translation.
+# @bazel2gn:skip
+rustc_test(
+    name = "fable-lib_test",
+    crate = ":fable-lib",
+    visibility = ["//visibility:private"],
+    deps = ["//sdk/fidl/fuchsia.intl:fuchsia.intl_rust"],
+)
+
+# Runs only in Bazel: only GN test groups used the old GN test.
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "fable-lib-unit-tests",
+    package_name = "fable-lib-unit-tests",
+    unit_tests = [":fable-lib_test"],
+    visibility = ["//src/lib:__pkg__"],
+)

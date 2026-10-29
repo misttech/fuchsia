@@ -36,6 +36,7 @@ test_suite(
         "//src/lib/callback:callback_tests",
         "//src/lib/cstringify:cstringify-test",
         "//src/lib/error/clonable_error:clonable_error_tests",
+        "//src/lib/fable:fable-lib-unit-tests",
         "//src/lib/fidl/llcpp/tests/conformance:fidl_llcpp_manual_conformance_tests",
         "//src/lib/fidl/llcpp/tests/conformance:fidl_llcpp_request_response_tests",
         "//src/lib/fidl_server:fidl-server-tests",
