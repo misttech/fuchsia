@@ -67,4 +67,16 @@ TEST(OpenPermsTest, WriteDenied) {
   }));
 }
 
+// Verify that open for read and write fails for a context with neither read nor write permission,
+// and that both permissions are reported as denied.
+TEST(OpenPermsTest, ReadWriteDenied) {
+  ASSERT_TRUE(IsPolicyCapSupported(kOpenPermsPolicyCap));
+  auto test_file = ScopedTempFDWithLabel(kFileLabel);
+  auto enforcing = ScopedEnforcement::SetEnforcing();
+
+  EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_open_deny_read_write_t:s0", [&]() {
+    EXPECT_THAT(open(test_file.name().c_str(), O_RDWR), SyscallFailsWithErrno(EACCES));
+  }));
+}
+
 }  // namespace

@@ -8,9 +8,9 @@
 use super::bpf::{check_bpf_map_access, check_bpf_prog_access};
 use super::{
     FileObjectOpenState, FileObjectState, FsNodeSidAndClass, NO_PERMISSIONS, NonPrivateFsNode,
-    PermissionFlags, build_permission_check, check_permission, current_task_state,
-    fs_node_effective_sid_and_class, has_file_ioctl_permission, has_file_permissions,
-    is_internal_operation, permissions_from_flags,
+    PermissionFlags, build_permission_check, check_permission, check_permissions,
+    common_fs_node_permissions_from_flags, current_task_state, fs_node_effective_sid_and_class,
+    has_file_ioctl_permission, has_file_permissions, is_internal_operation, permissions_from_flags,
 };
 use crate::bpf::fs::BpfHandle;
 use crate::mm::{Mapping, MappingNameRef, MappingOptions, ProtectionFlags};
@@ -25,8 +25,8 @@ use linux_uapi::{
     FS_IOC_SETVERSION,
 };
 use selinux::{
-    CommonFilePermission, CommonFsNodePermission, ForClass, FsNodeClass, PolicyCap, SecurityId,
-    SecurityServer,
+    CommonFilePermission, CommonFilePermissionSet, CommonFsNodePermission, ForClass, FsNodeClass,
+    PolicyCap, SecurityId, SecurityServer,
 };
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -64,8 +64,7 @@ pub(in crate::security) fn file_permission(
         );
     };
 
-    let FsNodeSidAndClass { class: file_class, sid: node_sid } =
-        fs_node_effective_sid_and_class(fs_node);
+    let node_sid = fs_node_effective_sid_and_class(fs_node).sid;
 
     // Fast-path: If the caller SID, `FsNode` SID, and policy sequence number all match the values
     // cached by `file_open()` then access checks can be skipped, because `file_open()` has already
@@ -90,7 +89,7 @@ pub(in crate::security) fn file_permission(
         current_task,
         current_sid,
         file,
-        &permissions_from_flags(permission_flags, file_class),
+        common_fs_node_permissions_from_flags(permission_flags),
         current_task.into(),
     )
 }
@@ -112,7 +111,7 @@ pub(in crate::security) fn file_open(
     //
     // The `FsNode` SID and policy sequence number are captured before validating access, to
     // safeguard against concurrent re-labeling or policy re-loading:
-    // - `FsNode` access is checked manually, rather than delegating to `has_fs_node_permission()`,
+    // - `FsNode` access is checked manually, rather than delegating to `has_fs_node_permissions()`,
     //   to ensure that the cached SID matches that for which access was validated.
     // - If the policy is re-loaded then subsequent `file_permission()` calls will observe the later
     //   sequence number and fail-safe by re-doing the check.
@@ -127,21 +126,25 @@ pub(in crate::security) fn file_open(
     let permission_check = build_permission_check(current_task, security_server);
     let audit_context = [current_task.into(), file.into()];
 
-    // Fast-path: Verify that the currently has the required `FsNode` access, to allow the fast-path
-    // in `file_permission()` to safely skip subsequent re-validation.
-    let mut open_permissions = permissions_from_flags(file.flags().into(), class);
-    if security_server.is_policycap_enabled(PolicyCap::OpenPerms) {
-        if let FsNodeClass::File(file_class) = class {
-            open_permissions.push(CommonFilePermission::Open.for_class(file_class));
+    // Fast-path: Verify that the caller currently has the required `FsNode` access, to allow the
+    // fast-path in `file_permission()` to safely skip subsequent re-validation.
+    let open_permissions = common_fs_node_permissions_from_flags(file.flags().into());
+    let open_permissions = match class {
+        FsNodeClass::File(file_class)
+            if security_server.is_policycap_enabled(PolicyCap::OpenPerms) =>
+        {
+            (CommonFilePermissionSet::from(open_permissions) | CommonFilePermission::Open)
+                .for_class(file_class)
         }
-    }
-    for permission in open_permissions {
-        check_permission(
+        _ => open_permissions.for_class(class),
+    };
+    if !open_permissions.is_empty() {
+        check_permissions(
             &permission_check,
             current_task,
             current_sid,
             node_sid,
-            permission,
+            open_permissions,
             (&audit_context).into(),
         )?;
     }
@@ -194,24 +197,12 @@ pub(in crate::security) fn file_receive(
         return Ok(());
     }
 
-    let Some(fs_node) = NonPrivateFsNode::new(file.node()) else {
-        return has_file_permissions(
-            &permission_check,
-            current_task,
-            receiving_sid,
-            file,
-            NO_PERMISSIONS,
-            current_task.into(),
-        );
-    };
-
-    let fs_node_class = fs_node_effective_sid_and_class(fs_node).class;
     has_file_permissions(
         &permission_check,
         current_task,
         receiving_sid,
         file,
-        &permissions_from_flags(permission_flags, fs_node_class),
+        common_fs_node_permissions_from_flags(permission_flags),
         current_task.into(),
     )
 }

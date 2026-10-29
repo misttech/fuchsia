@@ -6,12 +6,12 @@
 #![allow(non_upper_case_globals)]
 
 use super::{
-    BpfMapState, BpfProgState, build_permission_check, check_permission, check_self_permission,
-    current_task_state,
+    BpfMapState, BpfProgState, build_permission_check, check_permission, check_permissions,
+    check_self_permission, current_task_state,
 };
 use crate::security::PermissionFlags;
 use crate::task::CurrentTask;
-use selinux::{BpfPermission, SecurityId, SecurityServer};
+use selinux::{BpfPermission, BpfPermissionSet, SecurityId, SecurityServer};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{bpf_cmd, bpf_cmd_BPF_MAP_CREATE, bpf_cmd_BPF_PROG_LOAD, bpf_cmd_BPF_PROG_RUN};
 use zerocopy::FromBytes;
@@ -63,29 +63,25 @@ pub(in crate::security) fn check_bpf_map_access(
     bpf_map_state: &crate::security::BpfMapState,
     flags: PermissionFlags,
 ) -> Result<(), Errno> {
-    let audit_context = current_task.into();
-
+    let mut permissions = BpfPermissionSet::empty();
     if flags.contains(PermissionFlags::READ) {
-        check_permission(
-            &build_permission_check(current_task, security_server),
-            current_task,
-            subject_sid,
-            bpf_map_state.state.sid,
-            BpfPermission::MapRead,
-            audit_context,
-        )?;
+        permissions |= BpfPermission::MapRead;
     }
     if flags.contains(PermissionFlags::WRITE) {
-        check_permission(
-            &build_permission_check(current_task, security_server),
-            current_task,
-            subject_sid,
-            bpf_map_state.state.sid,
-            BpfPermission::MapWrite,
-            audit_context,
-        )?;
+        permissions |= BpfPermission::MapWrite;
     }
-    Ok(())
+    if permissions.is_empty() {
+        return Ok(());
+    }
+
+    check_permissions(
+        &build_permission_check(current_task, security_server),
+        current_task,
+        subject_sid,
+        bpf_map_state.state.sid,
+        permissions,
+        current_task.into(),
+    )
 }
 
 /// Performs necessary checks when the kernel generates and returns a file descriptor for BPF

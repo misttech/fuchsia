@@ -29,7 +29,7 @@ pub(super) fn has_socket_permission(
     current_task: &CurrentTask,
     subject_sid: SecurityId,
     socket_node: NonPrivateFsNode<'_>,
-    permission: impl ForClass<SocketClass>,
+    permission: impl ForClass<SocketClass, Output = KernelPermission>,
     audit_context: Auditable<'_>,
 ) -> Result<(), Errno> {
     let FsNodeSidAndClass { sid: socket_sid, class: socket_class } =

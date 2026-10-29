@@ -51,6 +51,8 @@ macro_rules! subset_enum {
 
         paste! {
             impl ForClass<$name> for $common_permission {
+                type Output = KernelPermission;
+
                 fn for_class(&self, class: $name) -> KernelPermission {
                     match class {
                         $($name::$variant => [<$variant Permission>]::from(*self).into(),)*
@@ -58,8 +60,10 @@ macro_rules! subset_enum {
                 }
             }
 
-            impl PermissionSet<$common_permission> {
-                pub fn for_class(&self, class: $name) -> KernelPermissionSet {
+            impl ForClass<$name> for PermissionSet<$common_permission> {
+                type Output = KernelPermissionSet;
+
+                fn for_class(&self, class: $name) -> KernelPermissionSet {
                     match class {
                         $($name::$variant => PermissionSet::<[<$variant Permission>]>::from(*self).into(),)*
                     }
@@ -263,10 +267,21 @@ impl From<FsNodeClass> for KernelClass {
     }
 }
 pub trait ForClass<T> {
-    /// Returns the `class`-affine [`KernelPermission`] value corresponding to this common
-    /// permission. This is used to allow hooks to resolve e.g. common "sys_nice" permission access
-    /// based on the "allow" rules for the correct target object class.
-    fn for_class(&self, class: T) -> KernelPermission;
+    type Output;
+
+    /// Returns the `class`-affine [`KernelPermission`] or [`KernelPermissionSet`] value
+    /// corresponding to this common permission or permission set. This is used to allow hooks to
+    /// resolve e.g. common "sys_nice" permission access based on the "allow" rules for the correct
+    /// target object class.
+    fn for_class(&self, class: T) -> Self::Output;
+}
+
+impl<T, U: ForClass<T> + ?Sized> ForClass<T> for &U {
+    type Output = U::Output;
+
+    fn for_class(&self, class: T) -> Self::Output {
+        (*self).for_class(class)
+    }
 }
 
 subset_enum! {
@@ -394,7 +409,18 @@ pub trait ClassPermission: Copy {
 }
 
 impl<T: Into<KernelClass>> ForClass<T> for KernelPermission {
+    type Output = KernelPermission;
+
     fn for_class(&self, class: T) -> KernelPermission {
+        assert_eq!(self.class(), class.into());
+        *self
+    }
+}
+
+impl<T: Into<KernelClass>> ForClass<T> for KernelPermissionSet {
+    type Output = KernelPermissionSet;
+
+    fn for_class(&self, class: T) -> KernelPermissionSet {
         assert_eq!(self.class(), class.into());
         *self
     }
@@ -616,6 +642,32 @@ macro_rules! class_permission_enum {
             }
         }
 
+        impl<const N: usize> From<[$name; N]> for PermissionSet<$name> {
+            #[inline]
+            fn from(permissions: [$name; N]) -> Self {
+                permissions.into_iter().collect()
+            }
+        }
+
+        impl<const N: usize> From<&[$name; N]> for PermissionSet<$name> {
+            #[inline]
+            fn from(permissions: &[$name; N]) -> Self {
+                permissions.iter().copied().collect()
+            }
+        }
+
+        impl<T, const N: usize> ForClass<T> for [$name; N]
+        where
+            PermissionSet<$name>: ForClass<T>,
+        {
+            type Output = <PermissionSet<$name> as ForClass<T>>::Output;
+
+            #[inline]
+            fn for_class(&self, class: T) -> Self::Output {
+                PermissionSet::<$name>::from(self).for_class(class)
+            }
+        }
+
         impl<T: Into<PermissionSet<$name>>> BitOr<T> for $name {
             type Output = PermissionSet<$name>;
 
@@ -826,6 +878,8 @@ fs_node_class_permission_enum! {
 }
 
 impl<T: Into<FsNodeClass>> ForClass<T> for CommonFsNodePermission {
+    type Output = KernelPermission;
+
     fn for_class(&self, class: T) -> KernelPermission {
         match class.into() {
             FsNodeClass::File(file_class) => {
@@ -838,8 +892,10 @@ impl<T: Into<FsNodeClass>> ForClass<T> for CommonFsNodePermission {
     }
 }
 
-impl PermissionSet<CommonFsNodePermission> {
-    pub fn for_class(&self, class: impl Into<FsNodeClass>) -> KernelPermissionSet {
+impl<T: Into<FsNodeClass>> ForClass<T> for PermissionSet<CommonFsNodePermission> {
+    type Output = KernelPermissionSet;
+
+    fn for_class(&self, class: T) -> KernelPermissionSet {
         match class.into() {
             FsNodeClass::File(file_class) => {
                 PermissionSet::<CommonFilePermission>::from(*self).for_class(file_class)

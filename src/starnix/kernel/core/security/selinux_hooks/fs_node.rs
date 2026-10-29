@@ -8,10 +8,10 @@
 use super::super::{FsNodeSecurityXattr, check_task_capable};
 use super::{
     Auditable, FileSystem, FsNodeLabel, FsNodeSidAndClass, NonPrivateDirEntry, NonPrivateFsNode,
-    PermissionFlags, build_permission_check, check_permission, current_task_state,
-    fs_node_effective_sid_and_class, fs_node_ensure_class, fs_node_set_label_with_task,
-    has_fs_node_permissions, has_fs_node_permissions_dontaudit, permissions_from_flags,
-    set_cached_sid,
+    PermissionFlags, build_permission_check, check_permission, check_permissions,
+    current_task_state, fs_node_effective_sid_and_class, fs_node_ensure_class,
+    fs_node_set_label_with_task, has_fs_node_permissions, has_fs_node_permissions_dontaudit,
+    permissions_from_flags, set_cached_sid,
 };
 use crate::task::CurrentTask;
 use crate::vfs::{DirEntry, FsStr, FsString, PathBuilder, UnlinkKind, ValueOrSize, XattrOp};
@@ -590,20 +590,12 @@ fn may_create(
     let fs = parent.fs();
 
     let audit_context = &[current_task.into(), parent.into(), Auditable::Name(name)];
-    check_permission(
+    check_permissions(
         &permission_check,
         current_task,
         current_sid,
         parent_sid,
-        DirPermission::Search,
-        audit_context.into(),
-    )?;
-    check_permission(
-        &permission_check,
-        current_task,
-        current_sid,
-        parent_sid,
-        DirPermission::AddName,
+        DirPermission::Search | DirPermission::AddName,
         audit_context.into(),
     )?;
 
@@ -672,20 +664,12 @@ fn may_link(
     let FsNodeClass::File(file_class) = file_class else {
         panic!("may_link called on non-file-like class")
     };
-    check_permission(
+    check_permissions(
         &permission_check,
         current_task,
         current_sid,
         parent_sid,
-        DirPermission::Search,
-        audit_context,
-    )?;
-    check_permission(
-        &permission_check,
-        current_task,
-        current_sid,
-        parent_sid,
-        DirPermission::AddName,
+        DirPermission::Search | DirPermission::AddName,
         audit_context,
     )?;
     check_permission(
@@ -719,20 +703,12 @@ fn may_unlink_or_rmdir(
     let current_sid = current_task_state(current_task).current_sid;
     let parent_sid = fs_node_effective_sid_and_class(parent).sid;
 
-    check_permission(
+    check_permissions(
         &permission_check,
         current_task,
         current_sid,
         parent_sid,
-        DirPermission::Search,
-        audit_context.into(),
-    )?;
-    check_permission(
-        &permission_check,
-        current_task,
-        current_sid,
-        parent_sid,
-        DirPermission::RemoveName,
+        DirPermission::Search | DirPermission::RemoveName,
         audit_context.into(),
     )?;
 

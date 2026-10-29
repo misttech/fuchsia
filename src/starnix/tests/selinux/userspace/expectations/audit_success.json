@@ -1215,6 +1215,12 @@
             ]
         },
         {
+            "name": "OpenPermsTest.ReadWriteDenied",
+            "audit_expectations": [
+                "avc:  denied  { read write } for name=\"proc_test_file_ndnq0b\" dev=\"tmpfs\" ino=6 scontext=test_u:test_r:test_open_deny_read_write_t:s0 tcontext=test_u:object_r:test_open_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
             "name": "OpenPermsTest.WriteAllowed",
             "audit_expectations": []
         },

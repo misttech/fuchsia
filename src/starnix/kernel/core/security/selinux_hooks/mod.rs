@@ -31,12 +31,12 @@ use indexmap::IndexSet;
 use selinux::permission_check::PermissionCheck;
 use selinux::policy::{FsUseType, XpermsKind};
 use selinux::{
-    ClassPermission, CommonFilePermission, CommonFsNodePermission, DirPermission, FdPermission,
-    FileClass, FileSystemLabel, FileSystemLabelingScheme, FileSystemMountOptions, ForClass,
-    FsNodeClass, InitialSid, KernelPermission, KernelPermissionSet, PolicyCap, ProcessPermission,
-    SecurityId, SecurityServer, TaskAttrs,
+    ClassPermission, CommonFilePermission, CommonFilePermissionSet, CommonFsNodePermission,
+    CommonFsNodePermissionSet, DirPermission, DirPermissionSet, FdPermission, FileClass,
+    FileSystemLabel, FileSystemLabelingScheme, FileSystemMountOptions, ForClass, FsNodeClass,
+    InitialSid, KernelPermission, KernelPermissionSet, PolicyCap, ProcessPermission, SecurityId,
+    SecurityServer, TaskAttrs,
 };
-use smallvec;
 use starnix_logging::{BugRef, CATEGORY_STARNIX_SECURITY, bug_ref, track_stub};
 use starnix_sync::{
     LockDepMutex, SeLinuxPeerSidLock, SeLinuxPendingEntriesLock, SeLinuxPendingFileSystemsLock,
@@ -50,40 +50,45 @@ use std::cell::Ref;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 
-/// Rust cannot infer the permission type from an empty slice, so define an explicitly-typed empty
-/// permissions slice to use.
-const NO_PERMISSIONS: &[KernelPermission] = &[];
+/// Empty permission set to pass to `has_file_permissions()`.
+const NO_PERMISSIONS: CommonFsNodePermissionSet = CommonFsNodePermissionSet::empty();
 
-/// Iterable set of permissions returned by `permissions_from_flags()`.
-type PermissionFlagsVec = smallvec::SmallVec<[KernelPermission; 3]>;
-
-/// Returns the set of `Permissions` on `class`, corresponding to the specified `flags`.
-fn permissions_from_flags(flags: PermissionFlags, class: FsNodeClass) -> PermissionFlagsVec {
-    let mut result = PermissionFlagsVec::new();
+/// Returns the `CommonFsNodePermission`s corresponding to the `READ`, `WRITE`, and `APPEND`
+/// bits in `flags`.
+fn common_fs_node_permissions_from_flags(flags: PermissionFlags) -> CommonFsNodePermissionSet {
+    debug_assert!(!flags.contains(PermissionFlags::EXEC));
+    let mut result = CommonFsNodePermissionSet::empty();
 
     if flags.contains(PermissionFlags::READ) {
-        result.push(CommonFsNodePermission::Read.for_class(class));
+        result |= CommonFsNodePermission::Read;
     }
     if flags.contains(PermissionFlags::WRITE) {
         // SELinux uses the `APPEND` bit to distinguish which of the "append" or the more general
         // "write" permission to check for.
         if flags.contains(PermissionFlags::APPEND) {
-            result.push(CommonFsNodePermission::Append.for_class(class));
+            result |= CommonFsNodePermission::Append;
         } else {
-            result.push(CommonFsNodePermission::Write.for_class(class));
+            result |= CommonFsNodePermission::Write;
         }
     }
+    result
+}
+
+/// Returns the set of `Permissions` on `class`, corresponding to the specified `flags`.
+fn permissions_from_flags(flags: PermissionFlags, class: FsNodeClass) -> KernelPermissionSet {
+    let result = common_fs_node_permissions_from_flags(flags - PermissionFlags::EXEC);
 
     if let FsNodeClass::File(class) = class {
         if flags.contains(PermissionFlags::EXEC) {
             if class == FileClass::Dir {
-                result.push(DirPermission::Search.into());
+                return (DirPermissionSet::from(result) | DirPermission::Search).into();
             } else {
-                result.push(CommonFilePermission::Execute.for_class(class));
+                return (CommonFilePermissionSet::from(result) | CommonFilePermission::Execute)
+                    .for_class(class);
             }
         }
     }
-    result
+    result.for_class(class)
 }
 
 fn is_internal_operation(current_task: &CurrentTask) -> bool {
@@ -97,7 +102,7 @@ fn has_file_permissions(
     current_task: &CurrentTask,
     subject_sid: SecurityId,
     file: &FileObject,
-    permissions: &[impl ForClass<FsNodeClass>],
+    permissions: impl Into<CommonFsNodePermissionSet>,
     audit_context: Auditable<'_>,
 ) -> Result<(), Errno> {
     if is_internal_operation(current_task) {
@@ -120,6 +125,7 @@ fn has_file_permissions(
     }
 
     // Validate that the `subject` has the desired `permissions`, if any, to the underlying node.
+    let permissions = permissions.into();
     if !permissions.is_empty()
         && let Some(fs_node) = NonPrivateFsNode::new(file.node())
     {
@@ -232,7 +238,7 @@ fn has_fs_node_permissions_dontaudit(
     _current_task: &CurrentTask,
     subject_sid: SecurityId,
     fs_node: NonPrivateFsNode<'_>,
-    permissions: &[impl ForClass<FsNodeClass>],
+    permissions: impl ForClass<FsNodeClass, Output = KernelPermissionSet>,
 ) -> Result<(), Errno> {
     fuchsia_trace::duration!(
         CATEGORY_STARNIX_SECURITY,
@@ -240,13 +246,13 @@ fn has_fs_node_permissions_dontaudit(
     );
 
     let target = fs_node_effective_sid_and_class(fs_node);
-    for permission in permissions {
-        if !permission_check
-            .has_permission(subject_sid, target.sid, permission.for_class(target.class))
-            .permit()
-        {
-            return error!(EACCES);
-        }
+    let permissions = permissions.for_class(target.class);
+    if permissions.is_empty() {
+        return Ok(());
+    }
+
+    if !permission_check.has_permissions(subject_sid, target.sid, permissions).permit() {
+        return error!(EACCES);
     }
 
     Ok(())
@@ -258,26 +264,26 @@ fn has_fs_node_permissions(
     current_task: &CurrentTask,
     subject_sid: SecurityId,
     fs_node: NonPrivateFsNode<'_>,
-    permissions: &[impl ForClass<FsNodeClass>],
+    permissions: impl ForClass<FsNodeClass, Output = KernelPermissionSet>,
     audit_context: Auditable<'_>,
 ) -> Result<(), Errno> {
     fuchsia_trace::duration!(CATEGORY_STARNIX_SECURITY, "security.selinux.has_fs_node_permissions");
 
     let target = fs_node_effective_sid_and_class(fs_node);
-
-    let audit_context = [audit_context, fs_node.into()];
-    for permission in permissions {
-        check_permission(
-            permission_check,
-            current_task,
-            subject_sid,
-            target.sid,
-            permission.for_class(target.class),
-            (&audit_context).into(),
-        )?;
+    let permissions = permissions.for_class(target.class);
+    if permissions.is_empty() {
+        return Ok(());
     }
 
-    Ok(())
+    let audit_context = [audit_context, fs_node.into()];
+    check_permissions(
+        permission_check,
+        current_task,
+        subject_sid,
+        target.sid,
+        permissions,
+        (&audit_context).into(),
+    )
 }
 
 fn file_class_from_file_mode(mode: FileMode) -> Result<FileClass, Errno> {
