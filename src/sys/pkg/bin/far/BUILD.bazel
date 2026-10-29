@@ -2,13 +2,15 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@rules_cc//cc:defs.bzl", "cc_binary")
-load("//build/bazel/rules/host:defs.bzl", "cc_binary_host_tool")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/idk:idk_host_tool.bzl", "idk_cc_binary_host_tool")
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
 
 package(default_applicable_licenses = ["//:license"])
 
-# @bazel2gn:raw_attribute:output_name = "far"
-cc_binary(
+fx_cc_binary(
     name = "bin",
     srcs = ["main.cc"],
     target_compatible_with = ["@platforms//os:fuchsia"],
@@ -19,10 +21,33 @@ cc_binary(
     ],
 )
 
-# @bazel2gn:skip
-cc_binary_host_tool(
+fx_packaged_binary(
+    name = "far_packaged_bin",
+    binary = ":bin",
+    binary_name = "far",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+)
+
+fx_package(
+    name = "far",
+    package_name = "far",
+    resources = [":far_packaged_bin"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+)
+
+idk_cc_binary_host_tool(
     name = "host",
     srcs = ["main.cc"],
+    api_area = "Software Delivery",
+    category = "partner",
+    idk_name = "far",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//bundles/tools:__pkg__",
+        "//sdk:__pkg__",
+        "//sdk/bundles:__pkg__",
+        "//tools/devshell:__subpackages__",
+    ],
     deps = [
         "//src/lib/fxl:fxl_cli",
         "//src/sys/pkg/lib/far/cpp:far",

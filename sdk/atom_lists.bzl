@@ -104,6 +104,7 @@ _NON_BUILD_HOST_TOOLS_ATOMS_REQUIRED_BY_BAZEL_SDK = [
 
 NON_BUILD_HOST_TOOLS_ATOMS = _NON_BUILD_HOST_TOOLS_ATOMS_REQUIRED_BY_BAZEL_SDK + [
     # buildifier: keep sorted
+    "//src/sys/pkg/bin/far:host_idk",
     "//src/sys/pkg/testing/fake-omaha-client:fake-omaha-client_idk",
     "//tools/net/device-finder:device-finder_idk",
 ]
