@@ -28,6 +28,7 @@ enum class Writability {
 struct MountOptions {
   Writability writability = Writability::Writable;
   bool verbose = false;
+  bool die_on_mutation_failure = true;
 
   // Used to establish fidl connections to the DecompressorCreator instead of the default
   // implementation that will perform an |fdio_service_connect| with the given channel.

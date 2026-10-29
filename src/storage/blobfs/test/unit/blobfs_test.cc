@@ -585,5 +585,55 @@ TEST_F(BlobfsTest, MemoryUse) {
   ADD_FAILURE() << "Unable to find nodemap VMO";
 }
 
+TEST_F(BlobfsTest, DestroyArmedTransactionDies) {
+  ASSERT_DEATH(
+      {
+        BlobTransaction transaction(/*die_on_mutation_failure=*/true);
+        transaction.AddTrimOperation({});
+      },
+      "BlobTransaction destroyed while armed with pending mutations!");
+}
+
+TEST_F(BlobfsTest, PartialFreeInodeFailurePanicsWhenDieOnMutationFailureEnabled) {
+  auto delivery_blob = TestDeliveryBlob::CreateUncompressed(64);
+  auto blob = CreateBlob(*blobfs(), delivery_blob);
+  ASSERT_OK(blob);
+
+  // Corrupt the in-memory inode so FreeInode() frees the primary node (mutating allocator and
+  // superblock state and arming BlobTransaction) and then fails internally when advancing to the
+  // invalid extent container.
+  {
+    auto inode = blobfs()->GetNode(blob->Ino());
+    ASSERT_OK(inode);
+    inode->extent_count = 2;
+    inode->header.next_node = blob->Ino();
+  }
+
+  ASSERT_DEATH(
+      { [[maybe_unused]] zx_status_t status = blob->QueueUnlink(); },
+      "BlobTransaction destroyed while armed with pending mutations!");
+
+  {
+    auto inode = blobfs()->GetNode(blob->Ino());
+    ASSERT_OK(inode);
+    inode->extent_count = 1;
+    inode->header.next_node = kMaxNodeId;
+  }
+}
+
+TEST_F(BlobfsTest, WriteFailurePanicsWhenDieOnMutationFailureEnabled) {
+  auto delivery_blob = TestDeliveryBlob::CreateUncompressed(64);
+  device_->set_hook([](const BlockFifoRequest& req, const zx::vmo* _vmo) {
+    if (req.command.opcode == BLOCK_OPCODE_WRITE) {
+      return ZX_ERR_IO;
+    }
+    return ZX_OK;
+  });
+  ASSERT_DEATH(
+      { [[maybe_unused]] auto res = CreateBlob(*blobfs(), delivery_blob); },
+      "Mutation failure\\. Disk no longer consistent");
+  device_->set_hook({});
+}
+
 }  // namespace
 }  // namespace blobfs

@@ -387,7 +387,7 @@ zx_status_t Blob::Purge() {
     // A readable blob should only be purged if it has been unlinked.
     ZX_ASSERT_MSG(deletable_, "Should not purge blob which is not unlinked.");
 
-    BlobTransaction transaction;
+    BlobTransaction transaction(blobfs_.die_on_mutation_failure());
     if (zx_status_t status = blobfs_.FreeInode(map_index_, transaction); status != ZX_OK)
       return status;
     transaction.Commit(*blobfs_.GetJournal());

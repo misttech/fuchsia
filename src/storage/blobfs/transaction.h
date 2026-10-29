@@ -24,20 +24,33 @@ namespace blobfs {
 // reserved extents (and there is no requirement to do so).
 class BlobTransaction {
  public:
-  BlobTransaction() = default;
+  explicit BlobTransaction(bool die_on_mutation_failure = true)
+      : die_on_mutation_failure_(die_on_mutation_failure) {}
   BlobTransaction(BlobTransaction&) = delete;
   BlobTransaction& operator=(BlobTransaction&) = delete;
+  ~BlobTransaction();
 
   void AddOperation(storage::UnbufferedOperation operation) {
+    Arm();
     operations_.Add(std::move(operation));
   }
 
   void AddTrimOperation(storage::BufferedOperation operation) {
+    Arm();
     trim_.push_back(std::move(operation));
   }
 
   // When freeing extents, we need to reserve them until after the trim operations have completed.
-  void AddReservedExtent(ReservedExtent extent) { reserved_extents_.push_back(std::move(extent)); }
+  void AddReservedExtent(ReservedExtent extent) {
+    Arm();
+    reserved_extents_.push_back(std::move(extent));
+  }
+
+  // Arms the transaction, indicating that it has pending mutations.
+  void Arm() { armed_ = true; }
+
+  // Disarms the transaction, indicating that it has been safely committed or consumed.
+  void Disarm() { armed_ = false; }
 
   // Commits this transaction to the journal.  |data| is an optional promise that is responsible for
   // writing data associated with metadata that is part of the transaction.  |callback| will be
@@ -55,6 +68,8 @@ class BlobTransaction {
   storage::UnbufferedOperationsBuilder operations_;
   std::vector<storage::BufferedOperation> trim_;
   std::vector<ReservedExtent> reserved_extents_;
+  bool armed_ = false;
+  bool die_on_mutation_failure_ = true;
 };
 
 }  // namespace blobfs

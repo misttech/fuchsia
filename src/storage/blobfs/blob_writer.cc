@@ -110,7 +110,7 @@ zx::result<Blob::WrittenBlob> Blob::Writer::WriteNullBlob(Blob& blob) {
     return status.take_error();
   }
 
-  BlobTransaction transaction;
+  BlobTransaction transaction(blobfs().die_on_mutation_failure());
   if (zx::result status = WriteMetadata(transaction); status.is_error()) {
     return status.take_error();
   }
@@ -536,7 +536,7 @@ zx::result<> Blob::Writer::FlushData(Blob& blob) {
 
   // Wrap all pending writes with a strong reference to this Blob, so that it stays
   // alive while there are writes in progress acting on it.
-  BlobTransaction transaction;
+  BlobTransaction transaction(blobfs().die_on_mutation_failure());
   if (zx::result status = WriteMetadata(transaction); status.is_error()) {
     return status.take_error();
   }

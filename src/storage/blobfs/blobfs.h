@@ -20,6 +20,7 @@
 #include <lib/zx/vmo.h>
 #include <zircon/types.h>
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -189,7 +190,15 @@ class Blobfs : public TransactionManager, public BlockIteratorProvider {
   BlobLoader& loader() { return *loader_; }
   PageLoader& page_loader() { return *page_loader_; }
 
+  void DieOnMutationFailure(bool setting) {
+    die_on_mutation_failure_.store(setting, std::memory_order_relaxed);
+  }
+  bool die_on_mutation_failure() const {
+    return die_on_mutation_failure_.load(std::memory_order_relaxed);
+  }
+
   zx_status_t RunRequests(const std::vector<storage::BufferedOperation>& operations) override;
+  zx_status_t Flush() override;
 
   zx::result<std::unique_ptr<Superblock>> ReadBackupSuperblock();
 
@@ -301,6 +310,7 @@ class Blobfs : public TransactionManager, public BlockIteratorProvider {
   fuchsia_storage_block::wire::BlockInfo block_info_ = {};
   Writability writability_;
   bool clean_unmount_on_reset_ = false;
+  std::atomic<bool> die_on_mutation_failure_ = true;
 
   std::unique_ptr<Allocator> allocator_;
 

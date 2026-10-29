@@ -460,8 +460,10 @@ TEST_F(BlobWriterTest, FailedWriteMarksBlobCorruptRecoversOnRemount) {
     EXPECT_STATUS(vmo->read(&a, 0, 1), ZX_ERR_BAD_STATE);
   }
 
-  // Remount to revert changes to the ondisk version.
-  ASSERT_OK(Remount());
+  // The filesystem will have terminated on the mutation failure, so Unmount is expected to fail.
+  ASSERT_NE(fs().Unmount().status_value(), ZX_OK);
+  ASSERT_OK(fs().Mount(fs().DefaultMountOptions()));
+  ASSERT_OK(Reconnect());
 
   auto vmo = blob_reader().GetVmo(blob.digest());
   ASSERT_OK(vmo);

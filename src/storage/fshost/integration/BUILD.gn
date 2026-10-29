@@ -626,6 +626,10 @@ template("fshost_integration_test_package") {
         "//src/lib/fidl/rust/fidl",
         "//src/lib/fuchsia-async",
         "//src/lib/fuchsia-fs",
+        "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
+        "//src/storage/lib/blob_writer:blob-writer",
+        "//src/storage/lib/delivery_blob",
+        "//src/sys/pkg/lib/fuchsia-merkle",
         "//third_party/rust_crates:assert_matches",
         "//third_party/rust_crates:futures",
       ]

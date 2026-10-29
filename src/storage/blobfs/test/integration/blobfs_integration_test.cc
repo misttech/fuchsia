@@ -674,6 +674,11 @@ TEST_P(BlobfsIntegrationTest, FailedWrite) {
   // will fail to commit at the end.
   auto delivery_blob2 = TestDeliveryBlob::CreateUncompressed(kBlobfsBlockSize * 5, 0x2);
   ASSERT_NE(blob_creator().CreateAndWriteBlob(delivery_blob2).status_value(), ZX_OK);
+
+  // The filesystem will have terminated on the mutation failure, so Unmount is expected to fail.
+  ASSERT_NE(fs().Unmount().status_value(), ZX_OK);
+  wake.call();
+  ASSERT_OK(fs().Mount(fs().DefaultMountOptions()));
 }
 
 struct CloneThreadArgs {
