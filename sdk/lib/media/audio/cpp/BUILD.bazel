@@ -1,0 +1,27 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "cpp",
+    srcs = [
+        "perceived_level.cc",
+        "types.cc",
+    ],
+    hdrs = [
+        "perceived_level.h",
+        "types.h",
+    ],
+    implementation_deps = [
+        "//sdk/lib/syslog/cpp",
+        "//src/lib/fxl",
+    ],
+    includes = ["../../../.."],
+    visibility = ["//src/media/audio:__subpackages__"],
+    deps = ["//sdk/fidl/fuchsia.media:fuchsia.media_hlcpp"],
+    alwayslink = True,
+)

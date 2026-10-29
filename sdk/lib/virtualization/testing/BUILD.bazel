@@ -1,0 +1,26 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "testing",
+    testonly = True,
+    srcs = [
+        "fake_guest_vsock.cc",
+        "fake_host_vsock.cc",
+    ],
+    hdrs = [
+        "fake_guest_vsock.h",
+        "fake_host_vsock.h",
+    ],
+    implementation_deps = ["//src/lib/fxl"],
+    includes = ["../../.."],
+    public_configs = ["//sdk/config"],
+    visibility = ["//src/virtualization/lib/grpc:__pkg__"],
+    deps = ["//sdk/fidl/fuchsia.virtualization:fuchsia.virtualization_hlcpp"],
+    alwayslink = True,
+)
