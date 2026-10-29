@@ -45,7 +45,6 @@ cc_prebuilt_library://pkg/magma_client
 cc_prebuilt_library://pkg/sampler_instrumentation
 cc_prebuilt_library://pkg/svc
 cc_prebuilt_library://pkg/sync
-cc_prebuilt_library://pkg/syslog
 cc_prebuilt_library://pkg/trace-engine
 cc_prebuilt_library://pkg/trace-provider-so
 cc_prebuilt_library://pkg/trace-vthread

@@ -16,25 +16,21 @@ alias(
 )
 """)
 
-    # GoogleTest lists `pkg/syslog` as a dependency but never calls into it: on
-    # Fuchsia it logs through `fdio`. There is no in-tree equivalent of the SDK's
-    # `pkg/syslog` C wrapper to point at, so supply an empty library instead. If
-    # a future GoogleTest roll starts calling `fx_log*`, this is what to fix.
+    # GoogleTest 1.17.0 lists `pkg/syslog` as a dependency in its BUILD.bazel
+    # (removed upstream in newer GoogleTest), even though it never calls into it
+    # and logs through `fdio` on Fuchsia. Supply an empty library until the
+    # in-tree GoogleTest version is rolled past 1.17.0.
     repo_ctx.file("pkg/syslog/BUILD.bazel", """
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 cc_library(
-    name = "syslog_noop",
-    # Propagate the gtest runner shard to any test binary that links against
-    # @com_google_googletest//:gtest (which depends on @fuchsia_sdk//pkg/syslog).
-    aspect_hints = ["@//src/sys/test_runners/gtest:default"],
-)
-
-alias(
     name = "syslog",
-    actual = select({
-        "@//build/bazel/platforms:is_fuchsia_platform": ":syslog_noop",
-        "@//build/bazel/platforms:is_fuchsia_with_sdk_rules": "@fuchsia_sdk//pkg/syslog",
+    # Propagate the gtest runner shard to any test binary that links against
+    # @com_google_googletest//:gtest (which depends on @fuchsia_sdk//pkg/syslog)
+    # in fuchsia_platform builds.
+    aspect_hints = select({
+        "@//build/bazel/platforms:is_fuchsia_platform": ["@//src/sys/test_runners/gtest:default"],
+        "@//build/bazel/platforms:is_fuchsia_with_sdk_rules": [],
     }),
     visibility = ["//visibility:public"],
 )

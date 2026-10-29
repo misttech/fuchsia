@@ -178,7 +178,7 @@ cc_library(
     ],
     deps = select(
         {
-            "@platforms//os:fuchsia": ["@fuchsia_sdk//pkg/syslog"],
+            "@platforms//os:fuchsia": ["@fuchsia_sdk//pkg/syslog_cpp"],
             "//conditions:default": [],
         },
     ),

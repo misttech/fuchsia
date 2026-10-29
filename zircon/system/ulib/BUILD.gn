@@ -45,7 +45,6 @@ group("tests") {
     "region-alloc:tests",
     "runtests-utils:tests",
     "sysconfig-client:tests",
-    "syslog:tests",
     "sysmem-version:tests",
     "test-exceptions:tests",
     "tftp:tests",

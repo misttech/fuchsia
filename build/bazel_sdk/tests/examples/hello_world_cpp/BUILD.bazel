@@ -21,7 +21,6 @@ fuchsia_cc_binary(
         "@fuchsia_sdk//fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_cpp_driver",
         "@fuchsia_sdk//fidl/fuchsia.mem:fuchsia.mem_hlcpp",
         "@fuchsia_sdk//pkg/fdio",
-        "@fuchsia_sdk//pkg/syslog",
     ],
 )
 
@@ -53,7 +52,6 @@ fuchsia_cc_test(
     ] + fuchsia_select({
         "@platforms//os:fuchsia": [
             "@fuchsia_sdk//pkg/fdio",
-            "@fuchsia_sdk//pkg/syslog",
         ],
     }),
 )

@@ -20,7 +20,6 @@ fuchsia_cc_binary(
     ],
     deps = [
         "@fuchsia_sdk//pkg/fdio",
-        "@fuchsia_sdk//pkg/syslog",
         # the fidl libraries below are not effectively used in the hello world sample, they are here just to validate that
         # the Bazel build can include FIDL dependencies from both internal and partner SDK correctly:
         "@fuchsia_sdk//fidl/fuchsia.component.decl:fuchsia.component.decl_cpp",
@@ -49,7 +48,6 @@ fuchsia_cc_test(
     srcs = ["hello_test.cc"],
     deps = [
         "@fuchsia_sdk//pkg/fdio",
-        "@fuchsia_sdk//pkg/syslog",
     ],
 )
 
@@ -60,7 +58,6 @@ fuchsia_cc_test(
     deps = [
         "@com_google_googletest//:gtest_main",
         "@fuchsia_sdk//pkg/fdio",
-        "@fuchsia_sdk//pkg/syslog",
     ],
 )
 

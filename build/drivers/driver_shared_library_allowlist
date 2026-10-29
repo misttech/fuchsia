@@ -8,7 +8,6 @@ libdriver_runtime.so
 libfdio.so
 libssl.so
 libsvc.so
-libsyslog.so
 libtee-client-api.so
 libtrace-engine.so
 libvfs_internal.so

@@ -20,48 +20,12 @@ The syslog library will fallback to `stderr` if the `LogSink` connection fails.
 
 ## Default configuration
 
-The global logger is lazily instantiated on the first use of the API (more
-specifically, on the first call to `fx_log_get_logger`). The default
-configuration for the global logger is:
+The global logger is lazily instantiated on the first use of the API. The
+default configuration for the global logger is:
 
 - Use process name as the tag
 - Write logs to `fuchsia.logger.LogSink`
-- Min log level of `FX_LOG_INFO`
-
-## In C
-
-### BUILD.gn dependency
-
-```gn
-//zircon/public/lib/syslog
-```
-
-### Log messages
-
-```C
-FX_LOGF(INFO, "tag", "my msg: %d", 10);
-FX_LOG(INFO, "tag", "my msg");
-FX_LOGF(INFO, NULL, "my msg: %d", 10);
-```
-
-### Using non-default configuration
-
-```C
-#include <lib/syslog/global.h>
-
-int main(int argc, char** argv) {
-    fx_logger_config_t config = {
-      .min_severity = FX_LOG_INFO,
-      .tags = (const char * []) {"gtag", "gtag2"},
-      .num_tags = 2,
-    };
-    fx_log_reconfigure(&config);
-}
-```
-
-### Reference
-
-[C APIs](/zircon/system/ulib/syslog/include/lib/syslog/global.h)
+- Min log level of `fuchsia_logging::LogSeverity::Info`
 
 ## In C++
 
