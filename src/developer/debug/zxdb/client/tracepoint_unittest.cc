@@ -20,6 +20,7 @@
 #include "src/developer/debug/zxdb/client/thread.h"
 #include "src/developer/debug/zxdb/client/thread_controller.h"
 #include "src/developer/debug/zxdb/client/thread_impl.h"
+#include "src/developer/debug/zxdb/client/thread_observer.h"
 #include "src/developer/debug/zxdb/client/tracepoint_capture.h"
 
 namespace zxdb {
@@ -48,6 +49,16 @@ class TestSystemObserver : public SystemObserver {
   std::vector<HitInfo> hits;
 };
 
+class AsyncRegMockFrame : public MockFrame {
+ public:
+  using MockFrame::MockFrame;
+
+  const std::vector<debug::RegisterValue>* GetRegisterCategorySync(
+      debug::RegisterCategory category) const override {
+    return nullptr;
+  }
+};
+
 class TracepointTest : public RemoteAPITest {};
 
 TEST_F(TracepointTest, LifecycleAndSettings) {
@@ -59,7 +70,10 @@ TEST_F(TracepointTest, LifecycleAndSettings) {
   EXPECT_EQ(tp->id(), 1u);
   EXPECT_TRUE(tp->enabled());
   EXPECT_FALSE(tp->auto_disabled());
-  EXPECT_EQ(tp->max_hits(), 20u);
+  EXPECT_EQ(tp->max_hits(), Tracepoint::kDefaultMaxHits);
+  tp->set_max_hits(0);
+  EXPECT_EQ(tp->max_hits(), 1u);
+  tp->set_max_hits(Tracepoint::kDefaultMaxHits);
   EXPECT_EQ(tp->hit_count(), 0u);
   EXPECT_EQ(observer.created.size(), 1u);
   EXPECT_EQ(observer.created[0], 1u);
@@ -93,6 +107,7 @@ TEST_F(TracepointTest, LifecycleAndSettings) {
   auto found = session().system().GetTracepointForBreakpoint(bp);
   EXPECT_EQ(found, tp);
 
+  session().system().DeleteTracepoint(nullptr);
   session().system().DeleteTracepoint(tp);
   EXPECT_EQ(observer.destroyed.size(), 1u);
   EXPECT_EQ(observer.destroyed[0], 1u);
@@ -476,6 +491,8 @@ TEST_F(TracepointTest, TargetScopedWatchpointWillDestroyThreadIsolation) {
   InjectThread(kProcess2Koid, kThread2Koid);
 
   Tracepoint* tp = session().system().CreateNewTracepoint();
+  tp->SetScope(ExecutionScope(thread1));
+
   TracepointSpec spec;
   TracepointWatchSpec watch;
   watch.address = 0x5000;
@@ -483,11 +500,9 @@ TEST_F(TracepointTest, TargetScopedWatchpointWillDestroyThreadIsolation) {
   spec.watch = watch;
   tp->SetSpec(spec);
 
-  // Scope the breakpoint to thread1.
-  BreakpointSettings settings = tp->breakpoint()->GetSettings();
-  settings.scope = ExecutionScope(thread1);
-  tp->breakpoint()->SetSettings(settings);
-
+  EXPECT_EQ(tp->scope().type(), ExecutionScope::kThread);
+  EXPECT_EQ(tp->scope().thread(), thread1);
+  EXPECT_EQ(tp->breakpoint()->GetSettings().scope.thread(), thread1);
   EXPECT_TRUE(tp->verified());
 
   // Destroying thread2 on target2 does NOT reset verified() on target1's watchpoint.
@@ -683,15 +698,14 @@ TEST_F(TracepointTest, ConcurrentCapturesRespectMaxHits) {
   bp_stats.id = bp_id;
   bp_stats.hit_count = 1;
 
-  // Construct frames with empty synchronous general registers so CaptureTracepointFrame issues
+  // Construct frames without synchronous general registers so CaptureTracepointFrame issues
   // asynchronous ReadRegisters requests on both threads before either hit is delivered.
-  Location loc(0x100000, FileLine("foo.cc", 10), 0, SymbolContext::ForRelativeAddresses());
   std::vector<std::unique_ptr<Frame>> frames1;
-  frames1.push_back(std::make_unique<MockFrame>(&session(), thread1, loc, 0x2000, 0x2010,
-                                                std::vector<debug::RegisterValue>{}));
+  frames1.push_back(std::make_unique<AsyncRegMockFrame>(&session(), thread1, 0x100000, 0x2000,
+                                                        "MyFunction", FileLine("foo.cc", 10)));
   std::vector<std::unique_ptr<Frame>> frames2;
-  frames2.push_back(std::make_unique<MockFrame>(&session(), thread2, loc, 0x3000, 0x3010,
-                                                std::vector<debug::RegisterValue>{}));
+  frames2.push_back(std::make_unique<AsyncRegMockFrame>(&session(), thread2, 0x100000, 0x3000,
+                                                        "MyFunction", FileLine("foo.cc", 10)));
 
   mock_remote_api()->GetAndResetResumeCount();
   InjectExceptionWithStack(kProcessKoid, kThread1Koid,
@@ -709,6 +723,323 @@ TEST_F(TracepointTest, ConcurrentCapturesRespectMaxHits) {
   EXPECT_EQ(mock_remote_api()->GetAndResetResumeCount(), 2);
 
   session().system().RemoveObserver(&observer);
+}
+
+TEST_F(TracepointTest, ObserverReentrantDeleteInHitAndWillDestroy) {
+  constexpr uint64_t kProcessKoid = 1234;
+  InjectProcessWithModule(kProcessKoid, 0x100000);
+  constexpr uint64_t kThreadKoid = 5678;
+  Thread* thread = InjectThread(kProcessKoid, kThreadKoid);
+
+  class DeletingObserver : public SystemObserver {
+   public:
+    explicit DeletingObserver(System* sys) : sys_(sys) {}
+    void OnTracepointHit(Tracepoint* tracepoint, const TracepointHitRecord& hit) override {
+      hit_count++;
+      if (hit.auto_disabled) {
+        sys_->DeleteTracepoint(tracepoint);
+      }
+    }
+    void WillDestroyTracepoint(Tracepoint* tracepoint) override {
+      destroy_count++;
+      // Re-entrant deletion during WillDestroyTracepoint should be a safe no-op.
+      sys_->DeleteTracepoint(tracepoint);
+    }
+    System* sys_;
+    int hit_count = 0;
+    int destroy_count = 0;
+  };
+
+  DeletingObserver deleter(&session().system());
+  TestSystemObserver trailing_observer;
+  session().system().AddObserver(&deleter);
+  session().system().AddObserver(&trailing_observer);
+
+  Tracepoint* tp = session().system().CreateNewTracepoint();
+  TracepointSpec spec;
+  spec.function = "MyFunction";
+  tp->SetSpec(spec);
+  tp->set_max_hits(1);
+
+  uint32_t bp_id = static_cast<BreakpointImpl*>(tp->breakpoint())->backend_id();
+  debug_ipc::BreakpointStats bp_stats{.id = bp_id, .hit_count = 1};
+
+  std::vector<std::unique_ptr<Frame>> frames;
+  frames.push_back(std::make_unique<MockFrame>(&session(), thread, 0x100000, 0x2000, "MyFunction",
+                                               FileLine("foo.cc", 10)));
+  InjectExceptionWithStack(kProcessKoid, kThreadKoid, debug_ipc::ExceptionType::kSoftwareBreakpoint,
+                           std::move(frames), true, {bp_stats});
+  loop().RunUntilNoTasks();
+
+  EXPECT_EQ(deleter.hit_count, 1);
+  EXPECT_EQ(deleter.destroy_count, 1);
+  EXPECT_TRUE(trailing_observer.hits.empty());
+  EXPECT_EQ(trailing_observer.destroyed.size(), 1u);
+  EXPECT_TRUE(session().system().GetTracepoints().empty());
+
+  session().system().RemoveObserver(&trailing_observer);
+  session().system().RemoveObserver(&deleter);
+}
+
+TEST_F(TracepointTest, ObserverDeletesTracepointBetweenInlineFrameCaptures) {
+  constexpr uint64_t kProcessKoid = 1234;
+  InjectProcessWithModule(kProcessKoid, 0x100000);
+  constexpr uint64_t kThreadKoid = 5678;
+  Thread* thread = InjectThread(kProcessKoid, kThreadKoid);
+
+  // Deletes the tracepoint on its first hit. The first frame capture completes synchronously, so
+  // the deletion happens before the second matched inline frame is captured.
+  class DeleteOnHitObserver : public SystemObserver {
+   public:
+    explicit DeleteOnHitObserver(System* sys) : sys_(sys) {}
+    void OnTracepointHit(Tracepoint* tracepoint, const TracepointHitRecord& hit) override {
+      hit_count++;
+      sys_->DeleteTracepoint(tracepoint);
+    }
+    System* sys_;
+    int hit_count = 0;
+  };
+
+  DeleteOnHitObserver deleter(&session().system());
+  session().system().AddObserver(&deleter);
+
+  Tracepoint* tp = session().system().CreateNewTracepoint();
+  TracepointSpec spec;
+  spec.function = "MyFunction";
+  tp->SetSpec(spec);
+
+  uint32_t bp_id = static_cast<BreakpointImpl*>(tp->breakpoint())->backend_id();
+  debug_ipc::BreakpointStats bp_stats{.id = bp_id, .hit_count = 1};
+
+  std::vector<std::unique_ptr<Frame>> frames;
+  frames.push_back(std::make_unique<MockFrame>(&session(), thread, 0x100000, 0x2000, "MyFunction",
+                                               FileLine("foo.cc", 10)));
+  frames.push_back(std::make_unique<MockFrame>(&session(), thread, 0x100000, 0x2020, "MyFunction",
+                                               FileLine("foo.cc", 25)));
+  InjectExceptionWithStack(kProcessKoid, kThreadKoid, debug_ipc::ExceptionType::kSoftwareBreakpoint,
+                           std::move(frames), true, {bp_stats});
+  loop().RunUntilNoTasks();
+
+  EXPECT_EQ(deleter.hit_count, 1);
+  EXPECT_TRUE(session().system().GetTracepoints().empty());
+
+  session().system().RemoveObserver(&deleter);
+}
+
+TEST_F(TracepointTest, SessionTeardownWithActiveTracepoint) {
+  Session local_session(std::make_unique<MockRemoteAPI>(), debug::Arch::kX64,
+                        debug::Platform::kFuchsia, 4096);
+  Tracepoint* tp = local_session.system().CreateNewTracepoint();
+  TracepointSpec spec;
+  spec.function = "MyFunction";
+  tp->SetSpec(spec);
+  EXPECT_EQ(local_session.system().GetTracepoints().size(), 1u);
+}
+
+TEST_F(TracepointTest, DeleteAllBreakpointsPreservesTracepointsAndProcessExitDisablesAddress) {
+  constexpr uint64_t kProcessKoid = 1234;
+  InjectProcessWithModule(kProcessKoid, 0x100000);
+  constexpr uint64_t kThreadKoid = 5678;
+  Thread* thread = InjectThread(kProcessKoid, kThreadKoid);
+
+  TestSystemObserver observer;
+  session().system().AddObserver(&observer);
+
+  Tracepoint* tp = session().system().CreateNewTracepoint();
+  TracepointSpec fn_spec;
+  fn_spec.function = "MyFunction";
+  tp->SetSpec(fn_spec);
+
+  Breakpoint* user_bp = session().system().CreateNewBreakpoint();
+  ASSERT_NE(user_bp, nullptr);
+  EXPECT_EQ(session().system().GetBreakpoints().size(), 1u);
+
+  session().system().DeleteAllBreakpoints();
+  EXPECT_TRUE(session().system().GetBreakpoints().empty());
+  ASSERT_NE(tp->breakpoint(), nullptr);
+  EXPECT_TRUE(tp->enabled());
+
+  uint32_t bp_id = static_cast<BreakpointImpl*>(tp->breakpoint())->backend_id();
+  debug_ipc::BreakpointStats bp_stats{.id = bp_id, .hit_count = 1};
+  std::vector<std::unique_ptr<Frame>> frames;
+  frames.push_back(std::make_unique<MockFrame>(&session(), thread, 0x100000, 0x2000, "MyFunction",
+                                               FileLine("foo.cc", 10)));
+  InjectExceptionWithStack(kProcessKoid, kThreadKoid, debug_ipc::ExceptionType::kSoftwareBreakpoint,
+                           std::move(frames), true, {bp_stats});
+  loop().RunUntilNoTasks();
+  EXPECT_EQ(observer.hits.size(), 1u);
+
+  // Address tracepoints disable when the process exits and can be re-enabled cleanly.
+  Tracepoint* addr_tp = session().system().CreateNewTracepoint();
+  TracepointSpec addr_spec;
+  addr_spec.address = 0x100200;
+  addr_tp->SetSpec(addr_spec);
+  EXPECT_TRUE(addr_tp->enabled());
+
+  debug_ipc::NotifyProcessExiting exit_notify{.process_koid = kProcessKoid, .return_code = 0};
+  session().DispatchNotifyProcessExiting(exit_notify);
+  loop().RunUntilNoTasks();
+
+  EXPECT_FALSE(addr_tp->enabled());
+  addr_tp->SetEnabled(true);
+  EXPECT_TRUE(addr_tp->enabled());
+  EXPECT_TRUE(addr_tp->breakpoint()->GetSettings().enabled);
+
+  session().system().RemoveObserver(&observer);
+}
+
+TEST_F(TracepointTest, MultipleMatchingInlineFramesAtTopIp) {
+  constexpr uint64_t kProcessKoid = 1234;
+  InjectProcessWithModule(kProcessKoid, 0x100000);
+  constexpr uint64_t kThreadKoid = 5678;
+  Thread* thread = InjectThread(kProcessKoid, kThreadKoid);
+
+  TestSystemObserver observer;
+  session().system().AddObserver(&observer);
+
+  Tracepoint* tp = session().system().CreateNewTracepoint();
+  TracepointSpec spec;
+  spec.function = "MyFunction";
+  spec.max_matching_frames = 3;
+  tp->SetSpec(spec);
+
+  uint32_t tp_bp_id = static_cast<BreakpointImpl*>(tp->breakpoint())->backend_id();
+  debug_ipc::BreakpointStats tp_stats{.id = tp_bp_id, .hit_count = 1};
+
+  std::vector<std::unique_ptr<Frame>> frames;
+  frames.push_back(std::make_unique<MockFrame>(&session(), thread, 0x100000, 0x2000, "MyFunction",
+                                               FileLine("foo.cc", 10)));
+  frames.push_back(std::make_unique<MockFrame>(&session(), thread, 0x100000, 0x2020, "MyFunction",
+                                               FileLine("foo.cc", 25)));
+
+  InjectExceptionWithStack(kProcessKoid, kThreadKoid, debug_ipc::ExceptionType::kSoftwareBreakpoint,
+                           std::move(frames), true, {tp_stats});
+  loop().RunUntilNoTasks();
+
+  // Both matched inline frames are reported, but the stop counts as one hit.
+  EXPECT_EQ(tp->hit_count(), 1u);
+  ASSERT_EQ(observer.hits.size(), 2u);
+  ASSERT_TRUE(observer.hits[0].hit.capture.frame.has_value());
+  ASSERT_TRUE(observer.hits[1].hit.capture.frame.has_value());
+  EXPECT_EQ(observer.hits[0].hit.capture.frame->line, 10);
+  EXPECT_EQ(observer.hits[1].hit.capture.frame->line, 25);
+  EXPECT_EQ(observer.hits[0].hit.hit_count, 1u);
+  EXPECT_EQ(observer.hits[1].hit.hit_count, 1u);
+
+  session().system().RemoveObserver(&observer);
+}
+
+TEST_F(TracepointTest, InlineFramesInStopThatReachesMaxHitsAreAllDelivered) {
+  constexpr uint64_t kProcessKoid = 1234;
+  InjectProcessWithModule(kProcessKoid, 0x100000);
+  constexpr uint64_t kThreadKoid = 5678;
+  Thread* thread = InjectThread(kProcessKoid, kThreadKoid);
+
+  TestSystemObserver observer;
+  session().system().AddObserver(&observer);
+
+  Tracepoint* tp = session().system().CreateNewTracepoint();
+  TracepointSpec spec;
+  spec.function = "MyFunction";
+  tp->SetSpec(spec);
+  tp->set_max_hits(1);
+
+  uint32_t tp_bp_id = static_cast<BreakpointImpl*>(tp->breakpoint())->backend_id();
+  debug_ipc::BreakpointStats tp_stats{.id = tp_bp_id, .hit_count = 1};
+
+  std::vector<std::unique_ptr<Frame>> frames;
+  frames.push_back(std::make_unique<MockFrame>(&session(), thread, 0x100000, 0x2000, "MyFunction",
+                                               FileLine("foo.cc", 10)));
+  frames.push_back(std::make_unique<MockFrame>(&session(), thread, 0x100000, 0x2020, "MyFunction",
+                                               FileLine("foo.cc", 25)));
+
+  InjectExceptionWithStack(kProcessKoid, kThreadKoid, debug_ipc::ExceptionType::kSoftwareBreakpoint,
+                           std::move(frames), true, {tp_stats});
+  loop().RunUntilNoTasks();
+
+  EXPECT_EQ(tp->hit_count(), 1u);
+  EXPECT_TRUE(tp->auto_disabled());
+  ASSERT_EQ(observer.hits.size(), 2u);
+  EXPECT_TRUE(observer.hits[0].hit.auto_disabled);
+  EXPECT_TRUE(observer.hits[1].hit.auto_disabled);
+
+  session().system().RemoveObserver(&observer);
+}
+
+TEST_F(TracepointTest, ReEnableRecreatesDeletedBreakpointFromSpec) {
+  Tracepoint* tp = session().system().CreateNewTracepoint();
+  TracepointSpec spec;
+  spec.function = "MyFunction";
+  tp->SetSpec(spec);
+  tp->SetEnabled(false);
+
+  ASSERT_NE(tp->breakpoint(), nullptr);
+  session().system().DeleteBreakpoint(tp->breakpoint());
+  ASSERT_EQ(tp->breakpoint(), nullptr);
+
+  tp->SetEnabled(true);
+  ASSERT_NE(tp->breakpoint(), nullptr);
+  BreakpointSettings settings = tp->breakpoint()->GetSettings();
+  EXPECT_TRUE(settings.enabled);
+  EXPECT_EQ(settings.stop_mode, BreakpointSettings::StopMode::kNone);
+  ASSERT_EQ(settings.locations.size(), 1u);
+  EXPECT_EQ(settings.locations[0].type, InputLocation::Type::kName);
+  EXPECT_TRUE(tp->enabled());
+}
+
+TEST_F(TracepointTest, ThreadResumedMidCaptureSkipsSecondContinueAndCleansOneShot) {
+  constexpr uint64_t kProcessKoid = 1234;
+  InjectProcessWithModule(kProcessKoid, 0x100000);
+  constexpr uint64_t kThreadKoid = 5678;
+  Thread* thread = InjectThread(kProcessKoid, kThreadKoid);
+
+  class StopCountingThreadObserver : public ThreadObserver {
+   public:
+    void OnThreadStopped(Thread*, const StopInfo&) override { stop_count++; }
+    int stop_count = 0;
+  };
+  StopCountingThreadObserver thread_observer;
+  session().thread_observers().AddObserver(&thread_observer);
+
+  Tracepoint* tp = session().system().CreateNewTracepoint();
+  TracepointSpec spec;
+  spec.function = "MyFunction";
+  spec.registers = true;
+  tp->SetSpec(spec);
+
+  Breakpoint* one_shot_bp = session().system().CreateNewBreakpoint();
+  BreakpointSettings bp_settings;
+  bp_settings.enabled = true;
+  bp_settings.stop_mode = BreakpointSettings::StopMode::kNone;
+  bp_settings.one_shot = true;
+  one_shot_bp->SetSettings(bp_settings);
+
+  uint32_t tp_bp_id = static_cast<BreakpointImpl*>(tp->breakpoint())->backend_id();
+  uint32_t one_shot_id = static_cast<BreakpointImpl*>(one_shot_bp)->backend_id();
+  debug_ipc::BreakpointStats tp_stats{.id = tp_bp_id, .hit_count = 1};
+  debug_ipc::BreakpointStats one_shot_stats{
+      .id = one_shot_id, .hit_count = 1, .should_delete = true};
+
+  std::vector<std::unique_ptr<Frame>> frames;
+  frames.push_back(std::make_unique<AsyncRegMockFrame>(&session(), thread, 0x100000, 0x2000,
+                                                       "MyFunction", FileLine("foo.cc", 10)));
+
+  mock_remote_api()->GetAndResetResumeCount();
+  InjectExceptionWithStack(kProcessKoid, kThreadKoid, debug_ipc::ExceptionType::kSoftwareBreakpoint,
+                           std::move(frames), true, {tp_stats, one_shot_stats});
+
+  // Resume the thread externally while async register capture is still pending.
+  thread->Continue(false);
+  EXPECT_EQ(mock_remote_api()->GetAndResetResumeCount(), 1);
+
+  loop().RunUntilNoTasks();
+
+  // Completion must not issue a second Resume or OnException, and must still clean up one-shot bps.
+  EXPECT_EQ(mock_remote_api()->GetAndResetResumeCount(), 0);
+  EXPECT_EQ(thread_observer.stop_count, 0);
+  EXPECT_TRUE(session().system().GetBreakpoints().empty());
+
+  session().thread_observers().RemoveObserver(&thread_observer);
 }
 
 class FailingThreadStatusRemoteAPI : public MockRemoteAPI {

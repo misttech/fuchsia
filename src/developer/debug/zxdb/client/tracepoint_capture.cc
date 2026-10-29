@@ -4,11 +4,11 @@
 
 #include "src/developer/debug/zxdb/client/tracepoint_capture.h"
 
-#include <inttypes.h>
-
 #include <algorithm>
+#include <memory>
 #include <ranges>
 
+#include "lib/fit/defer.h"
 #include "src/developer/debug/shared/register_info.h"
 #include "src/developer/debug/zxdb/client/frame.h"
 #include "src/developer/debug/zxdb/client/pretty_stack_manager.h"
@@ -22,17 +22,14 @@
 #include "src/developer/debug/zxdb/expr/eval_context.h"
 #include "src/developer/debug/zxdb/expr/expr.h"
 #include "src/developer/debug/zxdb/expr/expr_parser.h"
-#include "src/developer/debug/zxdb/expr/format.h"
 #include "src/developer/debug/zxdb/expr/format_node.h"
 #include "src/developer/debug/zxdb/expr/format_options.h"
 #include "src/developer/debug/zxdb/expr/parsed_identifier.h"
 #include "src/developer/debug/zxdb/format/format.h"
-#include "src/developer/debug/zxdb/symbols/base_type.h"
 #include "src/developer/debug/zxdb/symbols/function.h"
 #include "src/developer/debug/zxdb/symbols/location.h"
 #include "src/developer/debug/zxdb/symbols/variable.h"
 #include "src/lib/fxl/memory/ref_counted.h"
-#include "src/lib/fxl/strings/string_printf.h"
 
 namespace zxdb {
 
@@ -52,7 +49,7 @@ bool MatchParsedIdentifier(const ParsedIdentifier& target, const ParsedIdentifie
     const auto& tc = target.components()[i];
     const auto& cc = candidate.components()[offset + i];
 
-    if (tc.name() != cc.name())
+    if (tc.special() != cc.special() || tc.name() != cc.name())
       return false;
 
     if (tc.has_template()) {
@@ -82,27 +79,36 @@ bool FrameMatchesFileLine(const Frame* frame, const FileLine& target_file_line) 
   return PathEndsWith(loc.file_line().file(), target_file_line.file());
 }
 
-void ExtractLocals(const fxl::RefPtr<JoinCallbacks<void>>& joiner, TracepointFrameCapture* capture,
+// Ref-counted holder for a capture that async callbacks fill in. Each callback keeps a reference,
+// so the capture stays alive until the last callback finishes.
+struct CaptureState : public fxl::RefCountedThreadSafe<CaptureState> {
+  TracepointFrameCapture capture;
+};
+
+// Each AddCallback() token is wrapped in fit::defer_callback as soon as it is created. If an async
+// producer drops its callback without running it, the token still completes, so the joiner always
+// reaches its Ready callback and the stopped thread is not left blocked.
+void ExtractLocals(const fxl::RefPtr<JoinCallbacks<void>>& joiner,
+                   const fxl::RefPtr<CaptureState>& state,
                    const fxl::RefPtr<EvalContext>& eval_context, Frame* frame) {
+  state->capture.locals = std::map<std::string, TracepointValue>();
   ErrOr<std::map<std::string, fxl::RefPtr<Variable>>> vars_or = frame->GetLocalVariables();
-  if (vars_or.has_error() || vars_or.value().empty()) {
-    capture->locals = std::map<std::string, TracepointValue>();
+  if (vars_or.has_error()) {
+    state->capture.errors.push_back(vars_or.err().msg());
     return;
   }
-  const auto& vars = vars_or.value();
-  capture->locals = std::map<std::string, TracepointValue>();
 
-  for (const auto& [name, var] : vars) {
-    auto cb = joiner->AddCallback();
+  for (const auto& [name, var] : vars_or.value()) {
     eval_context->GetVariableValue(
-        var, [name = name, eval_context, capture, cb = std::move(cb)](ErrOrValue val_res) mutable {
+        var, [name = name, eval_context, state,
+              done = fit::defer_callback(joiner->AddCallback())](ErrOrValue val_res) mutable {
           auto node = std::make_unique<FormatNode>(std::string(), val_res);
           auto* node_ptr = node.get();
           FormatBufferOptions options;
           options.pointer_expand_depth = 0;
           DescribeFormatTreeNode(node_ptr, options, eval_context,
-                                 fit::defer_callback([name, options, node = std::move(node),
-                                                      capture, cb = std::move(cb)]() mutable {
+                                 fit::defer_callback([name, options, node = std::move(node), state,
+                                                      done = std::move(done)]() mutable {
                                    TracepointValue tv;
                                    if (node->err().has_error()) {
                                      tv.value = "<" + node->err().msg() + ">";
@@ -110,63 +116,63 @@ void ExtractLocals(const fxl::RefPtr<JoinCallbacks<void>>& joiner, TracepointFra
                                      tv.value = FormatTreeNode(*node, options).AsString();
                                      tv.type = node->type();
                                    }
-                                   (*capture->locals)[name] = std::move(tv);
-                                   cb();
+                                   (*state->capture.locals)[name] = std::move(tv);
+                                   done.call();
                                  }));
         });
   }
 }
 
 void ExtractExpressions(const fxl::RefPtr<JoinCallbacks<void>>& joiner,
-                        TracepointFrameCapture* capture,
+                        const fxl::RefPtr<CaptureState>& state,
                         const fxl::RefPtr<EvalContext>& eval_context,
                         const std::vector<std::string>& expressions) {
   if (expressions.empty())
     return;
 
-  capture->evaluations = std::map<std::string, TracepointEvaluation>();
+  state->capture.evaluations = std::map<std::string, TracepointEvaluation>();
 
   for (const auto& expr : expressions) {
     auto node = std::make_unique<FormatNode>(std::string(), expr);
     auto* node_ptr = node.get();
     FormatBufferOptions options;
     options.pointer_expand_depth = 0;
-    auto cb = joiner->AddCallback();
-    DescribeFormatTreeNode(node_ptr, options, eval_context,
-                           fit::defer_callback([expr, options, node = std::move(node), capture,
-                                                cb = std::move(cb)]() mutable {
-                             TracepointEvaluation te;
-                             if (node->err().has_error()) {
-                               te.error = node->err().msg();
-                               capture->errors.push_back(node->err().msg());
-                             } else {
-                               te.result = FormatTreeNode(*node, options).AsString();
-                               te.type = node->type();
-                             }
-                             capture->evaluations[expr] = std::move(te);
-                             cb();
-                           }));
+    DescribeFormatTreeNode(
+        node_ptr, options, eval_context,
+        fit::defer_callback([expr, options, node = std::move(node), state,
+                             done = fit::defer_callback(joiner->AddCallback())]() mutable {
+          TracepointEvaluation te;
+          if (node->err().has_error()) {
+            te.error = node->err().msg();
+            state->capture.errors.push_back(node->err().msg());
+          } else {
+            te.result = FormatTreeNode(*node, options).AsString();
+            te.type = node->type();
+          }
+          state->capture.evaluations[expr] = std::move(te);
+          done.call();
+        }));
   }
 }
 
 void ExtractRegisters(const fxl::RefPtr<JoinCallbacks<void>>& joiner,
-                      TracepointFrameCapture* capture, Frame* frame) {
+                      const fxl::RefPtr<CaptureState>& state, Frame* frame) {
   const auto* sync_regs = frame->GetRegisterCategorySync(debug::RegisterCategory::kGeneral);
-  if (sync_regs && !sync_regs->empty()) {
-    capture->registers = FormatRegisterValues(*sync_regs);
+  if (sync_regs) {
+    state->capture.registers = FormatRegisterValues(*sync_regs);
     return;
   }
 
   frame->GetRegisterCategoryAsync(
       debug::RegisterCategory::kGeneral, false,
-      [capture, cb = joiner->AddCallback()](const Err& err,
-                                            const std::vector<debug::RegisterValue>& regs) mutable {
+      [state, done = fit::defer_callback(joiner->AddCallback())](
+          const Err& err, const std::vector<debug::RegisterValue>& regs) mutable {
         if (err.has_error()) {
-          capture->errors.push_back(err.msg());
+          state->capture.errors.push_back(err.msg());
         } else {
-          capture->registers = FormatRegisterValues(regs);
+          state->capture.registers = FormatRegisterValues(regs);
         }
-        cb();
+        done.call();
       });
 }
 
@@ -196,7 +202,8 @@ void DoCaptureFrameState(fxl::WeakPtr<Thread> thread, fxl::WeakPtr<Frame> frame,
     return;
   }
 
-  auto capture = std::make_shared<TracepointFrameCapture>();
+  auto state = fxl::MakeRefCounted<CaptureState>();
+  TracepointFrameCapture* capture = &state->capture;
 
   if (spec.frame) {
     TracepointFrameSummary summary;
@@ -226,19 +233,19 @@ void DoCaptureFrameState(fxl::WeakPtr<Thread> thread, fxl::WeakPtr<Frame> frame,
   auto joiner = fxl::MakeRefCounted<JoinCallbacks<void>>();
 
   if (spec.registers) {
-    ExtractRegisters(joiner, capture.get(), frame.get());
+    ExtractRegisters(joiner, state, frame.get());
   }
 
   auto eval_context = frame->GetEvalContext();
-  if (spec.locals && eval_context) {
-    ExtractLocals(joiner, capture.get(), eval_context, frame.get());
+  if (!eval_context && (spec.locals || !spec.expressions.empty())) {
+    capture->errors.push_back("No eval context available for locals or expressions.");
+  } else {
+    if (spec.locals)
+      ExtractLocals(joiner, state, eval_context, frame.get());
+    ExtractExpressions(joiner, state, eval_context, spec.expressions);
   }
 
-  if (!spec.expressions.empty() && eval_context) {
-    ExtractExpressions(joiner, capture.get(), eval_context, spec.expressions);
-  }
-
-  joiner->Ready([capture, cb = std::move(cb)]() mutable { cb(std::move(*capture)); });
+  joiner->Ready([state, cb = std::move(cb)]() mutable { cb(std::move(state->capture)); });
 }
 
 TracepointMatchResult MatchAddressFrames(Stack* stack, TargetPointer address,
@@ -272,9 +279,10 @@ TracepointMatchResult MatchAddressFrames(Stack* stack, TargetPointer address,
   return result;
 }
 
-TracepointMatchResult MatchFileLineFrames(Stack* stack, const FileLine& file_line,
-                                          std::optional<uint32_t> max_matching_frames,
-                                          FrameMatchMode mode) {
+template <typename Predicate>
+TracepointMatchResult MatchFramesWithPredicate(Stack* stack,
+                                               std::optional<uint32_t> max_matching_frames,
+                                               FrameMatchMode mode, Predicate pred) {
   TracepointMatchResult result;
   if (mode == FrameMatchMode::kLiveStopTopFrame) {
     TargetPointer top_ip = (*stack)[0]->GetAddress();
@@ -282,7 +290,7 @@ TracepointMatchResult MatchFileLineFrames(Stack* stack, const FileLine& file_lin
       Frame* f = (*stack)[i];
       if (f->GetAddress() != top_ip)
         break;
-      if (FrameMatchesFileLine(f, file_line)) {
+      if (pred(f)) {
         if (max_matching_frames.has_value() && result.frames.size() >= *max_matching_frames) {
           result.truncated = true;
           break;
@@ -298,7 +306,7 @@ TracepointMatchResult MatchFileLineFrames(Stack* stack, const FileLine& file_lin
 
   for (size_t i = 0; i < stack->size(); ++i) {
     Frame* f = (*stack)[i];
-    if (FrameMatchesFileLine(f, file_line)) {
+    if (pred(f)) {
       if (max_matching_frames.has_value() && result.frames.size() >= *max_matching_frames) {
         result.truncated = true;
         break;
@@ -307,6 +315,14 @@ TracepointMatchResult MatchFileLineFrames(Stack* stack, const FileLine& file_lin
     }
   }
   return result;
+}
+
+TracepointMatchResult MatchFileLineFrames(Stack* stack, const FileLine& file_line,
+                                          std::optional<uint32_t> max_matching_frames,
+                                          FrameMatchMode mode) {
+  return MatchFramesWithPredicate(stack, max_matching_frames, mode, [&file_line](const Frame* f) {
+    return FrameMatchesFileLine(f, file_line);
+  });
 }
 
 ErrOr<TracepointMatchResult> MatchFunctionFrames(Stack* stack, const std::string& function_name,
@@ -316,41 +332,54 @@ ErrOr<TracepointMatchResult> MatchFunctionFrames(Stack* stack, const std::string
   if (Err err = ExprParser::ParseIdentifier(function_name, &target_ident); err.has_error())
     return err;
 
-  TracepointMatchResult result;
-  if (mode == FrameMatchMode::kLiveStopTopFrame) {
-    TargetPointer top_ip = (*stack)[0]->GetAddress();
-    for (size_t i = 0; i < stack->size(); ++i) {
-      Frame* f = (*stack)[i];
-      if (f->GetAddress() != top_ip)
-        break;
-      if (FrameMatchesFunction(f, target_ident)) {
-        if (max_matching_frames.has_value() && result.frames.size() >= *max_matching_frames) {
-          result.truncated = true;
-          break;
-        }
-        result.frames.push_back(f);
-      }
-    }
-    if (result.frames.empty()) {
-      result.frames.push_back((*stack)[0]);
-    }
-    return result;
-  }
-
-  for (size_t i = 0; i < stack->size(); ++i) {
-    Frame* f = (*stack)[i];
-    if (FrameMatchesFunction(f, target_ident)) {
-      if (max_matching_frames.has_value() && result.frames.size() >= *max_matching_frames) {
-        result.truncated = true;
-        break;
-      }
-      result.frames.push_back(f);
-    }
-  }
-  return result;
+  return MatchFramesWithPredicate(
+      stack, max_matching_frames, mode,
+      [&target_ident](const Frame* f) { return FrameMatchesFunction(f, target_ident); });
 }
 
 }  // namespace
+
+Err TracepointSpec::Validate() const {
+  if (max_matching_frames.has_value() && *max_matching_frames == 0) {
+    return Err("max_matching_frames must be at least 1.");
+  }
+
+  size_t target_count = 0;
+  if (function.has_value()) {
+    if (function->empty()) {
+      return Err("Function name cannot be empty for a tracepoint.");
+    }
+    target_count++;
+  }
+  if (file_line.has_value()) {
+    if (!file_line->is_valid()) {
+      return Err("Invalid file/line location specified for tracepoint.");
+    }
+    target_count++;
+  }
+  if (address.has_value()) {
+    target_count++;
+  }
+  if (watch.has_value()) {
+    if (!watch->address.has_value()) {
+      return Err("Watchpoint tracepoints require a resolved target address.");
+    }
+    if (watch->access_type != debug_ipc::BreakpointType::kWrite &&
+        watch->access_type != debug_ipc::BreakpointType::kReadWrite) {
+      return Err("Unsupported watchpoint access type (only write or read-write allowed).");
+    }
+    target_count++;
+  }
+  if (target_count == 0) {
+    return Err("A tracepoint must specify a function, file/line, address, or watch target.");
+  }
+  if (target_count > 1) {
+    return Err(
+        "A tracepoint can specify at most one of a function, file/line, address, or watch "
+        "target.");
+  }
+  return Err();
+}
 
 std::vector<TracepointFrameRecord> CaptureThreadBacktrace(
     const Thread* thread, bool raw_backtrace, std::span<const Frame* const> matched_frames) {
@@ -398,9 +427,8 @@ std::vector<TracepointFrameRecord> CaptureThreadBacktrace(
 
 ErrOr<TracepointMatchResult> MatchTracepointFrames(Stack* stack, const TracepointSpec& spec,
                                                    FrameMatchMode mode) {
-  if (spec.max_matching_frames.has_value() && *spec.max_matching_frames == 0) {
-    return Err("Tracepoint max_matching_frames must be positive.");
-  }
+  if (Err err = spec.Validate(); err.has_error())
+    return err;
 
   if (mode == FrameMatchMode::kAllMatchingFrames && spec.watch.has_value()) {
     return Err("Watchpoint tracepoints do not support all-matching-frames mode.");
@@ -417,28 +445,16 @@ ErrOr<TracepointMatchResult> MatchTracepointFrames(Stack* stack, const Tracepoin
     return MatchAddressFrames(stack, *spec.address, spec.max_matching_frames, mode);
   }
 
-  if (spec.file_line.has_value() && spec.file_line->is_valid()) {
+  if (spec.file_line.has_value()) {
     return MatchFileLineFrames(stack, *spec.file_line, spec.max_matching_frames, mode);
   }
 
-  if (spec.function.has_value() && !spec.function->empty()) {
+  if (spec.function.has_value()) {
     return MatchFunctionFrames(stack, *spec.function, spec.max_matching_frames, mode);
   }
 
-  TracepointMatchResult result;
-  if (mode == FrameMatchMode::kLiveStopTopFrame) {
-    result.frames.push_back((*stack)[0]);
-    return result;
-  }
-
-  for (size_t i = 0; i < stack->size(); ++i) {
-    if (spec.max_matching_frames.has_value() && result.frames.size() >= *spec.max_matching_frames) {
-      result.truncated = true;
-      break;
-    }
-    result.frames.push_back((*stack)[i]);
-  }
-  return result;
+  // Validate() requires exactly one target, so this is not reachable.
+  return Err("Tracepoint has no target.");
 }
 
 void CaptureTracepointFrame(fxl::WeakPtr<Thread> thread, fxl::WeakPtr<Frame> frame,

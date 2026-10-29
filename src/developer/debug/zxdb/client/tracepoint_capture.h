@@ -5,9 +5,9 @@
 #ifndef SRC_DEVELOPER_DEBUG_ZXDB_CLIENT_TRACEPOINT_CAPTURE_H_
 #define SRC_DEVELOPER_DEBUG_ZXDB_CLIENT_TRACEPOINT_CAPTURE_H_
 
-#include <stdint.h>
 #include <zircon/types.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <optional>
@@ -24,7 +24,6 @@
 
 namespace zxdb {
 
-class Frame;
 class Stack;
 class Thread;
 

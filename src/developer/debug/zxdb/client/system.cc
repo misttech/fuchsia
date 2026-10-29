@@ -314,6 +314,7 @@ System::~System() {
   }
 
   targets_.clear();
+  tracepoints_.clear();
 
   session()->RemoveDownloadObserver(this);
   session()->RemoveObserver(this);
@@ -498,15 +499,17 @@ void System::DeleteBreakpoint(Breakpoint* breakpoint) {
 }
 
 void System::DeleteAllBreakpoints() {
-  for (auto& bp : breakpoints_) {
-    // Only notify for non-internal breakpoints.
-    if (!bp.second->is_internal()) {
-      for (auto& observer : observers_)
-        observer.WillDestroyBreakpoint(bp.second.get());
+  for (auto it = breakpoints_.begin(); it != breakpoints_.end();) {
+    if (GetTracepointForBreakpoint(it->second.get())) {
+      ++it;
+      continue;
     }
+    if (!it->second->is_internal()) {
+      for (auto& observer : observers_)
+        observer.WillDestroyBreakpoint(it->second.get());
+    }
+    it = breakpoints_.erase(it);
   }
-
-  breakpoints_.clear();
 }
 
 Filter* System::CreateNewFilter(std::optional<debug_ipc::Filter> maybe_filter) {
@@ -569,14 +572,17 @@ Tracepoint* System::CreateNewTracepoint() {
 }
 
 void System::DeleteTracepoint(Tracepoint* tracepoint) {
+  if (!tracepoint)
+    return;
   auto found = tracepoints_.find(tracepoint->id());
   if (found == tracepoints_.end())
     return;
 
+  // Move ownership onto the stack before notifying observers so re-entrant DeleteTracepoint calls
+  // become no-ops and cannot destroy the tracepoint twice.
+  auto node = tracepoints_.extract(found);
   for (auto& observer : observers_)
     observer.WillDestroyTracepoint(tracepoint);
-
-  tracepoints_.erase(found);
 }
 
 void System::DeleteAllTracepoints() {
@@ -604,16 +610,15 @@ Tracepoint* System::GetTracepointForBreakpoint(const Breakpoint* bp) const {
   return nullptr;
 }
 
-Tracepoint* System::GetTracepointForBreakpointId(uint32_t bp_id) const {
-  const BreakpointImpl* impl = BreakpointImplForId(bp_id);
-  if (!impl)
-    return nullptr;
-  return GetTracepointForBreakpoint(impl);
-}
-
 void System::NotifyTracepointHit(Tracepoint* tracepoint, const TracepointHitRecord& hit) {
-  for (auto& observer : observers_)
-    observer.OnTracepointHit(tracepoint, hit);
+  if (!tracepoint)
+    return;
+  fxl::WeakPtr<Tracepoint> weak_tp = tracepoint->GetWeakPtr();
+  for (auto& observer : observers_) {
+    if (!weak_tp)
+      break;
+    observer.OnTracepointHit(weak_tp.get(), hit);
+  }
 }
 
 void System::Pause(fit::callback<void()> on_paused) {
@@ -692,13 +697,6 @@ void System::DidDisconnect() {
 }
 
 BreakpointImpl* System::BreakpointImplForId(uint32_t id) {
-  auto found = breakpoints_.find(id);
-  if (found == breakpoints_.end())
-    return nullptr;
-  return found->second.get();
-}
-
-const BreakpointImpl* System::BreakpointImplForId(uint32_t id) const {
   auto found = breakpoints_.find(id);
   if (found == breakpoints_.end())
     return nullptr;

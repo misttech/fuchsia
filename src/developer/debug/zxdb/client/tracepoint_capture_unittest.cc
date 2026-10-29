@@ -50,8 +50,7 @@ class EvalMockFrame : public MockFrame {
 class TracepointCaptureTest : public RemoteAPITest {};
 
 TEST_F(TracepointCaptureTest, MatchTracepointFrames) {
-  Session session;
-  MockStackDelegate delegate(&session);
+  MockStackDelegate delegate(&session());
   Stack stack(&delegate);
   delegate.set_stack(&stack);
 
@@ -63,14 +62,15 @@ TEST_F(TracepointCaptureTest, MatchTracepointFrames) {
   ASSERT_TRUE(matched.ok());
   EXPECT_TRUE(matched.value().frames.empty());
 
-  auto phys_frame = std::make_unique<MockFrame>(&session, nullptr, 0x1000, 0x2000,
+  auto phys_frame = std::make_unique<MockFrame>(&session(), nullptr, 0x1000, 0x2000,
                                                 "my::ns::ProcessData", FileLine("bar.cc", 20));
   MockFrame* phys_frame_ptr = phys_frame.get();
 
-  auto inline_frame = std::make_unique<MockFrame>(&session, nullptr, 0x1000, 0x2000,
+  auto inline_frame = std::make_unique<MockFrame>(&session(), nullptr, 0x1000, 0x2000,
                                                   "my::ns::Helper", FileLine("foo.cc", 10));
+  MockFrame* inline_frame_ptr = inline_frame.get();
 
-  auto caller_frame = std::make_unique<MockFrame>(&session, nullptr, 0x2000, 0x2020,
+  auto caller_frame = std::make_unique<MockFrame>(&session(), nullptr, 0x2000, 0x2020,
                                                   "my::ns::ProcessData", FileLine("baz.cc", 30));
   MockFrame* caller_frame_ptr = caller_frame.get();
 
@@ -93,16 +93,28 @@ TEST_F(TracepointCaptureTest, MatchTracepointFrames) {
   EXPECT_EQ(matched.value().frames[0], phys_frame_ptr);
   EXPECT_EQ(matched.value().frames[1], caller_frame_ptr);
 
-  // kAllMatchingFrames with watch specification returns an error.
+  // Watch specification matches top frame in kLiveStopTopFrame and rejects kAllMatchingFrames.
   TracepointSpec watch_spec;
-  watch_spec.function = "MyFunction";
-  watch_spec.watch = TracepointWatchSpec();
+  TracepointWatchSpec watch;
+  watch.address = 0x2000;
+  watch_spec.watch = watch;
+  matched = MatchTracepointFrames(&stack, watch_spec, FrameMatchMode::kLiveStopTopFrame);
+  ASSERT_TRUE(matched.ok());
+  ASSERT_EQ(matched.value().frames.size(), 1u);
+  EXPECT_EQ(matched.value().frames[0], inline_frame_ptr);
+
   matched = MatchTracepointFrames(&stack, watch_spec, FrameMatchMode::kAllMatchingFrames);
   EXPECT_TRUE(matched.has_error());
+
+  // A special identifier such as $plt(...) does not match a normal function with the same name.
+  TracepointSpec plt_spec;
+  plt_spec.function = "$plt(ProcessData)";
+  matched = MatchTracepointFrames(&stack, plt_spec, FrameMatchMode::kAllMatchingFrames);
+  ASSERT_TRUE(matched.ok()) << matched.err().msg();
+  EXPECT_TRUE(matched.value().frames.empty());
 }
 
 TEST_F(TracepointCaptureTest, CaptureRegistersAndSummary) {
-  Session session;
   std::vector<debug::RegisterValue> regs;
   debug::RegisterValue reg1;
   reg1.id = debug::RegisterID::kX64_rax;
@@ -110,7 +122,7 @@ TEST_F(TracepointCaptureTest, CaptureRegistersAndSummary) {
   regs.push_back(reg1);
 
   Location loc(0x1000, FileLine("test.cc", 42), 0, SymbolContext::ForRelativeAddresses());
-  auto frame = std::make_unique<MockFrame>(&session, nullptr, loc, 0x2000, 0x2010, regs);
+  auto frame = std::make_unique<MockFrame>(&session(), nullptr, loc, 0x2000, 0x2010, regs);
 
   TracepointSpec spec;
   spec.function = "TestFunc";
@@ -133,12 +145,24 @@ TEST_F(TracepointCaptureTest, CaptureRegistersAndSummary) {
 
   loop().RunUntilNoTasks();
   EXPECT_TRUE(done);
+
+  // Empty cached general registers still complete synchronously without an async round-trip.
+  auto empty_reg_frame = std::make_unique<MockFrame>(&session(), nullptr, loc, 0x2000, 0x2010,
+                                                     std::vector<debug::RegisterValue>{});
+  bool empty_done = false;
+  CaptureTracepointFrame(fxl::WeakPtr<Thread>(), empty_reg_frame->GetWeakPtr(), spec,
+                         [&empty_done](ErrOr<TracepointFrameCapture> result) {
+                           empty_done = true;
+                           ASSERT_TRUE(result.ok());
+                           ASSERT_TRUE(result.value().registers.has_value());
+                           EXPECT_TRUE(result.value().registers->empty());
+                         });
+  EXPECT_TRUE(empty_done);
 }
 
 TEST_F(TracepointCaptureTest, ConditionEvaluation) {
-  Session session;
   Location loc(0x1000, FileLine("test.cc", 42), 0, SymbolContext::ForRelativeAddresses());
-  auto frame = std::make_unique<MockFrame>(&session, nullptr, loc, 0x2000, 0x2010);
+  auto frame = std::make_unique<MockFrame>(&session(), nullptr, loc, 0x2000, 0x2010);
 
   // Condition true: 1 == 1
   {
@@ -188,9 +212,8 @@ TEST_F(TracepointCaptureTest, ConditionEvaluation) {
 }
 
 TEST_F(TracepointCaptureTest, DuplicateExpressions) {
-  Session session;
   Location loc(0x1000, FileLine("test.cc", 42), 0, SymbolContext::ForRelativeAddresses());
-  auto frame = std::make_unique<MockFrame>(&session, nullptr, loc, 0x2000, 0x2010);
+  auto frame = std::make_unique<MockFrame>(&session(), nullptr, loc, 0x2000, 0x2010);
 
   TracepointSpec spec;
   spec.expressions = {"10 + 20", "10 + 20", "30 + 40"};
@@ -211,8 +234,7 @@ TEST_F(TracepointCaptureTest, DuplicateExpressions) {
 }
 
 TEST_F(TracepointCaptureTest, MatchTracepointFramesWithAddress) {
-  Session session;
-  MockStackDelegate delegate(&session);
+  MockStackDelegate delegate(&session());
   Stack stack(&delegate);
   delegate.set_stack(&stack);
 
@@ -224,14 +246,14 @@ TEST_F(TracepointCaptureTest, MatchTracepointFramesWithAddress) {
   ASSERT_TRUE(matched.ok());
   EXPECT_TRUE(matched.value().frames.empty());
 
-  auto frame1 = std::make_unique<MockFrame>(&session, nullptr, 0x1000, 0x2000, "func1",
+  auto frame1 = std::make_unique<MockFrame>(&session(), nullptr, 0x1000, 0x2000, "func1",
                                             FileLine("foo.cc", 10));
   MockFrame* frame1_ptr = frame1.get();
 
-  auto frame2 = std::make_unique<MockFrame>(&session, nullptr, 0x2000, 0x2020, "func2",
+  auto frame2 = std::make_unique<MockFrame>(&session(), nullptr, 0x2000, 0x2020, "func2",
                                             FileLine("bar.cc", 20));
 
-  auto frame3 = std::make_unique<MockFrame>(&session, nullptr, 0x1000, 0x2040, "func3",
+  auto frame3 = std::make_unique<MockFrame>(&session(), nullptr, 0x1000, 0x2040, "func3",
                                             FileLine("baz.cc", 30));
   MockFrame* frame3_ptr = frame3.get();
 
@@ -263,8 +285,7 @@ TEST_F(TracepointCaptureTest, MatchTracepointFramesWithAddress) {
 }
 
 TEST_F(TracepointCaptureTest, MatchTracepointFramesWithFileLine) {
-  Session session;
-  MockStackDelegate delegate(&session);
+  MockStackDelegate delegate(&session());
   Stack stack(&delegate);
   delegate.set_stack(&stack);
 
@@ -272,14 +293,14 @@ TEST_F(TracepointCaptureTest, MatchTracepointFramesWithFileLine) {
   spec.file_line = FileLine("target.cc", 42);
 
   // Set up an inline frame and physical frame sharing the top PC (0x1000).
-  auto frame_inline = std::make_unique<MockFrame>(&session, nullptr, 0x1000, 0x2000, "InlinedFunc",
-                                                  FileLine("target.cc", 42));
+  auto frame_inline = std::make_unique<MockFrame>(&session(), nullptr, 0x1000, 0x2000,
+                                                  "InlinedFunc", FileLine("target.cc", 42));
   MockFrame* inline_ptr = frame_inline.get();
 
-  auto frame_phys = std::make_unique<MockFrame>(&session, nullptr, 0x1000, 0x2000, "PhysFunc",
+  auto frame_phys = std::make_unique<MockFrame>(&session(), nullptr, 0x1000, 0x2000, "PhysFunc",
                                                 FileLine("other.cc", 10));
 
-  auto frame_other = std::make_unique<MockFrame>(&session, nullptr, 0x2000, 0x2020, "CallerFunc",
+  auto frame_other = std::make_unique<MockFrame>(&session(), nullptr, 0x2000, 0x2020, "CallerFunc",
                                                  FileLine("target.cc", 42));
   MockFrame* other_ptr = frame_other.get();
 
@@ -304,9 +325,8 @@ TEST_F(TracepointCaptureTest, MatchTracepointFramesWithFileLine) {
 }
 
 TEST_F(TracepointCaptureTest, CaptureLocals) {
-  Session session;
   Location loc(0x1000, FileLine("test.cc", 42), 0, SymbolContext::ForRelativeAddresses());
-  auto frame = std::make_unique<MockFrame>(&session, nullptr, loc, 0x2000, 0x2010);
+  auto frame = std::make_unique<MockFrame>(&session(), nullptr, loc, 0x2000, 0x2010);
 
   TracepointSpec spec;
   spec.function = "TestFunc";
@@ -321,6 +341,10 @@ TEST_F(TracepointCaptureTest, CaptureLocals) {
                            EXPECT_TRUE(cap.matched);
                            ASSERT_TRUE(cap.locals.has_value());
                            EXPECT_TRUE(cap.locals->empty());
+                           // A frame without symbols reports why no locals were captured.
+                           ASSERT_EQ(cap.errors.size(), 1u);
+                           EXPECT_EQ(cap.errors[0],
+                                     "There is no symbol information for the frame.");
                          });
   loop().RunUntilNoTasks();
   EXPECT_TRUE(done);
@@ -360,7 +384,6 @@ TEST_F(TracepointCaptureTest, CaptureBacktrace) {
 }
 
 TEST_F(TracepointCaptureTest, NonTopmostFrameRegisters) {
-  Session session;
   constexpr uint64_t kProcessKoid = 1234;
   InjectProcessWithModule(kProcessKoid, 0x100000);
   constexpr uint64_t kThreadKoid = 5678;
@@ -373,10 +396,10 @@ TEST_F(TracepointCaptureTest, NonTopmostFrameRegisters) {
   regs.push_back(reg1);
 
   std::vector<std::unique_ptr<Frame>> frames;
-  frames.push_back(std::make_unique<MockFrame>(&session, thread, 0x1000, 0x2000, "TopFunc",
+  frames.push_back(std::make_unique<MockFrame>(&session(), thread, 0x1000, 0x2000, "TopFunc",
                                                FileLine("foo.cc", 10)));
   frames.push_back(std::make_unique<MockFrame>(
-      &session, thread,
+      &session(), thread,
       Location(0x2000, FileLine("bar.cc", 20), 0, SymbolContext::ForRelativeAddresses()), 0x3000,
       0x3010, regs));
   thread->GetStack().SetFramesForTest(std::move(frames), true);
@@ -400,16 +423,15 @@ TEST_F(TracepointCaptureTest, NonTopmostFrameRegisters) {
 }
 
 TEST_F(TracepointCaptureTest, RawBacktraceImpliesBacktrace) {
-  Session session;
   constexpr uint64_t kProcessKoid = 1234;
   InjectProcessWithModule(kProcessKoid, 0x100000);
   constexpr uint64_t kThreadKoid = 5678;
   Thread* thread = InjectThread(kProcessKoid, kThreadKoid);
 
   std::vector<std::unique_ptr<Frame>> frames;
-  frames.push_back(std::make_unique<MockFrame>(&session, thread, 0x1000, 0x2000, "Func1",
+  frames.push_back(std::make_unique<MockFrame>(&session(), thread, 0x1000, 0x2000, "Func1",
                                                FileLine("foo.cc", 10)));
-  frames.push_back(std::make_unique<MockFrame>(&session, thread, 0x2000, 0x2020, "Func2",
+  frames.push_back(std::make_unique<MockFrame>(&session(), thread, 0x2000, 0x2020, "Func2",
                                                FileLine("bar.cc", 20)));
   thread->GetStack().SetFramesForTest(std::move(frames), true);
 
@@ -464,7 +486,7 @@ TEST_F(TracepointCaptureTest, TracepointSpecValidate) {
     TracepointSpec spec;
     spec.address = 0x1000;
     TracepointWatchSpec watch;
-    watch.expression = "x";
+    watch.address = 0x2000;
     spec.watch = watch;
     EXPECT_TRUE(spec.Validate().has_error());
   }
@@ -481,11 +503,19 @@ TEST_F(TracepointCaptureTest, TracepointSpecValidate) {
     EXPECT_TRUE(spec.Validate().has_error());
   }
 
-  // watch with empty expression and address == nullopt -> error.
+  // watch without a resolved address -> error even when expression is set.
   {
     TracepointSpec spec;
     TracepointWatchSpec watch;
     watch.expression = "";
+    watch.address = std::nullopt;
+    spec.watch = watch;
+    EXPECT_TRUE(spec.Validate().has_error());
+  }
+  {
+    TracepointSpec spec;
+    TracepointWatchSpec watch;
+    watch.expression = "x";
     watch.address = std::nullopt;
     spec.watch = watch;
     EXPECT_TRUE(spec.Validate().has_error());
@@ -503,6 +533,7 @@ TEST_F(TracepointCaptureTest, TracepointSpecValidate) {
   {
     TracepointSpec spec;
     TracepointWatchSpec watch;
+    watch.address = 0x1000;
     watch.expression = "x";
     watch.access_type = debug_ipc::BreakpointType::kHardware;
     spec.watch = watch;
@@ -529,6 +560,7 @@ TEST_F(TracepointCaptureTest, TracepointSpecValidate) {
     TracepointSpec spec;
     TracepointWatchSpec watch;
     watch.expression = "x";
+    watch.address = 0x1000;
     watch.access_type = debug_ipc::BreakpointType::kWrite;
     spec.watch = watch;
     EXPECT_TRUE(spec.Validate().ok());
@@ -544,8 +576,7 @@ TEST_F(TracepointCaptureTest, TracepointSpecValidate) {
 }
 
 TEST_F(TracepointCaptureTest, MatchTracepointFramesAdversarial) {
-  Session session;
-  MockStackDelegate delegate(&session);
+  MockStackDelegate delegate(&session());
   Stack stack(&delegate);
   delegate.set_stack(&stack);
 
@@ -566,10 +597,10 @@ TEST_F(TracepointCaptureTest, MatchTracepointFramesAdversarial) {
   // FrameMatchMode::kLiveStopTopFrame falls back to frame 0 when no inline frame at the top IP
   // matches spec.function or spec.file_line, without walking into caller frames at lower IPs.
   {
-    auto frame0 = std::make_unique<MockFrame>(&session, nullptr, 0x1000, 0x2000, "UnrelatedFunc",
+    auto frame0 = std::make_unique<MockFrame>(&session(), nullptr, 0x1000, 0x2000, "UnrelatedFunc",
                                               FileLine("unrelated.cc", 10));
     MockFrame* frame0_ptr = frame0.get();
-    auto frame1 = std::make_unique<MockFrame>(&session, nullptr, 0x2000, 0x2020, "TargetFunc",
+    auto frame1 = std::make_unique<MockFrame>(&session(), nullptr, 0x2000, 0x2020, "TargetFunc",
                                               FileLine("target.cc", 20));
 
     std::vector<std::unique_ptr<Frame>> frames;
@@ -590,13 +621,44 @@ TEST_F(TracepointCaptureTest, MatchTracepointFramesAdversarial) {
     EXPECT_EQ(fl_res.value().frames[0], frame0_ptr);
   }
 
+  // Invalid specs (empty, empty function, multiple targets, watch without address) fail validation
+  // in both matching modes instead of falling through.
+  {
+    TracepointSpec empty_spec;
+    EXPECT_TRUE(
+        MatchTracepointFrames(&stack, empty_spec, FrameMatchMode::kLiveStopTopFrame).has_error());
+    EXPECT_TRUE(
+        MatchTracepointFrames(&stack, empty_spec, FrameMatchMode::kAllMatchingFrames).has_error());
+
+    TracepointSpec empty_func_spec;
+    empty_func_spec.function = "";
+    EXPECT_TRUE(MatchTracepointFrames(&stack, empty_func_spec, FrameMatchMode::kLiveStopTopFrame)
+                    .has_error());
+    EXPECT_TRUE(MatchTracepointFrames(&stack, empty_func_spec, FrameMatchMode::kAllMatchingFrames)
+                    .has_error());
+
+    TracepointSpec multi_target_spec;
+    multi_target_spec.function = "TargetFunc";
+    multi_target_spec.address = 0x1000;
+    EXPECT_TRUE(MatchTracepointFrames(&stack, multi_target_spec, FrameMatchMode::kLiveStopTopFrame)
+                    .has_error());
+
+    TracepointSpec unresolved_watch_spec;
+    TracepointWatchSpec watch;
+    watch.expression = "x";
+    unresolved_watch_spec.watch = watch;
+    EXPECT_TRUE(
+        MatchTracepointFrames(&stack, unresolved_watch_spec, FrameMatchMode::kLiveStopTopFrame)
+            .has_error());
+  }
+
   // FrameMatchMode::kAllMatchingFrames recursion cap: stack with >10 matching frames caps at 10.
   {
     std::vector<std::unique_ptr<Frame>> frames;
     frames.reserve(15);
     for (size_t i = 0; i < 15; ++i) {
-      frames.push_back(std::make_unique<MockFrame>(&session, nullptr, 0x1000 + i * 0x10,
-                                                   0x2000 + i * 0x20, "RecursiveFunc",
+      frames.push_back(std::make_unique<MockFrame>(&session(), nullptr, 0x1000 + (i * 0x10),
+                                                   0x2000 + (i * 0x20), "RecursiveFunc",
                                                    FileLine("recurse.cc", 10)));
     }
     stack.SetFramesForTest(std::move(frames), true);

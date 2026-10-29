@@ -128,7 +128,7 @@ class System : public ClientObject,
   // Deletes the given breakpoint. The passed-in pointer will be invalid after this call. Used for
   // both internal and external breakpoints.
   void DeleteBreakpoint(Breakpoint* breakpoint);
-  // Delete all internal and external breakpoints.
+  // Deletes all breakpoints except internal breakpoints owned by tracepoints.
   void DeleteAllBreakpoints();
 
   // Creates a new filter. It will have no associated pattern.
@@ -151,9 +151,8 @@ class System : public ClientObject,
   // Returns all tracepoints.
   std::vector<Tracepoint*> GetTracepoints() const;
 
-  // Returns the tracepoint that owns the given breakpoint (if any).
+  // Returns the tracepoint that owns the given breakpoint, or null if none owns it.
   Tracepoint* GetTracepointForBreakpoint(const Breakpoint* bp) const;
-  Tracepoint* GetTracepointForBreakpointId(uint32_t bp_id) const;
 
   // Notifies observers of a tracepoint hit.
   void NotifyTracepointHit(Tracepoint* tracepoint, const TracepointHitRecord& hit);
@@ -188,7 +187,6 @@ class System : public ClientObject,
   // map. This will include both internal and regular breakpoints (it is used for notification
   // dispatch).
   BreakpointImpl* BreakpointImplForId(uint32_t id);
-  const BreakpointImpl* BreakpointImplForId(uint32_t id) const;
 
   // SettingStoreObserver implementation.
   void OnSettingChanged(const SettingStore&, const std::string& setting_name) override;

@@ -82,9 +82,9 @@ monikers/URLs and attaches automatically when a match starts.
 ### Tracepoint
 
 `System` owns all `Tracepoint` objects globally. A tracepoint defines a location
-target (function, file/line, or watchpoint) and non-stopping capture settings.
-It configures an internal breakpoint with `StopMode::kNone`. When hit, the
-session captures requested frame state (frame summary, backtrace, registers,
+target (function, file/line, address, or watchpoint) and non-stopping capture
+settings. It configures an internal breakpoint with `StopMode::kNone`. When hit,
+the session captures requested frame state (frame summary, backtrace, registers,
 locals, expressions) and continues execution without a user stop notification
 unless a stopping breakpoint hits at the same address.
 

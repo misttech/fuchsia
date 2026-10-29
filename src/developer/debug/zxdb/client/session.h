@@ -5,6 +5,7 @@
 #ifndef SRC_DEVELOPER_DEBUG_ZXDB_CLIENT_SESSION_H_
 #define SRC_DEVELOPER_DEBUG_ZXDB_CLIENT_SESSION_H_
 
+#include <chrono>
 #include <filesystem>
 #include <map>
 #include <memory>
@@ -241,6 +242,11 @@ class Session : public SettingStoreObserver {
   void HandleMatchedTracepoints(ThreadImpl* thread, const debug_ipc::NotifyException& notify,
                                 StopInfo info,
                                 std::vector<fxl::WeakPtr<Tracepoint>> matched_tracepoints);
+  void RunTracepointCaptures(fxl::WeakPtr<Thread> weak_thread, uint64_t thread_koid,
+                             std::vector<fxl::WeakPtr<Tracepoint>> matched_tracepoints,
+                             std::chrono::steady_clock::time_point start_time, bool skip_stop,
+                             StopInfo info, std::vector<debug_ipc::BreakpointStats> hit_bps,
+                             const Err& unwind_err);
 
   // Nonspecific callback type. Implemented by SessionDispatchCallback (with the type-specific
   // parameter pre-bound). The uint32_t is the transaction ID. If the error is set, the data will be
