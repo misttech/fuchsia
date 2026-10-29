@@ -18,6 +18,9 @@ use starnix_uapi::{
 };
 use std::collections::HashMap;
 
+/// Maximum Linux utilization clamp value (`SCHED_CAPACITY_SCALE`, 1024 = 100% capacity).
+pub(crate) const SCHED_CAPACITY_SCALE: u32 = 1024;
+
 pub struct SchedulerManager {
     role_manager: Option<RoleManagerSynchronousProxy>,
     role_overrides: RoleOverrides,
@@ -432,6 +435,14 @@ pub struct SchedulerState {
     /// sched_setparam(). Only used for Fifo and Round-Robin.
     pub(crate) realtime_priority: RealtimePriority,
     pub(crate) reset_on_fork: bool,
+    /// Per-thread utilization clamp minimum (`0..=1024`), set via `sched_setattr(2)`.
+    pub(crate) uclamp_min: u32,
+    /// Per-thread utilization clamp maximum (`0..=1024`), set via `sched_setattr(2)`.
+    ///
+    /// Note: Starnix and Zircon do not currently support `uclamp_max` clamping when
+    /// assigning scheduler roles; this value is only stored and reported for
+    /// `sched_setattr(2)` and `sched_getattr(2)` fidelity.
+    pub(crate) uclamp_max: u32,
     /// The last committed scheduler role name.
     committed_role_name: Option<String>,
 }
@@ -443,6 +454,8 @@ impl SchedulerState {
             && self.normal_priority == default.normal_priority
             && self.realtime_priority == default.realtime_priority
             && self.reset_on_fork == default.reset_on_fork
+            && self.uclamp_min == default.uclamp_min
+            && self.uclamp_max == default.uclamp_max
             && self.committed_role_name.as_deref().is_none_or(|role| role == default.role_name())
     }
 
@@ -470,14 +483,8 @@ impl SchedulerState {
                     RealtimePriority::NON_REAL_TIME,
                 )
             };
-            Self {
-                policy,
-                normal_priority,
-                realtime_priority,
-                // This flag is disabled in child processes created by fork(2).
-                reset_on_fork: false,
-                committed_role_name: None,
-            }
+            // reset_on_fork and utilization clamps revert to their defaults in the child.
+            Self { policy, normal_priority, realtime_priority, ..Self::default() }
         } else {
             Self { committed_role_name: None, ..*self }
         }
@@ -612,6 +619,8 @@ impl std::default::Default for SchedulerState {
             normal_priority: NormalPriority::default(),
             realtime_priority: RealtimePriority::NON_REAL_TIME,
             reset_on_fork: false,
+            uclamp_min: 0,
+            uclamp_max: SCHED_CAPACITY_SCALE,
             committed_role_name: None,
         }
     }
@@ -711,6 +720,8 @@ mod tests {
             .is_default()
         );
         assert!(!SchedulerState { reset_on_fork: true, ..SchedulerState::default() }.is_default());
+        assert!(!SchedulerState { uclamp_min: 128, ..SchedulerState::default() }.is_default());
+        assert!(!SchedulerState { uclamp_max: 512, ..SchedulerState::default() }.is_default());
     }
 
     #[fuchsia::test]
@@ -720,6 +731,8 @@ mod tests {
             normal_priority: NormalPriority { value: 30 },
             realtime_priority: RealtimePriority { value: 50 },
             reset_on_fork: false,
+            uclamp_min: 256,
+            uclamp_max: 768,
             committed_role_name: Some("fuchsia.starnix.realtime".to_string()),
         };
         assert_eq!(
@@ -729,6 +742,8 @@ mod tests {
                 normal_priority: NormalPriority { value: 30 },
                 realtime_priority: RealtimePriority { value: 50 },
                 reset_on_fork: false,
+                uclamp_min: 256,
+                uclamp_max: 768,
                 committed_role_name: None,
             }
         );
@@ -741,6 +756,8 @@ mod tests {
                 normal_priority: NormalPriority::default(),
                 realtime_priority: RealtimePriority::NON_REAL_TIME,
                 reset_on_fork: false,
+                uclamp_min: 0,
+                uclamp_max: SCHED_CAPACITY_SCALE,
                 committed_role_name: None,
             }
         );
@@ -750,6 +767,8 @@ mod tests {
             normal_priority: NormalPriority { value: 30 },
             realtime_priority: RealtimePriority::NON_REAL_TIME,
             reset_on_fork: true,
+            uclamp_min: 512,
+            uclamp_max: 512,
             committed_role_name: Some("fuchsia.starnix.fair.21".to_string()),
         };
         assert_eq!(
@@ -759,6 +778,8 @@ mod tests {
                 normal_priority: NormalPriority::default(),
                 realtime_priority: RealtimePriority::NON_REAL_TIME,
                 reset_on_fork: false,
+                uclamp_min: 0,
+                uclamp_max: SCHED_CAPACITY_SCALE,
                 committed_role_name: None,
             }
         );
@@ -770,9 +791,7 @@ mod tests {
             SchedulerState {
                 policy: SchedulingPolicy::Normal,
                 normal_priority: NormalPriority { value: 10 },
-                realtime_priority: RealtimePriority::NON_REAL_TIME,
-                reset_on_fork: false,
-                committed_role_name: None,
+                ..SchedulerState::default()
             }
             .role_name(),
             "fuchsia.starnix.fair.11"
@@ -781,9 +800,7 @@ mod tests {
             SchedulerState {
                 policy: SchedulingPolicy::Normal,
                 normal_priority: NormalPriority { value: 27 },
-                realtime_priority: RealtimePriority::NON_REAL_TIME,
-                reset_on_fork: false,
-                committed_role_name: None,
+                ..SchedulerState::default()
             }
             .role_name(),
             "fuchsia.starnix.fair.19"
@@ -795,10 +812,8 @@ mod tests {
         assert_eq!(
             SchedulerState {
                 policy: SchedulingPolicy::Fifo,
-                normal_priority: NormalPriority::default(),
                 realtime_priority: RealtimePriority { value: 1 },
-                reset_on_fork: false,
-                committed_role_name: None,
+                ..SchedulerState::default()
             }
             .role_name(),
             "fuchsia.starnix.realtime",
@@ -806,10 +821,8 @@ mod tests {
         assert_eq!(
             SchedulerState {
                 policy: SchedulingPolicy::Fifo,
-                normal_priority: NormalPriority::default(),
                 realtime_priority: RealtimePriority { value: 2 },
-                reset_on_fork: false,
-                committed_role_name: None,
+                ..SchedulerState::default()
             }
             .role_name(),
             "fuchsia.starnix.realtime",
@@ -817,10 +830,8 @@ mod tests {
         assert_eq!(
             SchedulerState {
                 policy: SchedulingPolicy::Fifo,
-                normal_priority: NormalPriority::default(),
                 realtime_priority: RealtimePriority { value: 99 },
-                reset_on_fork: false,
-                committed_role_name: None,
+                ..SchedulerState::default()
             }
             .role_name(),
             "fuchsia.starnix.realtime",
@@ -833,31 +844,21 @@ mod tests {
             SchedulerState {
                 policy: SchedulingPolicy::Idle,
                 normal_priority: NormalPriority { value: 1 },
-                realtime_priority: RealtimePriority::NON_REAL_TIME,
-                reset_on_fork: false,
-                committed_role_name: None,
+                ..SchedulerState::default()
             }
             .role_name(),
             "fuchsia.starnix.fair.0"
         );
         assert_eq!(
-            SchedulerState {
-                policy: SchedulingPolicy::Idle,
-                normal_priority: NormalPriority::default(),
-                realtime_priority: RealtimePriority::NON_REAL_TIME,
-                reset_on_fork: false,
-                committed_role_name: None,
-            }
-            .role_name(),
+            SchedulerState { policy: SchedulingPolicy::Idle, ..SchedulerState::default() }
+                .role_name(),
             "fuchsia.starnix.fair.0"
         );
         assert_eq!(
             SchedulerState {
                 policy: SchedulingPolicy::Idle,
                 normal_priority: NormalPriority { value: 40 },
-                realtime_priority: RealtimePriority::NON_REAL_TIME,
-                reset_on_fork: false,
-                committed_role_name: None,
+                ..SchedulerState::default()
             }
             .role_name(),
             "fuchsia.starnix.fair.0"

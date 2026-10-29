@@ -226,17 +226,15 @@
                 "readahead02",
                 "remap_file_pages02",
 
-                // TODO: https://fxbug.dev/287120797 - maybe we'll implement sched_getattr?
+                // TODO: https://fxbug.dev/287120797 - requires SCHED_DEADLINE support.
                 "sched_getattr01", // https://fxbug.dev/287120797
-                "sched_getattr02", // https://fxbug.dev/287120797
 
                 // TODO: https://fxbug.dev/297292100 - maybe we'll implement sched_rr_get_interval?
                 "sched_rr_get_interval02", // https://fxbug.dev/297292100
                 "sched_rr_get_interval03", // https://fxbug.dev/297292100
 
-                // TODO: https://fxbug.dev/287114492 - maybe we'll implement sched_setattr?
+                // TODO: https://fxbug.dev/287114492 - requires SCHED_DEADLINE support.
                 "sched_setattr01", // https://fxbug.dev/287114492
-                "sched_setattr02", // https://fxbug.dev/287114492
                 "send02",
                 "setitimer01",
                 "setitimer02",

@@ -11,8 +11,9 @@ use crate::ptrace::{
 use crate::security;
 use crate::signals::syscalls::RUsagePtr;
 use crate::task::{
-    CurrentTask, ExitStatus, NormalPriority, SchedulingPolicy, SeccompAction, SeccompStateValue,
-    SyslogAccess, Task, ThreadGroup, max_priority_for_sched_policy, min_priority_for_sched_policy,
+    CurrentTask, ExitStatus, NormalPriority, RealtimePriority, SCHED_CAPACITY_SCALE,
+    SchedulerState, SchedulingPolicy, SeccompAction, SeccompStateValue, SyslogAccess, Task,
+    ThreadGroup, max_priority_for_sched_policy, min_priority_for_sched_policy,
 };
 use crate::vfs::{
     FdNumber, FileHandle, MountNamespaceFile, PidFdFileObject, UserBuffersOutputBuffer,
@@ -47,12 +48,14 @@ use starnix_uapi::{
     PR_GET_TIMERSLACK, PR_SET_CHILD_SUBREAPER, PR_SET_DUMPABLE, PR_SET_KEEPCAPS, PR_SET_NAME,
     PR_SET_NO_NEW_PRIVS, PR_SET_PDEATHSIG, PR_SET_PTRACER, PR_SET_SECCOMP, PR_SET_SECUREBITS,
     PR_SET_TIMERSLACK, PR_SET_VMA, PR_SET_VMA_ANON_NAME, PRIO_PROCESS, PTRACE_ATTACH, PTRACE_SEIZE,
-    PTRACE_TRACEME, RUSAGE_CHILDREN, SCHED_RESET_ON_FORK, SECCOMP_FILTER_FLAG_LOG,
-    SECCOMP_FILTER_FLAG_NEW_LISTENER, SECCOMP_FILTER_FLAG_SPEC_ALLOW, SECCOMP_FILTER_FLAG_TSYNC,
-    SECCOMP_FILTER_FLAG_TSYNC_ESRCH, SECCOMP_GET_ACTION_AVAIL, SECCOMP_GET_NOTIF_SIZES,
-    SECCOMP_MODE_FILTER, SECCOMP_MODE_STRICT, SECCOMP_SET_MODE_FILTER, SECCOMP_SET_MODE_STRICT,
-    c_char, c_int, clone_args, errno, error, gid_t, pid_t, rusage, sched_param, sock_filter, uapi,
-    uid_t,
+    PTRACE_TRACEME, RUSAGE_CHILDREN, SCHED_ATTR_SIZE_VER0, SCHED_ATTR_SIZE_VER1,
+    SCHED_FLAG_KEEP_ALL, SCHED_FLAG_KEEP_PARAMS, SCHED_FLAG_KEEP_POLICY, SCHED_FLAG_RESET_ON_FORK,
+    SCHED_FLAG_UTIL_CLAMP, SCHED_FLAG_UTIL_CLAMP_MAX, SCHED_FLAG_UTIL_CLAMP_MIN,
+    SCHED_RESET_ON_FORK, SECCOMP_FILTER_FLAG_LOG, SECCOMP_FILTER_FLAG_NEW_LISTENER,
+    SECCOMP_FILTER_FLAG_SPEC_ALLOW, SECCOMP_FILTER_FLAG_TSYNC, SECCOMP_FILTER_FLAG_TSYNC_ESRCH,
+    SECCOMP_GET_ACTION_AVAIL, SECCOMP_GET_NOTIF_SIZES, SECCOMP_MODE_FILTER, SECCOMP_MODE_STRICT,
+    SECCOMP_SET_MODE_FILTER, SECCOMP_SET_MODE_STRICT, c_char, c_int, clone_args, errno, error,
+    gid_t, pid_t, rusage, sched_attr, sched_param, sock_filter, uapi, uid_t,
 };
 use static_assertions::const_assert;
 use std::cmp;
@@ -674,6 +677,40 @@ pub fn sys_sched_getscheduler(current_task: &CurrentTask, pid: pid_t) -> Result<
     Ok(target_task.scheduler_state.lock().policy_for_sched_getscheduler())
 }
 
+fn verify_sched_permissions(
+    current_task: &CurrentTask,
+    target_task: &Task,
+    current_state: &SchedulerState,
+    new_policy: SchedulingPolicy,
+    new_realtime_priority: RealtimePriority,
+    new_normal_priority: NormalPriority,
+    new_reset_on_fork: bool,
+) -> Result<(), Errno> {
+    let euid_friendly = current_task.is_euid_friendly_with(target_task);
+    let rt_strengthening = current_state.realtime_priority < new_realtime_priority;
+    let rt_rlimited = rt_strengthening
+        && new_realtime_priority.exceeds(target_task.thread_group().get_rlimit(Resource::RTPRIO));
+    let nice_strengthening = current_state.normal_priority < new_normal_priority;
+    let nice_rlimited = nice_strengthening
+        && new_normal_priority.exceeds(target_task.thread_group().get_rlimit(Resource::NICE));
+    let clearing_reset_on_fork = current_state.reset_on_fork && !new_reset_on_fork;
+    let caught_in_idle_trap = current_state.policy == SchedulingPolicy::Idle
+        && new_policy != SchedulingPolicy::Idle
+        && current_state
+            .normal_priority
+            .exceeds(target_task.thread_group().get_rlimit(Resource::NICE));
+    if !euid_friendly
+        || rt_rlimited
+        || nice_rlimited
+        || clearing_reset_on_fork
+        || caught_in_idle_trap
+    {
+        security::check_task_capable(current_task, CAP_SYS_NICE)?;
+    }
+
+    security::check_task_setscheduler_access(current_task, target_task)
+}
+
 pub fn sys_sched_setscheduler(
     current_task: &CurrentTask,
     pid: pid_t,
@@ -693,35 +730,23 @@ pub fn sys_sched_setscheduler(
     let realtime_priority =
         policy.realtime_priority_from(current_task.read_object(param)?.sched_priority)?;
 
-    // TODO: https://fxbug.dev/425143440 - we probably want to improve the locking here.
-    let (current_policy, current_realtime_priority, current_normal_priority, current_reset_on_fork) = {
-        let state = target_task.scheduler_state.lock();
-        (state.policy, state.realtime_priority, state.normal_priority, state.reset_on_fork)
-    };
+    target_task.update_scheduler_state_then_role(|scheduler_state| {
+        // Check capabilities and permissions, if required, for the operation.
+        verify_sched_permissions(
+            current_task,
+            &target_task,
+            scheduler_state,
+            policy,
+            realtime_priority,
+            scheduler_state.normal_priority,
+            reset_on_fork,
+        )?;
 
-    // Check capabilities and permissions, if required, for the operation.
-    let euid_friendly = current_task.is_euid_friendly_with(&target_task);
-    let strengthening = current_realtime_priority < realtime_priority;
-    let rlimited = strengthening
-        && realtime_priority.exceeds(target_task.thread_group().get_rlimit(Resource::RTPRIO));
-    let clearing_reset_on_fork = current_reset_on_fork && !reset_on_fork;
-    let caught_in_idle_trap = current_policy == SchedulingPolicy::Idle
-        && policy != SchedulingPolicy::Idle
-        && current_normal_priority.exceeds(target_task.thread_group().get_rlimit(Resource::NICE));
-    if !euid_friendly || rlimited || clearing_reset_on_fork || caught_in_idle_trap {
-        security::check_task_capable(current_task, CAP_SYS_NICE)?;
-    }
-
-    security::check_task_setscheduler_access(current_task, &target_task)?;
-
-    // Apply the new scheduler configuration to the task.
-    target_task.set_scheduler_policy_priority_and_reset_on_fork(
-        policy,
-        realtime_priority,
-        reset_on_fork,
-    )?;
-
-    Ok(())
+        scheduler_state.policy = policy;
+        scheduler_state.realtime_priority = realtime_priority;
+        scheduler_state.reset_on_fork = reset_on_fork;
+        Ok(())
+    })
 }
 
 const CPU_SET_SIZE: usize = 128;
@@ -855,28 +880,214 @@ pub fn sys_sched_setparam(
     let target_task = get_task_or_current(current_task, pid)?;
     let param = current_task.read_object(param)?;
 
-    // TODO: https://fxbug.dev/425143440 - we probably want to improve the locking here.
-    let (policy, current_priority) = {
-        let state = target_task.scheduler_state.lock();
-        (state.policy, state.realtime_priority)
-    };
+    target_task.update_scheduler_state_then_role(|scheduler_state| {
+        let realtime_priority =
+            scheduler_state.policy.realtime_priority_from(param.sched_priority)?;
 
-    let realtime_priority = policy.realtime_priority_from(param.sched_priority)?;
+        // Check capabilities and permissions, if required, for the operation.
+        verify_sched_permissions(
+            current_task,
+            &target_task,
+            scheduler_state,
+            scheduler_state.policy,
+            realtime_priority,
+            scheduler_state.normal_priority,
+            scheduler_state.reset_on_fork,
+        )?;
 
-    // Check capabilities and permissions, if required, for the operation.
-    let euid_friendly = current_task.is_euid_friendly_with(&target_task);
-    let strengthening = current_priority < realtime_priority;
-    let rlimited = strengthening
-        && realtime_priority.exceeds(target_task.thread_group().get_rlimit(Resource::RTPRIO));
-    if !euid_friendly || rlimited {
-        security::check_task_capable(current_task, CAP_SYS_NICE)?;
+        scheduler_state.realtime_priority = realtime_priority;
+        Ok(())
+    })
+}
+
+const_assert!(std::mem::size_of::<sched_attr>() == SCHED_ATTR_SIZE_VER1 as usize);
+
+/// Reads a `sched_attr` structure from userspace, following the Linux size-extensible ABI
+/// (`sched_setattr(2)`):
+/// - `size == 0` defaults to `SCHED_ATTR_SIZE_VER0` (48 bytes).
+/// - If `size` is out of bounds (`< SCHED_ATTR_SIZE_VER0` or `> PAGE_SIZE`) or has non-zero
+///   trailing bytes beyond `size_of::<sched_attr>()`, writes the kernel's `sched_attr` size back
+///   to `attr_addr` and returns `E2BIG`.
+/// - If `size < size_of::<sched_attr>()`, zero-fills the remaining fields via
+///   `read_object_partial`.
+fn read_sched_attr(
+    current_task: &CurrentTask,
+    attr_addr: UserAddress,
+) -> Result<sched_attr, Errno> {
+    let size_ref = UserRef::<u32>::new(attr_addr);
+    let mut attr_size = current_task.read_object(size_ref)?;
+    if attr_size == 0 {
+        attr_size = SCHED_ATTR_SIZE_VER0;
+    }
+    if attr_size < SCHED_ATTR_SIZE_VER0 || (attr_size as usize) > *PAGE_SIZE as usize {
+        let _ = current_task.write_object(size_ref, &SCHED_ATTR_SIZE_VER1);
+        return error!(E2BIG);
     }
 
-    security::check_task_setscheduler_access(current_task, &target_task)?;
+    let mut attr_size = attr_size as usize;
+    let sizeof_attr = std::mem::size_of::<sched_attr>();
+    if attr_size > sizeof_attr {
+        let tail_addr = attr_addr.checked_add(sizeof_attr).ok_or_else(|| errno!(EFAULT))?;
+        let tail = current_task.read_memory_to_vec(tail_addr, attr_size - sizeof_attr)?;
+        if tail.into_iter().any(|byte| byte != 0) {
+            let _ = current_task.write_object(size_ref, &SCHED_ATTR_SIZE_VER1);
+            return error!(E2BIG);
+        }
+        attr_size = sizeof_attr;
+    }
 
-    // Apply the new scheduler configuration to the task.
-    target_task.set_scheduler_priority(realtime_priority)?;
+    let kattr: sched_attr = current_task.read_object_partial(UserRef::new(attr_addr), attr_size)?;
+    if (kattr.sched_flags & (SCHED_FLAG_UTIL_CLAMP as u64)) != 0 && attr_size < sizeof_attr {
+        return error!(EINVAL);
+    }
+    Ok(kattr)
+}
 
+pub fn sys_sched_setattr(
+    current_task: &CurrentTask,
+    pid: pid_t,
+    attr: UserAddress,
+    flags: u32,
+) -> Result<(), Errno> {
+    if pid < 0 || attr.is_null() || flags != 0 {
+        return error!(EINVAL);
+    }
+
+    let kattr = read_sched_attr(current_task, attr)?;
+    const SUPPORTED_SCHED_FLAGS: u64 =
+        (SCHED_FLAG_RESET_ON_FORK | SCHED_FLAG_KEEP_ALL | SCHED_FLAG_UTIL_CLAMP) as u64;
+    if (kattr.sched_flags & !SUPPORTED_SCHED_FLAGS) != 0 {
+        return error!(EINVAL);
+    }
+
+    let target_task = get_task_or_current(current_task, pid)?;
+    let keep_policy = (kattr.sched_flags & (SCHED_FLAG_KEEP_POLICY as u64)) != 0;
+    let keep_params = (kattr.sched_flags & (SCHED_FLAG_KEEP_PARAMS as u64)) != 0;
+
+    target_task.update_scheduler_state_then_role(|scheduler_state| {
+        let reset_on_fork = if keep_policy {
+            scheduler_state.reset_on_fork
+        } else {
+            (kattr.sched_flags & (SCHED_FLAG_RESET_ON_FORK as u64)) != 0
+        };
+
+        let policy = if keep_policy {
+            scheduler_state.policy
+        } else {
+            if (kattr.sched_policy & SCHED_RESET_ON_FORK) != 0 {
+                return error!(EINVAL);
+            }
+            SchedulingPolicy::try_from(kattr.sched_policy)?
+        };
+
+        let (realtime_priority, normal_priority) = if keep_params {
+            let rt_priority = if keep_policy {
+                scheduler_state.realtime_priority
+            } else {
+                policy.realtime_priority_from(scheduler_state.get_sched_param().sched_priority)?
+            };
+            (rt_priority, scheduler_state.normal_priority)
+        } else {
+            let priority_i32 = i32::try_from(kattr.sched_priority).map_err(|_| errno!(EINVAL))?;
+            let rt_priority = policy.realtime_priority_from(priority_i32)?;
+            let normal_priority = match policy {
+                SchedulingPolicy::Normal | SchedulingPolicy::Batch => {
+                    NormalPriority::from_setpriority_syscall(kattr.sched_nice)
+                }
+                SchedulingPolicy::Idle | SchedulingPolicy::Fifo | SchedulingPolicy::RoundRobin => {
+                    scheduler_state.normal_priority
+                }
+            };
+            (rt_priority, normal_priority)
+        };
+
+        const UCLAMP_RESET_TO_DEFAULT: u32 = u32::MAX;
+        let uclamp_min = if (kattr.sched_flags & (SCHED_FLAG_UTIL_CLAMP_MIN as u64)) != 0 {
+            if kattr.sched_util_min == UCLAMP_RESET_TO_DEFAULT { 0 } else { kattr.sched_util_min }
+        } else {
+            scheduler_state.uclamp_min
+        };
+        let uclamp_max = if (kattr.sched_flags & (SCHED_FLAG_UTIL_CLAMP_MAX as u64)) != 0 {
+            if kattr.sched_util_max == UCLAMP_RESET_TO_DEFAULT {
+                SCHED_CAPACITY_SCALE
+            } else {
+                kattr.sched_util_max
+            }
+        } else {
+            scheduler_state.uclamp_max
+        };
+        if uclamp_min > SCHED_CAPACITY_SCALE
+            || uclamp_max > SCHED_CAPACITY_SCALE
+            || uclamp_min > uclamp_max
+        {
+            return error!(EINVAL);
+        }
+
+        verify_sched_permissions(
+            current_task,
+            &target_task,
+            scheduler_state,
+            policy,
+            realtime_priority,
+            normal_priority,
+            reset_on_fork,
+        )?;
+
+        // The SCHED_FLAG_KEEP_PARAMS flag always preserves the existing policy, even when
+        // SCHED_FLAG_KEEP_POLICY is unset.
+        if !keep_params {
+            scheduler_state.policy = policy;
+            scheduler_state.realtime_priority = realtime_priority;
+            scheduler_state.normal_priority = normal_priority;
+        }
+        scheduler_state.reset_on_fork = reset_on_fork;
+        scheduler_state.uclamp_min = uclamp_min;
+        scheduler_state.uclamp_max = uclamp_max;
+        Ok(())
+    })
+}
+
+pub fn sys_sched_getattr(
+    current_task: &CurrentTask,
+    pid: pid_t,
+    attr: UserAddress,
+    size: u32,
+    flags: u32,
+) -> Result<(), Errno> {
+    if pid < 0
+        || attr.is_null()
+        || size < SCHED_ATTR_SIZE_VER0
+        || (size as usize) > *PAGE_SIZE as usize
+        || flags != 0
+    {
+        return error!(EINVAL);
+    }
+
+    let target_task = get_task_or_current(current_task, pid)?;
+    security::check_task_getscheduler_access(current_task, &target_task)?;
+
+    let state = target_task.scheduler_state.lock().clone();
+    let copy_size = std::cmp::min(size, SCHED_ATTR_SIZE_VER1) as usize;
+
+    let kattr = sched_attr {
+        size: copy_size as u32,
+        sched_policy: state.policy_for_sched_getscheduler() & !SCHED_RESET_ON_FORK,
+        sched_flags: if state.reset_on_fork { SCHED_FLAG_RESET_ON_FORK as u64 } else { 0 },
+        sched_nice: match state.policy {
+            SchedulingPolicy::Normal | SchedulingPolicy::Batch | SchedulingPolicy::Idle => {
+                state.normal_priority.as_nice() as i32
+            }
+            SchedulingPolicy::Fifo | SchedulingPolicy::RoundRobin => 0,
+        },
+        sched_priority: state.get_sched_param().sched_priority as u32,
+        sched_runtime: 0,
+        sched_deadline: 0,
+        sched_period: 0,
+        sched_util_min: state.uclamp_min,
+        sched_util_max: state.uclamp_max,
+    };
+
+    current_task.write_memory(attr, &kattr.as_bytes()[..copy_size])?;
     Ok(())
 }
 
@@ -1992,8 +2203,10 @@ mod arch32 {
         sys_sched_get_priority_max as sys_arch32_sched_get_priority_max,
         sys_sched_get_priority_min as sys_arch32_sched_get_priority_min,
         sys_sched_getaffinity as sys_arch32_sched_getaffinity,
+        sys_sched_getattr as sys_arch32_sched_getattr,
         sys_sched_getparam as sys_arch32_sched_getparam,
         sys_sched_setaffinity as sys_arch32_sched_setaffinity,
+        sys_sched_setattr as sys_arch32_sched_setattr,
         sys_sched_setparam as sys_arch32_sched_setparam,
         sys_sched_setscheduler as sys_arch32_sched_setscheduler, sys_seccomp as sys_arch32_seccomp,
         sys_setfsgid as sys_arch32_setfsgid, sys_setfsgid as sys_arch32_setfsgid32,
@@ -2021,7 +2234,7 @@ mod tests {
     use starnix_uapi::auth::Credentials;
     use starnix_uapi::signals::SIGCHLD;
     use starnix_uapi::uapi::{kcmp_type_KCMP_SYSVSEM, kcmp_type_KCMP_TYPES, kcmp_type_KCMP_VM};
-    use starnix_uapi::{SCHED_FIFO, SCHED_NORMAL};
+    use starnix_uapi::{SCHED_BATCH, SCHED_FIFO, SCHED_FLAG_KEEP_ALL, SCHED_NORMAL};
     use std::ffi::CString;
 
     #[::fuchsia::test]
@@ -3086,6 +3299,125 @@ mod tests {
                 sys_kcmp(&current_task, target_pid, pid, kcmp_type_KCMP_SYSVSEM, 0, 0),
                 error!(EPERM)
             );
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn test_sched_setattr_and_getattr_uclamp() {
+        spawn_kernel_and_run(async |current_task| {
+            let attr_addr = map_memory(&current_task, UserAddress::default(), *PAGE_SIZE);
+            let attr_ref = UserRef::<sched_attr>::new(attr_addr);
+
+            // Initial sched_getattr returns default uclamp values (0, 1024).
+            sys_sched_getattr(&current_task, 0, attr_addr, SCHED_ATTR_SIZE_VER1, 0)
+                .expect("sched_getattr");
+            let initial: sched_attr = current_task.read_object(attr_ref).unwrap();
+            assert_eq!(initial.size, SCHED_ATTR_SIZE_VER1);
+            assert_eq!(initial.sched_policy, SCHED_NORMAL);
+            assert_eq!(initial.sched_util_min, 0);
+            assert_eq!(initial.sched_util_max, 1024);
+
+            // Apply uclamp boost via SCHED_FLAG_KEEP_ALL | SCHED_FLAG_UTIL_CLAMP.
+            let boost_attr = sched_attr {
+                size: SCHED_ATTR_SIZE_VER1,
+                sched_flags: (SCHED_FLAG_KEEP_ALL | SCHED_FLAG_UTIL_CLAMP) as u64,
+                sched_util_min: 384,
+                sched_util_max: 1024,
+                ..Default::default()
+            };
+            current_task.write_object(attr_ref, &boost_attr).unwrap();
+            sys_sched_setattr(&current_task, 0, attr_addr, 0).expect("sched_setattr boost");
+
+            sys_sched_getattr(&current_task, 0, attr_addr, SCHED_ATTR_SIZE_VER1, 0)
+                .expect("sched_getattr after boost");
+            let boosted: sched_attr = current_task.read_object(attr_ref).unwrap();
+            assert_eq!(boosted.sched_util_min, 384);
+            assert_eq!(boosted.sched_util_max, 1024);
+
+            // Reset uclamp_min using UINT32_MAX (-1).
+            let reset_attr = sched_attr {
+                size: SCHED_ATTR_SIZE_VER1,
+                sched_flags: (SCHED_FLAG_KEEP_ALL | SCHED_FLAG_UTIL_CLAMP_MIN) as u64,
+                sched_util_min: u32::MAX,
+                ..Default::default()
+            };
+            current_task.write_object(attr_ref, &reset_attr).unwrap();
+            sys_sched_setattr(&current_task, 0, attr_addr, 0).expect("sched_setattr reset");
+            assert_eq!(current_task.scheduler_state.lock().uclamp_min, 0);
+
+            // SCHED_FLAG_KEEP_PARAMS (without SCHED_FLAG_KEEP_POLICY) updates reset_on_fork while
+            // preserving the existing policy and nice value;
+            // SCHED_FLAG_KEEP_POLICY (without SCHED_FLAG_KEEP_PARAMS) updates nice while
+            // preserving policy and reset_on_fork.
+            let initial_batch = sched_attr {
+                size: SCHED_ATTR_SIZE_VER1,
+                sched_policy: SCHED_BATCH,
+                sched_nice: 3,
+                ..Default::default()
+            };
+            current_task.write_object(attr_ref, &initial_batch).unwrap();
+            sys_sched_setattr(&current_task, 0, attr_addr, 0).expect("sched_setattr initial_batch");
+
+            let keep_params_attr = sched_attr {
+                size: SCHED_ATTR_SIZE_VER1,
+                sched_policy: SCHED_NORMAL,
+                sched_flags: (SCHED_FLAG_KEEP_PARAMS | SCHED_FLAG_RESET_ON_FORK) as u64,
+                sched_nice: 15,
+                ..Default::default()
+            };
+            current_task.write_object(attr_ref, &keep_params_attr).unwrap();
+            sys_sched_setattr(&current_task, 0, attr_addr, 0).expect("sched_setattr keep_params");
+            sys_sched_getattr(&current_task, 0, attr_addr, SCHED_ATTR_SIZE_VER1, 0)
+                .expect("sched_getattr after keep_params");
+            let after_keep_params: sched_attr = current_task.read_object(attr_ref).unwrap();
+            assert_eq!(after_keep_params.sched_policy, SCHED_BATCH);
+            assert_eq!(after_keep_params.sched_flags, SCHED_FLAG_RESET_ON_FORK as u64);
+            assert_eq!(after_keep_params.sched_nice, 3);
+
+            let keep_policy_attr = sched_attr {
+                size: SCHED_ATTR_SIZE_VER1,
+                sched_policy: SCHED_NORMAL,
+                sched_flags: SCHED_FLAG_KEEP_POLICY as u64,
+                sched_nice: 7,
+                ..Default::default()
+            };
+            current_task.write_object(attr_ref, &keep_policy_attr).unwrap();
+            sys_sched_setattr(&current_task, 0, attr_addr, 0).expect("sched_setattr keep_policy");
+            sys_sched_getattr(&current_task, 0, attr_addr, SCHED_ATTR_SIZE_VER1, 0)
+                .expect("sched_getattr after keep_policy");
+            let after_keep_policy: sched_attr = current_task.read_object(attr_ref).unwrap();
+            assert_eq!(after_keep_policy.sched_policy, SCHED_BATCH);
+            assert_eq!(after_keep_policy.sched_flags, SCHED_FLAG_RESET_ON_FORK as u64);
+            assert_eq!(after_keep_policy.sched_nice, 7);
+
+            // Validation errors: uclamp_min > uclamp_max, uclamp_max > 1024, non-zero syscall flags.
+            let invalid_order = sched_attr {
+                size: SCHED_ATTR_SIZE_VER1,
+                sched_flags: (SCHED_FLAG_KEEP_ALL | SCHED_FLAG_UTIL_CLAMP) as u64,
+                sched_util_min: 800,
+                sched_util_max: 400,
+                ..Default::default()
+            };
+            current_task.write_object(attr_ref, &invalid_order).unwrap();
+            assert_eq!(sys_sched_setattr(&current_task, 0, attr_addr, 0), error!(EINVAL));
+
+            let invalid_scale = sched_attr {
+                size: SCHED_ATTR_SIZE_VER1,
+                sched_flags: (SCHED_FLAG_KEEP_ALL | SCHED_FLAG_UTIL_CLAMP_MAX) as u64,
+                sched_util_max: 1025,
+                ..Default::default()
+            };
+            current_task.write_object(attr_ref, &invalid_scale).unwrap();
+            assert_eq!(sys_sched_setattr(&current_task, 0, attr_addr, 0), error!(EINVAL));
+
+            let valid_attr = sched_attr {
+                size: SCHED_ATTR_SIZE_VER1,
+                sched_flags: SCHED_FLAG_KEEP_ALL as u64,
+                ..Default::default()
+            };
+            current_task.write_object(attr_ref, &valid_attr).unwrap();
+            assert_eq!(sys_sched_setattr(&current_task, 0, attr_addr, 1), error!(EINVAL));
         })
         .await;
     }

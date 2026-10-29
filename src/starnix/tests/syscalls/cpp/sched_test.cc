@@ -19,11 +19,17 @@
 #include <sys/resource.h>
 #include <sys/select.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <cstdint>
+#include <cstring>
+#include <vector>
+
 #include <fbl/unique_fd.h>
 #include <linux/capability.h>
+#include <linux/sched.h>
 
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
@@ -2349,6 +2355,709 @@ TEST(SuccessivePoliciesTest, UnusedPositiveNicenessIsZeroedDuringResetOnFork) {
     EXPECT_EQ(getpriority(PRIO_PROCESS, 0), kVeryNiceNiceness);
 
     complete.poker.poke();
+  });
+}
+
+constexpr uint32_t kSchedAttrSizeVer0 = 48;
+constexpr uint32_t kSchedAttrSizeVer1 = 56;
+constexpr uint32_t kSchedCapacityScale = 1024;
+
+struct TestSchedAttr {
+  uint32_t size;
+  uint32_t sched_policy;
+  uint64_t sched_flags;
+  int32_t sched_nice;
+  uint32_t sched_priority;
+  uint64_t sched_runtime;
+  uint64_t sched_deadline;
+  uint64_t sched_period;
+  uint32_t sched_util_min;
+  uint32_t sched_util_max;
+};
+static_assert(sizeof(TestSchedAttr) == kSchedAttrSizeVer1);
+
+int SchedSetattr(pid_t pid, void* attr, unsigned int flags) {
+  return static_cast<int>(syscall(SYS_sched_setattr, pid, attr, flags));
+}
+
+int SchedGetattr(pid_t pid, void* attr, unsigned int size, unsigned int flags) {
+  return static_cast<int>(syscall(SYS_sched_getattr, pid, attr, size, flags));
+}
+
+// Starnix always supports utilization clamp flags on `sched_setattr(2)`. When running this test
+// suite against a host or VM Linux kernel built without `CONFIG_UCLAMP_TASK`, `sched_setattr(2)`
+// with `SCHED_FLAG_UTIL_CLAMP*` fails with `EOPNOTSUPP`.
+bool IsUclampSupported() {
+  if (test_helper::IsStarnix()) {
+    return true;
+  }
+  TestSchedAttr probe{};
+  if (SchedGetattr(0, &probe, sizeof(probe), 0) != 0) {
+    return false;
+  }
+  probe.size = kSchedAttrSizeVer1;
+  probe.sched_flags = SCHED_FLAG_KEEP_ALL | SCHED_FLAG_UTIL_CLAMP_MIN;
+  return SchedSetattr(0, &probe, 0) == 0;
+}
+
+TEST(SchedSetattrGetattrTest, StructSizesAndBoundsValidation) {
+  const bool uclamp_supported = IsUclampSupported();
+  test_helper::ForkHelper().RunInForkedProcess([uclamp_supported] {
+    const unsigned int page_size = static_cast<unsigned int>(sysconf(_SC_PAGESIZE));
+    TestSchedAttr attr{};
+
+    // Invalid sched_getattr arguments.
+    errno = 0;
+    EXPECT_EQ(SchedGetattr(-1, &attr, sizeof(attr), 0), -1);
+    EXPECT_EQ(errno, EINVAL);
+    errno = 0;
+    EXPECT_EQ(SchedGetattr(INT32_MAX, &attr, sizeof(attr), 0), -1);
+    EXPECT_EQ(errno, ESRCH);
+    errno = 0;
+    EXPECT_EQ(SchedGetattr(0, nullptr, sizeof(attr), 0), -1);
+    EXPECT_EQ(errno, EINVAL);
+    errno = 0;
+    EXPECT_EQ(SchedGetattr(0, &attr, 0, 0), -1);
+    EXPECT_EQ(errno, EINVAL);
+    errno = 0;
+    EXPECT_EQ(SchedGetattr(0, &attr, kSchedAttrSizeVer0 - 1, 0), -1);
+    EXPECT_EQ(errno, EINVAL);
+    errno = 0;
+    EXPECT_EQ(SchedGetattr(0, &attr, page_size + 1, 0), -1);
+    EXPECT_EQ(errno, EINVAL);
+    errno = 0;
+    EXPECT_EQ(SchedGetattr(0, &attr, sizeof(attr), 1), -1);
+    EXPECT_EQ(errno, EINVAL);
+
+    // v0 sched_getattr (48 bytes) populates the v0 prefix without clobbering v1 fields.
+    attr.sched_util_min = 0xdeadbeef;
+    attr.sched_util_max = 0xcafebabe;
+    ASSERT_EQ(SchedGetattr(0, &attr, kSchedAttrSizeVer0, 0), 0);
+    EXPECT_EQ(attr.size, kSchedAttrSizeVer0);
+    EXPECT_EQ(attr.sched_util_min, 0xdeadbeefu);
+    EXPECT_EQ(attr.sched_util_max, 0xcafebabeu);
+
+    // v1 sched_getattr (56 bytes) and oversized buffers return size = 56 and default uclamp (0,
+    // 1024) when utilization clamping is supported.
+    alignas(TestSchedAttr) uint8_t oversized_buf[128] = {};
+    ASSERT_EQ(SchedGetattr(0, oversized_buf, sizeof(oversized_buf), 0), 0);
+    std::memcpy(&attr, oversized_buf, sizeof(attr));
+    EXPECT_EQ(attr.size, kSchedAttrSizeVer1);
+    EXPECT_EQ(attr.sched_util_min, 0u);
+    if (uclamp_supported) {
+      EXPECT_EQ(attr.sched_util_max, kSchedCapacityScale);
+    }
+
+    // Invalid sched_setattr arguments.
+    errno = 0;
+    EXPECT_EQ(SchedSetattr(-1, &attr, 0), -1);
+    EXPECT_EQ(errno, EINVAL);
+    errno = 0;
+    EXPECT_EQ(SchedSetattr(INT32_MAX, &attr, 0), -1);
+    EXPECT_EQ(errno, ESRCH);
+    errno = 0;
+    EXPECT_EQ(SchedSetattr(0, nullptr, 0), -1);
+    EXPECT_EQ(errno, EINVAL);
+    errno = 0;
+    EXPECT_EQ(SchedSetattr(0, &attr, 1), -1);
+    EXPECT_EQ(errno, EINVAL);
+
+    // size == 0 is treated as v0 (48 bytes).
+    TestSchedAttr zero_size_attr{};
+    zero_size_attr.size = 0;
+    zero_size_attr.sched_flags = SCHED_FLAG_KEEP_ALL;
+    EXPECT_EQ(SchedSetattr(0, &zero_size_attr, 0), 0);
+    zero_size_attr.sched_flags = SCHED_FLAG_KEEP_ALL | SCHED_FLAG_UTIL_CLAMP_MIN;
+    zero_size_attr.sched_util_min = 128;
+    errno = 0;
+    EXPECT_EQ(SchedSetattr(0, &zero_size_attr, 0), -1);
+    EXPECT_EQ(errno, EINVAL);
+
+    // size < 48 or size > page_size fails with E2BIG and writes kernel struct size (56) back to
+    // size.
+    TestSchedAttr small_attr{};
+    small_attr.size = kSchedAttrSizeVer0 - 1;
+    errno = 0;
+    EXPECT_EQ(SchedSetattr(0, &small_attr, 0), -1);
+    EXPECT_EQ(errno, E2BIG);
+    EXPECT_EQ(small_attr.size, kSchedAttrSizeVer1);
+
+    std::vector<uint8_t> huge_buf(page_size + 16, 0);
+    const uint32_t huge_size = page_size + 1;
+    std::memcpy(huge_buf.data(), &huge_size, sizeof(huge_size));
+    errno = 0;
+    EXPECT_EQ(SchedSetattr(0, huge_buf.data(), 0), -1);
+    EXPECT_EQ(errno, E2BIG);
+    uint32_t returned_size = 0;
+    std::memcpy(&returned_size, huge_buf.data(), sizeof(returned_size));
+    EXPECT_EQ(returned_size, kSchedAttrSizeVer1);
+
+    // Oversized struct (> 56 bytes) succeeds if trailing bytes are zero, and fails with E2BIG if
+    // non-zero.
+    std::memset(oversized_buf, 0, sizeof(oversized_buf));
+    TestSchedAttr oversized_header{};
+    oversized_header.size = sizeof(oversized_buf);
+    oversized_header.sched_flags = SCHED_FLAG_KEEP_ALL;
+    std::memcpy(oversized_buf, &oversized_header, sizeof(oversized_header));
+    EXPECT_EQ(SchedSetattr(0, oversized_buf, 0), 0);
+
+    oversized_buf[kSchedAttrSizeVer1 + 3] = 1;
+    errno = 0;
+    EXPECT_EQ(SchedSetattr(0, oversized_buf, 0), -1);
+    EXPECT_EQ(errno, E2BIG);
+    returned_size = 0;
+    std::memcpy(&returned_size, oversized_buf, sizeof(returned_size));
+    EXPECT_EQ(returned_size, kSchedAttrSizeVer1);
+
+    // Passing SCHED_FLAG_UTIL_CLAMP* with v0 struct size (48) must fail with EINVAL.
+    for (uint64_t flag : {
+             static_cast<uint64_t>(SCHED_FLAG_UTIL_CLAMP_MIN),
+             static_cast<uint64_t>(SCHED_FLAG_UTIL_CLAMP_MAX),
+             static_cast<uint64_t>(SCHED_FLAG_UTIL_CLAMP),
+         }) {
+      TestSchedAttr v0_uclamp{};
+      v0_uclamp.size = kSchedAttrSizeVer0;
+      v0_uclamp.sched_flags = SCHED_FLAG_KEEP_ALL | flag;
+      errno = 0;
+      EXPECT_EQ(SchedSetattr(0, &v0_uclamp, 0), -1);
+      EXPECT_EQ(errno, EINVAL);
+    }
+
+    // Unknown sched_flags bit, SCHED_RESET_ON_FORK embedded in sched_policy, or non-zero
+    // sched_priority on non-RT policies must fail with EINVAL.
+    TestSchedAttr bad_flags{};
+    bad_flags.size = kSchedAttrSizeVer1;
+    bad_flags.sched_flags = 1ULL << 31U;
+    errno = 0;
+    EXPECT_EQ(SchedSetattr(0, &bad_flags, 0), -1);
+    EXPECT_EQ(errno, EINVAL);
+
+    TestSchedAttr policy_flag{};
+    policy_flag.size = kSchedAttrSizeVer1;
+    policy_flag.sched_policy =
+        static_cast<uint32_t>(SCHED_OTHER) | static_cast<uint32_t>(SCHED_RESET_ON_FORK);
+    errno = 0;
+    EXPECT_EQ(SchedSetattr(0, &policy_flag, 0), -1);
+    EXPECT_EQ(errno, EINVAL);
+
+    for (uint32_t non_rt_policy : {
+             static_cast<uint32_t>(SCHED_OTHER),
+             static_cast<uint32_t>(SCHED_BATCH),
+             static_cast<uint32_t>(SCHED_IDLE),
+         }) {
+      TestSchedAttr nonzero_prio{};
+      nonzero_prio.size = kSchedAttrSizeVer1;
+      nonzero_prio.sched_policy = non_rt_policy;
+      nonzero_prio.sched_priority = 1;
+      errno = 0;
+      EXPECT_EQ(SchedSetattr(0, &nonzero_prio, 0), -1);
+      EXPECT_EQ(errno, EINVAL);
+    }
+
+    // sched_setattr(2) clamps sched_nice > 19 to 19 and sched_nice < -20 to -20.
+    TestSchedAttr high_nice{};
+    high_nice.size = kSchedAttrSizeVer1;
+    high_nice.sched_policy = SCHED_OTHER;
+    high_nice.sched_nice = 25;
+    ASSERT_EQ(SchedSetattr(0, &high_nice, 0), 0);
+    ASSERT_EQ(SchedGetattr(0, &attr, sizeof(attr), 0), 0);
+    EXPECT_EQ(attr.sched_nice, 19);
+
+    TestSchedAttr low_nice{};
+    low_nice.size = kSchedAttrSizeVer1;
+    low_nice.sched_policy = SCHED_OTHER;
+    low_nice.sched_nice = -25;
+    ASSERT_EQ(SchedSetattr(0, &low_nice, 0), 0);
+    ASSERT_EQ(SchedGetattr(0, &attr, sizeof(attr), 0), 0);
+    EXPECT_EQ(attr.sched_nice, -20);
+  });
+}
+
+TEST(SchedSetattrGetattrTest, UtilClampAndUint32MaxReset) {
+  if (!IsUclampSupported()) {
+    GTEST_SKIP() << "Kernel does not support SCHED_FLAG_UTIL_CLAMP.";
+  }
+  test_helper::ForkHelper().RunInForkedProcess([] {
+    TestSchedAttr attr{};
+
+    // Set uclamp_min via SCHED_FLAG_UTIL_CLAMP_MIN.
+    TestSchedAttr set_min{};
+    set_min.size = kSchedAttrSizeVer1;
+    set_min.sched_flags = SCHED_FLAG_KEEP_ALL | SCHED_FLAG_UTIL_CLAMP_MIN;
+    set_min.sched_util_min = 384;
+    ASSERT_EQ(SchedSetattr(0, &set_min, 0), 0);
+
+    ASSERT_EQ(SchedGetattr(0, &attr, sizeof(attr), 0), 0);
+    EXPECT_EQ(attr.sched_util_min, 384u);
+    EXPECT_EQ(attr.sched_util_max, kSchedCapacityScale);
+
+    // Set uclamp_max via SCHED_FLAG_UTIL_CLAMP_MAX.
+    TestSchedAttr set_max{};
+    set_max.size = kSchedAttrSizeVer1;
+    set_max.sched_flags = SCHED_FLAG_KEEP_ALL | SCHED_FLAG_UTIL_CLAMP_MAX;
+    set_max.sched_util_max = 768;
+    ASSERT_EQ(SchedSetattr(0, &set_max, 0), 0);
+
+    ASSERT_EQ(SchedGetattr(0, &attr, sizeof(attr), 0), 0);
+    EXPECT_EQ(attr.sched_util_min, 384u);
+    EXPECT_EQ(attr.sched_util_max, 768u);
+
+    // Set both via SCHED_FLAG_UTIL_CLAMP.
+    TestSchedAttr set_both{};
+    set_both.size = kSchedAttrSizeVer1;
+    set_both.sched_flags = SCHED_FLAG_KEEP_ALL | SCHED_FLAG_UTIL_CLAMP;
+    set_both.sched_util_min = 128;
+    set_both.sched_util_max = 640;
+    ASSERT_EQ(SchedSetattr(0, &set_both, 0), 0);
+
+    ASSERT_EQ(SchedGetattr(0, &attr, sizeof(attr), 0), 0);
+    EXPECT_EQ(attr.sched_util_min, 128u);
+    EXPECT_EQ(attr.sched_util_max, 640u);
+
+    // Bounds validation: > 1024, min > max, and single-bound updates violating current peer bound.
+    struct InvalidUclampCase {
+      uint64_t flags;
+      uint32_t util_min;
+      uint32_t util_max;
+    };
+    const InvalidUclampCase invalid_cases[] = {
+        {.flags = SCHED_FLAG_KEEP_ALL | SCHED_FLAG_UTIL_CLAMP_MIN,
+         .util_min = kSchedCapacityScale + 1,
+         .util_max = 0},
+        {.flags = SCHED_FLAG_KEEP_ALL | SCHED_FLAG_UTIL_CLAMP_MAX,
+         .util_min = 0,
+         .util_max = kSchedCapacityScale + 1},
+        {.flags = SCHED_FLAG_KEEP_ALL | SCHED_FLAG_UTIL_CLAMP, .util_min = 800, .util_max = 400},
+        {.flags = SCHED_FLAG_KEEP_ALL | SCHED_FLAG_UTIL_CLAMP_MIN,
+         .util_min = 700,
+         .util_max = 0},  // > current util_max (640)
+        {.flags = SCHED_FLAG_KEEP_ALL | SCHED_FLAG_UTIL_CLAMP_MAX,
+         .util_min = 0,
+         .util_max = 100},  // < current util_min (128)
+    };
+    for (const auto& tc : invalid_cases) {
+      SCOPED_TRACE(testing::Message()
+                   << "flags=" << tc.flags << " min=" << tc.util_min << " max=" << tc.util_max);
+      TestSchedAttr invalid{};
+      invalid.size = kSchedAttrSizeVer1;
+      invalid.sched_flags = tc.flags;
+      invalid.sched_util_min = tc.util_min;
+      invalid.sched_util_max = tc.util_max;
+      errno = 0;
+      EXPECT_EQ(SchedSetattr(0, &invalid, 0), -1);
+      EXPECT_EQ(errno, EINVAL);
+    }
+
+    // Verify invalid calls did not mutate (128, 640).
+    ASSERT_EQ(SchedGetattr(0, &attr, sizeof(attr), 0), 0);
+    EXPECT_EQ(attr.sched_util_min, 128u);
+    EXPECT_EQ(attr.sched_util_max, 640u);
+
+    // Reset uclamp_min to 0 using UINT32_MAX.
+    TestSchedAttr reset_min{};
+    reset_min.size = kSchedAttrSizeVer1;
+    reset_min.sched_flags = SCHED_FLAG_KEEP_ALL | SCHED_FLAG_UTIL_CLAMP_MIN;
+    reset_min.sched_util_min = UINT32_MAX;
+    ASSERT_EQ(SchedSetattr(0, &reset_min, 0), 0);
+    ASSERT_EQ(SchedGetattr(0, &attr, sizeof(attr), 0), 0);
+    EXPECT_EQ(attr.sched_util_min, 0u);
+    EXPECT_EQ(attr.sched_util_max, 640u);
+
+    // Reset uclamp_max to 1024 using UINT32_MAX.
+    TestSchedAttr reset_max{};
+    reset_max.size = kSchedAttrSizeVer1;
+    reset_max.sched_flags = SCHED_FLAG_KEEP_ALL | SCHED_FLAG_UTIL_CLAMP_MAX;
+    reset_max.sched_util_max = UINT32_MAX;
+    ASSERT_EQ(SchedSetattr(0, &reset_max, 0), 0);
+    ASSERT_EQ(SchedGetattr(0, &attr, sizeof(attr), 0), 0);
+    EXPECT_EQ(attr.sched_util_min, 0u);
+    EXPECT_EQ(attr.sched_util_max, kSchedCapacityScale);
+
+    // Set (600, 900), then simultaneously reset min=UINT32_MAX and lower max=400 in one call.
+    TestSchedAttr high_range{};
+    high_range.size = kSchedAttrSizeVer1;
+    high_range.sched_flags = SCHED_FLAG_KEEP_ALL | SCHED_FLAG_UTIL_CLAMP;
+    high_range.sched_util_min = 600;
+    high_range.sched_util_max = 900;
+    ASSERT_EQ(SchedSetattr(0, &high_range, 0), 0);
+
+    TestSchedAttr reset_min_and_lower_max{};
+    reset_min_and_lower_max.size = kSchedAttrSizeVer1;
+    reset_min_and_lower_max.sched_flags = SCHED_FLAG_KEEP_ALL | SCHED_FLAG_UTIL_CLAMP;
+    reset_min_and_lower_max.sched_util_min = UINT32_MAX;
+    reset_min_and_lower_max.sched_util_max = 400;
+    ASSERT_EQ(SchedSetattr(0, &reset_min_and_lower_max, 0), 0);
+    ASSERT_EQ(SchedGetattr(0, &attr, sizeof(attr), 0), 0);
+    EXPECT_EQ(attr.sched_util_min, 0u);
+    EXPECT_EQ(attr.sched_util_max, 400u);
+  });
+}
+
+TEST(SchedSetattrGetattrTest, KeepPolicyAndKeepParams) {
+  const bool uclamp_supported = IsUclampSupported();
+  test_helper::ForkHelper().RunInForkedProcess([uclamp_supported] {
+    TestSchedAttr attr{};
+
+    // Set policy=SCHED_BATCH, nice=6, and (when supported) uclamp=(200, 800).
+    TestSchedAttr initial{};
+    initial.size = kSchedAttrSizeVer1;
+    initial.sched_policy = SCHED_BATCH;
+    initial.sched_nice = 6;
+    if (uclamp_supported) {
+      initial.sched_flags = SCHED_FLAG_UTIL_CLAMP;
+      initial.sched_util_min = 200;
+      initial.sched_util_max = 800;
+    }
+    ASSERT_EQ(SchedSetattr(0, &initial, 0), 0);
+
+    // 1. SCHED_FLAG_KEEP_PARAMS set + SCHED_FLAG_KEEP_POLICY unset:
+    // Passing a different valid policy (SCHED_IDLE) and nice (19) with SCHED_FLAG_RESET_ON_FORK
+    // validates sched_policy and enables SCHED_FLAG_RESET_ON_FORK, while preserving both the
+    // existing policy (SCHED_BATCH, because SCHED_FLAG_KEEP_PARAMS preserves the current policy
+    // and parameters) and nice=6.
+    TestSchedAttr keep_params{};
+    keep_params.size = kSchedAttrSizeVer1;
+    keep_params.sched_policy = SCHED_IDLE;
+    keep_params.sched_flags = SCHED_FLAG_KEEP_PARAMS | SCHED_FLAG_RESET_ON_FORK;
+    keep_params.sched_nice = 19;  // Ignored because SCHED_FLAG_KEEP_PARAMS is set.
+    ASSERT_EQ(SchedSetattr(0, &keep_params, 0), 0);
+
+    ASSERT_EQ(SchedGetattr(0, &attr, sizeof(attr), 0), 0);
+    EXPECT_EQ(attr.sched_policy, static_cast<uint32_t>(SCHED_BATCH));
+    EXPECT_EQ(attr.sched_flags, static_cast<uint64_t>(SCHED_FLAG_RESET_ON_FORK));
+    EXPECT_EQ(attr.sched_nice, 6);
+    if (uclamp_supported) {
+      EXPECT_EQ(attr.sched_util_min, 200u);
+      EXPECT_EQ(attr.sched_util_max, 800u);
+    }
+
+    // Because SCHED_FLAG_KEEP_POLICY is unset, sched_policy is still validated against existing
+    // parameters: passing SCHED_FIFO when current rt_priority is 0 fails with EINVAL.
+    TestSchedAttr incompatible_rt{};
+    incompatible_rt.size = kSchedAttrSizeVer1;
+    incompatible_rt.sched_policy = SCHED_FIFO;
+    incompatible_rt.sched_flags = SCHED_FLAG_KEEP_PARAMS;
+    errno = 0;
+    EXPECT_EQ(SchedSetattr(0, &incompatible_rt, 0), -1);
+    EXPECT_EQ(errno, EINVAL);
+
+    // 2. SCHED_FLAG_KEEP_POLICY set + SCHED_FLAG_KEEP_PARAMS unset:
+    // Preserves both policy (SCHED_BATCH) and SCHED_FLAG_RESET_ON_FORK while updating nice to 12,
+    // ignoring a different valid policy (SCHED_IDLE) or an unrecognized policy value (999).
+    TestSchedAttr keep_policy_valid{};
+    keep_policy_valid.size = kSchedAttrSizeVer1;
+    keep_policy_valid.sched_policy = SCHED_IDLE;  // Ignored because SCHED_FLAG_KEEP_POLICY is set.
+    keep_policy_valid.sched_flags = SCHED_FLAG_KEEP_POLICY;
+    keep_policy_valid.sched_nice = 12;
+    ASSERT_EQ(SchedSetattr(0, &keep_policy_valid, 0), 0);
+
+    ASSERT_EQ(SchedGetattr(0, &attr, sizeof(attr), 0), 0);
+    EXPECT_EQ(attr.sched_policy, static_cast<uint32_t>(SCHED_BATCH));
+    EXPECT_EQ(attr.sched_flags, static_cast<uint64_t>(SCHED_FLAG_RESET_ON_FORK));
+    EXPECT_EQ(attr.sched_nice, 12);
+    if (uclamp_supported) {
+      EXPECT_EQ(attr.sched_util_min, 200u);
+      EXPECT_EQ(attr.sched_util_max, 800u);
+    }
+
+    TestSchedAttr keep_policy_invalid{};
+    keep_policy_invalid.size = kSchedAttrSizeVer1;
+    keep_policy_invalid.sched_policy = 999;  // Ignored because SCHED_FLAG_KEEP_POLICY is set.
+    keep_policy_invalid.sched_flags = SCHED_FLAG_KEEP_POLICY;
+    keep_policy_invalid.sched_nice = 15;
+    ASSERT_EQ(SchedSetattr(0, &keep_policy_invalid, 0), 0);
+
+    ASSERT_EQ(SchedGetattr(0, &attr, sizeof(attr), 0), 0);
+    EXPECT_EQ(attr.sched_policy, static_cast<uint32_t>(SCHED_BATCH));
+    EXPECT_EQ(attr.sched_flags, static_cast<uint64_t>(SCHED_FLAG_RESET_ON_FORK));
+    EXPECT_EQ(attr.sched_nice, 15);
+    if (uclamp_supported) {
+      EXPECT_EQ(attr.sched_util_min, 200u);
+      EXPECT_EQ(attr.sched_util_max, 800u);
+
+      // 3. SCHED_FLAG_KEEP_ALL | SCHED_FLAG_UTIL_CLAMP_MIN updates uclamp_min while preserving
+      // policy, reset_on_fork, nice, and uclamp_max.
+      TestSchedAttr keep_all_uclamp{};
+      keep_all_uclamp.size = kSchedAttrSizeVer1;
+      keep_all_uclamp.sched_flags = SCHED_FLAG_KEEP_ALL | SCHED_FLAG_UTIL_CLAMP_MIN;
+      keep_all_uclamp.sched_util_min = 512;
+      ASSERT_EQ(SchedSetattr(0, &keep_all_uclamp, 0), 0);
+
+      ASSERT_EQ(SchedGetattr(0, &attr, sizeof(attr), 0), 0);
+      EXPECT_EQ(attr.sched_policy, static_cast<uint32_t>(SCHED_BATCH));
+      EXPECT_EQ(attr.sched_flags, static_cast<uint64_t>(SCHED_FLAG_RESET_ON_FORK));
+      EXPECT_EQ(attr.sched_nice, 15);
+      EXPECT_EQ(attr.sched_util_min, 512u);
+      EXPECT_EQ(attr.sched_util_max, 800u);
+    }
+  });
+}
+
+TEST(SchedSetattrGetattrTest, NonRootNiceRLimitAndPermissions) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running with sysadmin capabilities, skipping test.";
+  }
+
+  constexpr int kNicenessRlimitCur = 24;  // Permits nice values down to 20 - 24 = -4.
+  constexpr int kNicenessRlimitMax = kNicenessRlimitCur + 5;
+
+  // 1. Unprivileged process can increase nice (0 -> 19) and decrease nice down to the RLIMIT_NICE
+  // ceiling (-4), but decreasing nice below -4 fails with EPERM.
+  test_helper::ForkHelper().RunInForkedProcess([] {
+    rlimit niceness_rlimit = {
+        .rlim_cur = static_cast<rlim_t>(kNicenessRlimitCur),
+        .rlim_max = static_cast<rlim_t>(kNicenessRlimitMax),
+    };
+    SAFE_SYSCALL(setrlimit(RLIMIT_NICE, &niceness_rlimit));
+    SAFE_SYSCALL(setpriority(PRIO_PROCESS, 0, 0));
+    Become(kUser1Uid, kUser1Uid);
+
+    TestSchedAttr attr{};
+    for (int niceness = 19; niceness >= 20 - kNicenessRlimitCur; niceness--) {
+      TestSchedAttr set_nice{};
+      set_nice.size = kSchedAttrSizeVer1;
+      set_nice.sched_policy = (niceness % 2 == 0) ? SCHED_OTHER : SCHED_BATCH;
+      set_nice.sched_nice = niceness;
+      ASSERT_EQ(SchedSetattr(0, &set_nice, 0), 0);
+
+      ASSERT_EQ(SchedGetattr(0, &attr, sizeof(attr), 0), 0);
+      EXPECT_EQ(attr.sched_policy, set_nice.sched_policy);
+      EXPECT_EQ(attr.sched_nice, niceness);
+      EXPECT_EQ(getpriority(PRIO_PROCESS, 0), niceness);
+    }
+
+    for (int niceness = 19 - kNicenessRlimitCur; niceness >= -20; niceness--) {
+      TestSchedAttr exceed_nice{};
+      exceed_nice.size = kSchedAttrSizeVer1;
+      exceed_nice.sched_flags = SCHED_FLAG_KEEP_POLICY;
+      exceed_nice.sched_nice = niceness;
+      errno = 0;
+      EXPECT_EQ(SchedSetattr(0, &exceed_nice, 0), -1);
+      EXPECT_EQ(errno, EPERM);
+
+      ASSERT_EQ(SchedGetattr(0, &attr, sizeof(attr), 0), 0);
+      EXPECT_EQ(attr.sched_nice, 20 - kNicenessRlimitCur);
+    }
+  });
+
+  // 2. Unprivileged process starting with a nice value (-10) that already exceeds RLIMIT_NICE (-4)
+  // can maintain or weaken (increase) its nice value, cannot strengthen (decrease) it, and is
+  // subject to the SCHED_IDLE trap and SCHED_FLAG_RESET_ON_FORK clearing check.
+  const bool uclamp_supported = IsUclampSupported();
+  test_helper::ForkHelper().RunInForkedProcess([uclamp_supported] {
+    rlimit niceness_rlimit = {
+        .rlim_cur = static_cast<rlim_t>(kNicenessRlimitCur),
+        .rlim_max = static_cast<rlim_t>(kNicenessRlimitMax),
+    };
+    SAFE_SYSCALL(setrlimit(RLIMIT_NICE, &niceness_rlimit));
+    ASSERT_EQ(setpriority(PRIO_PROCESS, 0, -10), 0);
+    Become(kUser1Uid, kUser1Uid);
+
+    TestSchedAttr attr{};
+
+    // Maintaining nice=-10 while switching policy to SCHED_BATCH or calling SCHED_FLAG_KEEP_ALL
+    // (including updating uclamp when supported) is allowed.
+    TestSchedAttr maintain_nice_batch{};
+    maintain_nice_batch.size = kSchedAttrSizeVer1;
+    maintain_nice_batch.sched_policy = SCHED_BATCH;
+    maintain_nice_batch.sched_nice = -10;
+    ASSERT_EQ(SchedSetattr(0, &maintain_nice_batch, 0), 0);
+    ASSERT_EQ(SchedGetattr(0, &attr, sizeof(attr), 0), 0);
+    EXPECT_EQ(attr.sched_policy, static_cast<uint32_t>(SCHED_BATCH));
+    EXPECT_EQ(attr.sched_nice, -10);
+
+    TestSchedAttr keep_all{};
+    keep_all.size = kSchedAttrSizeVer1;
+    keep_all.sched_flags = SCHED_FLAG_KEEP_ALL | (uclamp_supported ? SCHED_FLAG_UTIL_CLAMP_MIN : 0);
+    keep_all.sched_util_min = uclamp_supported ? 256 : 0;
+    ASSERT_EQ(SchedSetattr(0, &keep_all, 0), 0);
+    ASSERT_EQ(SchedGetattr(0, &attr, sizeof(attr), 0), 0);
+    EXPECT_EQ(attr.sched_policy, static_cast<uint32_t>(SCHED_BATCH));
+    EXPECT_EQ(attr.sched_nice, -10);
+    if (uclamp_supported) {
+      EXPECT_EQ(attr.sched_util_min, 256u);
+    }
+
+    // Weakening (increasing) nice from -10 to -6 (still beyond RLIMIT_NICE ceiling -4) is allowed.
+    TestSchedAttr weaken_nice{};
+    weaken_nice.size = kSchedAttrSizeVer1;
+    weaken_nice.sched_flags = SCHED_FLAG_KEEP_POLICY;
+    weaken_nice.sched_nice = -6;
+    ASSERT_EQ(SchedSetattr(0, &weaken_nice, 0), 0);
+    ASSERT_EQ(SchedGetattr(0, &attr, sizeof(attr), 0), 0);
+    EXPECT_EQ(attr.sched_nice, -6);
+
+    // Strengthening (decreasing) nice from -6 to -7 fails with EPERM.
+    TestSchedAttr strengthen_nice{};
+    strengthen_nice.size = kSchedAttrSizeVer1;
+    strengthen_nice.sched_flags = SCHED_FLAG_KEEP_POLICY;
+    strengthen_nice.sched_nice = -7;
+    errno = 0;
+    EXPECT_EQ(SchedSetattr(0, &strengthen_nice, 0), -1);
+    EXPECT_EQ(errno, EPERM);
+    ASSERT_EQ(SchedGetattr(0, &attr, sizeof(attr), 0), 0);
+    EXPECT_EQ(attr.sched_nice, -6);
+
+    // Transitioning into SCHED_IDLE succeeds while nice is -6, and transitioning out of SCHED_IDLE
+    // while current nice is -6 fails with EPERM (caught in the SCHED_IDLE trap) even if the new
+    // sched_attr specifies an allowed sched_nice, until the thread's current nice is first raised
+    // into the RLIMIT_NICE range (-4).
+    TestSchedAttr to_idle{};
+    to_idle.size = kSchedAttrSizeVer1;
+    to_idle.sched_policy = SCHED_IDLE;
+    ASSERT_EQ(SchedSetattr(0, &to_idle, 0), 0);
+
+    TestSchedAttr escape_idle_keep_params{};
+    escape_idle_keep_params.size = kSchedAttrSizeVer1;
+    escape_idle_keep_params.sched_policy = SCHED_OTHER;
+    escape_idle_keep_params.sched_flags = SCHED_FLAG_KEEP_PARAMS;
+    errno = 0;
+    EXPECT_EQ(SchedSetattr(0, &escape_idle_keep_params, 0), -1);
+    EXPECT_EQ(errno, EPERM);
+
+    TestSchedAttr escape_idle_with_allowed_nice{};
+    escape_idle_with_allowed_nice.size = kSchedAttrSizeVer1;
+    escape_idle_with_allowed_nice.sched_policy = SCHED_OTHER;
+    escape_idle_with_allowed_nice.sched_nice = 20 - kNicenessRlimitCur;
+    errno = 0;
+    EXPECT_EQ(SchedSetattr(0, &escape_idle_with_allowed_nice, 0), -1);
+    EXPECT_EQ(errno, EPERM);
+
+    ASSERT_EQ(setpriority(PRIO_PROCESS, 0, 20 - kNicenessRlimitCur), 0);
+    ASSERT_EQ(SchedSetattr(0, &escape_idle_with_allowed_nice, 0), 0);
+    ASSERT_EQ(SchedGetattr(0, &attr, sizeof(attr), 0), 0);
+    EXPECT_EQ(attr.sched_policy, static_cast<uint32_t>(SCHED_OTHER));
+    EXPECT_EQ(attr.sched_nice, 20 - kNicenessRlimitCur);
+
+    // Unprivileged process can set SCHED_FLAG_RESET_ON_FORK, but cannot clear it once set.
+    TestSchedAttr set_reset_on_fork{};
+    set_reset_on_fork.size = kSchedAttrSizeVer1;
+    set_reset_on_fork.sched_policy = SCHED_OTHER;
+    set_reset_on_fork.sched_flags = SCHED_FLAG_KEEP_PARAMS | SCHED_FLAG_RESET_ON_FORK;
+    ASSERT_EQ(SchedSetattr(0, &set_reset_on_fork, 0), 0);
+
+    TestSchedAttr clear_reset_on_fork{};
+    clear_reset_on_fork.size = kSchedAttrSizeVer1;
+    clear_reset_on_fork.sched_policy = SCHED_OTHER;
+    clear_reset_on_fork.sched_flags = SCHED_FLAG_KEEP_PARAMS;
+    errno = 0;
+    EXPECT_EQ(SchedSetattr(0, &clear_reset_on_fork, 0), -1);
+    EXPECT_EQ(errno, EPERM);
+  });
+
+  // 3. Unprivileged process cannot call sched_setattr on an euid-unfriendly target process,
+  //    can still read its attributes via sched_getattr, and can update/read an euid-friendly
+  //    target process.
+  {
+    test_helper::ForkHelper fork_helper;
+    test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+    test_helper::Rendezvous complete = test_helper::MakeRendezvous();
+
+    pid_t other_uid_pid =
+        SpawnTarget(fork_helper, std::move(ready.poker), std::move(complete.holder),
+                    [] { Become(kUser2Uid, kUser2Uid); });
+
+    fork_helper.RunInForkedProcess([ready = std::move(ready.holder),
+                                    complete = std::move(complete.poker), other_uid_pid]() mutable {
+      Become(kUser1Uid, kUser1Uid);
+      ready.hold();
+
+      TestSchedAttr attr{};
+      attr.size = kSchedAttrSizeVer1;
+      attr.sched_flags = SCHED_FLAG_KEEP_ALL;
+      errno = 0;
+      EXPECT_EQ(SchedSetattr(other_uid_pid, &attr, 0), -1);
+      EXPECT_EQ(errno, EPERM);
+      EXPECT_EQ(SchedGetattr(other_uid_pid, &attr, sizeof(attr), 0), 0);
+
+      complete.poke();
+    });
+  }
+
+  {
+    test_helper::ForkHelper fork_helper;
+    test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+    test_helper::Rendezvous complete = test_helper::MakeRendezvous();
+
+    pid_t same_uid_pid =
+        SpawnTarget(fork_helper, std::move(ready.poker), std::move(complete.holder), [] {
+          rlimit niceness_rlimit = {
+              .rlim_cur = static_cast<rlim_t>(kNicenessRlimitCur),
+              .rlim_max = static_cast<rlim_t>(kNicenessRlimitMax),
+          };
+          SAFE_SYSCALL(setrlimit(RLIMIT_NICE, &niceness_rlimit));
+          SAFE_SYSCALL(setpriority(PRIO_PROCESS, 0, 0));
+          Become(kUser1Uid, kUser1Uid);
+        });
+
+    fork_helper.RunInForkedProcess([ready = std::move(ready.holder),
+                                    complete = std::move(complete.poker), same_uid_pid]() mutable {
+      Become(kUser1Uid, kUser1Uid);
+      ready.hold();
+
+      TestSchedAttr update_same_uid{};
+      update_same_uid.size = kSchedAttrSizeVer1;
+      update_same_uid.sched_policy = SCHED_BATCH;
+      update_same_uid.sched_nice = 7;
+      EXPECT_EQ(SchedSetattr(same_uid_pid, &update_same_uid, 0), 0);
+
+      TestSchedAttr attr{};
+      EXPECT_EQ(SchedGetattr(same_uid_pid, &attr, sizeof(attr), 0), 0);
+      EXPECT_EQ(attr.sched_policy, static_cast<uint32_t>(SCHED_BATCH));
+      EXPECT_EQ(attr.sched_nice, 7);
+
+      complete.poke();
+    });
+  }
+}
+
+TEST(SchedSetattrGetattrTest, ForkInheritsAndResetsUtilClamp) {
+  if (!IsUclampSupported()) {
+    GTEST_SKIP() << "Kernel does not support SCHED_FLAG_UTIL_CLAMP.";
+  }
+  test_helper::ForkHelper().RunInForkedProcess([] {
+    // 1. Without SCHED_FLAG_RESET_ON_FORK, forked child inherits uclamp_min and uclamp_max.
+    TestSchedAttr set_uclamp{};
+    set_uclamp.size = kSchedAttrSizeVer1;
+    set_uclamp.sched_flags = SCHED_FLAG_KEEP_ALL | SCHED_FLAG_UTIL_CLAMP;
+    set_uclamp.sched_util_min = 256;
+    set_uclamp.sched_util_max = 768;
+    ASSERT_EQ(SchedSetattr(0, &set_uclamp, 0), 0);
+
+    test_helper::ForkHelper child_fork_helper;
+    child_fork_helper.RunInForkedProcess([] {
+      TestSchedAttr child_attr{};
+      ASSERT_EQ(SchedGetattr(0, &child_attr, sizeof(child_attr), 0), 0);
+      EXPECT_EQ(child_attr.sched_flags, 0u);
+      EXPECT_EQ(child_attr.sched_util_min, 256u);
+      EXPECT_EQ(child_attr.sched_util_max, 768u);
+    });
+    ASSERT_TRUE(child_fork_helper.WaitForChildren());
+
+    // 2. With SCHED_FLAG_RESET_ON_FORK, forked child resets uclamp to (0, 1024) and clears
+    // SCHED_FLAG_RESET_ON_FORK while parent retains (384, 640).
+    TestSchedAttr set_reset{};
+    set_reset.size = kSchedAttrSizeVer1;
+    set_reset.sched_policy = SCHED_OTHER;
+    set_reset.sched_flags = SCHED_FLAG_RESET_ON_FORK | SCHED_FLAG_UTIL_CLAMP;
+    set_reset.sched_util_min = 384;
+    set_reset.sched_util_max = 640;
+    ASSERT_EQ(SchedSetattr(0, &set_reset, 0), 0);
+
+    TestSchedAttr parent_attr{};
+    ASSERT_EQ(SchedGetattr(0, &parent_attr, sizeof(parent_attr), 0), 0);
+    EXPECT_EQ(parent_attr.sched_flags, static_cast<uint64_t>(SCHED_FLAG_RESET_ON_FORK));
+    EXPECT_EQ(parent_attr.sched_util_min, 384u);
+    EXPECT_EQ(parent_attr.sched_util_max, 640u);
+
+    child_fork_helper.RunInForkedProcess([] {
+      TestSchedAttr child_attr{};
+      ASSERT_EQ(SchedGetattr(0, &child_attr, sizeof(child_attr), 0), 0);
+      EXPECT_EQ(child_attr.sched_flags, 0u);
+      EXPECT_EQ(child_attr.sched_util_min, 0u);
+      EXPECT_EQ(child_attr.sched_util_max, kSchedCapacityScale);
+    });
+    ASSERT_TRUE(child_fork_helper.WaitForChildren());
   });
 }
 

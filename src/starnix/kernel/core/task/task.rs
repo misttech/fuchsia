@@ -13,9 +13,9 @@ use crate::task::run_state::RunState;
 use crate::task::tracing::ZirconIdentity;
 use crate::task::{
     AbstractUnixSocketNamespace, AbstractVsockSocketNamespace, CurrentCreds, CurrentTask,
-    EventHandler, ExitStatus, Kernel, NormalPriority, Pid, RealtimePriority, SchedulerState,
-    SchedulingPolicy, SeccompFilterContainer, SeccompState, SeccompStateValue, TaskRunningState,
-    ThreadGroup, ThreadState, UtsNamespaceHandle, WaitCanceler, Waiter, ZombieProcess, ZombieState,
+    EventHandler, ExitStatus, Kernel, NormalPriority, Pid, SchedulerState, SeccompFilterContainer,
+    SeccompState, SeccompStateValue, TaskRunningState, ThreadGroup, ThreadState,
+    UtsNamespaceHandle, WaitCanceler, Waiter, ZombieProcess, ZombieState,
 };
 use crate::vfs::{FdTable, FsContext, FsString, SharedFdTable, SharedFsContext};
 use atomic_bitflags::atomic_bitflags;
@@ -1279,32 +1279,11 @@ impl Task {
         self.running_state()?.mm.upgrade().ok_or_else(|| errno!(EINVAL))
     }
 
-    /// Modify the given elements of the scheduler state with new values and update the
-    /// task's thread's role.
-    pub(crate) fn set_scheduler_policy_priority_and_reset_on_fork(
-        &self,
-        policy: SchedulingPolicy,
-        priority: RealtimePriority,
-        reset_on_fork: bool,
-    ) -> Result<(), Errno> {
-        self.update_scheduler_state_then_role(|scheduler_state| {
-            scheduler_state.policy = policy;
-            scheduler_state.realtime_priority = priority;
-            scheduler_state.reset_on_fork = reset_on_fork;
-        })
-    }
-
-    /// Modify the scheduler state's priority and update the task's thread's role.
-    pub(crate) fn set_scheduler_priority(&self, priority: RealtimePriority) -> Result<(), Errno> {
-        self.update_scheduler_state_then_role(|scheduler_state| {
-            scheduler_state.realtime_priority = priority;
-        })
-    }
-
     /// Modify the scheduler state's nice and update the task's thread's role.
     pub(crate) fn set_scheduler_nice(&self, nice: NormalPriority) -> Result<(), Errno> {
         self.update_scheduler_state_then_role(|scheduler_state| {
             scheduler_state.normal_priority = nice;
+            Ok(())
         })
     }
 
@@ -1313,12 +1292,15 @@ impl Task {
     ///
     /// This should be called on tasks that have newly created threads, e.g. after cloning.
     pub fn sync_scheduler_state_to_role(&self) -> Result<(), Errno> {
-        self.update_scheduler_state_then_role(|_| {})
+        self.update_scheduler_state_then_role(|_| Ok(()))
     }
 
-    fn update_scheduler_state_then_role(
+    /// Locks the task's `scheduler_state`, runs `updater` to validate and mutate it in place, and
+    /// commits the updated thread role while holding the lock. Restores the previous fields if
+    /// `updater`, priority validation, or role commitment returns an error.
+    pub(crate) fn update_scheduler_state_then_role(
         &self,
-        updater: impl FnOnce(&mut SchedulerState),
+        updater: impl FnOnce(&mut SchedulerState) -> Result<(), Errno>,
     ) -> Result<(), Errno> {
         let mut scheduler_state = self.scheduler_state.lock();
         let prev = (
@@ -1326,20 +1308,24 @@ impl Task {
             scheduler_state.normal_priority,
             scheduler_state.realtime_priority,
             scheduler_state.reset_on_fork,
+            scheduler_state.uclamp_min,
+            scheduler_state.uclamp_max,
         );
-        updater(&mut scheduler_state);
-        let result = if !scheduler_state.policy.is_valid_priority(scheduler_state.realtime_priority)
-        {
-            error!(EINVAL)
-        } else {
-            self.thread_group().kernel.scheduler.commit_thread_role(self, &mut scheduler_state)
-        };
+        let result = updater(&mut scheduler_state).and_then(|()| {
+            if !scheduler_state.policy.is_valid_priority(scheduler_state.realtime_priority) {
+                error!(EINVAL)
+            } else {
+                self.thread_group().kernel.scheduler.commit_thread_role(self, &mut scheduler_state)
+            }
+        });
         result.inspect_err(|_| {
             (
                 scheduler_state.policy,
                 scheduler_state.normal_priority,
                 scheduler_state.realtime_priority,
                 scheduler_state.reset_on_fork,
+                scheduler_state.uclamp_min,
+                scheduler_state.uclamp_max,
             ) = prev;
         })
     }
@@ -1738,7 +1724,9 @@ mod test {
     use super::*;
     use crate::mm::PAGE_SIZE;
     use crate::security;
+    use crate::task::{RoleOverrides, SchedulerManager, SchedulingPolicy};
     use crate::testing::*;
+    use fidl_fuchsia_scheduler::RoleManagerMarker;
     use starnix_uapi::auth::{CAP_SYS_ADMIN, Capabilities};
     use starnix_uapi::resource_limits::Resource;
     use starnix_uapi::signals::{SIGCHLD, SIGUSR1};
@@ -2016,35 +2004,54 @@ mod test {
 
             // Passing a non-zero real-time priority while `SchedulingPolicy::Normal` returns
             // `EINVAL` without mutating `realtime_priority`.
-            assert_eq!(current_task.set_scheduler_priority(realtime_10), error!(EINVAL));
+            assert_eq!(
+                current_task.update_scheduler_state_then_role(|scheduler_state| {
+                    scheduler_state.realtime_priority = realtime_10;
+                    Ok(())
+                }),
+                error!(EINVAL)
+            );
             assert_eq!(current_task.scheduler_state.lock().realtime_priority, non_realtime);
 
             current_task
-                .set_scheduler_policy_priority_and_reset_on_fork(
-                    SchedulingPolicy::Fifo,
-                    realtime_10,
-                    false,
-                )
-                .expect("set_scheduler_policy_priority_and_reset_on_fork");
+                .update_scheduler_state_then_role(|scheduler_state| {
+                    scheduler_state.policy = SchedulingPolicy::Fifo;
+                    scheduler_state.realtime_priority = realtime_10;
+                    scheduler_state.reset_on_fork = false;
+                    Ok(())
+                })
+                .expect("update policy and priority");
             assert_eq!(current_task.scheduler_state.lock().policy, SchedulingPolicy::Fifo);
             assert_eq!(current_task.scheduler_state.lock().realtime_priority, realtime_10);
 
-            current_task.set_scheduler_priority(realtime_20).expect("set_scheduler_priority");
+            current_task
+                .update_scheduler_state_then_role(|scheduler_state| {
+                    scheduler_state.realtime_priority = realtime_20;
+                    Ok(())
+                })
+                .expect("update priority");
             assert_eq!(current_task.scheduler_state.lock().realtime_priority, realtime_20);
 
             // Passing `NON_REAL_TIME` while `SchedulingPolicy::Fifo` returns `EINVAL` without
             // mutating `realtime_priority`.
-            assert_eq!(current_task.set_scheduler_priority(non_realtime), error!(EINVAL));
+            assert_eq!(
+                current_task.update_scheduler_state_then_role(|scheduler_state| {
+                    scheduler_state.realtime_priority = non_realtime;
+                    Ok(())
+                }),
+                error!(EINVAL)
+            );
             assert_eq!(current_task.scheduler_state.lock().realtime_priority, realtime_20);
 
             // Setting policy and priority together also validates their combination and rolls back
             // on mismatch.
             assert_eq!(
-                current_task.set_scheduler_policy_priority_and_reset_on_fork(
-                    SchedulingPolicy::Normal,
-                    realtime_10,
-                    true,
-                ),
+                current_task.update_scheduler_state_then_role(|scheduler_state| {
+                    scheduler_state.policy = SchedulingPolicy::Normal;
+                    scheduler_state.realtime_priority = realtime_10;
+                    scheduler_state.reset_on_fork = true;
+                    Ok(())
+                }),
                 error!(EINVAL)
             );
             assert_eq!(current_task.scheduler_state.lock().policy, SchedulingPolicy::Fifo);
@@ -2056,9 +2063,6 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_update_scheduler_state_rolls_back_on_commit_error() {
-        use crate::task::{RoleOverrides, SchedulerManager};
-        use fidl_fuchsia_scheduler::RoleManagerMarker;
-
         let (role_manager, server_end) = fidl::endpoints::create_sync_proxy::<RoleManagerMarker>();
         // Drop the server endpoint so RoleManager FIDL calls fail and `commit_thread_role`
         // returns `Err(EINVAL)`.
@@ -2070,19 +2074,38 @@ mod test {
         spawn_kernel_with_scheduler_and_run_sync(scheduler_manager, |current_task| {
             let initial_state = current_task.scheduler_state.lock().clone();
             let realtime_10 = SchedulingPolicy::Fifo.realtime_priority_from(10).unwrap();
+            let nicer = NormalPriority::from_setpriority_syscall(-5);
 
             assert_eq!(
-                current_task.set_scheduler_policy_priority_and_reset_on_fork(
-                    SchedulingPolicy::Fifo,
-                    realtime_10,
-                    true,
-                ),
+                current_task.update_scheduler_state_then_role(|scheduler_state| {
+                    scheduler_state.policy = SchedulingPolicy::Fifo;
+                    scheduler_state.realtime_priority = realtime_10;
+                    scheduler_state.reset_on_fork = true;
+                    scheduler_state.uclamp_min = 256;
+                    scheduler_state.uclamp_max = 768;
+                    Ok(())
+                }),
                 error!(EINVAL)
             );
             assert_eq!(*current_task.scheduler_state.lock(), initial_state);
 
-            let nicer = NormalPriority::from_setpriority_syscall(-5);
             assert_eq!(current_task.set_scheduler_nice(nicer), error!(EINVAL));
+            assert_eq!(*current_task.scheduler_state.lock(), initial_state);
+
+            // Also verify rollback when the updater closure itself returns an error after mutating
+            // fields.
+            assert_eq!(
+                current_task.update_scheduler_state_then_role(|scheduler_state| {
+                    scheduler_state.policy = SchedulingPolicy::Fifo;
+                    scheduler_state.realtime_priority = realtime_10;
+                    scheduler_state.normal_priority = nicer;
+                    scheduler_state.reset_on_fork = true;
+                    scheduler_state.uclamp_min = 128;
+                    scheduler_state.uclamp_max = 512;
+                    error!(EPERM)
+                }),
+                error!(EPERM)
+            );
             assert_eq!(*current_task.scheduler_state.lock(), initial_state);
         })
         .await;
