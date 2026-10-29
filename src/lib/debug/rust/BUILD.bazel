@@ -21,9 +21,7 @@ rustc_library(
     srcs = ["src/lib.rs"],
     crate_name = "debug",
     edition = "2024",
-    # Rust std needs fdio on Fuchsia. GN adds it to every Fuchsia executable,
-    # Bazel does not (https://fxbug.dev/42065890), so list it for the test.
-    test_deps = ["//sdk/lib/fdio"],
+    link_deps = [":debug_sym_for_rust"],
     visibility = [
         "//src/connectivity/network/netstack3:__pkg__",
         "//src/devices/bin/driver-host:__pkg__",
@@ -33,5 +31,4 @@ rustc_library(
         "//src/sys/time/timekeeper/alarms:__pkg__",
     ],
     with_unit_tests = True,
-    deps = [":debug_sym_for_rust"],
 )

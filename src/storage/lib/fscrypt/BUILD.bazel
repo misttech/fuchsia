@@ -15,10 +15,7 @@ rustc_library(
         "src/proxy_filename.rs",
     ],
     edition = "2024",
-    # Rust std needs fdio on Fuchsia. GN adds it to every Fuchsia executable,
-    # Bazel does not (https://fxbug.dev/42065890), so list it for the test.
     test_deps = [
-        "//sdk/lib/fdio",
         "//third_party/rust_crates/vendor:hex",
     ],
     visibility = [

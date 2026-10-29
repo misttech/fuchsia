@@ -45,12 +45,7 @@ rustc_test(
         "//third_party/rust_crates/vendor:serde",
         "//third_party/rust_crates/vendor:serde_json",
         "//third_party/rust_crates/vendor:test-case",
-    ] + select({
-        # GN links fdio into every Fuchsia executable; Bazel does not.
-        # See https://fxbug.dev/42065890.
-        "@platforms//os:fuchsia": ["//sdk/lib/fdio"],
-        "//conditions:default": [],
-    }),
+    ],
 )
 
 wrap_host_rust_test(

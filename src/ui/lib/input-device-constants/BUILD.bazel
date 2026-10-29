@@ -11,9 +11,6 @@ rustc_library(
     srcs = ["src/lib.rs"],
     crate_name = "input_device_constants",
     edition = "2024",
-    # Rust std needs fdio on Fuchsia. GN adds it to every Fuchsia executable,
-    # Bazel does not (https://fxbug.dev/42065890), so list it for the test.
-    test_deps = ["//sdk/lib/fdio"],
     visibility = [
         "//src/lib/assembly/config_schema:__pkg__",
         "//src/ui/lib/input_pipeline:__pkg__",

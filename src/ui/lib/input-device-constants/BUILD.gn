@@ -50,7 +50,6 @@ rustc_library("lib") {
   sources = [ "src/lib.rs" ]
   crate_name = "input_device_constants"
   edition = "2024"
-  test_deps = [ "//sdk/lib/fdio" ]
   visibility = [
     ":*",
     "//src/lib/assembly/config_schema:*",

@@ -46,10 +46,7 @@ rustc_library("fscrypt") {
     "src/proxy_filename.rs",
   ]
   edition = "2024"
-  test_deps = [
-    "//sdk/lib/fdio",
-    "//third_party/rust_crates:hex",
-  ]
+  test_deps = [ "//third_party/rust_crates:hex" ]
   visibility = [
     ":*",
     "//src/storage/crypt/fxfs/common:*",
