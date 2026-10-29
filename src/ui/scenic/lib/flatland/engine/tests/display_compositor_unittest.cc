@@ -2129,8 +2129,8 @@ TEST_P(DisplayCompositorSolidColorAlphaTest, SolidColorAlphaByteFollowsBlendMode
   display_compositor_->AddDisplay(&display, display_info, /*num_vmos*/ 0,
                                   /*out_buffer_collection*/ nullptr);
 
-  // Premultiplied half-opaque green, at layer opacity 1, in the blend mode under test. Red and
-  // blue are equal, so the expected bytes do not depend on the channel order.
+  // A premultiplied half-opaque orange, at layer opacity 1, in the blend mode under test. Red and
+  // blue differ, so the expected bytes and format also check the channel order.
   ResolvedLayer layer = {
       .geometry = SrcToDest(types::RectangleF({.x = 0,
                                                .y = 0,
@@ -2138,7 +2138,7 @@ TEST_P(DisplayCompositorSolidColorAlphaTest, SolidColorAlphaByteFollowsBlendMode
                                                .height = static_cast<float>(resolution.y)})),
       .multiply_color = {1.f, 1.f, 1.f, 1.f},
       .blend_mode = GetParam().blend_mode,
-      .content = ResolvedLayer::SolidColorContent{.color = {0.f, 0.5f, 0.f, 0.5f}},
+      .content = ResolvedLayer::SolidColorContent{.color = {0.5f, 0.25f, 0.f, 0.5f}},
   };
   RenderData render_data = {
       .display_id = kDisplayId,
@@ -2148,6 +2148,7 @@ TEST_P(DisplayCompositorSolidColorAlphaTest, SolidColorAlphaByteFollowsBlendMode
   // Only the displayed solid-color layer's config is sent.  The empty-scene layer, whose color
   // config `AddDisplay()` set to black, is not displayed, so the proxy does not send that config.
   std::vector<std::array<uint8_t, 4>> sent_color_bytes;
+  std::vector<fuchsia_images2::wire::PixelFormat> sent_color_formats;
   EXPECT_CALL(*mock_display_coordinator_, SetLayerColorConfig(_, _))
       .Times(1)
       .WillOnce(testing::Invoke(
@@ -2156,6 +2157,7 @@ TEST_P(DisplayCompositorSolidColorAlphaTest, SolidColorAlphaByteFollowsBlendMode
               MockDisplayCoordinator::SetLayerColorConfigCompleter::Sync& completer) {
             const fidl::Array<uint8_t, 8>& bytes = request->color.bytes;
             sent_color_bytes.push_back({bytes[0], bytes[1], bytes[2], bytes[3]});
+            sent_color_formats.push_back(request->color.format);
           }));
   EXPECT_CALL(*mock_display_coordinator_, SetLayerPrimaryConfig(_, _)).Times(0);
   EXPECT_CALL(*mock_display_coordinator_, SetLayerImage2(_, _)).Times(0);
@@ -2172,8 +2174,10 @@ TEST_P(DisplayCompositorSolidColorAlphaTest, SolidColorAlphaByteFollowsBlendMode
   bool result = TryDirectToDisplay(std::span<const RenderData>(&render_data, 1));
   EXPECT_TRUE(result);
 
+  EXPECT_THAT(sent_color_formats,
+              testing::ElementsAre(fuchsia_images2::wire::PixelFormat::kB8G8R8A8));
   EXPECT_THAT(sent_color_bytes,
-              testing::ElementsAre(testing::ElementsAre(uint8_t{0}, uint8_t{127}, uint8_t{0},
+              testing::ElementsAre(testing::ElementsAre(uint8_t{0}, uint8_t{63}, uint8_t{127},
                                                         GetParam().expected_alpha)));
 
   // Cleanup: All layers should be destroyed.

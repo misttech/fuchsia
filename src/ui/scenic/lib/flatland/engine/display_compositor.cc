@@ -912,11 +912,13 @@ void DisplayCompositor::ApplyLayerColor(const display::LayerId& layer_id, const 
   // A `kReplace` fill writes its premultiplied RGB without blending, so nothing below it shows
   // through, and the alpha it leaves in the output is not displayed. Sending alpha 0xff therefore
   // gives the same pixels on the display path as on the GPU path, even for a translucent color.
+  //
+  // `color` is RGBA, as Flatland stores solid colors. `kB8G8R8A8` stores blue in byte 0.
   const bool is_replace = blend_mode == types::BlendMode::kReplace();
   const fidl::Array<uint8_t, 8> color_bytes = {
-      static_cast<uint8_t>(255 * color[0]),
-      static_cast<uint8_t>(255 * color[1]),
       static_cast<uint8_t>(255 * color[2]),
+      static_cast<uint8_t>(255 * color[1]),
+      static_cast<uint8_t>(255 * color[0]),
       is_replace ? uint8_t{0xff} : static_cast<uint8_t>(255 * color[3]),
       0,
       0,

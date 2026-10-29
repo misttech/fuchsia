@@ -1156,7 +1156,7 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenSolidColorRectangle
                                                .height = static_cast<float>(kRectHeight)})),
       .multiply_color = {1.f, 1.f, 1.f, 1.f},
       .blend_mode = BlendMode::kReplace(),
-      .content = ResolvedLayer::SolidColorContent{.color = {0.f, 0.2f, 0.f, 1.f}},
+      .content = ResolvedLayer::SolidColorContent{.color = {0.f, 0.f, 0.2f, 1.f}},
   };
   RenderData render_data = {.display_id = display->display_id(),
                             .layers = std::span<const ResolvedLayer>(&layer, 1)};
