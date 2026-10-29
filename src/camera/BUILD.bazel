@@ -8,3 +8,12 @@ exports_files(
     ["meta/camera.core_shard.cml"],
     visibility = ["//bundles/assembly:__subpackages__"],
 )
+
+test_suite(
+    name = "target_tests",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    tests = [
+        "//src/camera/bin/camera-gym/controller_error:camera_gym_controller_error_unittest",
+        "//src/camera/bin/camera-gym/controller_parser:camera_gym_controller_parser_unittest",
+    ],
+)

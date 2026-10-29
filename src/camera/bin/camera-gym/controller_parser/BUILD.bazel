@@ -1,0 +1,51 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "lib",
+    srcs = [
+        "controller_parser.cc",
+    ],
+    hdrs = [
+        "controller_parser.h",
+    ],
+    copts = [
+        # TODO(https://fxbug.dev/42085293): delete the below and fix compiler warnings
+        "-Wno-vla-cxx-extension",
+    ],
+    implementation_deps = [
+        "//sdk/lib/sys/cpp",
+        "//sdk/lib/syslog/cpp",
+        "//src/lib/fxl:fxl_cli",
+    ],
+    visibility = ["//src/camera/bin/camera-gym/controller_client:__pkg__"],
+    deps = [
+        "//sdk/lib/fit-promise",
+        "//src/camera/bin/camera-gym/fidl:controller_hlcpp",
+    ],
+    alwayslink = True,
+)
+
+fx_cc_binary(
+    name = "camera_gym_controller_parser_unittest_bin",
+    testonly = True,
+    srcs = ["controller_parser_unittest.cc"],
+    tags = ["manual"],
+    deps = [
+        ":lib",
+        "//src/lib/fxl/test:gtest_main",
+    ],
+)
+
+fx_unittest_package(
+    name = "camera_gym_controller_parser_unittest",
+    unit_tests = [":camera_gym_controller_parser_unittest_bin"],
+    visibility = ["//src/camera:__pkg__"],
+)
