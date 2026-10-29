@@ -2656,13 +2656,52 @@ def match_bazel_target_for_gn(name, gn_top, before_targets, bazel_targets, top_v
     return None, None
 
 
+# Load bazel2gn's copt -> GN config map (`var coptToConfig = map[string]string{...}` in the
+# checkout's build/tools/bazel2gn/constants.go). bazel2gn rewrites each listed Bazel `copts`
+# string into the mapped GN config label, so such copts carry GN `configs`.
+def load_copt_to_config_map():
+    path = os.path.join(workdir, "build/tools/bazel2gn/constants.go")
+    try:
+        src = open(path, encoding="utf-8").read()
+    except Exception:
+        return {}
+    m = re.search(r"var\s+coptToConfig\s*=\s*map\[string\]string\s*\{(.*?)\n\}", src, re.S)
+    if not m:
+        return {}
+    return dict(re.findall(r'"([^"]+)"\s*:\s*"([^"]+)"', m.group(1)))
+
+
+COPT_TO_CONFIG = load_copt_to_config_map()
+
+
+# Check that every GN config of a C/C++ target is carried by its Bazel `copts`: either a copt
+# that bazel2gn maps to that config (COPT_TO_CONFIG), or a
+# `# @bazel2gn:raw_overwrite:[ ... ]` on the closing `],` of `copts`, and that the current
+# (generated) GN target still lists the config.
+def gn_configs_carried_by_copts(gn_top, bt_kws, bazel_lines, cur):
+    gn_cfgs = gn_top.get("configs", [])
+    copts_node = bt_kws.get("copts")
+    if not gn_cfgs or copts_node is None or not cur:
+        return False
+    carried = {COPT_TO_CONFIG[c] for c in ast_str_list(copts_node) if c in COPT_TO_CONFIG}
+    end = getattr(copts_node, "end_lineno", None)
+    if end and end <= len(bazel_lines):
+        ro = re.search(r"#\s*@bazel2gn:raw_overwrite:\s*\[([^\]]*)\]", bazel_lines[end - 1])
+        if ro:
+            carried.update(re.findall(r'"([^"]+)"', ro.group(1)))
+    cur_cfgs = set(parse_gn_top_attrs(cur[2]).get("configs", []))
+    return all(c in carried and c in cur_cfgs for c in gn_cfgs)
+
+
 def record_verified_alignment_info(pkg, bazel_rel, bazel_path, before_targets, new_targets):
     if not os.path.isfile(bazel_path):
         return
     try:
-        bazel_tree = ast.parse(open(bazel_path, encoding="utf-8").read(), filename=bazel_rel)
+        bazel_src = open(bazel_path, encoding="utf-8").read()
+        bazel_tree = ast.parse(bazel_src, filename=bazel_rel)
     except Exception:
         return
+    bazel_lines = bazel_src.splitlines()
     bazel_targets = {}
     has_bazel_test_rule = False
     has_bazel_test_args = False
@@ -2791,6 +2830,26 @@ def record_verified_alignment_info(pkg, bazel_rel, bazel_path, before_targets, n
                         f'{"; ".join(notes)}'
                     ),
                 })
+
+        # Record verified C/C++ GN configs carried by Bazel copts (bazel2gn's copt -> config
+        # map or a raw_overwrite on copts), so review_diff's "configs ... not carried over"
+        # warning is deduplicated instead of sending the coder back for an already-kept config.
+        if (
+            has_gn_configs
+            and "configs" not in bt_kws
+            and gn_configs_carried_by_copts(gn_top, bt_kws, bazel_lines, cur)
+        ):
+            findings.append({
+                "source": "gn_attr_parity",
+                "category": "attribute_alignment",
+                "severity": "info",
+                "file": bazel_rel,
+                "line": bt_line,
+                "message": (
+                    f'Target "{name}" (Target Attributes): '
+                    "configs in GN not carried over to Bazel"
+                ),
+            })
 
         # Record verified attribute mappings for test data_deps (GN data_deps -> Bazel test_data / data).
         if (
