@@ -6,7 +6,6 @@
 #include <fuchsia/media/cpp/fidl.h>
 #include <fuchsia/mediacodec/cpp/fidl.h>
 #include <fuchsia/sysmem/cpp/fidl.h>
-#include <fuchsia/sysmem/cpp/fidl_test_base.h>
 #include <fuchsia/sysmem2/cpp/fidl_test_base.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
@@ -53,11 +52,11 @@ auto CreateDecoderParams() {
 
 auto CreateStreamBufferPartialSettings(
     uint64_t buffer_lifetime_ordinal, const fuchsia::media::StreamBufferConstraints& constraints,
-    fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken> token) {
+    fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token) {
   fuchsia::media::StreamBufferPartialSettings settings;
   settings.set_buffer_lifetime_ordinal(buffer_lifetime_ordinal)
       .set_buffer_constraints_version_ordinal(constraints.buffer_constraints_version_ordinal())
-      .set_sysmem_token(std::move(token));
+      .set_sysmem2_token(std::move(token));
   return settings;
 }
 
@@ -273,7 +272,7 @@ class CodecImplFailures : public gtest::RealLoopFixture {
 
   // Just cache this request so that we can have a valid sysmem handle
   std::optional<fidl::InterfaceRequest<fuchsia::sysmem2::Allocator>> sysmem_request_;
-  std::optional<fidl::InterfaceRequest<fuchsia::sysmem::BufferCollectionToken>> token_request_;
+  std::optional<fidl::InterfaceRequest<fuchsia::sysmem2::BufferCollectionToken>> token_request_;
 
   bool error_handler_ran_ = false;
   std::unique_ptr<CodecImpl> codec_impl_;
@@ -284,7 +283,7 @@ TEST_F(CodecImplFailures, InputBufferCollectionConstraintsCpuUsage) {
   StreamProcessorPtr processor;
 
   processor.events().OnInputConstraints = [this, &processor](auto input_constraints) {
-    fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken> token;
+    fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token;
     token_request_ = token.NewRequest();
 
     auto buffer_collection_constraints = CreateValidInputBufferCollectionConstraints();
@@ -305,11 +304,43 @@ TEST_F(CodecImplFailures, InputBufferCollectionConstraintsCpuUsage) {
   ASSERT_TRUE(error_handler_ran_);
 }
 
+// TODO(https://fxbug.dev/577201084): Remove once API level 33 is retired and v1 token support is
+// removed.
+TEST_F(CodecImplFailures, InputBufferCollectionConstraintsCpuUsageV1Token) {
+  StreamProcessorPtr processor;
+
+  processor.events().OnInputConstraints = [this, &processor](auto input_constraints) {
+    fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token;
+    token_request_ = token.NewRequest();
+
+    auto buffer_collection_constraints = CreateValidInputBufferCollectionConstraints();
+    // Setting write usage on input buffers is invalid and will result in codec
+    // failure
+    buffer_collection_constraints.usage()->cpu() =
+        fuchsia::sysmem::cpuUsageWrite | fuchsia::sysmem::cpuUsageWriteOften;
+    codec_adapter_->SetBufferCollectionConstraints(kInputPort,
+                                                   std::move(buffer_collection_constraints));
+
+    fuchsia::media::StreamBufferPartialSettings settings;
+    settings.set_buffer_lifetime_ordinal(1)
+        .set_buffer_constraints_version_ordinal(
+            input_constraints.buffer_constraints_version_ordinal())
+        .set_sysmem_token(
+            fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken>(token.TakeChannel()));
+    processor->SetInputBufferPartialSettings(std::move(settings));
+  };
+
+  Create(processor.NewRequest());
+
+  RunLoopUntil([this]() { return error_handler_ran_; });
+  ASSERT_TRUE(error_handler_ran_);
+}
+
 TEST_F(CodecImplFailures, InputBufferCollectionConstraintsMinBufferCount) {
   StreamProcessorPtr processor;
 
   processor.events().OnInputConstraints = [this, &processor](auto input_constraints) {
-    fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken> token;
+    fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token;
     token_request_ = token.NewRequest();
 
     auto buffer_collection_constraints = CreateValidInputBufferCollectionConstraints();
@@ -333,7 +364,7 @@ TEST_F(CodecImplFailures, InputBufferCollectionSysmemFailure) {
   StreamProcessorPtr processor;
 
   processor.events().OnInputConstraints = [this, &processor](auto input_constraints) {
-    fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken> token;
+    fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token;
     token_request_ = token.NewRequest();
 
     codec_adapter_->SetBufferCollectionConstraints(kInputPort,
@@ -366,7 +397,7 @@ TEST_F(CodecImplFailures, InputBufferCollectionSysmemFailureDuringDestruction) {
   StreamProcessorPtr processor;
 
   processor.events().OnInputConstraints = [this, &processor](auto input_constraints) {
-    fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken> token;
+    fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token;
     token_request_ = token.NewRequest();
 
     codec_adapter_->SetBufferCollectionConstraints(kInputPort,
@@ -401,7 +432,7 @@ TEST_F(CodecImplFailures, InputBufferCollectionSysmemFailureDuringDestruction) {
 
 TEST_F(CodecImplFailures, OutputPacketOnFirstBufferAddInNonDynamicMode) {
   StreamProcessorPtr processor;
-  std::optional<fidl::InterfaceRequest<fuchsia::sysmem::BufferCollectionToken>>
+  std::optional<fidl::InterfaceRequest<fuchsia::sysmem2::BufferCollectionToken>>
       output_token_request;
 
   std::atomic<bool> output_packet_emitted = false;
@@ -409,7 +440,7 @@ TEST_F(CodecImplFailures, OutputPacketOnFirstBufferAddInNonDynamicMode) {
   CodecPacket* first_recycled_packet = nullptr;
 
   processor.events().OnInputConstraints = [this, &processor](auto input_constraints) {
-    fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken> token;
+    fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token;
     token_request_ = token.NewRequest();
 
     codec_adapter_->SetBufferCollectionConstraints(kInputPort,
@@ -420,7 +451,7 @@ TEST_F(CodecImplFailures, OutputPacketOnFirstBufferAddInNonDynamicMode) {
   };
 
   processor.events().OnOutputConstraints = [&](auto output_constraints) {
-    fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken> token;
+    fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token;
     output_token_request = token.NewRequest();
 
     codec_adapter_->SetBufferCollectionConstraints(kOutputPort,
@@ -495,7 +526,7 @@ TEST_F(CodecImplFailures, OutputPacketOnFirstBufferAddInNonDynamicMode) {
 
 TEST_F(CodecImplFailures, OutputPacketWithOldOrdinalWhenPortDeconfigured) {
   StreamProcessorPtr processor;
-  std::optional<fidl::InterfaceRequest<fuchsia::sysmem::BufferCollectionToken>>
+  std::optional<fidl::InterfaceRequest<fuchsia::sysmem2::BufferCollectionToken>>
       output_token_request;
 
   CodecPacket* saved_output_packet = nullptr;
@@ -508,7 +539,7 @@ TEST_F(CodecImplFailures, OutputPacketWithOldOrdinalWhenPortDeconfigured) {
   std::atomic<bool> old_packet_recycled_back = false;
 
   processor.events().OnInputConstraints = [this, &processor](auto input_constraints) {
-    fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken> token;
+    fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token;
     token_request_ = token.NewRequest();
 
     codec_adapter_->SetBufferCollectionConstraints(kInputPort,
@@ -527,7 +558,7 @@ TEST_F(CodecImplFailures, OutputPacketWithOldOrdinalWhenPortDeconfigured) {
   processor.events().OnOutputConstraints = [&](auto output_constraints) {
     if (!sent_output_settings) {
       sent_output_settings = true;
-      fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken> token;
+      fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token;
       output_token_request = token.NewRequest();
 
       codec_adapter_->SetBufferCollectionConstraints(
@@ -632,7 +663,7 @@ TEST_F(CodecImplFailures, RemoveBufferInNonDynamicModeForActiveOrdinalFails) {
   StreamProcessorPtr processor;
 
   processor.events().OnInputConstraints = [this, &processor](auto input_constraints) {
-    fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken> token;
+    fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token;
     token_request_ = token.NewRequest();
 
     codec_adapter_->SetBufferCollectionConstraints(kInputPort,
@@ -658,9 +689,9 @@ TEST_F(CodecImplFailures, RemoveBufferInNonDynamicModeForActiveOrdinalFails) {
 TEST_F(CodecImplFailures,
        OutputPacketWithOldOrdinalDeliveredWithEnableOldOutputBuffersAndRemoveBuffer) {
   StreamProcessorPtr processor;
-  std::optional<fidl::InterfaceRequest<fuchsia::sysmem::BufferCollectionToken>>
+  std::optional<fidl::InterfaceRequest<fuchsia::sysmem2::BufferCollectionToken>>
       output_token_request_1;
-  std::optional<fidl::InterfaceRequest<fuchsia::sysmem::BufferCollectionToken>>
+  std::optional<fidl::InterfaceRequest<fuchsia::sysmem2::BufferCollectionToken>>
       output_token_request_2;
 
   CodecPacket* saved_output_packet = nullptr;
@@ -677,7 +708,7 @@ TEST_F(CodecImplFailures,
   bool remove_buffer_completed_before_output_packet = false;
 
   processor.events().OnInputConstraints = [this, &processor](auto input_constraints) {
-    fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken> token;
+    fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token;
     token_request_ = token.NewRequest();
 
     codec_adapter_->SetBufferCollectionConstraints(kInputPort,
@@ -691,7 +722,7 @@ TEST_F(CodecImplFailures,
   processor.events().OnOutputConstraints = [&](auto output_constraints) {
     if (!sent_first_output_settings) {
       sent_first_output_settings = true;
-      fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken> token;
+      fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token;
       output_token_request_1 = token.NewRequest();
 
       codec_adapter_->SetBufferCollectionConstraints(
@@ -808,7 +839,7 @@ TEST_F(CodecImplFailures,
 
   // Now configure ordinal 3 output buffers and CompleteOutputBufferPartialSettings(3) to unpause
   // output.
-  fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken> token_2;
+  fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token_2;
   output_token_request_2 = token_2.NewRequest();
   processor->SetOutputBufferPartialSettings(CreateStreamBufferPartialSettings(
       3, second_output_constraints.buffer_constraints(), std::move(token_2)));
@@ -961,9 +992,9 @@ TEST_F(CodecImplFailures,
 
 TEST_F(CodecImplFailures, OutputPacketQueuedDuringPausedOutputShortCircuitedOnOutputReconfig) {
   StreamProcessorPtr processor;
-  std::optional<fidl::InterfaceRequest<fuchsia::sysmem::BufferCollectionToken>>
+  std::optional<fidl::InterfaceRequest<fuchsia::sysmem2::BufferCollectionToken>>
       output_token_request_1;
-  std::optional<fidl::InterfaceRequest<fuchsia::sysmem::BufferCollectionToken>>
+  std::optional<fidl::InterfaceRequest<fuchsia::sysmem2::BufferCollectionToken>>
       output_token_request_2;
 
   CodecPacket* saved_output_packet_1 = nullptr;
@@ -977,7 +1008,7 @@ TEST_F(CodecImplFailures, OutputPacketQueuedDuringPausedOutputShortCircuitedOnOu
   fuchsia::media::StreamOutputConstraints initial_output_constraints;
 
   processor.events().OnInputConstraints = [this, &processor](auto input_constraints) {
-    fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken> token;
+    fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token;
     token_request_ = token.NewRequest();
 
     codec_adapter_->SetBufferCollectionConstraints(kInputPort,
@@ -989,7 +1020,7 @@ TEST_F(CodecImplFailures, OutputPacketQueuedDuringPausedOutputShortCircuitedOnOu
 
   processor.events().OnOutputConstraints = [&](auto output_constraints) {
     initial_output_constraints = std::move(output_constraints);
-    fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken> token;
+    fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token;
     output_token_request_1 = token.NewRequest();
 
     codec_adapter_->SetBufferCollectionConstraints(kOutputPort,
@@ -1064,7 +1095,7 @@ TEST_F(CodecImplFailures, OutputPacketQueuedDuringPausedOutputShortCircuitedOnOu
   // is true), and when CompleteOutputBufferPartialSettings(3) unpauses output_queue_, the queued
   // closure must short-circuit and recycle ordinal 1's packet exactly once without delivering
   // OnOutputPacket for ordinal 1 to the client.
-  fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken> token_2;
+  fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token_2;
   output_token_request_2 = token_2.NewRequest();
   processor->SetOutputBufferPartialSettings(CreateStreamBufferPartialSettings(
       3, initial_output_constraints.buffer_constraints(), std::move(token_2)));
@@ -1099,9 +1130,9 @@ TEST_F(CodecImplFailures, OutputPacketQueuedDuringPausedOutputShortCircuitedOnOu
 
 TEST_F(CodecImplFailures, OutputPacketQueuedDuringMidStreamFormatChangeNonDynamicBuffers) {
   StreamProcessorPtr processor;
-  std::optional<fidl::InterfaceRequest<fuchsia::sysmem::BufferCollectionToken>>
+  std::optional<fidl::InterfaceRequest<fuchsia::sysmem2::BufferCollectionToken>>
       output_token_request_1;
-  std::optional<fidl::InterfaceRequest<fuchsia::sysmem::BufferCollectionToken>>
+  std::optional<fidl::InterfaceRequest<fuchsia::sysmem2::BufferCollectionToken>>
       output_token_request_2;
 
   CodecPacket* saved_output_packet_1 = nullptr;
@@ -1122,7 +1153,7 @@ TEST_F(CodecImplFailures, OutputPacketQueuedDuringMidStreamFormatChangeNonDynami
   uint32_t output_constraints_count = 0;
 
   processor.events().OnInputConstraints = [this, &processor](auto input_constraints) {
-    fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken> token;
+    fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token;
     token_request_ = token.NewRequest();
 
     codec_adapter_->SetBufferCollectionConstraints(kInputPort,
@@ -1136,7 +1167,7 @@ TEST_F(CodecImplFailures, OutputPacketQueuedDuringMidStreamFormatChangeNonDynami
     ++output_constraints_count;
     initial_output_constraints = std::move(output_constraints);
     if (output_constraints_count == 1) {
-      fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken> token;
+      fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token;
       output_token_request_1 = token.NewRequest();
 
       codec_adapter_->SetBufferCollectionConstraints(
@@ -1277,7 +1308,7 @@ TEST_F(CodecImplFailures, OutputPacketQueuedDuringMidStreamFormatChangeNonDynami
 
   // Complete the mid-stream output buffer reconfiguration to ordinal 3 so that subsequent output
   // packet delivery on ordinal 3 can be verified.
-  fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken> token_2;
+  fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token_2;
   output_token_request_2 = token_2.NewRequest();
   processor->SetOutputBufferPartialSettings(CreateStreamBufferPartialSettings(
       3, initial_output_constraints.buffer_constraints(), std::move(token_2)));
@@ -1313,7 +1344,7 @@ TEST_F(CodecImplFailures, OutputPacketQueuedDuringMidStreamFormatChangeNonDynami
 
 TEST_F(CodecImplFailures, RecycleOutputPacketWhileQueued) {
   StreamProcessorPtr processor;
-  std::optional<fidl::InterfaceRequest<fuchsia::sysmem::BufferCollectionToken>>
+  std::optional<fidl::InterfaceRequest<fuchsia::sysmem2::BufferCollectionToken>>
       output_token_request;
 
   CodecPacket* saved_output_packet = nullptr;
@@ -1324,7 +1355,7 @@ TEST_F(CodecImplFailures, RecycleOutputPacketWhileQueued) {
   processor.set_error_handler([&](zx_status_t status) { channel_epitaph = status; });
 
   processor.events().OnInputConstraints = [this, &processor](auto input_constraints) {
-    fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken> token;
+    fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token;
     token_request_ = token.NewRequest();
 
     codec_adapter_->SetBufferCollectionConstraints(kInputPort,
@@ -1335,7 +1366,7 @@ TEST_F(CodecImplFailures, RecycleOutputPacketWhileQueued) {
   };
 
   processor.events().OnOutputConstraints = [&](auto output_constraints) {
-    fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken> token;
+    fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token;
     output_token_request = token.NewRequest();
 
     codec_adapter_->SetBufferCollectionConstraints(kOutputPort,
@@ -1399,7 +1430,7 @@ TEST_F(CodecImplFailures, RecycleOutputPacketWhileQueued) {
 
 TEST_F(CodecImplFailures, FailStreamWhilePausedOutputShortCircuitsQueuedPacket) {
   StreamProcessorPtr processor;
-  std::optional<fidl::InterfaceRequest<fuchsia::sysmem::BufferCollectionToken>>
+  std::optional<fidl::InterfaceRequest<fuchsia::sysmem2::BufferCollectionToken>>
       output_token_request;
 
   CodecPacket* saved_output_packet = nullptr;
@@ -1411,7 +1442,7 @@ TEST_F(CodecImplFailures, FailStreamWhilePausedOutputShortCircuitsQueuedPacket) 
   bool stream_failed_seen = false;
 
   processor.events().OnInputConstraints = [this, &processor](auto input_constraints) {
-    fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken> token;
+    fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token;
     token_request_ = token.NewRequest();
 
     codec_adapter_->SetBufferCollectionConstraints(kInputPort,
@@ -1422,7 +1453,7 @@ TEST_F(CodecImplFailures, FailStreamWhilePausedOutputShortCircuitsQueuedPacket) 
   };
 
   processor.events().OnOutputConstraints = [&](auto output_constraints) {
-    fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken> token;
+    fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token;
     output_token_request = token.NewRequest();
 
     codec_adapter_->SetBufferCollectionConstraints(kOutputPort,
@@ -1526,7 +1557,7 @@ TEST_F(CodecImplFailures, QueueInputPacketOutOfBoundsFailsAndShutsDownCleanly) {
   StreamProcessorPtr processor;
 
   processor.events().OnInputConstraints = [&](auto input_constraints) {
-    fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken> token;
+    fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token;
     token_request_ = token.NewRequest();
 
     codec_adapter_->SetBufferCollectionConstraints(kInputPort,
@@ -1587,7 +1618,7 @@ class CodecImplFormatTrackingFailures : public CodecImplFailures {
 
   void ConfigureInputBuffers(StreamProcessorPtr& processor) {
     processor.events().OnInputConstraints = [this, &processor](auto input_constraints) {
-      fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken> token;
+      fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token;
       token_request_ = token.NewRequest();
 
       auto buffer_collection_constraints = CreateValidInputBufferCollectionConstraints();

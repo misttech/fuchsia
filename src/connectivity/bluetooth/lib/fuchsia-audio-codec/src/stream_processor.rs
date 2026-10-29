@@ -200,12 +200,7 @@ impl StreamProcessorInner {
                 let processor = self.processor.clone();
                 let mut partial_settings = Self::partial_settings();
                 let token_fn = move |token: ClientEnd<BufferCollectionTokenMarker>| {
-                    // A sysmem token channel serves both sysmem(1) and sysmem2 token protocols, so
-                    // we can convert here until StreamProcessor has a sysmem2 token field.
-                    partial_settings.sysmem_token =
-                        Some(ClientEnd::<fidl_fuchsia_sysmem::BufferCollectionTokenMarker>::new(
-                            token.into_channel(),
-                        ));
+                    partial_settings.sysmem2_token = Some(token);
                     // FIDL failures will be caught via the request stream.
                     if let Err(e) = processor.set_input_buffer_partial_settings(partial_settings) {
                         warn!("Couldn't set input buffer settings: {:?}", e);
@@ -229,12 +224,7 @@ impl StreamProcessorInner {
                 let processor = self.processor.clone();
                 let mut partial_settings = Self::partial_settings();
                 let token_fn = move |token: ClientEnd<BufferCollectionTokenMarker>| {
-                    // A sysmem token channel serves both sysmem(1) and sysmem2 token protocols, so
-                    // we can convert here until StreamProcessor has a sysmem2 token field.
-                    partial_settings.sysmem_token =
-                        Some(ClientEnd::<fidl_fuchsia_sysmem::BufferCollectionTokenMarker>::new(
-                            token.into_channel(),
-                        ));
+                    partial_settings.sysmem2_token = Some(token);
                     // FIDL failures will be caught via the request stream.
                     if let Err(e) = processor.set_output_buffer_partial_settings(partial_settings) {
                         warn!("Couldn't set output buffer settings: {:?}", e);
@@ -296,7 +286,7 @@ impl StreamProcessorInner {
         StreamBufferPartialSettings {
             buffer_lifetime_ordinal: Some(1),
             buffer_constraints_version_ordinal: Some(1),
-            sysmem_token: None,
+            sysmem2_token: None,
             ..Default::default()
         }
     }

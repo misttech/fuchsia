@@ -7,7 +7,7 @@
 use crate::Result;
 use crate::buffer_collection_constraints::*;
 use anyhow::Context as _;
-use fidl::endpoints::{ClientEnd, Proxy, create_endpoints};
+use fidl::endpoints::{Proxy, create_endpoints};
 use fidl_fuchsia_media::*;
 use fidl_fuchsia_sysmem2::*;
 use fuchsia_component::client;
@@ -205,13 +205,7 @@ impl BufferSetFactory {
                 buffer_constraints_version_ordinal: Some(
                     constraints.buffer_constraints_version_ordinal,
                 ),
-                // A sysmem token channel serves both sysmem(1) and sysmem2 token protocols, so we
-                // can convert here until StreamBufferPartialSettings has a sysmem2 token field.
-                sysmem_token: Some(
-                    ClientEnd::<fidl_fuchsia_sysmem::BufferCollectionTokenMarker>::new(
-                        codec_token.into_channel(),
-                    ),
-                ),
+                sysmem2_token: Some(codec_token),
                 ..Default::default()
             },
         ))

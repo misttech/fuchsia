@@ -54,8 +54,7 @@ auto CreateStreamBufferPartialSettings(
   fuchsia::media::StreamBufferPartialSettings settings;
   settings.set_buffer_lifetime_ordinal(kBufferLifetimeOrdinal)
       .set_buffer_constraints_version_ordinal(kBufferConstraintsVersionOrdinal)
-      .set_sysmem_token(
-          fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken>(token.TakeChannel()));
+      .set_sysmem2_token(std::move(token));
   return settings;
 }
 

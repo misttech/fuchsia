@@ -277,8 +277,7 @@ void EncoderClient::ConfigurePortBufferCollection(
   settings.set_buffer_lifetime_ordinal(new_buffer_lifetime_ordinal);
   settings.set_buffer_constraints_version_ordinal(buffer_constraints_version_ordinal);
 
-  settings.set_sysmem_token(
-      fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken>(token.TakeChannel()));
+  settings.set_sysmem2_token(std::move(token));
 
   fuchsia::sysmem2::BufferCollectionConstraints constraints;
 

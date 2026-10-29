@@ -15,7 +15,6 @@ rustc_test("fuchsia-audio-codec_test") {
   deps = [
     "//sdk/fidl/fuchsia.media:fuchsia.media_rust",
     "//sdk/fidl/fuchsia.mediacodec:fuchsia.mediacodec_rust",
-    "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_rust",
     "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust",
     "//sdk/rust/zx",
     "//src/connectivity/bluetooth/lib/async-helpers:async-test-helpers",
@@ -114,7 +113,6 @@ if (is_fuchsia) {
     deps = [
       "//sdk/fidl/fuchsia.media:fuchsia.media_rust",
       "//sdk/fidl/fuchsia.mediacodec:fuchsia.mediacodec_rust",
-      "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_rust",
       "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust",
       "//sdk/rust/zx",
       "//src/lib/fidl/rust/fidl",

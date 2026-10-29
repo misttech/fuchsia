@@ -34,7 +34,6 @@ rustc_library(
     deps = [
         "//sdk/fidl/fuchsia.images2:fuchsia.images2_rust",
         "//sdk/fidl/fuchsia.media:fuchsia.media_rust",
-        "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_rust",
         "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust",
         "//sdk/rust/zx",
         "//src/lib/fidl/rust/fidl",
