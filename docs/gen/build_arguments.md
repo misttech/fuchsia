@@ -210,7 +210,7 @@ NOTE: Enabling will add a several seconds of overhead to the build.
 
 **Current value (from the default):** `false`
 
-From //build/bazel/bazel_action.gni:15
+From //build/bazel/bazel_action.gni:16
 
 ### bazel_execution_logs
 
@@ -684,18 +684,6 @@ This is primarily meant to be used by the clang canary builders.
 **Current value (from the default):** `false`
 
 From //build/images/args.gni:12
-
-### chromium_build_dir
-
-This variable specifies a fully qualified Chromium build output directory,
-such as `/home/$USER/chrome/src/out/fuchsia`, from which `web_engine` will
-be obtained.
-All of those targets must exist in the output directory.
-If unset, the prebuilt packages from CIPD will be used.
-
-**Current value (from the default):** `""`
-
-From //src/chromium/build_args.gni:11
 
 ### cipd_assembly_artifact_targets
 
@@ -1601,7 +1589,7 @@ This should never be set as a build argument.
 }
   x86_64_unknown_linux_gnu = {
   libclang_rt_profile_a = "lib/clang/24/lib/x86_64-unknown-linux-gnu/libclang_rt.profile.a"
-  libunwind_so = "../../../../out/not-default/libunwind.so"
+  libunwind_so = ""
   resource_dir = "lib/clang/24"
   variants = {
   asan = {
@@ -6068,33 +6056,6 @@ Controls whether we should output GSYM files for Fuchsia binaries.
 **Current value (from the default):** `false`
 
 From //build/config/BUILDCONFIG.gn:36
-
-### package_flavor_selections
-
-Used to configure the set of package flavors desired.
-
-Usage:
-
- package_flavor_selections = [
-   {
-     name = "snazzy"
-     flavor = "with_hooks"
-   },
-   {
-     name = "some_other_package"
-     flavor = "some_other_flavor"
-   },
- ]
-
-The above specifies that the package "snazzy" should use the
-"with_hooks" flavor, and that "some_other_package" should use
-the "some_other_flavor" flavor instead of their default flavor
-all other packages using this template would use their default
-package flavors.
-
-**Current value (from the default):** `[]`
-
-From //build/packages/prebuilt_package_with_flavors.gni:30
 
 ### perfetto_amalgamated_sdk
 
