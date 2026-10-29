@@ -16,7 +16,6 @@
         },
         {
             "paths": [
-                "build/secondary/third_party/acpica",
                 "build/secondary/third_party/alacritty",
                 "build/secondary/third_party/glog",
                 "build/secondary/third_party/mesa",
@@ -341,6 +340,7 @@
         {
             "paths": [
                 "third_party/Vulkan-Tools/src/README.fuchsia",
+                "third_party/acpica/src/README.fuchsia",
                 "third_party/pyyaml/src/README.fuchsia"
             ],
             "description": "Skip redundant nested README.fuchsia in submodules so outer project README governs the repository."

@@ -1622,7 +1622,6 @@ config("Wno-nontrivial-memaccess") {
 # until all instances are fixed.
 config("Wno-unterminated-string-initialization") {
   visibility = [
-    "//third_party/acpica-migrating/*",
     "//third_party/acpica/*",
     "//third_party/mesa-migrating/*",
     "//third_party/openssh-portable/*",

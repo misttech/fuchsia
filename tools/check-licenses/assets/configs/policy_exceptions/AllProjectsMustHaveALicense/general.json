@@ -5,7 +5,6 @@
                 "bug": "TODO: b/missing",
                 "description": "Secondary build stubs and ICU wrappers with external license references",
                 "paths": [
-                    "build/secondary/third_party/acpica",
                     "build/secondary/third_party/alacritty",
                     "build/secondary/third_party/gflags",
                     "build/secondary/third_party/ogg",

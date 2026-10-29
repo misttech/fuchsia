@@ -4,7 +4,7 @@
 
 import("//zircon/system/ulib/acpica/acpica.gni")
 
-source_root = "//third_party/acpica-migrating/src"
+source_root = "src"
 
 group("headers") {
   public_configs = [

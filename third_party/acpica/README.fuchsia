@@ -5,7 +5,7 @@ Revision: f78d50aacc2a1c6dfa59052a696a54cec16e6aab
 Security Critical: yes
 
 License: BSD
-License File: ../../../../third_party/acpica-migrating/src/LICENSE
+License File: src/LICENSE
 
 Description:
   operating system-independent implementation of

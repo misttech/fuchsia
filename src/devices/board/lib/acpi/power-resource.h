@@ -11,7 +11,7 @@
 #include <unordered_set>
 
 #include "src/devices/board/lib/acpi/acpi.h"
-#include "third_party/acpica-migrating/src/source/include/actypes.h"
+#include "third_party/acpica/src/source/include/actypes.h"
 
 namespace acpi {
 
