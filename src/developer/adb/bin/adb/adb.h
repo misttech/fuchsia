@@ -6,7 +6,7 @@
 #define SRC_DEVELOPER_ADB_BIN_ADB_ADB_H_
 
 #include <fidl/fuchsia.hardware.adb/cpp/fidl.h>
-#include <lib/fit/function.h>
+#include <lib/sync/cpp/completion.h>
 
 #include <map>
 #include <memory>
@@ -34,12 +34,16 @@ class DeviceConnector {
 // and file-sync to connect to it and interact with USB transport.
 class Adb : public AdbBase {
  public:
+  // |dispatcher| must run on a dedicated background thread; Create(), Reset(), and ~Adb() wait
+  // synchronously for UsbAdbImpl client teardown on |dispatcher| and must not be called from it.
   explicit Adb(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {}
-  ~Adb();
+  ~Adb() override;
 
   static zx::result<std::unique_ptr<Adb>> Create(async_dispatcher_t* dispatcher);
 
-  void Reset();
+  // Stops the current UsbAdbImpl connection and starts a new one, so that the host reconnects and
+  // picks up the current system type. Returns an error if the new connection could not be started.
+  zx_status_t Reset();
 
   // AdbDaemonBase functions
   bool SendUsbPacket(uint8_t* buf, size_t len) override;
@@ -53,6 +57,7 @@ class Adb : public AdbBase {
   // creating required connections
   zx_status_t Init(DeviceConnector* connector);
   zx_status_t StartUsbAdbImpl();
+  void StopUsbAdbImpl();
 
   // Parses packet received at the end of fuchsia_hardware_adb::UsbAdbImpl::Receive, forwards
   // it to adb-protocol, and sends another fuchsia_hardware_adb::UsbAdbImpl::Receive request
@@ -76,8 +81,7 @@ class Adb : public AdbBase {
   // completely received, copied_len_ should be 0.
   size_t copied_len_ = 0;
 
-  std::shared_ptr<fit::callback<void()>> teardown_callback_ =
-      std::make_shared<fit::callback<void()>>();
+  std::shared_ptr<libsync::Completion> impl_teardown_;
   ServiceManager service_manager_;
 };
 

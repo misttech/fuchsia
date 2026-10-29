@@ -7,6 +7,7 @@
 #include <fuchsia/hardware/adb/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
+#include <lib/async/cpp/task.h>
 #include <lib/fidl/cpp/binding_set.h>
 #include <lib/fit/defer.h>
 #include <lib/sync/cpp/completion.h>
@@ -98,6 +99,7 @@ class FakeAdbDriver {
   }
 
   void TearDown() {
+    impl_.Close();
     impl_.loop_.Shutdown();
 
     EXPECT_EQ(device_.expect_start_, 0UL);
@@ -117,16 +119,41 @@ class FakeAdbDriver {
       EXPECT_EQ(loop_.StartThread("adb-test-impl-thread"), ZX_OK);
     }
 
-    ~UsbAdbImplServer() override {
-      if (receive_completer_.has_value()) {
-        receive_completer_->Reply(fit::error(ZX_ERR_BAD_STATE));
-        receive_completer_.reset();
-        return;
-      }
-    }
+    ~UsbAdbImplServer() override { Close(); }
 
     void Bind(fidl::ServerEnd<fuchsia_hardware_adb::UsbAdbImpl> server) {
-      binding_.emplace(fidl::BindServer(loop_.dispatcher(), std::move(server), this));
+      Close();
+      auto unbound = std::make_shared<libsync::Completion>();
+      fbl::AutoLock _(&lock_);
+      unbound_ = unbound;
+      binding_.emplace(
+          fidl::BindServer(loop_.dispatcher(), std::move(server), this,
+                           [unbound](UsbAdbImplServer* self, fidl::UnbindInfo,
+                                     fidl::ServerEnd<fuchsia_hardware_adb::UsbAdbImpl>) {
+                             {
+                               fbl::AutoLock _(&self->lock_);
+                               self->receive_completer_.reset();
+                               self->receive_armed_.Reset();
+                             }
+                             unbound->Signal();
+                           }));
+    }
+
+    void Close() {
+      std::shared_ptr<libsync::Completion> unbound;
+      {
+        fbl::AutoLock _(&lock_);
+        receive_completer_.reset();
+        receive_armed_.Reset();
+        if (binding_.has_value()) {
+          binding_->Unbind();
+          binding_.reset();
+        }
+        unbound = std::move(unbound_);
+      }
+      if (unbound) {
+        EXPECT_EQ(unbound->Wait(zx::sec(5)), ZX_OK);
+      }
     }
 
     // fuchsia_hardware_adb::UsbAdbImpl functions
@@ -151,6 +178,7 @@ class FakeAdbDriver {
       fbl::AutoLock _(&lock_);
       if (expect_receive_.empty()) {
         receive_completer_.emplace(completer.ToAsync());
+        receive_armed_.Signal();
         return;
       }
       completer.Reply(fit::ok(std::move(expect_receive_.front())));
@@ -161,6 +189,7 @@ class FakeAdbDriver {
       if (receive_completer_.has_value()) {
         receive_completer_->Reply(fit::ok(std::move(vec)));
         receive_completer_.reset();
+        receive_armed_.Reset();
         return;
       }
       expect_receive_.push(std::move(vec));
@@ -179,9 +208,11 @@ class FakeAdbDriver {
     friend class FakeAdbDriver;
 
     async::Loop loop_;
-    std::optional<fidl::ServerBindingRef<fuchsia_hardware_adb::UsbAdbImpl>> binding_;
-
     fbl::Mutex lock_;
+    libsync::Completion receive_armed_;
+    std::shared_ptr<libsync::Completion> unbound_ __TA_GUARDED(lock_);
+    std::optional<fidl::ServerBindingRef<fuchsia_hardware_adb::UsbAdbImpl>> binding_
+        __TA_GUARDED(lock_);
     std::queue<std::vector<uint8_t>> expect_queue_tx_ __TA_GUARDED(lock_);
     std::queue<std::vector<uint8_t>> expect_receive_ __TA_GUARDED(lock_);
     std::optional<ReceiveCompleter::Async> receive_completer_ __TA_GUARDED(lock_);
@@ -208,10 +239,14 @@ class FakeAdbDriver {
 
     void StopAdb(StopAdbCompleter::Sync& completer) override {
       stop_called_++;
+      if (on_stop_) {
+        on_stop_();
+      }
       completer.Reply(fit::success());
     }
 
     std::atomic_uint32_t stop_called_ = 0;
+    fit::closure on_stop_;
 
    private:
     friend class FakeAdbDriver;
@@ -288,10 +323,41 @@ class AdbTest : public testing::Test {
     fidl_loop_.RunUntilIdle();
     dev_.reset();
     fidl_loop_.Shutdown();
+    set_system_type(kCsDevice);
   }
 
  private:
  protected:
+  void WaitForImplTeardown() {
+    if (auto teardown = dev_->impl_teardown_) {
+      EXPECT_EQ(teardown->Wait(zx::sec(5)), ZX_OK);
+    }
+  }
+
+  void SendConnect() {
+    std::string connection_string =
+        "device::ro.product.name=zircon;ro.product.model=zircon;ro.product.device=zircon;";
+    fake_driver_.ExpectQueueTx(
+        0, {
+               .msg =
+                   {
+                       .command = A_CNXN,
+                       .arg0 = A_VERSION,
+                       .arg1 = MAX_PAYLOAD,
+                       .data_length = static_cast<uint32_t>(connection_string.size()),
+                       .data_check = 0,
+                       .magic = A_CNXN ^ 0xffffffff,
+                   },
+               .payload = {},
+           });
+    fake_driver_.ExpectQueueTx(
+        0, std::vector<uint8_t>(connection_string.begin(), connection_string.end()));
+    fake_driver_.SendConnect();
+    while (!fake_driver_.expectations_empty()) {
+      usleep(1'000);
+    }
+  }
+
   async::Loop fidl_loop_;
   FakeAdbDriver fake_driver_;
   std::unique_ptr<FakeAdb> dev_;
@@ -486,12 +552,40 @@ TEST_F(AdbTest, RecoveryConnectTest) {
 
 TEST_F(AdbTest, ResetTest) {
   fake_driver_.ExpectStart();
-  dev_->Reset();
+  EXPECT_EQ(dev_->Reset(), ZX_OK);
   EXPECT_EQ(fake_driver_.device_.stop_called_.load(), 1UL);
 
   while (!fake_driver_.expectations_empty()) {
     usleep(1'000);
   }
+}
+
+TEST_F(AdbTest, ResetClearsIncompletePacketTest) {
+  // Deliver a partial ADB header so |pending_packet_| and |copied_len_| hold incomplete state.
+  ASSERT_EQ(fake_driver_.impl_.receive_armed_.Wait(zx::sec(5)), ZX_OK);
+  fake_driver_.impl_.ExpectReceive(std::vector<uint8_t>(10, 0xff));
+  ASSERT_EQ(fake_driver_.impl_.receive_armed_.Wait(zx::sec(5)), ZX_OK);
+  libsync::Completion callback_done;
+  ASSERT_EQ(async::PostTask(fidl_loop_.dispatcher(), [&]() { callback_done.Signal(); }), ZX_OK);
+  ASSERT_EQ(callback_done.Wait(zx::sec(5)), ZX_OK);
+
+  fake_driver_.ExpectStart();
+  EXPECT_EQ(dev_->Reset(), ZX_OK);
+
+  SendConnect();
+}
+
+TEST_F(AdbTest, ResetWhenDriverClosesImplDuringStopTest) {
+  fake_driver_.device_.on_stop_ = [this]() {
+    fake_driver_.impl_.Close();
+    WaitForImplTeardown();
+  };
+  fake_driver_.ExpectStart();
+  EXPECT_EQ(dev_->Reset(), ZX_OK);
+  EXPECT_EQ(fake_driver_.device_.stop_called_.load(), 1UL);
+  EXPECT_TRUE(fake_driver_.expectations_empty());
+
+  SendConnect();
 }
 
 // Integration tests
