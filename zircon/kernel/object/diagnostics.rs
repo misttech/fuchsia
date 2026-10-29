@@ -103,6 +103,39 @@ fn arch_mmu_flags_to_vm_flags(arch_mmu_flags: ArchMmuFlags) -> u32 {
     ret
 }
 
+/// Number of entries that are counted, but not written because the user buffer is already full,
+/// between checks for contention on the aspace lock.
+///
+/// Writing an entry always releases and re-acquires the aspace lock (the entry is built and copied
+/// out via `call_unlocked`), which lets other threads of the target process make progress.
+/// Counting an entry does not, so once the user buffer is full the remainder of the walk would
+/// otherwise hold the aspace lock continuously, stalling page faults and VMAR operations of the
+/// target process for the whole duration of the walk (several milliseconds for address spaces with
+/// many thousands of mappings). To bound this, the lock is yielded if it is found to be contested
+/// every this many counted entries.
+const COUNT_ONLY_ENTRIES_BETWEEN_CONTENTION_CHECKS: usize = 32;
+
+/// Called by the enumerators below for every entry that is counted but not written, with `count`
+/// being the number of entries enumerated so far. Every
+/// `COUNT_ONLY_ENTRIES_BETWEEN_CONTENTION_CHECKS` entries, if the aspace lock held by `guard` is
+/// contested, briefly releases it so that the waiting threads can acquire it.
+///
+/// Dropping the lock is permitted at any point of a `VmEnumerator` callback, since
+/// `enumerate_children` pauses its enumerator across each callback, with the usual caveat that
+/// objects observed before the lock was dropped may have been unmapped meanwhile.
+#[inline]
+fn yield_aspace_lock_if_contested(
+    count: usize,
+    vmar: &VmAddressRegion,
+    guard: Pin<&mut VmAspaceGuard<'_>>,
+) {
+    if count.is_multiple_of(COUNT_ONLY_ENTRIES_BETWEEN_CONTENTION_CHECKS)
+        && vmar.lock().raw_mutex().is_contested()
+    {
+        guard.call_unlocked(|| {});
+    }
+}
+
 /// Builds a list of all VMARs and mappings in a `VmAspace` or `VmAddressRegion`.
 struct AspaceEnumerator<'a, W: VmarMapsInfoWriter> {
     writer: &'a mut W,
@@ -125,7 +158,7 @@ impl<W: VmarMapsInfoWriter> VmEnumerator for AspaceEnumerator<'_, W> {
     fn on_vm_mapping(
         &mut self,
         map: &VmMapping,
-        _vmar: &VmAddressRegion,
+        vmar: &VmAddressRegion,
         depth: u32,
         mut guard: Pin<&mut VmAspaceGuard<'_>>,
     ) -> Status {
@@ -179,6 +212,8 @@ impl<W: VmarMapsInfoWriter> VmEnumerator for AspaceEnumerator<'_, W> {
                 if status.is_err() {
                     return Status::INVALID_ARGS;
                 }
+            } else {
+                yield_aspace_lock_if_contested(self.available, vmar, guard.as_mut());
             }
             self.available += 1;
             region_offset += region_len;
@@ -208,6 +243,8 @@ impl<W: VmarMapsInfoWriter> VmEnumerator for AspaceEnumerator<'_, W> {
             if status.is_err() {
                 return Status::INVALID_ARGS;
             }
+        } else {
+            yield_aspace_lock_if_contested(self.available, vmar, guard.as_mut());
         }
         self.available += 1;
 
@@ -288,7 +325,7 @@ impl<W: VmoInfoWriter> VmEnumerator for AspaceVmoEnumerator<'_, W> {
     fn on_vm_mapping(
         &mut self,
         map: &VmMapping,
-        _vmar: &VmAddressRegion,
+        vmar: &VmAddressRegion,
         _depth: u32,
         mut guard: Pin<&mut VmAspaceGuard<'_>>,
     ) -> Status {
@@ -306,6 +343,8 @@ impl<W: VmoInfoWriter> VmEnumerator for AspaceVmoEnumerator<'_, W> {
             if let Err(err) = status {
                 return err;
             }
+        } else {
+            yield_aspace_lock_if_contested(self.available, vmar, guard.as_mut());
         }
         self.available += 1;
         Status::NEXT
