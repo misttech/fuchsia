@@ -505,6 +505,14 @@ pub fn periph_paddr_to_vaddr(paddr: PAddr) -> Option<VAddr> {
     Phys2Virt::map(paddr.into()).map(VAddr::from)
 }
 
+/// Translates an arm64 peripheral virtual address to a physical address in the kernel periphmap.
+///
+/// Returns `None` if `vaddr` is not in the peripheral mappings.
+#[inline]
+pub fn periph_vaddr_to_paddr(vaddr: VAddr) -> Option<PAddr> {
+    Virt2Phys::map(vaddr.into()).map(PAddr::from)
+}
+
 #[cfg(console_enabled)]
 static_command!(
     CMD_PM,

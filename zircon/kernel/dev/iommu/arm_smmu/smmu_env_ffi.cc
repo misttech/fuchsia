@@ -15,12 +15,14 @@
 #include <stdint.h>
 #include <zircon/types.h>
 
+#include <arch/arm64/periphmap.h>
 #include <kernel/ffi.h>
 
 #if defined(ARM_SMMU_HOST_TEST)
 #include <lib/arch/cache.h>
 #include <zircon/errors.h>
 
+#include <hwreg/mmio.h>
 #include <kernel/spinlock.h>
 #include <vm/page.h>
 #include <vm/physmap.h>
@@ -37,6 +39,16 @@ static_assert(alignof(PinnedVmObject) == alignof(uintptr_t));
 #if defined(ARM_SMMU_HOST_TEST)
 
 extern "C" {
+
+// Converts a peripheral physical address to its virtual address (`0` if unmapped).
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE
+uintptr_t cpp_arm_smmu_periph_paddr_to_vaddr(paddr_t paddr) { return periph_paddr_to_vaddr(paddr); }
+
+// Converts a peripheral virtual address back to its physical address (`0` if unmapped).
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE
+paddr_t cpp_arm_smmu_periph_vaddr_to_paddr(uintptr_t vaddr) { return periph_vaddr_to_paddr(vaddr); }
 
 // Sleeps the current thread for `delay_ns` nanoseconds (relative).
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
@@ -68,7 +80,7 @@ void cpp_arm_smmu_on_table_zero(uintptr_t table_vaddr, size_t len) {
   arch::OnTableZero(table_vaddr, len);
 }
 
-// Allocates a single physical page from the host PmmMock.
+// Allocates a single physical page from the host `PmmMock`.
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE
 zx_status_t cpp_arm_smmu_pmm_alloc_page(uint32_t alloc_flags, vm_page_t** out_page) {
@@ -78,7 +90,7 @@ zx_status_t cpp_arm_smmu_pmm_alloc_page(uint32_t alloc_flags, vm_page_t** out_pa
   return pmm_alloc_page(alloc_flags, out_page);
 }
 
-// Returns a single physical page to the host PmmMock.
+// Returns a single physical page to the host `PmmMock`.
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE
 void cpp_arm_smmu_pmm_free_page(vm_page_t* page) {
@@ -143,6 +155,34 @@ zx_status_t cpp_arm_smmu_pinned_vmo_lookup_contiguous(const PinnedVmObject* pinn
     return ZX_ERR_INVALID_ARGS;
   }
   return pinned_vmo->vmo()->LookupContiguous(offset, size, out_paddr);
+}
+
+// Reads a 32-bit register at `base + offset` via the host `FakeSmmuMmioRouter` / `RegisterMmio`.
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE
+uint32_t cpp_arm_smmu_mmio_read32(uintptr_t base, uint32_t offset) {
+  return hwreg::RegisterMmio(reinterpret_cast<volatile void*>(base)).Read<uint32_t>(offset);
+}
+
+// Writes a 32-bit register at `base + offset` via the host `FakeSmmuMmioRouter` / `RegisterMmio`.
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE
+void cpp_arm_smmu_mmio_write32(uintptr_t base, uint32_t offset, uint32_t val) {
+  hwreg::RegisterMmio(reinterpret_cast<volatile void*>(base)).Write<uint32_t>(val, offset);
+}
+
+// Reads a 64-bit register at `base + offset` via the host `FakeSmmuMmioRouter` / `RegisterMmio`.
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE
+uint64_t cpp_arm_smmu_mmio_read64(uintptr_t base, uint32_t offset) {
+  return hwreg::RegisterMmio(reinterpret_cast<volatile void*>(base)).Read<uint64_t>(offset);
+}
+
+// Writes a 64-bit register at `base + offset` via the host `FakeSmmuMmioRouter` / `RegisterMmio`.
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE
+void cpp_arm_smmu_mmio_write64(uintptr_t base, uint32_t offset, uint64_t val) {
+  hwreg::RegisterMmio(reinterpret_cast<volatile void*>(base)).Write<uint64_t>(val, offset);
 }
 
 }  // extern "C"

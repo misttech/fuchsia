@@ -49,8 +49,8 @@ pub fn cpu_num_to_mpidr(cpu_num: cpu_num_t) -> u64 {
 }
 
 pub use cache::clean_dcache_range;
-pub use libarch::arm64::{device_memory_barrier, isb, thread_memory_barrier, wfi};
-pub use periphmap::periph_paddr_to_vaddr;
+pub use libarch::arm64::{device_memory_barrier, isb, thread_memory_barrier, wfi, r#yield};
+pub use periphmap::{periph_paddr_to_vaddr, periph_vaddr_to_paddr};
 pub use user_copy::{
     arch_copy_from_user, arch_copy_from_user_capture_faults, arch_copy_to_user,
     arch_copy_to_user_capture_faults,

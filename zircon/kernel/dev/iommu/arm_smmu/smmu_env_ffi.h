@@ -17,6 +17,8 @@
 extern "C" {
 
 #if defined(ARM_SMMU_HOST_TEST)
+uintptr_t cpp_arm_smmu_periph_paddr_to_vaddr(paddr_t paddr);
+paddr_t cpp_arm_smmu_periph_vaddr_to_paddr(uintptr_t vaddr);
 zx_status_t cpp_arm_smmu_sleep_relative(zx_duration_t delay_ns);
 void cpp_arm_smmu_clean_dcache_range(uintptr_t start, size_t len);
 void cpp_arm_smmu_on_pte_write(const uint64_t* slot, uint64_t new_val, uint32_t level);
@@ -32,6 +34,10 @@ uint64_t cpp_arm_smmu_pinned_vmo_size(const PinnedVmObject* pinned_vmo);
 zx_status_t cpp_arm_smmu_pinned_vmo_lookup_contiguous(const PinnedVmObject* pinned_vmo,
                                                       uint64_t offset, size_t size,
                                                       paddr_t* out_paddr);
+uint32_t cpp_arm_smmu_mmio_read32(uintptr_t base, uint32_t offset);
+void cpp_arm_smmu_mmio_write32(uintptr_t base, uint32_t offset, uint32_t val);
+uint64_t cpp_arm_smmu_mmio_read64(uintptr_t base, uint32_t offset);
+void cpp_arm_smmu_mmio_write64(uintptr_t base, uint32_t offset, uint64_t val);
 #endif  // defined(ARM_SMMU_HOST_TEST)
 
 }  // extern "C"

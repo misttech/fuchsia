@@ -7,3 +7,4 @@
 //! ARM SMMU driver modules shared across SMMUv2 and SMMUv3.
 
 pub mod common;
+pub mod v2;

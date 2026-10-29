@@ -155,8 +155,10 @@ rustc_library("arch-rs") {
   name = "libarch"
   edition = "2024"
 
-  # Since the crate name is already "lib"-prefixed.
-  output_prefix_override = true
+  # Since the crate name is already "lib"-prefixed, GN's `output_prefix = "lib"`
+  # in `zircon_toolchain` elides the extra "lib" prefix, whereas
+  # `clang_toolchain` hardcodes `"lib{{target_output_name}}"`.
+  output_prefix_override = zircon_toolchain != false
 
   sources = [
     "src/arm64/cache.rs",

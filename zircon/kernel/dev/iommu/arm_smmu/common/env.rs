@@ -27,6 +27,13 @@ unsafe extern "C" {
     /// Sleeps the calling thread for `delay_ns` nanoseconds (relative).
     fn cpp_arm_smmu_sleep_relative(delay_ns: i64) -> zx_status_t;
 
+    /// Converts peripheral physical address `paddr` to its mapped virtual address (`0` if
+    /// unmapped).
+    fn cpp_arm_smmu_periph_paddr_to_vaddr(paddr: u64) -> usize;
+
+    /// Converts peripheral virtual address `vaddr` back to its physical address (`0` if unmapped).
+    fn cpp_arm_smmu_periph_vaddr_to_paddr(vaddr: usize) -> u64;
+
     /// Cleans CPU data cache lines covering `[start, start + len)` in host test builds.
     fn cpp_arm_smmu_clean_dcache_range(start: usize, len: usize);
 
@@ -76,6 +83,23 @@ unsafe extern "C" {
         size: usize,
         out_paddr: *mut u64,
     ) -> zx_status_t;
+
+    /// Reads a 32-bit MMIO register at `base + offset` via the host `FakeSmmuMmioRouter` or raw
+    /// memory fallback. `base + offset` must either belong to a registered router region or point
+    /// to a valid 32-bit aligned host memory location.
+    fn cpp_arm_smmu_mmio_read32(base: usize, offset: u32) -> u32;
+    /// Writes `val` to a 32-bit MMIO register at `base + offset` via the host `FakeSmmuMmioRouter`
+    /// or raw memory fallback. `base + offset` must either belong to a registered router region or
+    /// point to a valid 32-bit aligned writable host memory location.
+    fn cpp_arm_smmu_mmio_write32(base: usize, offset: u32, val: u32);
+    /// Reads a 64-bit MMIO register at `base + offset` via the host `FakeSmmuMmioRouter` or raw
+    /// memory fallback. `base + offset` must either belong to a registered router region or point
+    /// to a valid 64-bit aligned host memory location.
+    fn cpp_arm_smmu_mmio_read64(base: usize, offset: u32) -> u64;
+    /// Writes `val` to a 64-bit MMIO register at `base + offset` via the host `FakeSmmuMmioRouter`
+    /// or raw memory fallback. `base + offset` must either belong to a registered router region or
+    /// point to a valid 64-bit aligned writable host memory location.
+    fn cpp_arm_smmu_mmio_write64(base: usize, offset: u32, val: u64);
 }
 
 /// Opaque representation of a host `vm_page_t` whose leading field at offset 0 is its intrusive
@@ -494,6 +518,100 @@ impl SmmuEnv {
                     }
                 }
             }
+        }
+    }
+
+    /// Converts a peripheral physical address `paddr` to its mapped virtual address (`0` if
+    /// unmapped).
+    #[inline]
+    pub fn periph_paddr_to_vaddr(paddr: u64) -> usize {
+        #[cfg(is_kernel)]
+        {
+            crate::arch_rs::periph_paddr_to_vaddr(crate::kernel::types::PAddr(paddr as usize))
+                .map_or(0, |v| v.0)
+        }
+        #[cfg(not(is_kernel))]
+        {
+            // SAFETY: Pure address lookup in the host mock peripheral map.
+            unsafe { cpp_arm_smmu_periph_paddr_to_vaddr(paddr) }
+        }
+    }
+
+    /// Converts a peripheral virtual address `vaddr` back to its physical address (`0` if
+    /// unmapped).
+    #[inline]
+    pub fn periph_vaddr_to_paddr(vaddr: usize) -> u64 {
+        #[cfg(is_kernel)]
+        {
+            crate::arch_rs::periph_vaddr_to_paddr(crate::kernel::types::VAddr(vaddr))
+                .map_or(0, u64::from)
+        }
+        #[cfg(not(is_kernel))]
+        {
+            // SAFETY: Pure address lookup in the host mock peripheral map.
+            unsafe { cpp_arm_smmu_periph_vaddr_to_paddr(vaddr) }
+        }
+    }
+
+    /// Executes a full-system Device Memory Barrier (`dsb sy` on arm64, no-op on host).
+    #[inline]
+    pub fn device_memory_barrier() {
+        #[cfg(is_kernel)]
+        {
+            crate::arch_rs::device_memory_barrier();
+        }
+    }
+
+    /// Hints to the processor that the caller is in a busy-wait spin loop.
+    ///
+    /// Issues the architectural spin-wait yield instruction (`yield` on aarch64, `pause` on
+    /// x86_64) via `libarch::r#yield()` rather than `core::hint::spin_loop()`, which on aarch64
+    /// emits an `isb` (a pipeline flush on every poll) and omits the compiler memory clobber.
+    #[inline]
+    pub fn yield_cpu() {
+        #[cfg(is_kernel)]
+        {
+            crate::arch_rs::r#yield();
+        }
+        #[cfg(not(is_kernel))]
+        {
+            libarch::r#yield();
+        }
+    }
+
+    /// Reads a 32-bit register at `base + offset` in host test builds via `FakeSmmuMmioRouter`.
+    #[cfg(not(is_kernel))]
+    #[inline]
+    pub fn host_mmio_read32(base: usize, offset: u32) -> u32 {
+        // SAFETY: Routes through `FakeSmmuMmioRouter` or valid host test register buffer.
+        unsafe { cpp_arm_smmu_mmio_read32(base, offset) }
+    }
+
+    /// Writes a 32-bit register at `base + offset` in host test builds via `FakeSmmuMmioRouter`.
+    #[cfg(not(is_kernel))]
+    #[inline]
+    pub fn host_mmio_write32(base: usize, offset: u32, val: u32) {
+        // SAFETY: Routes through `FakeSmmuMmioRouter` or valid host test register buffer.
+        unsafe {
+            cpp_arm_smmu_mmio_write32(base, offset, val);
+        }
+    }
+
+    /// Reads a 64-bit register at `base + offset` in host test builds via `FakeSmmuMmioRouter`.
+    #[cfg(not(is_kernel))]
+    #[inline]
+    pub fn host_mmio_read64(base: usize, offset: u32) -> u64 {
+        // SAFETY: Routes through `FakeSmmuMmioRouter` or valid host test register buffer.
+        unsafe { cpp_arm_smmu_mmio_read64(base, offset) }
+    }
+
+    /// Writes a 64-bit register at `base + offset` in host test builds via `FakeSmmuMmioRouter`.
+    #[cfg(not(is_kernel))]
+    #[inline]
+    pub fn host_mmio_write64(base: usize, offset: u32, val: u64) {
+        // SAFETY: Routes through `FakeSmmuMmioRouter` or valid host test register buffer.
+        unsafe {
+            cpp_arm_smmu_mmio_write64(base, offset, val);
         }
     }
 
