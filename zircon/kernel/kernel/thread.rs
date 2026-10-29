@@ -1736,13 +1736,12 @@ impl Thread {
         unsafe { (*pid).load() }
     }
 
-    /// Checks whether the kill or suspend signal has been raised.
-    ///
-    /// Returns `Err(ZX_ERR_INTERNAL_INTR_KILLED)` if kill has been raised,
-    /// `Err(ZX_ERR_INTERNAL_INTR_RETRY)` if suspend has been raised, and `Ok(())` otherwise.
+    /// Checks whether the kill or suspend signal (excluding signals in `signal_mask`) has been
+    /// raised. If kill has been raised, returns `Err(ZX_ERR_INTERNAL_INTR_KILLED)`. If suspend has
+    /// been raised, returns `Err(ZX_ERR_INTERNAL_INTR_RETRY)`. Otherwise, returns `Ok(())`.
     #[inline]
-    pub fn check_kill_or_suspend_signal(&self) -> Result<(), Status> {
-        let current_signals = self.signals();
+    pub fn check_kill_or_suspend_signal_mask(&self, signal_mask: u32) -> Result<(), Status> {
+        let current_signals = self.signals() & !signal_mask;
         if current_signals & THREAD_SIGNAL_KILL != 0 {
             core::hint::cold_path();
             return Err(ZX_ERR_INTERNAL_INTR_KILLED);
@@ -1752,6 +1751,15 @@ impl Thread {
             return Err(ZX_ERR_INTERNAL_INTR_RETRY);
         }
         Ok(())
+    }
+
+    /// Checks whether the kill or suspend signal has been raised.
+    ///
+    /// Returns `Err(ZX_ERR_INTERNAL_INTR_KILLED)` if kill has been raised,
+    /// `Err(ZX_ERR_INTERNAL_INTR_RETRY)` if suspend has been raised, and `Ok(())` otherwise.
+    #[inline]
+    pub fn check_kill_or_suspend_signal(&self) -> Result<(), Status> {
+        self.check_kill_or_suspend_signal_mask(0)
     }
 
     // Accessors for specific flags bits.
@@ -4242,6 +4250,8 @@ mod tests {
         expect_true!(current.canary.valid());
         current.assert_canary();
         expect_true!(current.check_kill_or_suspend_signal().is_ok());
+        expect_true!(current.check_kill_or_suspend_signal_mask(0).is_ok());
+        expect_true!(current.check_kill_or_suspend_signal_mask(u32::MAX).is_ok());
 
         let mut running = false;
         let mut state_transitions_match = false;
@@ -4576,10 +4586,23 @@ mod tests {
 
         thread.set_signals(super::THREAD_SIGNAL_SUSPEND);
         expect_err!(thread.check_kill_or_suspend_signal(), super::ZX_ERR_INTERNAL_INTR_RETRY);
+        expect_err!(thread.check_kill_or_suspend_signal_mask(0), super::ZX_ERR_INTERNAL_INTR_RETRY);
+        expect_ok!(thread.check_kill_or_suspend_signal_mask(super::THREAD_SIGNAL_SUSPEND));
 
-        // When both KILL and SUSPEND are raised, KILL takes precedence.
+        // When both KILL and SUSPEND are raised, KILL takes precedence unless masked.
         thread.set_signals(super::THREAD_SIGNAL_KILL);
         expect_err!(thread.check_kill_or_suspend_signal(), super::ZX_ERR_INTERNAL_INTR_KILLED);
+        expect_err!(
+            thread.check_kill_or_suspend_signal_mask(super::THREAD_SIGNAL_SUSPEND),
+            super::ZX_ERR_INTERNAL_INTR_KILLED
+        );
+        expect_err!(
+            thread.check_kill_or_suspend_signal_mask(super::THREAD_SIGNAL_KILL),
+            super::ZX_ERR_INTERNAL_INTR_RETRY
+        );
+        expect_ok!(thread.check_kill_or_suspend_signal_mask(
+            super::THREAD_SIGNAL_KILL | super::THREAD_SIGNAL_SUSPEND
+        ));
         thread.clear_signals(super::THREAD_SIGNAL_KILL | super::THREAD_SIGNAL_SUSPEND);
         expect_ok!(thread.check_kill_or_suspend_signal());
         expect_eq!(thread.signals(), initial);

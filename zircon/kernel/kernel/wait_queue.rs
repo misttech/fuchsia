@@ -1047,10 +1047,8 @@ impl ChainLockProof<'_, WaitQueueBase> {
             return Err(Status::TIMED_OUT);
         }
 
-        if interruptible == Interruptible::Yes
-            && (current_thread.owner().signals() & !signal_mask) != 0
-        {
-            current_thread.owner().check_kill_or_suspend_signal()?;
+        if interruptible == Interruptible::Yes {
+            current_thread.owner().check_kill_or_suspend_signal_mask(signal_mask)?;
         }
 
         let state = current_thread.wait_queue_state();
@@ -3247,7 +3245,7 @@ pub unsafe extern "C" fn rust_wait_queue_move_thread(
 #[cfg(ktest)]
 #[unittest::suite(name = "wait_queue")]
 mod tests {
-    use unittest::{expect_eq, expect_false, expect_true};
+    use unittest::{expect_eq, expect_err, expect_false, expect_ok, expect_true};
 
     use crate::arch_rs::InterruptDisableGuard;
     use crate::kconcurrent::{
@@ -4530,5 +4528,101 @@ mod tests {
         expect_eq!(blockers.join(first), ZX_OK);
         expect_eq!(blockers.join(second), ZX_OK);
         expect_eq!(queue_count(&wq), 0);
+    }
+
+    /// `block_etc_preamble` honors `signal_mask` even when another unmasked signal bit is pending.
+    #[test]
+    fn test_block_etc_preamble_signal_mask() {
+        pin_init::stack_pin_init!(let wq = WaitQueue::init());
+        // SAFETY: Called from a running kernel thread.
+        let current = unsafe { ThreadPtr::current().as_ref() };
+        let initial_signals = current.signals();
+        let test_signals = thread::THREAD_SIGNAL_SUSPEND | thread::THREAD_SIGNAL_RESTRICTED_KICK;
+
+        let mut unmasked_res = Ok(());
+        let mut masked_res = Err(Status::BAD_STATE);
+        let mut queued_when_masked = false;
+        ChainLockTransaction::until_done(
+            IRQ_SAVE_OPTION,
+            clt_tag!("test_block_etc_preamble_signal_mask"),
+            |token| {
+                let mut wq_guard = OwnerGuard::new(&*wq, token);
+                let Some(mut current_guard) = OwnerGuard::acquire_or_backoff(current, token) else {
+                    return TransactionResult::BACKOFF;
+                };
+                ChainLockTransaction::finalize(token);
+                let mut wq_proof = wq_guard.proof();
+                let mut current_proof = current_guard.proof();
+                let orig_state = current_proof.state();
+                let orig_interruptible =
+                    current_proof.wait_queue_state().interruptible(current_proof.token());
+
+                current.set_signals(test_signals);
+
+                // Without masking `THREAD_SIGNAL_SUSPEND`, the preamble rejects the block with
+                // `ZX_ERR_INTERNAL_INTR_RETRY`.
+                // SAFETY: `current` is the running thread and is not in any wait queue; if the
+                // call unexpectedly returns `Ok(())`, the insertion is undone by `dequeue` and
+                // state restoration below before releasing any locks.
+                unmasked_res = unsafe {
+                    wq_proof.as_base().block_etc_preamble(
+                        &mut current_proof,
+                        &Deadline::infinite(),
+                        0,
+                        ResourceOwnership::Normal,
+                        Interruptible::Yes,
+                    )
+                };
+
+                if unmasked_res.is_ok() {
+                    // SAFETY: `block_etc_preamble` just inserted `current` into `wq`.
+                    unsafe {
+                        wq_proof.as_base().dequeue(&mut current_proof, Ok(()));
+                    }
+                    current_proof.set_state(orig_state);
+                    current_proof
+                        .wait_queue_state()
+                        .set_interruptible(orig_interruptible, current_proof.token_mut());
+                } else {
+                    // With `signal_mask = THREAD_SIGNAL_SUSPEND`, the masked suspend signal is
+                    // ignored even though `THREAD_SIGNAL_RESTRICTED_KICK` is also set
+                    // (`signals & !mask != 0`).
+                    // SAFETY: `current` is the running thread and not in any wait queue
+                    // (`unmasked_res` returned `Err`); the insertion below is immediately undone by
+                    // `dequeue` and state restoration before releasing any locks.
+                    masked_res = unsafe {
+                        wq_proof.as_base().block_etc_preamble(
+                            &mut current_proof,
+                            &Deadline::infinite(),
+                            thread::THREAD_SIGNAL_SUSPEND,
+                            ResourceOwnership::Normal,
+                            Interruptible::Yes,
+                        )
+                    };
+                    queued_when_masked = wq_proof.count() == 1;
+                    if masked_res.is_ok() {
+                        // SAFETY: `block_etc_preamble` just inserted `current` into `wq`.
+                        unsafe {
+                            wq_proof.as_base().dequeue(&mut current_proof, Ok(()));
+                        }
+                        current_proof.set_state(orig_state);
+                        current_proof
+                            .wait_queue_state()
+                            .set_interruptible(orig_interruptible, current_proof.token_mut());
+                    }
+                }
+
+                current.clear_signals(test_signals & !initial_signals);
+                current_guard.release();
+                wq_guard.release();
+                TransactionResult::DONE
+            },
+        );
+
+        expect_err!(unmasked_res, Status::INTERRUPTED_RETRY);
+        expect_ok!(masked_res);
+        expect_true!(queued_when_masked);
+        expect_eq!(queue_count(&wq), 0);
+        expect_eq!(current.signals(), initial_signals);
     }
 }
