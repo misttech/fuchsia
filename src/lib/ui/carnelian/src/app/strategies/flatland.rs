@@ -4,17 +4,13 @@
 
 use crate::app::strategies::base::AppStrategy;
 use crate::app::{InternalSender, MessageInternal};
-use crate::view::strategies::base::{FlatlandParams, ViewStrategyParams, ViewStrategyPtr};
-use crate::view::strategies::flatland::{FlatlandViewStrategy, FLATLAND_DEBUG_NAME};
 use crate::view::ViewKey;
-use anyhow::{bail, Context as _, Error};
+use crate::view::strategies::base::{FlatlandParams, ViewStrategyParams, ViewStrategyPtr};
+use crate::view::strategies::flatland::{FLATLAND_DEBUG_NAME, FlatlandViewStrategy};
+use anyhow::{Error, bail};
 use async_trait::async_trait;
-use fidl_fuchsia_ui_app::{CreateView2Args, ViewProviderRequest, ViewProviderRequestStream};
-use fuchsia_async::{self as fasync};
 use fuchsia_component::server::{ServiceFs, ServiceObjLocal};
-use fuchsia_scenic::flatland::ViewCreationTokenPair;
 use futures::channel::mpsc::UnboundedSender;
-use futures::{TryFutureExt, TryStreamExt};
 
 pub(crate) struct FlatlandAppStrategy;
 
@@ -38,74 +34,49 @@ impl AppStrategy for FlatlandAppStrategy {
 
     fn create_view_strategy_params_for_additional_view(
         &mut self,
-        _view_key: ViewKey,
+        view_key: ViewKey,
     ) -> ViewStrategyParams {
-        todo!("Additional views not yet supported on Scenic (Flatland)");
-    }
-
-    fn create_view_for_testing(
-        &self,
-        app_sender: &UnboundedSender<MessageInternal>,
-    ) -> Result<(), Error> {
-        let tokens = ViewCreationTokenPair::new().context("ViewCreationTokenPair::new")?;
-        app_sender
-            .unbounded_send(MessageInternal::CreateView(ViewStrategyParams::Flatland(
-                FlatlandParams {
-                    args: CreateView2Args {
-                        view_creation_token: Some(tokens.view_creation_token),
-                        ..Default::default()
-                    },
-                    debug_name: Some("Test View".to_string()),
-                },
-            )))
-            .expect("send");
-        Ok(())
+        ViewStrategyParams::Flatland(FlatlandParams {
+            view_key: Some(view_key),
+            debug_name: Some(FLATLAND_DEBUG_NAME.to_string()),
+        })
     }
 
     fn supports_scenic(&self) -> bool {
         return true;
     }
 
+    // Hosted mode creates its primary view here because no external ViewProvider
+    // caller exists any more; `App::test()` also relies on this to initialize the view.
     fn start_services<'a, 'b>(
         &self,
         app_sender: UnboundedSender<MessageInternal>,
-        fs: &'a mut ServiceFs<ServiceObjLocal<'b, ()>>,
+        _fs: &'a mut ServiceFs<ServiceObjLocal<'b, ()>>,
     ) -> Result<(), Error> {
-        let mut public = fs.dir("svc");
-
-        let sender = app_sender;
-        let f = move |stream: ViewProviderRequestStream| {
-            let sender = sender.clone();
-            fasync::Task::local(
-                stream
-                    .try_for_each(move |req| {
-                        #[allow(unreachable_patterns)]
-                        match req {
-                            ViewProviderRequest::CreateView2 { args, .. } => {
-                                sender
-                                    .unbounded_send(MessageInternal::CreateView(
-                                        ViewStrategyParams::Flatland(FlatlandParams {
-                                            args,
-                                            debug_name: Some(FLATLAND_DEBUG_NAME.to_string()),
-                                        }),
-                                    ))
-                                    .expect("unbounded_send");
-                            }
-
-                            _ => {}
-                        };
-                        futures::future::ready(Ok(()))
-                    })
-                    .unwrap_or_else(|e| eprintln!("error running ViewProvider server: {:?}", e)),
-            )
-            .detach()
-        };
-        public.add_fidl_service(f);
-
+        app_sender
+            .unbounded_send(MessageInternal::CreateView(ViewStrategyParams::Flatland(
+                FlatlandParams {
+                    view_key: None,
+                    debug_name: Some(FLATLAND_DEBUG_NAME.to_string()),
+                },
+            )))
+            .expect("unbounded_send");
         Ok(())
     }
 
     async fn post_setup(&mut self, _internal_sender: &InternalSender) -> Result<(), Error> {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_view_strategy_params_for_additional_view() {
+        let mut strategy = FlatlandAppStrategy;
+        let params = strategy.create_view_strategy_params_for_additional_view(ViewKey(7));
+        assert_eq!(params.view_key(), Some(ViewKey(7)));
     }
 }

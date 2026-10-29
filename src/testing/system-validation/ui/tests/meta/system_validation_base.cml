@@ -13,15 +13,31 @@
         binary: "bin/ui_app_instrumentor",
     },
 
-    // Defines API used by bin/ui_app_instrumentor
-    // Note: All UI example apps manifests must also include
-    // use: [
-    // ...
-    //     {
-    //         protocol: [ "fuchsia.ui.app.ViewProvider" ],
-    //         from: "#sample-app", // where "sample-app" is the name given the child component
-    //     },
-    // ]
+    // Defines API used by bin/ui_app_instrumentor.
+    // UI example app test manifests must include one of two shapes:
+    //
+    // 1. For apps that serve ViewProvider:
+    //    use: [
+    //        {
+    //            protocol: [ "fuchsia.ui.app.ViewProvider" ],
+    //            from: "#sample-app",
+    //        },
+    //    ]
+    //
+    // 2. For apps that present themselves via GraphicalPresenter:
+    //    offer: [
+    //        {
+    //            protocol: [ "fuchsia.element.GraphicalPresenter" ],
+    //            from: "parent",
+    //            to: [ "#sample-app" ],
+    //        },
+    //    ],
+    //    use: [
+    //        {
+    //            protocol: [ "fuchsia.component.Binder" ],
+    //            from: "#sample-app",
+    //        },
+    //    ]
     use: [
         {
             protocol: [

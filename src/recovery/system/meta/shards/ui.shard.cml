@@ -4,11 +4,6 @@
 
 // This shard provides UI support for recovering devices with screens.
 {
-    capabilities: [
-        {
-            protocol: [ "fuchsia.ui.app.ViewProvider" ],
-        },
-    ],
     use: [
         { service: "fuchsia.hardware.display.Service" },
         { service: "fuchsia.input.report.Service" },
@@ -18,13 +13,6 @@
             availability: "optional",
             type: "uint16",
             default: 0,
-        },
-    ],
-    expose: [
-        {
-            protocol: [ "fuchsia.ui.app.ViewProvider" ],
-            from: "self",
-            to: "parent",
         },
     ],
 }

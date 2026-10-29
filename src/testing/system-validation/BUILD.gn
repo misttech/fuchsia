@@ -8,6 +8,7 @@ import("//build/rust/rustc_library.gni")
 rustc_library("system_validation_lib") {
   edition = "2024"
   name = "system_validation_lib"
+  with_unit_tests = true
   sources = [
     "src/app_monitor.rs",
     "src/lib.rs",
@@ -18,6 +19,7 @@ rustc_library("system_validation_lib") {
     "//sdk/fidl/fuchsia.tracing.controller:fuchsia.tracing.controller_rust",
     "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_rust",
     "//sdk/rust/zx",
+    "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-sync",
@@ -25,12 +27,18 @@ rustc_library("system_validation_lib") {
     "//src/sys/lib/component-events",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:png",
   ]
+}
+
+fuchsia_unittest_package("system-validation-lib-tests") {
+  deps = [ ":system_validation_lib_test" ]
 }
 
 group("tests") {
   testonly = true
   deps = [
+    ":system-validation-lib-tests",
     "ui:system_validation_test_pkg",
     "web:dynamic_elements_web_system_validation_test_pkg",
     "web:simple_audio_web_system_validation_test_pkg",

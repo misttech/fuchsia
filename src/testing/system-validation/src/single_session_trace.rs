@@ -2,16 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl_fuchsia_tracing_controller::{
-    ProvisionerMarker, ProvisionerProxy, SessionMarker, SessionProxy, StartError, StartOptions,
-    StopOptions, TerminateOptions, TraceConfig,
+    ProvisionerMarker, SessionProxy, StartError, StartOptions, StopOptions, TraceConfig,
 };
-use fuchsia_async;
+use fuchsia_async as fasync;
 use fuchsia_component::{self as app};
 use fuchsia_sync::RwLock;
 use futures::io::AsyncReadExt;
-use futures::{future, TryFutureExt};
 use std::fs;
 use std::io::Write;
 
@@ -66,7 +64,7 @@ impl SingleSessionTrace {
             ..Default::default()
         };
 
-        trace_provisioner.initialize_tracing(server, config, write_socket)?;
+        trace_provisioner.initialize_tracing(server, &config, write_socket)?;
         {
             let mut status = self.status.write();
             status.data_socket = Some(read_socket);
@@ -80,12 +78,13 @@ impl SingleSessionTrace {
     /// There must be a trace session initialized first, otherwise an error is returned.
     /// Within a trace session, tracing may be started and stopped multiple times.
     pub async fn start(&self) -> Result<(), Error> {
-        let status = self.status.read();
-        let trace_controller = status
+        let trace_controller = self
+            .status
+            .read()
             .controller
-            .as_ref()
+            .clone()
             .ok_or_else(|| format_err!("No trace session has been initialized"))?;
-        match trace_controller.start_tracing(StartOptions::default()).await? {
+        match trace_controller.start_tracing(&StartOptions::default()).await? {
             Ok(_) => Ok(()),
             Err(e) => match e {
                 StartError::NotInitialized => {
@@ -94,6 +93,7 @@ impl SingleSessionTrace {
                 StartError::AlreadyStarted => Err(format_err!("Trace already started")),
                 StartError::Stopping => Err(format_err!("Trace is stopping")),
                 StartError::Terminating => Err(format_err!("Trace is terminating")),
+                _ => Err(format_err!("Unexpected start error: {:?}", e)),
             },
         }
     }
@@ -103,12 +103,16 @@ impl SingleSessionTrace {
     /// There must be a trace session initialized first, otherwise an error is returned.
     /// Within a trace session, tracing may be started and stopped multiple times.
     pub async fn stop(&self) -> Result<(), Error> {
-        let status = self.status.read();
-        let trace_controller = status
+        let trace_controller = self
+            .status
+            .read()
             .controller
-            .as_ref()
+            .clone()
             .ok_or_else(|| format_err!("No trace session has been initialized"))?;
-        trace_controller.stop_tracing(StopOptions::default()).await?;
+        trace_controller
+            .stop_tracing(&StopOptions::default())
+            .await?
+            .map_err(|e| format_err!("Unexpected stop error: {:?}", e))?;
         Ok(())
     }
 
@@ -118,7 +122,7 @@ impl SingleSessionTrace {
     pub async fn terminate(&self) -> Result<(), Error> {
         // Tracing gets terminated when the controller is closed. Drain the socket to get
         // everything that was written until the last stop and destroy the existing controller.
-        let controller = self.status.write().controller.take();
+        drop(self.status.write().controller.take());
         let data_socket = self.status.write().data_socket.take();
         let drain_result = drain_socket(data_socket).await?;
 
@@ -133,7 +137,7 @@ impl SingleSessionTrace {
 async fn drain_socket(socket: Option<zx::Socket>) -> Result<Vec<u8>, Error> {
     let mut ret = Vec::new();
     if let Some(socket) = socket {
-        let mut socket = fuchsia_async::Socket::from_socket(socket);
+        let mut socket = fasync::Socket::from_socket(socket);
         socket.read_to_end(&mut ret).await?;
     }
     Ok(ret)

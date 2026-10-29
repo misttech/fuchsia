@@ -10,19 +10,21 @@
         },
     ],
     use: [
+        // Used by ui_app_instrumentor to start sample-app, which presents itself
+        // via GraphicalPresenter.
         {
-            protocol: [ "fuchsia.ui.app.ViewProvider" ],
+            protocol: [ "fuchsia.component.Binder" ],
             from: "#sample-app",
         },
     ],
     offer: [
         {
             protocol: [
+                "fuchsia.element.GraphicalPresenter",
                 "fuchsia.sysmem.Allocator",
                 "fuchsia.sysmem2.Allocator",
                 "fuchsia.tracing.provider.Registry",
                 "fuchsia.ui.composition.Allocator",
-                "fuchsia.ui.composition.Flatland",
                 "fuchsia.ui.composition.FlatlandFactory",
                 "fuchsia.ui.input3.Keyboard",
                 "fuchsia.vulkan.loader.Loader",

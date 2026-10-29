@@ -36,8 +36,9 @@ fn setup_handle_flatland_events(
     event_stream: flatland::FlatlandEventStream,
     view_key: ViewKey,
     app_sender: UnboundedSender<MessageInternal>,
+    scope: &fasync::Scope,
 ) {
-    fasync::Task::local(
+    scope.spawn_local(
         event_stream
             .try_for_each(move |event| {
                 match event {
@@ -65,8 +66,7 @@ fn setup_handle_flatland_events(
                 future::ok(())
             })
             .unwrap_or_else(|e| eprintln!("error listening for Flatland Events: {:?}", e)),
-    )
-    .detach();
+    );
 }
 
 fn duplicate_import_token(
@@ -190,17 +190,22 @@ struct PresentationTime {
 pub(crate) struct FlatlandViewStrategy {
     flatland: flatland::FlatlandProxy,
     allocator: flatland::AllocatorProxy,
+    // We rely on element_manager and proposers to stop the component if the element is
+    // dismissed presenter-side, so Carnelian does not observe the ViewController channel closing here.
+    view_controller: fidl_fuchsia_element::ViewControllerProxy,
     view_key: ViewKey,
     last_presentation_time: i64,
     future_presentation_times: Vec<PresentationTime>,
     custom_render_offset: Option<i64>,
     present_interval: i64,
-    // The number of `Flatland.Present()` calls we're authorized to make.  Initial value is 1.
+    // The number of `Flatland.Present()` calls we're authorized to make.
     // Decremented whenever `Present()` is called, and incremented whenever Scenic authorizes us to.
+    // Initial value is 0 because the first present credit is spent in `new()` before calling PresentView.
     num_presents_allowed: usize,
-    // Only used for tracing, does not affect behavior.
+    // Only used for tracing, does not affect behavior. Initial value is 1 due to the present in `new()`.
     present_count: u64,
-    // Only used for tracing, does not affect behavior.
+    // Tracks the number of in-flight presents; asserted in `present_done()` as well as
+    // logged in traces. Initial value is 1 for the initial `do_present()` in `new()`.
     pending_present_count: usize,
     render_timer_scheduled: bool,
     missed_frame: bool,
@@ -214,6 +219,7 @@ pub(crate) struct FlatlandViewStrategy {
     flatland_mouse_input_handlers: HashMap<u32, FlatlandMouseInputHandler>,
     flatland_touch_input_handler: FlatlandTouchInputHandler,
     keyboard_handler: KeyboardInputHandler,
+    _scope: fasync::Scope,
 }
 
 impl FlatlandViewStrategy {
@@ -246,27 +252,56 @@ impl FlatlandViewStrategy {
 
         flatland.create_transform(&TRANSFORM_ID)?;
         flatland.set_root_transform(&TRANSFORM_ID)?;
-        setup_handle_flatland_events(flatland.take_event_stream(), key, app_sender.clone());
+        let scope = fasync::Scope::new();
+        setup_handle_flatland_events(flatland.take_event_stream(), key, app_sender.clone(), &scope);
         let allocator = connect_to_protocol::<flatland::AllocatorMarker>()?;
+        let fuchsia_scenic::flatland::ViewCreationTokenPair {
+            view_creation_token,
+            viewport_creation_token,
+        } = fuchsia_scenic::flatland::ViewCreationTokenPair::new()?;
         Self::create_parent_viewport_watcher(
             &flatland,
             app_sender.clone(),
             key,
-            flatland_params.args.view_creation_token.expect("view_creation_token"),
+            view_creation_token,
+            &scope,
         )?;
+
+        // TODO(https://fxbug.dev/42055565): `flatland.present()` is required before
+        // calling `present_view()` to avoid scenic deadlock.
+        Self::do_present(&flatland, &app_sender, key, 0, None, 0);
+
+        let graphical_presenter =
+            connect_to_protocol::<fidl_fuchsia_element::GraphicalPresenterMarker>()
+                .context("Failed to connect to GraphicalPresenter")?;
+        let (view_controller, view_controller_request) =
+            create_proxy::<fidl_fuchsia_element::ViewControllerMarker>();
+        let view_spec = fidl_fuchsia_element::ViewSpec {
+            viewport_creation_token: Some(viewport_creation_token),
+            ..Default::default()
+        };
+        graphical_presenter
+            .present_view(view_spec, None, Some(view_controller_request))
+            .await
+            .context("Failed to call PresentView")?
+            .map_err(|e| anyhow::anyhow!("PresentView failed: {:?}", e))?;
 
         let strat = Self {
             flatland,
             allocator,
+            view_controller,
             view_key: key,
             app_sender: app_sender,
             last_presentation_time: fasync::MonotonicInstant::now().into_nanos(),
             future_presentation_times: Vec::new(),
             custom_render_offset: None,
             present_interval: DEFAULT_PRESENT_INTERVAL,
-            num_presents_allowed: 1,
-            present_count: 0,
-            pending_present_count: 0,
+            // These starting values account for the `do_present()` call earlier in `new()`
+            // to avoid Scenic deadlock: the initial present credit has been consumed (0 remaining),
+            // and 1 present has been submitted and is pending.
+            num_presents_allowed: 0,
+            present_count: 1,
+            pending_present_count: 1,
             render_timer_scheduled: false,
             missed_frame: false,
             plumber: None,
@@ -278,6 +313,7 @@ impl FlatlandViewStrategy {
             flatland_mouse_input_handlers: HashMap::new(),
             flatland_touch_input_handler: FlatlandTouchInputHandler::default(),
             keyboard_handler: KeyboardInputHandler::new(),
+            _scope: scope,
         };
 
         Ok(Box::new(strat))
@@ -288,17 +324,18 @@ impl FlatlandViewStrategy {
         app_sender: UnboundedSender<MessageInternal>,
         view_key: ViewKey,
         view_creation_token: fidl_fuchsia_ui_views::ViewCreationToken,
+        scope: &fasync::Scope,
     ) -> Result<(), Error> {
         let (parent_viewport_watcher, server_end) =
             create_proxy::<flatland::ParentViewportWatcherMarker>();
 
         let viewref_pair = fuchsia_scenic::ViewRefPair::new()?;
         let view_ref = fuchsia_scenic::duplicate_view_ref(&viewref_pair.view_ref)?;
+        let view_identity = fidl_fuchsia_ui_views::ViewIdentityOnCreation::from(viewref_pair);
 
-        // Use CreateView2 if input events are expected.
+        // Bind input protocols if input events are expected.
         let input = Config::get().input;
         if input {
-            let view_identity = fidl_fuchsia_ui_views::ViewIdentityOnCreation::from(viewref_pair);
             let mut view_bound_protocols = flatland::ViewBoundProtocols::default();
 
             let (touch_client, touch_server) = create_endpoints();
@@ -319,7 +356,7 @@ impl FlatlandViewStrategy {
             let touch_proxy = touch_client.into_proxy();
             let touch_sender = app_sender.clone();
 
-            fasync::Task::local(async move {
+            scope.spawn_local(async move {
                 let mut events: Vec<fidl_fuchsia_ui_pointer::TouchResponse> = Vec::new();
                 loop {
                     let result = touch_proxy.watch(&events).await;
@@ -355,13 +392,12 @@ impl FlatlandViewStrategy {
                         }
                     }
                 }
-            })
-            .detach();
+            });
 
             let mouse_proxy = mouse_client.into_proxy();
             let mouse_sender = app_sender.clone();
 
-            fasync::Task::local(async move {
+            scope.spawn_local(async move {
                 loop {
                     let result = mouse_proxy.watch().await;
                     match result {
@@ -383,13 +419,12 @@ impl FlatlandViewStrategy {
                         }
                     }
                 }
-            })
-            .detach();
+            });
 
             let view_ref_focused_proxy = view_ref_focused_client.into_proxy();
             let view_ref_focused_sender = app_sender.clone();
 
-            fasync::Task::local(async move {
+            scope.spawn_local(async move {
                 loop {
                     let result = view_ref_focused_proxy.watch().await;
                     match result {
@@ -411,16 +446,20 @@ impl FlatlandViewStrategy {
                         }
                     }
                 }
-            })
-            .detach();
+            });
 
-            Self::listen_for_key_events(view_ref, &app_sender, view_key)?;
+            Self::listen_for_key_events(view_ref, &app_sender, view_key, scope)?;
         } else {
-            flatland.create_view(view_creation_token, server_end)?;
+            flatland.create_view2(
+                view_creation_token,
+                view_identity,
+                flatland::ViewBoundProtocols::default(),
+                server_end,
+            )?;
         }
 
         let sender = app_sender;
-        fasync::Task::local(async move {
+        scope.spawn_local(async move {
             let mut layout_info_stream = HangingGetStream::new(
                 parent_viewport_watcher,
                 flatland::ParentViewportWatcherProxy::get_layout,
@@ -460,8 +499,7 @@ impl FlatlandViewStrategy {
                     }
                 }
             }
-        })
-        .detach();
+        });
         Ok(())
     }
 
@@ -575,11 +613,10 @@ impl FlatlandViewStrategy {
                 fasync::Timer::new(fuchsia_async::MonotonicInstant::from_nanos(render_time));
             let timer_sender = self.app_sender.clone();
             let key = self.view_key;
-            fasync::Task::local(async move {
+            self._scope.spawn_local(async move {
                 timer.await;
                 timer_sender.unbounded_send(MessageInternal::Render(key)).expect("unbounded_send");
-            })
-            .detach();
+            });
             self.render_timer_scheduled = true;
         }
     }
@@ -611,14 +648,13 @@ impl FlatlandViewStrategy {
             let local_release_event =
                 release_event.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("duplicate_handle");
             let app_sender = self.app_sender.clone();
-            fasync::Task::local(async move {
+            self._scope.spawn_local(async move {
                 let signals = OnSignals::new(&local_release_event, Signals::EVENT_SIGNALED);
                 signals.await.expect("to wait");
                 app_sender
                     .unbounded_send(MessageInternal::ImageFreed(key, available, collection_id))
                     .expect("unbounded_send");
-            })
-            .detach();
+            });
             self.current_present_release_event = Some(release_event);
 
             let image_id = flatland::ContentId { value: available };
@@ -648,6 +684,7 @@ impl FlatlandViewStrategy {
         view_ref: ViewRef,
         app_sender: &UnboundedSender<MessageInternal>,
         key: ViewKey,
+        scope: &fasync::Scope,
     ) -> Result<(), Error> {
         let keyboard = connect_to_protocol::<fidl_fuchsia_ui_input3::KeyboardMarker>()
             .context("Failed to connect to Keyboard service")?;
@@ -657,7 +694,7 @@ impl FlatlandViewStrategy {
 
         let event_sender = app_sender.clone();
 
-        fasync::Task::local(async move {
+        scope.spawn_local(async move {
             keyboard.add_listener(view_ref, listener_client_end).await.expect("add_listener");
 
             while let Some(event) =
@@ -684,8 +721,7 @@ impl FlatlandViewStrategy {
                     }
                 }
             }
-        })
-        .detach();
+        });
         Ok(())
     }
 }
@@ -731,6 +767,10 @@ impl ViewStrategy for FlatlandViewStrategy {
             "height" => size.height);
 
         self.render_timer_scheduled = false;
+        // Reset missed_frame to false so that if rendering succeeds or is not blocked on credits,
+        // `FlatlandViewStrategy::present()` (called unconditionally by `ViewController::render()`)
+        // knows a frame was produced.
+        self.missed_frame = false;
         if size.width > 0 && size.height > 0 {
             if self.num_presents_allowed == 0 {
                 instant!("gfx", "FlatlandViewStrategy::present_is_not_allowed",
@@ -756,7 +796,11 @@ impl ViewStrategy for FlatlandViewStrategy {
             }
             self.render_to_image_from_plumber(view_details, view_assistant)
         } else {
-            true
+            // A zero-size render cannot be presented. Mark missed_frame so that
+            // `FlatlandViewStrategy::present()` does not assert that a present credit is available
+            // (num_presents_allowed > 0).
+            self.missed_frame = true;
+            false
         }
     }
 
@@ -911,5 +955,9 @@ impl ViewStrategy for FlatlandViewStrategy {
 
         // Now that we have incremented `self.num_presents_allowed`, a missed frame might succeed.
         self.retry_missed_frame();
+    }
+
+    fn close(&mut self) {
+        let _ = self.view_controller.dismiss();
     }
 }

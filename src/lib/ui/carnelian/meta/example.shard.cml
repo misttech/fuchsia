@@ -8,15 +8,13 @@
     ],
     capabilities: [
         {
-            protocol: [
-                "fuchsia.ui.app.ViewProvider",
-                "test.placeholders.Echo",
-            ],
+            protocol: [ "test.placeholders.Echo" ],
         },
     ],
     use: [
         {
             protocol: [
+                "fuchsia.element.GraphicalPresenter",
                 "fuchsia.sysmem.Allocator",
                 "fuchsia.sysmem2.Allocator",
                 "fuchsia.tracing.provider.Registry",
@@ -41,10 +39,7 @@
             from: "framework",
         },
         {
-            protocol: [
-                "fuchsia.ui.app.ViewProvider",
-                "test.placeholders.Echo",
-            ],
+            protocol: [ "test.placeholders.Echo" ],
             from: "self",
         },
     ],

@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fuchsia/element/cpp/fidl.h>
 #include <fuchsia/logger/cpp/fidl.h>
 #include <fuchsia/sysmem/cpp/fidl.h>
 #include <fuchsia/sysmem2/cpp/fidl.h>
 #include <fuchsia/tracing/provider/cpp/fidl.h>
-#include <fuchsia/ui/app/cpp/fidl.h>
 #include <fuchsia/ui/input3/cpp/fidl.h>
 #include <fuchsia/vulkan/loader/cpp/fidl.h>
 #include <lib/sys/component/cpp/testing/realm_builder.h>
@@ -37,7 +37,9 @@ class CarnelianPixelTest : public ui_testing::PortableUITest {
  private:
   void ExtendRealm() override {
     // Add the carnelian component.
-    realm_builder().AddChild(kCarnelianClient, kCarnelianClientUrl);
+    realm_builder().AddChild(
+        kCarnelianClient, kCarnelianClientUrl,
+        component_testing::ChildOptions{.startup_mode = component_testing::StartupMode::EAGER});
 
     realm_builder().AddRoute(
         {.capabilities = {Protocol{fuchsia::logger::LogSink::Name_},
@@ -53,15 +55,12 @@ class CarnelianPixelTest : public ui_testing::PortableUITest {
                               .targets = {ChildRef{kCarnelianClient}, kTestUIStackRef}});
 
     realm_builder().AddRoute(
-        {.capabilities = {Protocol{fuchsia::ui::composition::FlatlandFactory::Name_},
+        {.capabilities = {Protocol{fuchsia::element::GraphicalPresenter::Name_},
+                          Protocol{fuchsia::ui::composition::FlatlandFactory::Name_},
                           Protocol{fuchsia::ui::composition::Allocator::Name_},
                           Protocol{fuchsia::ui::input3::Keyboard::Name_}},
          .source = kTestUIStackRef,
          .targets = {ChildRef{kCarnelianClient}}});
-
-    realm_builder().AddRoute({.capabilities = {Protocol{fuchsia::ui::app::ViewProvider::Name_}},
-                              .source = ChildRef{kCarnelianClient},
-                              .targets = {ParentRef()}});
   }
 
   static constexpr auto kCarnelianClient = "carnelian_client";
@@ -84,13 +83,13 @@ TEST_F(CarnelianPixelTest, ValidPixelTest) {
   const uint32_t square_pixels = display_size().height() / 2 * display_size().height() / 2;
   const uint32_t background_pixels = total_pixels - square_pixels;
 
-  LaunchClient();
+  WaitForViewPresentation();
 
-  // Take screenshots till the background color shows up.
+  // Take screenshots till the full scene is rendered (no unrendered pixels remain).
   ASSERT_TRUE(TakeScreenshotUntil(
       [&](const ui_testing::Screenshot& screenshot) {
         auto histogram = screenshot.Histogram();
-        if (histogram[utils::kBlue] == 0)
+        if (histogram[utils::Pixel(0, 0, 0, 0)] > 0)
           return false;
         // TODO(https://fxbug.dev/42067818): Switch to exact comparisons after Astro
         // precision issues are resolved.

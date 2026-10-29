@@ -195,6 +195,7 @@
         },
         {
             protocol: [
+                "fuchsia.element.GraphicalPresenter",
                 "fuchsia.session.scene.Manager",
                 "fuchsia.ui.composition.Allocator",
                 "fuchsia.ui.composition.Flatland",

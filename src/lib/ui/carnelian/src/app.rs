@@ -313,9 +313,10 @@ impl Debug for ViewCreationParameters {
     }
 }
 
-/// Trait that a mod author must implement. Currently responsible for creating
-/// a view assistant when the Fuchsia view framework requests that the mod create
-/// a view.
+/// Trait that an app author must implement. Responsible for creating a view
+/// assistant when Carnelian creates a view at startup (in hosted mode), per
+/// connected display (in direct mode), or when requested via
+/// `AppSender::create_additional_view()`.
 pub trait AppAssistant {
     /// This method is responsible for setting up the AppAssistant implementation.
     /// _It's not clear if this is going to so useful, as anything that isn't
@@ -323,15 +324,15 @@ pub trait AppAssistant {
     /// is going to have to be represented as an `Option`, which is awkward._
     fn setup(&mut self) -> Result<(), Error>;
 
-    /// Called when the Fuchsia view system requests that a view be created, or once at startup
-    /// when running without Scenic.
+    /// Called when Carnelian creates a view at startup in hosted mode, for each
+    /// display in direct mode, or when `AppSender::create_additional_view()` is called.
     fn create_view_assistant(&mut self, _: ViewKey) -> Result<ViewAssistantPtr, Error> {
         todo!("Must implement create_view_assistant_with_parameters or create_view_assistant");
     }
 
-    /// Called when the Fuchsia view system requests that a view be created. Provides
-    /// parameters to view creation that include anything provided the the view creation
-    /// requestor and an AppSender.
+    /// Called when Carnelian creates a view. Provides parameters for view creation,
+    /// including the view key, optional display ID, `AppSender`, and any options passed
+    /// to `AppSender::create_additional_view()`.
     fn create_view_assistant_with_parameters(
         &mut self,
         params: ViewCreationParameters,
@@ -432,7 +433,8 @@ impl App {
     }
 
     /// Starts an application based on Carnelian. The `assistant` parameter will
-    /// be used to create new views when asked to do so by the Fuchsia view system.
+    /// be used to create views when Carnelian initiates view creation at startup,
+    /// per display in direct mode, or via `AppSender::create_additional_view()`.
     pub fn run(assistant_creator_func: AssistantCreatorFunc) -> Result<(), Error> {
         let mut executor = fasync::LocalExecutor::default();
         let (internal_sender, mut internal_receiver) = unbounded::<MessageInternal>();
@@ -513,12 +515,14 @@ impl App {
             }
             MessageInternal::TargetedMessage(target, message) => match target {
                 MessageTarget::Facet(view_id, facet_id) => {
-                    let view = self.get_view(view_id).context("TargetedMessage")?;
-                    view.send_facet_message(facet_id, message).context("TargetedMessage")?;
+                    if let Ok(view) = self.get_view(view_id) {
+                        view.send_facet_message(facet_id, message).context("TargetedMessage")?;
+                    }
                 }
                 MessageTarget::View(view_id) => {
-                    let view = self.get_view(view_id).context("TargetedMessage")?;
-                    view.send_message(message);
+                    if let Ok(view) = self.get_view(view_id) {
+                        view.send_message(message);
+                    }
                 }
                 MessageTarget::Application => {
                     self.assistant.handle_message(message);
@@ -546,8 +550,9 @@ impl App {
                 }
             }
             MessageInternal::UserInputMessage(view_id, user_input_message) => {
-                let view = self.get_view(view_id).context("UserInputMessage")?;
-                view.handle_user_input_message(user_input_message)?;
+                if let Ok(view) = self.get_view(view_id) {
+                    view.handle_user_input_message(user_input_message)?;
+                }
             }
             MessageInternal::OwnershipChanged(owned) => {
                 self.ownership_changed(owned);
@@ -556,12 +561,14 @@ impl App {
                 self.drop_display_resources();
             }
             MessageInternal::FlatlandOnNextFrameBegin(view_id, info) => {
-                let view = self.get_view(view_id).context("FlatlandOnNextFrameBegin")?;
-                view.handle_on_next_frame_begin(&info);
+                if let Ok(view) = self.get_view(view_id) {
+                    view.handle_on_next_frame_begin(&info);
+                }
             }
             MessageInternal::FlatlandOnFramePresented(view_id, info) => {
-                let view = self.get_view(view_id).context("FlatlandOnFramePresented")?;
-                view.present_done(info);
+                if let Ok(view) = self.get_view(view_id) {
+                    view.present_done(info);
+                }
             }
             MessageInternal::FlatlandOnError(view_id, error) => {
                 eprintln!("flatland error view: {}, error: {:#?}", view_id, error);
@@ -609,7 +616,6 @@ impl App {
             let mut assistant = assistant_creator.await?;
             Self::load_and_filter_config(&mut assistant)?;
             let strat = create_app_strategy(&internal_sender).await?;
-            strat.create_view_for_testing(&internal_sender)?;
             let mut app = App::new(internal_sender, strat, assistant);
             let mut frame_count = 0;
             app.app_init_common().await?;
@@ -797,5 +803,166 @@ impl App {
         let config_contents = fs::read_to_string(config_path)?;
         let config = toml::from_str(&config_contents)?;
         Ok(config)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::strategies::base::AppStrategy;
+    use crate::view::strategies::base::{FlatlandParams, ViewStrategy, ViewStrategyPtr};
+    use crate::view::{ViewAssistant, ViewAssistantContext, ViewDetails};
+    use async_trait::async_trait;
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    struct FakeViewAssistant;
+
+    impl ViewAssistant for FakeViewAssistant {}
+
+    struct FakeViewStrategy {
+        closed: Rc<Cell<bool>>,
+    }
+
+    #[async_trait(?Send)]
+    impl ViewStrategy for FakeViewStrategy {
+        fn create_view_assistant_context(
+            &self,
+            _view_details: &ViewDetails,
+        ) -> ViewAssistantContext {
+            ViewAssistantContext::new_for_testing()
+        }
+
+        fn setup(&mut self, _view_details: &ViewDetails, _view_assistant: &mut ViewAssistantPtr) {}
+
+        async fn render(
+            &mut self,
+            _view_details: &ViewDetails,
+            _view_assistant: &mut ViewAssistantPtr,
+        ) -> bool {
+            false
+        }
+
+        fn present(&mut self, _view_details: &ViewDetails) {}
+
+        fn convert_user_input_message(
+            &mut self,
+            _view_details: &ViewDetails,
+            _: UserInputMessage,
+        ) -> Result<Vec<crate::input::Event>, Error> {
+            Ok(Vec::new())
+        }
+
+        fn handle_focus(
+            &mut self,
+            _view_details: &ViewDetails,
+            _view_assistant: &mut ViewAssistantPtr,
+            _: bool,
+        ) {
+        }
+
+        fn close(&mut self) {
+            self.closed.set(true);
+        }
+    }
+
+    struct FakeAppStrategy {
+        closed: Rc<Cell<bool>>,
+    }
+
+    #[async_trait(?Send)]
+    impl AppStrategy for FakeAppStrategy {
+        async fn create_view_strategy(
+            &mut self,
+            _key: ViewKey,
+            _app_sender: UnboundedSender<MessageInternal>,
+            _strategy_params: ViewStrategyParams,
+        ) -> Result<ViewStrategyPtr, Error> {
+            Ok(Box::new(FakeViewStrategy { closed: self.closed.clone() }))
+        }
+
+        fn supports_scenic(&self) -> bool {
+            true
+        }
+
+        fn create_view_strategy_params_for_additional_view(
+            &mut self,
+            view_key: ViewKey,
+        ) -> ViewStrategyParams {
+            ViewStrategyParams::Flatland(FlatlandParams {
+                view_key: Some(view_key),
+                debug_name: None,
+            })
+        }
+
+        async fn post_setup(&mut self, _internal_sender: &InternalSender) -> Result<(), Error> {
+            Ok(())
+        }
+    }
+
+    struct FakeAppAssistant;
+
+    impl AppAssistant for FakeAppAssistant {
+        fn setup(&mut self) -> Result<(), Error> {
+            Ok(())
+        }
+
+        fn create_view_assistant(&mut self, _: ViewKey) -> Result<ViewAssistantPtr, Error> {
+            Ok(Box::new(FakeViewAssistant))
+        }
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_close_additional_view_and_stale_view_messages() {
+        let (sender, _receiver) = unbounded::<MessageInternal>();
+        let closed = Rc::new(Cell::new(false));
+        let strategy = Box::new(FakeAppStrategy { closed: closed.clone() });
+        let assistant = Box::new(FakeAppAssistant);
+        let mut app = App::new(sender, strategy, assistant);
+
+        let view_key = ViewKey(42);
+        app.create_additional_view(view_key, None).await.expect("create_additional_view");
+        assert!(app.get_view(view_key).is_ok());
+
+        app.close_additional_view(view_key).expect("close_additional_view");
+        assert!(closed.get());
+        assert!(app.get_view(view_key).is_err());
+
+        // Messages targeting the closed view key must be ignored without returning an error.
+        let unknown_key = ViewKey(999);
+        app.handle_message(MessageInternal::FlatlandOnNextFrameBegin(
+            unknown_key,
+            fidl_fuchsia_ui_composition::OnNextFrameBeginValues::default(),
+        ))
+        .await
+        .expect("FlatlandOnNextFrameBegin");
+        app.handle_message(MessageInternal::FlatlandOnFramePresented(
+            unknown_key,
+            fidl_fuchsia_scenic_scheduling::FramePresentedInfo {
+                actual_presentation_time: 0,
+                num_presents_allowed: 1,
+                presentation_infos: Vec::new(),
+            },
+        ))
+        .await
+        .expect("FlatlandOnFramePresented");
+        app.handle_message(MessageInternal::UserInputMessage(
+            unknown_key,
+            UserInputMessage::FlatlandMouseEvents(Vec::new()),
+        ))
+        .await
+        .expect("UserInputMessage");
+        app.handle_message(MessageInternal::TargetedMessage(
+            MessageTarget::View(unknown_key),
+            Box::new(()),
+        ))
+        .await
+        .expect("TargetedMessage::View");
+        app.handle_message(MessageInternal::TargetedMessage(
+            MessageTarget::Facet(unknown_key, FacetId::new()),
+            Box::new(()),
+        ))
+        .await
+        .expect("TargetedMessage::Facet");
     }
 }

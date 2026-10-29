@@ -10,11 +10,6 @@
         runner: "elf",
         binary: "bin/terminal",
     },
-    capabilities: [
-        {
-            protocol: [ "fuchsia.ui.app.ViewProvider" ],
-        },
-    ],
     use: [
         {
             directory: "bin",
@@ -33,6 +28,7 @@
                 "fuchsia.bluetooth.sys.Pairing",
                 "fuchsia.device.NameProvider",
                 "fuchsia.diagnostics.ArchiveAccessor",
+                "fuchsia.element.GraphicalPresenter",
                 "fuchsia.hardware.power.statecontrol.Admin",
                 "fuchsia.hardware.pty.Device",
                 "fuchsia.media.Audio",
@@ -49,7 +45,7 @@
                 "fuchsia.sysmem2.Allocator",
                 "fuchsia.tracing.provider.Registry",
                 "fuchsia.ui.composition.Allocator",
-                "fuchsia.ui.composition.Flatland",
+                "fuchsia.ui.composition.FlatlandFactory",
                 "fuchsia.ui.input.ImeService",
                 "fuchsia.ui.input3.Keyboard",
                 "fuchsia.ui.input3.KeyEventInjector",
@@ -64,10 +60,11 @@
         },
     ],
     expose: [
+        // This is necessary to start the component from a session. A session
+        // would connect to this protocol in order to start the component.
         {
-            protocol: "fuchsia.ui.app.ViewProvider",
-            from: "self",
-            to: "parent",
+            protocol: "fuchsia.component.Binder",
+            from: "framework",
         },
     ],
 }

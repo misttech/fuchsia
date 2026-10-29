@@ -92,6 +92,7 @@ rustc_library(
         "//src/ui/tests/integration_graphics_tests/carnelian-pixel-tests/carnelian_pixel_client:__pkg__",
     ],
     deps = [
+        "//sdk/fidl/fuchsia.element:fuchsia.element_rust",
         "//sdk/fidl/fuchsia.hardware.display:fuchsia.hardware.display_rust",
         "//sdk/fidl/fuchsia.hardware.display.types:fuchsia.hardware.display.types_rust",
         "//sdk/fidl/fuchsia.images2:fuchsia.images2_rust",
@@ -100,7 +101,6 @@ rustc_library(
         "//sdk/fidl/fuchsia.math:fuchsia.math_rust",
         "//sdk/fidl/fuchsia.scenic.scheduling:fuchsia.scenic.scheduling_rust",
         "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust",
-        "//sdk/fidl/fuchsia.ui.app:fuchsia.ui.app_rust",
         "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_rust",
         "//sdk/fidl/fuchsia.ui.input3:fuchsia.ui.input3_rust",
         "//sdk/fidl/fuchsia.ui.pointer:fuchsia.ui.pointer_rust",

@@ -8,15 +8,15 @@ use carnelian::color::Color;
 use carnelian::drawing::DisplayRotation;
 #[cfg(feature = "debug_touch_to_update")]
 use carnelian::input;
-use carnelian::render::rive::load_rive;
 use carnelian::render::Context as RenderContext;
+use carnelian::render::rive::load_rive;
 use carnelian::scene::facets::{RiveFacet, TextHorizontalAlignment};
 use carnelian::scene::layout::{CrossAxisAlignment, MainAxisAlignment};
 use carnelian::scene::scene::{Scene, SceneBuilder};
 use carnelian::{
-    make_message, App, AppAssistant, AppAssistantPtr, AppSender, AssistantCreatorFunc,
-    LocalBoxFuture, Message, MessageTarget, Size, ViewAssistant, ViewAssistantContext,
-    ViewAssistantPtr, ViewKey,
+    App, AppAssistant, AppAssistantPtr, AppSender, AssistantCreatorFunc, LocalBoxFuture, Message,
+    MessageTarget, Size, ViewAssistant, ViewAssistantContext, ViewAssistantPtr, ViewKey,
+    make_message,
 };
 use euclid::size2;
 use fidl::endpoints::{DiscoverableProtocolMarker, RequestStream};
@@ -239,6 +239,9 @@ impl AppAssistant for ProgressBarAppAssistant {
     fn filter_config(&mut self, config: &mut Config) {
         //TODO use display rotation ui config
         config.display_rotation = DisplayRotation::Deg90;
+        // Recovery shards do not route hosted presentation protocols (`GraphicalPresenter`
+        // and `FlatlandFactory`).
+        config.view_mode = carnelian::app::ViewMode::Direct;
     }
 
     fn outgoing_services_names(&self) -> Vec<&'static str> {

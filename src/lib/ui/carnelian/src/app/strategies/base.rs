@@ -32,9 +32,6 @@ pub(crate) trait AppStrategy {
     ) -> Result<ViewStrategyPtr, Error>;
     #[allow(dead_code)]
     fn supports_scenic(&self) -> bool;
-    fn create_view_for_testing(&self, _: &UnboundedSender<MessageInternal>) -> Result<(), Error> {
-        Ok(())
-    }
     fn create_view_strategy_params_for_additional_view(
         &mut self,
         view_key: ViewKey,

@@ -22,6 +22,7 @@
             protocol: [
                 "fuchsia.accessibility.semantics.SemanticsManager",
                 "fuchsia.buildinfo.Provider",
+                "fuchsia.element.GraphicalPresenter",
                 "fuchsia.feedback.ComponentDataRegister",
                 "fuchsia.feedback.CrashReportingProductRegister",
                 "fuchsia.fonts.Provider",

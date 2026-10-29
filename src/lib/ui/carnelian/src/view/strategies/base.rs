@@ -92,7 +92,7 @@ pub(crate) struct DisplayDirectParams {
 
 #[derive(Debug)]
 pub(crate) struct FlatlandParams {
-    pub args: fidl_fuchsia_ui_app::CreateView2Args,
+    pub view_key: Option<ViewKey>,
     pub debug_name: Option<String>,
 }
 
@@ -108,7 +108,7 @@ impl ViewStrategyParams {
             ViewStrategyParams::DisplayDirect(params) => {
                 params.view_key.or(Some(ViewKey(params.info.id.value)))
             }
-            _ => None,
+            ViewStrategyParams::Flatland(params) => params.view_key,
         }
     }
 

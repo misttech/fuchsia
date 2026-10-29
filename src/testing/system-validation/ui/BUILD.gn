@@ -6,8 +6,9 @@ import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
 import("//build/testing/run_target_test_and_host_script.gni")
 
-# Create a test wrapper that connects to ViewProvider implemented by example
-# apps
+# Create a test wrapper that drives example apps either by connecting to
+# ViewProvider implemented by the app, or by starting the app via Binder
+# when the app presents itself via GraphicalPresenter.
 rustc_binary("bin") {
   name = "ui_app_instrumentor"
   testonly = true
@@ -15,8 +16,10 @@ rustc_binary("bin") {
   source_root = "src/ui_app_instrumentor.rs"
   sources = [ "src/ui_app_instrumentor.rs" ]
   deps = [
+    "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
     "//sdk/fidl/fuchsia.session.scene:fuchsia.session.scene_rust",
     "//sdk/fidl/fuchsia.ui.app:fuchsia.ui.app_rust",
+    "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
@@ -60,7 +63,7 @@ fuchsia_test_package("system_validation_test_pkg") {
     ":spinning_square_system_validation_component",
   ]
   deps = [
-    "//src/lib/ui/carnelian:spinning-square-rs_v2",
+    "//src/lib/ui/carnelian:spinning-square-rs_component",
     "//src/ui/examples/flatland-rainbow",
     "//src/ui/examples/simplest_sysmem:simplest_sysmem_component",
   ]

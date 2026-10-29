@@ -28,6 +28,7 @@
         },
         {
             protocol: [
+                "fuchsia.element.GraphicalPresenter",
                 "fuchsia.ui.composition.Allocator",
                 "fuchsia.ui.composition.FlatlandFactory",
                 "fuchsia.ui.input3.Keyboard",

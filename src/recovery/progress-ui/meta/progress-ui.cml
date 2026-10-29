@@ -29,7 +29,6 @@
             protocol: [
                 "fuchsia.sysmem.Allocator",
                 "fuchsia.sysmem2.Allocator",
-                "fuchsia.ui.composition.Flatland",
             ],
         },
         { service: "fuchsia.hardware.display.Service" },

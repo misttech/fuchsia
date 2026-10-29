@@ -418,6 +418,7 @@ rustc_library("carnelian") {
     "//src/ui/tests/integration_graphics_tests/carnelian-pixel-tests/carnelian_pixel_client:*",
   ]
   deps = [
+    "//sdk/fidl/fuchsia.element:fuchsia.element_rust",
     "//sdk/fidl/fuchsia.hardware.display:fuchsia.hardware.display_rust",
     "//sdk/fidl/fuchsia.hardware.display.types:fuchsia.hardware.display.types_rust",
     "//sdk/fidl/fuchsia.images2:fuchsia.images2_rust",
@@ -426,7 +427,6 @@ rustc_library("carnelian") {
     "//sdk/fidl/fuchsia.math:fuchsia.math_rust",
     "//sdk/fidl/fuchsia.scenic.scheduling:fuchsia.scenic.scheduling_rust",
     "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust",
-    "//sdk/fidl/fuchsia.ui.app:fuchsia.ui.app_rust",
     "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_rust",
     "//sdk/fidl/fuchsia.ui.input3:fuchsia.ui.input3_rust",
     "//sdk/fidl/fuchsia.ui.pointer:fuchsia.ui.pointer_rust",
@@ -664,6 +664,7 @@ rustc_test("carnelian_test") {
   edition = "2024"
   proc_macro_deps = [ "//third_party/rust_crates:async-trait" ]
   deps = [
+           "//sdk/fidl/fuchsia.element:fuchsia.element_rust",
            "//sdk/fidl/fuchsia.hardware.display:fuchsia.hardware.display_rust",
            "//sdk/fidl/fuchsia.hardware.display.types:fuchsia.hardware.display.types_rust",
            "//sdk/fidl/fuchsia.images2:fuchsia.images2_rust",
@@ -672,7 +673,6 @@ rustc_test("carnelian_test") {
            "//sdk/fidl/fuchsia.math:fuchsia.math_rust",
            "//sdk/fidl/fuchsia.scenic.scheduling:fuchsia.scenic.scheduling_rust",
            "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust",
-           "//sdk/fidl/fuchsia.ui.app:fuchsia.ui.app_rust",
            "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_rust",
            "//sdk/fidl/fuchsia.ui.input3:fuchsia.ui.input3_rust",
            "//sdk/fidl/fuchsia.ui.pointer:fuchsia.ui.pointer_rust",
