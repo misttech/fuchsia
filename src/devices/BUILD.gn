@@ -63,6 +63,7 @@ group("tests") {
 
 bazel_test_suite("bazel_tests") {
   host_tests = [ "//src/devices:host_tests" ]
+  target_tests = [ "//src/devices:target_tests" ]
 }
 
 group("e2e_tests") {

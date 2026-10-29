@@ -13,3 +13,11 @@ test_suite(
         "//src/devices/tools/fidlgen_banjo:fidlgen_banjo_lib_test",
     ],
 )
+
+test_suite(
+    name = "target_tests",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    tests = [
+        "//src/devices/lib/io-buffer/tests:phys-iter-test",
+    ],
+)
