@@ -68,6 +68,16 @@ class _ManualUsbPowerHub(usb_power_hub.UsbPowerHub):
 class SuspendResumeTestCases(fuchsia_base_test.FuchsiaTestCases):
     """Test cases for suspend and resume."""
 
+    _suspend_resume_timeout: timedelta = _SUSPEND_RESUME_TIMEOUT
+    _usb_cli_base_idle_duration: timedelta = _USB_CLI_BASE_IDLE_DURATION
+    _usb_power_hub_base_idle_duration: timedelta = (
+        power.SUSPEND_RESUME_BASE_IDLE_DURATION
+    )
+    _max_idle_duration: timedelta = power.SUSPEND_RESUME_MAX_IDLE_DURATION
+    _manual_suspend_resume_timeout: timedelta = _MANUAL_SUSPEND_RESUME_TIMEOUT
+    _manual_base_idle_duration: timedelta = _MANUAL_BASE_IDLE_DURATION
+    _min_suspend_duration: timedelta = timedelta(seconds=0)
+
     def _set_display_power(self, device: FuchsiaDevice, power_on: bool) -> None:
         """Power on/off the display panel.
 
@@ -92,6 +102,11 @@ class SuspendResumeTestCases(fuchsia_base_test.FuchsiaTestCases):
         deadline: Deadline,
     ) -> None:
         """Suspends and resumes the device using SystemPowerStateController with retries."""
+        before_sag_stats = (
+            await power.get_sag_suspend_stats(self.dut)
+            if self._min_suspend_duration > timedelta(seconds=0)
+            else None
+        )
         attempt = -1
         while True:
             attempt += 1
@@ -101,8 +116,11 @@ class SuspendResumeTestCases(fuchsia_base_test.FuchsiaTestCases):
                 )
 
             idle_duration = min(
-                _USB_CLI_BASE_IDLE_DURATION * (2**attempt),
-                power.SUSPEND_RESUME_MAX_IDLE_DURATION,
+                self._usb_cli_base_idle_duration * (2**attempt),
+                max(
+                    self._usb_cli_base_idle_duration,
+                    self._max_idle_duration,
+                ),
             )
             duration_sec = math.ceil(idle_duration.total_seconds())
             _LOGGER.info(
@@ -116,7 +134,6 @@ class SuspendResumeTestCases(fuchsia_base_test.FuchsiaTestCases):
                     duration=duration_sec,
                     verify_duration=False,
                 )
-                return
             except (
                 system_power_state_controller_interface.SystemPowerStateControllerError
             ) as err:
@@ -127,6 +144,24 @@ class SuspendResumeTestCases(fuchsia_base_test.FuchsiaTestCases):
                     )
                     continue
                 raise
+
+            if before_sag_stats is None:
+                return
+
+            current_sag_delta = (
+                await power.get_sag_suspend_stats(self.dut) - before_sag_stats
+            )
+            if (
+                current_sag_delta.total_time_in_suspend
+                >= self._min_suspend_duration
+            ):
+                return
+            _LOGGER.info(
+                "Cumulative suspend time is %.2fs (< %.1fs); running "
+                "another suspend cycle...",
+                current_sag_delta.total_time_in_suspend.total_seconds(),
+                self._min_suspend_duration.total_seconds(),
+            )
 
     async def test_suspend_resume(self) -> None:
         """Must run on workbench products."""
@@ -156,20 +191,22 @@ class SuspendResumeTestCases(fuchsia_base_test.FuchsiaTestCases):
                 )
                 await self._suspend_resume_with_controller(
                     controller=controller,
-                    deadline=Deadline.from_timeout(_SUSPEND_RESUME_TIMEOUT),
+                    deadline=Deadline.from_timeout(
+                        self._suspend_resume_timeout
+                    ),
                 )
                 return
 
         is_manual_usb = isinstance(self.dut.usb_power_hub, _ManualUsbPowerHub)
         timeout = (
-            _MANUAL_SUSPEND_RESUME_TIMEOUT
+            self._manual_suspend_resume_timeout
             if is_manual_usb
-            else _SUSPEND_RESUME_TIMEOUT
+            else self._suspend_resume_timeout
         )
         base_idle_duration = (
-            _MANUAL_BASE_IDLE_DURATION
+            self._manual_base_idle_duration
             if is_manual_usb
-            else power.SUSPEND_RESUME_BASE_IDLE_DURATION
+            else self._usb_power_hub_base_idle_duration
         )
 
         # TODO(https://fxbug.dev/519249679): Find a better way to
@@ -177,13 +214,38 @@ class SuspendResumeTestCases(fuchsia_base_test.FuchsiaTestCases):
         #
         # On workbench, the display panel must be manually powered off
         # before suspend. Otherwise, the device will not suspend.
+        deadline = Deadline.from_timeout(timeout)
+        before_sag_stats = (
+            await power.get_sag_suspend_stats(self.dut)
+            if self._min_suspend_duration > timedelta(seconds=0)
+            else None
+        )
         self._set_display_power(self.dut, power_on=False)
         try:
-            await power.suspend_resume(
-                self.dut,
-                deadline=Deadline.from_timeout(timeout),
-                base_idle_duration=base_idle_duration,
-            )
+            while True:
+                await power.suspend_resume(
+                    self.dut,
+                    deadline=deadline,
+                    base_idle_duration=base_idle_duration,
+                    max_idle_duration=self._max_idle_duration,
+                )
+                if before_sag_stats is None:
+                    break
+                current_sag_delta = (
+                    await power.get_sag_suspend_stats(self.dut)
+                    - before_sag_stats
+                )
+                if (
+                    current_sag_delta.total_time_in_suspend
+                    >= self._min_suspend_duration
+                ):
+                    break
+                _LOGGER.info(
+                    "Cumulative suspend time is %.2fs (< %.1fs); running "
+                    "another suspend cycle...",
+                    current_sag_delta.total_time_in_suspend.total_seconds(),
+                    self._min_suspend_duration.total_seconds(),
+                )
         finally:
             # On workbench, the display panel must be manually powered on after
             # resume.
