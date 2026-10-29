@@ -41,7 +41,7 @@ rust_library(
         allow_empty = False,
     ),
     aliases = {
-        "//third_party/rust_crates/vendor/crypto-bigint-0.7.5:crypto_bigint": "bigint",
+        "//third_party/rust_crates/vendor/crypto-bigint-0.7.10:crypto_bigint": "bigint",
         "//third_party/rust_crates/vendor/crypto-common-0.2.2:crypto_common": "common",
         "//third_party/rust_crates/vendor/hybrid-array-0.4.15:hybrid_array": "array",
     },
@@ -96,7 +96,7 @@ rust_library(
     deps = [
         "//third_party/rust_crates/forks/zeroize",
         "//third_party/rust_crates/vendor/base16ct-1.0.0:base16ct",
-        "//third_party/rust_crates/vendor/crypto-bigint-0.7.5:crypto_bigint",
+        "//third_party/rust_crates/vendor/crypto-bigint-0.7.10:crypto_bigint",
         "//third_party/rust_crates/vendor/crypto-common-0.2.2:crypto_common",
         "//third_party/rust_crates/vendor/digest-0.11.3:digest",
         "//third_party/rust_crates/vendor/ff-0.14.0:ff",

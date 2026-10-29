@@ -133,7 +133,7 @@ hex = { version = "0.4.3", features = ["serde"] }
 hkdf = "0.13.0"
 hkdf_0_12 = { package = "hkdf", version = "0.12.4" }
 hmac = "0.13.0"
-hmac-0_12 = { package = "hmac", version = "0.12.1" }
+hmac-0_12 = { package = "hmac", version = "0.12.1", features = ["reset"] }
 hound = "3.5.1"
 http = "1"
 http-body = "1"
@@ -175,7 +175,6 @@ num-traits = "0.2.19"
 omaha_client = "0.4.1"
 once_cell = "1.21.4"
 p256 = { version = "0.14.0", features = ["ecdh", "pem", "serde"] }
-p256-0_11 = { package = "p256", version = "0.11.1", features = ["ecdh", "pem", "serde"] }
 paste = "1.0.15"
 pathdiff = { version = "0.2.3", features = ["camino"] }
 pem = "4.0.0"
@@ -751,9 +750,6 @@ rustflags = []
 env_vars = [ "CARGO_PKG_NAME=getrandom", "CARGO_PKG_VERSION=0.4.3", "CARGO_MANIFEST_DIR=${gn_source_root}/third_party/rust_crates/vendor/getrandom-0.4.3" ]
 rustflags = []
 
-[gn.package.group."0.12.1"]
-license_files = ["LICENSE-APACHE"]
-
 [gn.package.handlebars."6.4.4"]
 # pest relies on this being set to find the grammar file
 env_vars = [ "CARGO_MANIFEST_DIR=${gn_source_root}/third_party/rust_crates/vendor/handlebars-6.4.4" ]
@@ -955,13 +951,6 @@ configs = ["//third_party/boringssl/rust:osslconf"]
 [gn.package.openssl-sys."0.9.117"]
 rustflags = ["--cfg=boringssl"]
 configs = ["//third_party/boringssl/rust:osslconf"]
-
-[gn.package.p256."0.11.1"]
-group_name = "p256-0_11"
-visibility = [
-  ":*",
-  "//src/sys/pkg/bin/pkg-resolver:*",
-]
 
 [gn.package.parking_lot."0.12.5"]
 # Funnel usage of parking_lot through fuchsia_sync.

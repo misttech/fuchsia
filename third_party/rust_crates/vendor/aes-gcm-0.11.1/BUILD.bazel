@@ -84,7 +84,7 @@ rust_library(
         "//third_party/rust_crates/vendor/aes-0.9.3:aes",
         "//third_party/rust_crates/vendor/cipher-0.5.2:cipher",
         "//third_party/rust_crates/vendor/ctr-0.10.1:ctr",
-        "//third_party/rust_crates/vendor/ctutils-0.4.5:ctutils",
+        "//third_party/rust_crates/vendor/ctutils-0.4.6:ctutils",
         "//third_party/rust_crates/vendor/ghash-0.6.0:ghash",
     ],
 )

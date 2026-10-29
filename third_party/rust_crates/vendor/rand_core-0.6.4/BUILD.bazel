@@ -52,11 +52,6 @@ rust_library(
             "WORKSPACE.bazel",
         ],
     ),
-    crate_features = [
-        "alloc",
-        "getrandom",
-        "std",
-    ],
     crate_root = "src/lib.rs",
     edition = "2018",
     rustc_flags = [
@@ -78,7 +73,4 @@ rust_library(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     version = "0.6.4",
-    deps = [
-        "//third_party/rust_crates/vendor/getrandom-0.2.17:getrandom",
-    ],
 )
