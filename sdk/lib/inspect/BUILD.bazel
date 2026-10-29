@@ -15,6 +15,7 @@ exports_files(
     ],
     visibility = [
         "//bundles/assembly:__subpackages__",
+        "//src/factory/fake_factory_store_providers:__pkg__",
         "//src/security/lib/scrutiny/tests/route_verification:__pkg__",
         "//src/sys/pkg/lib/omaha-client-fuchsia:__pkg__",
         "//src/sys/pkg/tests/pkg-resolver:__pkg__",
