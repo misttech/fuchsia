@@ -166,6 +166,7 @@ mod everything {
         DictionaryRouter(DictionaryRouter),
         DirConnector(DirConnector),
         DirConnectorRouter(DirConnectorRouter),
+        Handle(Handle),
         InstanceToken(InstanceToken),
     }
 
@@ -177,6 +178,9 @@ mod everything {
         ) -> Self {
             match type_ {
                 fruntime::CapabilityType::Data => Self::Data(Data { handle, capabilities_proxy }),
+                fruntime::CapabilityType::Handle => {
+                    Self::Handle(Handle { handle, capabilities_proxy })
+                }
                 fruntime::CapabilityType::Connector => {
                     Self::Connector(Connector { handle, capabilities_proxy })
                 }
@@ -208,6 +212,7 @@ mod everything {
         pub fn as_event_pair(&self) -> &zx::EventPair {
             match self {
                 Self::Data(data) => &data.handle,
+                Self::Handle(handle) => &handle.handle,
                 Self::Connector(connector) => &connector.handle,
                 Self::DirConnector(dir_connector) => &dir_connector.handle,
                 Self::Dictionary(dictionary) => &dictionary.handle,
@@ -223,6 +228,12 @@ mod everything {
     impl From<Data> for Capability {
         fn from(val: Data) -> Self {
             Self::Data(val)
+        }
+    }
+
+    impl From<Handle> for Capability {
+        fn from(val: Handle) -> Self {
+            Self::Handle(val)
         }
     }
 
@@ -279,6 +290,16 @@ mod everything {
         fn try_from(val: Capability) -> Result<Self, Self::Error> {
             match val {
                 Capability::Data(val) => Ok(val),
+                _ => Err(()),
+            }
+        }
+    }
+
+    impl TryFrom<Capability> for Handle {
+        type Error = ();
+        fn try_from(val: Capability) -> Result<Self, Self::Error> {
+            match val {
+                Capability::Handle(val) => Ok(val),
                 _ => Err(()),
             }
         }
@@ -439,6 +460,98 @@ mod everything {
     }
 
     impl Clone for Data {
+        fn clone(&self) -> Self {
+            Self {
+                handle: self.handle.duplicate_handle(zx::Rights::SAME_RIGHTS).expect(
+                    "failed to duplicate handle, please only use handles with the duplicate right",
+                ),
+                capabilities_proxy: self.capabilities_proxy.clone(),
+            }
+        }
+    }
+
+    /// A handle capability wraps a single Zircon handle, which may be retrieved once.
+    #[derive(Debug)]
+    pub struct Handle {
+        /// The handle that references this capability
+        pub handle: zx::EventPair,
+
+        /// The proxy used to create this capability, and the proxy which will be used to perform
+        /// operations on this capability.
+        pub capabilities_proxy: fruntime::CapabilitiesProxy,
+    }
+
+    impl From<zx::EventPair> for Handle {
+        fn from(handle: zx::EventPair) -> Self {
+            Self {
+                handle,
+                capabilities_proxy: connect_to_protocol::<fruntime::CapabilitiesMarker>()
+                    .expect("failed to connect to fuchsia.component.runtime.Capabilities"),
+            }
+        }
+    }
+
+    impl Handle {
+        /// Creates a new [`Handle`], connecting to `/svc/fuchsia.component.runtime.Capabilities` to
+        /// do so.
+        pub async fn new(value: impl Into<zx::NullableHandle>) -> Self {
+            let proxy = connect_to_protocol::<fruntime::CapabilitiesMarker>()
+                .expect("failed to connect to fuchsia.component.runtime.Capabilities");
+            Self::new_with_proxy(proxy, value).await
+        }
+
+        /// Creates a new [`Handle`] using the provided `capabilities_proxy`.
+        pub async fn new_with_proxy(
+            capabilities_proxy: fruntime::CapabilitiesProxy,
+            value: impl Into<zx::NullableHandle>,
+        ) -> Self {
+            let (handle, handle_other_end) = zx::EventPair::create();
+            capabilities_proxy
+                .handle_create(handle_other_end, value.into())
+                .await
+                .expect("failed to use fuchsia.component.runtime.Capabilities")
+                .expect(
+                    "this should be impossible, we passed a valid handle with the correct rights",
+                );
+            Self { handle, capabilities_proxy }
+        }
+
+        /// Associates `other_handle` with the same object referenced by this capability, so that
+        /// whoever holds the other end of `other_handle` can refer to our capability.
+        pub async fn associate_with_handle(&self, other_handle: zx::EventPair) {
+            self.capabilities_proxy
+                .capability_associate_handle(
+                    self.handle.duplicate_handle(zx::Rights::SAME_RIGHTS).expect(
+                        "failed to duplicate handle, please only use handles with the duplicate right",
+                    ),
+                    other_handle,
+                )
+                .await
+                .expect("failed to use fuchsia.component.runtime.Capabilities")
+                .expect("failed to clone onto handle, does it have sufficient rights?");
+        }
+
+        /// Takes and returns the wrapped Zircon handle from this capability, or returns `None` if
+        /// the handle has already been taken.
+        pub async fn take(&self) -> Option<zx::NullableHandle> {
+            let res = self
+                .capabilities_proxy
+                .handle_get(self.handle.duplicate_handle(zx::Rights::SAME_RIGHTS).expect(
+                    "failed to duplicate handle, please only use handles with the duplicate right",
+                ))
+                .await
+                .expect("failed to use fuchsia.component.runtime.Capabilities");
+            match res {
+                Ok(handle) => Some(handle),
+                Err(fruntime::CapabilitiesError::HandleAlreadyTaken) => None,
+                Err(other_error) => panic!(
+                    "this arm should be impossible, we passed a valid handle with the correct rights: {other_error:?}"
+                ),
+            }
+        }
+    }
+
+    impl Clone for Handle {
         fn clone(&self) -> Self {
             Self {
                 handle: self.handle.duplicate_handle(zx::Rights::SAME_RIGHTS).expect(
@@ -1639,6 +1752,7 @@ mod everything {
             dictionary.insert("dir_connector", dir_connector).await;
             dictionary.insert("dictionary", Dictionary::new().await).await;
             dictionary.insert("data", Data::new(DataValue::Int64(1)).await).await;
+            dictionary.insert("handle", Handle::new(zx::Event::create()).await).await;
             let (connector_router, _connector_router_receiver) = ConnectorRouter::new().await;
             dictionary.insert("connector_router", connector_router).await;
             let (dir_connector_router, _dir_connector_router_receiver) =
@@ -1657,6 +1771,7 @@ mod everything {
             );
             assert_matches!(dictionary.get("dictionary").await, Some(Capability::Dictionary(_)));
             assert_matches!(dictionary.get("data").await, Some(Capability::Data(_)));
+            assert_matches!(dictionary.get("handle").await, Some(Capability::Handle(_)));
             assert_matches!(
                 dictionary.get("connector_router").await,
                 Some(Capability::ConnectorRouter(_))
@@ -1680,6 +1795,16 @@ mod everything {
         async fn data_test() {
             let data = Data::new(DataValue::Uint64(100)).await;
             assert_eq!(DataValue::Uint64(100), data.get_value().await);
+        }
+
+        #[fuchsia::test]
+        async fn handle_test() {
+            let event = zx::Event::create();
+            let expected_koid = event.basic_info().unwrap().koid;
+            let handle = Handle::new(event).await;
+            let retrieved = handle.take().await.unwrap();
+            assert_eq!(expected_koid, retrieved.basic_info().unwrap().koid);
+            assert!(handle.take().await.is_none());
         }
 
         #[fuchsia::test]

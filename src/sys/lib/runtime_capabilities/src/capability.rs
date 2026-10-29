@@ -142,6 +142,17 @@ impl TryFrom<Capability> for crate::Data {
     }
 }
 
+impl TryFrom<Capability> for Arc<crate::Handle> {
+    type Error = ();
+
+    fn try_from(c: Capability) -> Result<Self, Self::Error> {
+        match c {
+            Capability::Handle(h) => Ok(h),
+            _ => Err(()),
+        }
+    }
+}
+
 impl TryFrom<Capability> for Arc<Router<crate::Dictionary>> {
     type Error = ();
 

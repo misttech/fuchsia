@@ -20,6 +20,7 @@ type CapabilityType = flexible enum {
     DICTIONARY_ROUTER = 7;
     DATA_ROUTER = 8;
     INSTANCE_TOKEN = 9;
+    HANDLE = 10;
 };
 
 @available(added=HEAD)
@@ -277,6 +278,7 @@ type CapabilitiesError = flexible enum {
     HANDLE_ALREADY_REGISTERED = 7;
     INVALID_DATA = 8;
     INVALID_ARGS = 9;
+    HANDLE_ALREADY_TAKEN = 10;
 };
 
 @available(added=HEAD)
@@ -358,6 +360,16 @@ open protocol Capabilities {
     flexible DataCreate(resource struct {
         data_handle zx.Handle:EVENTPAIR;
         data Data;
+    }) -> () error CapabilitiesError;
+
+    /// Creates a reference to a new handle capability wrapping the given
+    /// `handle`.
+    ///
+    /// Make sure this method returns before passing the handle's peer to other
+    /// methods in this API. The creation may not be complete before then.
+    flexible HandleCreate(resource struct {
+        handle_capability zx.Handle:EVENTPAIR;
+        handle zx.Handle;
     }) -> () error CapabilitiesError;
 
     /// Creates a reference to a new router capability that will return a
@@ -499,6 +511,15 @@ open protocol Capabilities {
     flexible DataGet(resource struct {
         data_handle zx.Handle:EVENTPAIR;
     }) -> (Data) error CapabilitiesError;
+
+    /// Takes and returns the `zx.Handle` that was provided to the
+    /// `HandleCreate` call used with `handle_capability`. Returns
+    /// `HANDLE_ALREADY_TAKEN` if the handle has already been taken.
+    flexible HandleGet(resource struct {
+        handle_capability zx.Handle:EVENTPAIR;
+    }) -> (resource struct {
+        handle zx.Handle;
+    }) error CapabilitiesError;
 
     /// Attempts to produce a `Connector` capability from this
     /// `ConnectorRouter`.

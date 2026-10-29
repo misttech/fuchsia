@@ -25,7 +25,7 @@ use router_error::{Explain, RouterError};
 use routing::error::RoutingError;
 use runtime_capabilities::{
     Capability, CapabilityBound, Connectable, Connector, Data, Dictionary, DirConnectable,
-    DirConnector, Routable, Router, WeakInstanceToken,
+    DirConnector, Handle, Routable, Router, WeakInstanceToken,
 };
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -229,6 +229,15 @@ impl Capabilities {
                     data_res.and_then(|data| self.remote_capabilities.store(data_handle, data));
                 let _ = responder.send(res);
             }
+            fruntime::CapabilitiesRequest::HandleCreate {
+                handle_capability,
+                handle,
+                responder,
+                ..
+            } => {
+                let res = self.remote_capabilities.store(handle_capability, Handle::new(handle));
+                let _ = responder.send(res);
+            }
             fruntime::CapabilitiesRequest::ConnectorRouterCreate {
                 router,
                 router_client_end,
@@ -396,6 +405,13 @@ impl Capabilities {
                         let _ = responder.send(Err(e));
                     }
                 }
+            }
+            fruntime::CapabilitiesRequest::HandleGet { handle_capability, responder, .. } => {
+                let res = self
+                    .remote_capabilities
+                    .get::<Handle>(handle_capability)
+                    .and_then(|h| h.take().ok_or(fruntime::CapabilitiesError::HandleAlreadyTaken));
+                let _ = responder.send(res);
             }
             fruntime::CapabilitiesRequest::CapabilityAssociateHandle {
                 capability_handle,
@@ -792,12 +808,12 @@ fn capability_as_type(cap: &Capability) -> Result<fruntime::CapabilityType, Erro
         Capability::DirConnector(_) => Ok(fruntime::CapabilityType::DirConnector),
         Capability::Dictionary(_) => Ok(fruntime::CapabilityType::Dictionary),
         Capability::Data(_) => Ok(fruntime::CapabilityType::Data),
+        Capability::Handle(_) => Ok(fruntime::CapabilityType::Handle),
         Capability::ConnectorRouter(_) => Ok(fruntime::CapabilityType::ConnectorRouter),
         Capability::DirConnectorRouter(_) => Ok(fruntime::CapabilityType::DirConnectorRouter),
         Capability::DictionaryRouter(_) => Ok(fruntime::CapabilityType::DictionaryRouter),
         Capability::DataRouter(_) => Ok(fruntime::CapabilityType::DataRouter),
         Capability::Instance(_) => Ok(fruntime::CapabilityType::InstanceToken),
-        other_value => Err(format_err!("unexpected capability type: {other_value:?}")),
     }
 }
 
@@ -1036,6 +1052,29 @@ mod tests {
         proxy.dictionary_create(dictionary_other_end).await.unwrap().unwrap();
 
         assert_matches!(remote_capabilities.get::<Dictionary>(dictionary), Ok(_));
+        assert_no_remote_capabilities(&remote_capabilities).await;
+    }
+
+    #[fuchsia::test]
+    async fn create_get_handle_test() {
+        let (proxy, remote_capabilities, _scope) = new_connection();
+        let (handle_cap, handle_cap_other_end) = zx::EventPair::create();
+        let (c1, c2) = zx::Channel::create();
+        let expected_koid = c1.basic_info().unwrap().koid;
+        proxy.handle_create(handle_cap_other_end, c1.into()).await.unwrap().unwrap();
+
+        let handle_cap_dup = handle_cap.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+        let retrieved = proxy.handle_get(handle_cap_dup).await.unwrap().unwrap();
+        assert_eq!(retrieved.basic_info().unwrap().koid, expected_koid);
+        assert_eq!(retrieved.basic_info().unwrap().related_koid, c2.basic_info().unwrap().koid,);
+
+        let handle_cap_dup_2 = handle_cap.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+        assert_eq!(
+            proxy.handle_get(handle_cap_dup_2).await.unwrap(),
+            Err(fruntime::CapabilitiesError::HandleAlreadyTaken),
+        );
+
+        assert_matches!(remote_capabilities.get::<Handle>(handle_cap), Ok(_));
         assert_no_remote_capabilities(&remote_capabilities).await;
     }
 
