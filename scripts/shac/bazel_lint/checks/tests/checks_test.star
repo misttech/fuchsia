@@ -5,6 +5,7 @@
 """Runs all Starlark tests for bazel_lint checks."""
 
 load("./bzl_require_load_visibility_test.star", "run_bzl_require_load_visibility_tests")
+load("./fuchsia_wrappers_test.star", "run_fuchsia_wrappers_tests")
 load("./host_constraints_test.star", "run_host_constraints_tests")
 load("./load_visibility_test.star", "run_load_visibility_tests")
 load("./package_default_visibility_test.star", "run_package_default_visibility_tests")
@@ -18,6 +19,7 @@ def test_bazel_lint_checks():
 
     # LINT.IfChange(run_all_check_tests)
     run_bzl_require_load_visibility_tests()
+    run_fuchsia_wrappers_tests()
     run_host_constraints_tests()
     run_load_visibility_tests()
     run_package_default_visibility_tests()

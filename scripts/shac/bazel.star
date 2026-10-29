@@ -468,6 +468,15 @@ _bazel_disallowed_workspace_root_package_labels = _make_bazel_lint_check(
     applies_to_globs = _ALL_BAZEL_FILES,
 )
 
+# Reports an error when upstream C/C++ or Rust rules are loaded or called
+# instead of their Fuchsia-specific wrapper macros.
+# TODO(https://fxbug.dev/570203009): Switch to "all" once rolled out.
+_bazel_fuchsia_wrappers = _make_bazel_lint_check(
+    "bazel_fuchsia_wrappers",
+    applies_to_globs = _BUILD_AND_BZL_FILES,
+    enforcement = "unchanged_lines_warning_only",
+)
+
 # Reports an error when `HOST_CONSTRAINTS` is loaded from
 # `@platforms//host:constraints.bzl` or used in `target_compatible_with`.
 # TODO(https://fxbug.dev/567965595): Switch to "all" once rolled out.
@@ -534,6 +543,7 @@ def register_bazel_checks():
     # LINT.IfChange(register_all_checks)
     shac.register_check(_bazel_bzl_require_load_visibility)
     shac.register_check(_bazel_disallowed_workspace_root_package_labels)
+    shac.register_check(_bazel_fuchsia_wrappers)
     shac.register_check(_bazel_host_constraints)
     shac.register_check(_bazel_load_visibility)
     shac.register_check(_bazel_package_default_visibility)

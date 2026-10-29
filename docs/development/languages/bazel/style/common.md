@@ -209,9 +209,10 @@ See [Wrapping built-in and common rules, macros, and
 functions][wrapping-rules-macros] for one pattern used when needing to
 differentiate Fuchsia platform from general Bazel identifiers.
 
-## Use Fuchsia-specific wrappers
+## Use Fuchsia-specific wrappers {:#use-fuchsia-specific-wrappers}
 
-When Fuchsia-specific wrappers exist, use those rather than external
+When Fuchsia-specific wrappers exist, use those
+_\[<span style="color:red">SHAC error</span>\]_ rather than external
 repositories, macros, etc. This helps ensure that Fuchsia build configurations
 are applied consistently.
 

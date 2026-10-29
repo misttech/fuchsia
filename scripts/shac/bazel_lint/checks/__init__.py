@@ -9,6 +9,7 @@
 # LINT.IfChange(all_checks)
 from . import (
     bzl_require_load_visibility,
+    fuchsia_wrappers,
     host_constraints,
     load_visibility,
     package_default_visibility,

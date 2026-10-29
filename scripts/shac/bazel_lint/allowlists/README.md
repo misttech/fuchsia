@@ -47,7 +47,9 @@ exceptions.
 ## Format
 
 Each allowlist file is a JSON object with a single top-level `"entries"` array.
-Entries should be kept in alphabetical order by `path` or `path_prefix`.
+Entries must be kept in alphabetical order by `path` or `path_prefix`. Within
+each entry object, place `path` or `path_prefix` first, followed by `bug`, then
+optional `comment` and `targets` (with `targets` sorted alphabetically).
 
 ### Entry Fields
 

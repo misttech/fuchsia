@@ -239,6 +239,10 @@ If existing files in the repository trigger findings:
     remaining pre-existing violations that cannot be fixed trivially in advance:
     * Format with 4-space indentation and keep `"entries"` sorted strictly
       alphabetically by `"path"` or `"path_prefix"`.
+    * Order keys within each entry object with `"path"` or `"path_prefix"`
+      first, followed by `"bug"`, then optional `"comment"` and `"targets"` (do
+      not pass `sort_keys=True` to `json.dumps()`, which sorts `"bug"` first).
+    * When `"targets"` is present, keep the target names sorted alphabetically.
     * Every entry must include `"bug": "https://fxbug.dev/<id>"` (use the bug ID
       provided by the user, or ask the user if none was provided).
     * When `supports_targets_allowlist = True`:
@@ -270,8 +274,22 @@ If existing files in the repository trigger findings:
       allowlist in `fuchsia.git`. `allowlist.py` only permits
       `"vendor/BUILD.bazel"`, `"vendor/google/BUILD.bazel"`, `"vendor/"`, or
       `"vendor/google/"`.
-3.  Re-run `fx host-tool shac check --only bazel_<check_name> --all` and confirm
-    it exits 0 with zero findings (including zero warnings on untouched files).
+3.  Verify allowlist ordering (entries sorted by `"path"`/`"path_prefix"`,
+    `"path"`/`"path_prefix"` first in each entry, and `"targets"` sorted) and
+    re-run `fx host-tool shac check --only bazel_<check_name> --all` to confirm
+    it exits 0 with zero findings (including zero warnings on untouched files):
+
+    ```sh
+    python3 -c '
+    import json
+    entries = json.load(open("scripts/shac/bazel_lint/allowlists/bazel_<check_name>.json"))["entries"]
+    paths = [e.get("path") or e.get("path_prefix") for e in entries]
+    assert paths == sorted(paths), "Entries not sorted"
+    assert all(next(iter(e)) in ("path", "path_prefix") for e in entries), "path/path_prefix must be first key"
+    assert all(e["targets"] == sorted(e["targets"]) for e in entries if "targets" in e), "targets not sorted"
+    '
+    fx host-tool shac check --only bazel_<check_name> --all
+    ```
 
 ---
 
