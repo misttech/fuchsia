@@ -1,0 +1,23 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "spec",
+    srcs = ["src/lib.rs"],
+    crate_name = "sdmmc_spec",
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:enumn",
+    ],
+    visibility = ["//src/devices/block/drivers/cqhci:__subpackages__"],
+    deps = [
+        "//third_party/rust_crates/vendor:bitfield",
+        "//third_party/rust_crates/vendor:bitflags",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
