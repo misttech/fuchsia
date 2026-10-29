@@ -970,6 +970,19 @@ assembly_input_bundle(
     bootfs_files_package = "//bundles/assembly/bazel_inputs:ufsutil.bootfs_files_package",
 )
 
+# spmi-ctl shell utility. Used in products that use SPMI and have shell commands enabled.
+#
+# buildifier: leave-alone
+assembly_input_bundle(
+    name = "spmi-ctl",
+    allowed_in = [
+        "bootstrap::eng",
+        "utility::eng",
+        "standard::eng",
+    ],
+    bootfs_files_package = "//bundles/assembly/bazel_inputs:spmi-ctl.bootfs_files_package",
+)
+
 # The kernel_debug_broker AIB is included by all eng and userdebug products.
 #
 # buildifier: leave-alone

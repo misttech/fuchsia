@@ -89,6 +89,8 @@ pub enum BoardFeature {
     SoftCrypto,
     /// A/B slot management support (switching slots, marking slots successful, etc).
     SlotManagement,
+    /// System Power Management Interface (SPMI) support.
+    Spmi,
     /// Hardware-backed inline storage encryption support.
     StorageInlineCrypto,
     /// Power management features for storage devices.
@@ -170,6 +172,7 @@ impl AsRef<str> for BoardFeature {
             Self::SharedRegisters => "fuchsia::shared_registers",
             Self::SoftCrypto => "fuchsia::soft_crypto",
             Self::SlotManagement => "fuchsia::slot_management",
+            Self::Spmi => "fuchsia::spmi",
             Self::StorageInlineCrypto => "fuchsia::storage_inline_crypto",
             Self::StoragePowerManagement => "fuchsia::storage_power_management",
             Self::StorageStallWatchdog => "fuchsia::storage_stall_watchdog",

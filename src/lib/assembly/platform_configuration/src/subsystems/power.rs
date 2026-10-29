@@ -271,6 +271,16 @@ impl DefineSubsystemConfiguration<PowerConfig> for PowerManagementSubsystem {
             builder.platform_bundle("power_framework_eager_shard")?;
         }
 
+        if context.board_config.provides_feature(BoardFeature::Spmi)
+            && *context.build_type == BuildType::Eng
+            && matches!(
+                context.feature_set_level,
+                FeatureSetLevel::Bootstrap | FeatureSetLevel::Utility | FeatureSetLevel::Standard
+            )
+        {
+            builder.platform_bundle("spmi-ctl")?;
+        }
+
         Ok(())
     }
 }
@@ -333,5 +343,50 @@ mod tests {
             &PowerConfig { deep_suspend_enabled: false, ..Default::default() },
             false,
         );
+    }
+
+    fn has_spmi_ctl(
+        provided_features: Vec<String>,
+        build_type: &BuildType,
+        feature_set_level: &FeatureSetLevel,
+    ) -> bool {
+        let board_config = BoardConfig { provided_features, ..Default::default() };
+        let context = ConfigurationContext {
+            board_config: &board_config,
+            build_type,
+            feature_set_level,
+            ..ConfigurationContext::default_for_tests()
+        };
+        let mut builder = ConfigurationBuilderImpl::default();
+        PowerManagementSubsystem::define_configuration(
+            &context,
+            &PowerConfig::default(),
+            &mut builder,
+        )
+        .unwrap();
+        builder.build().bundles.contains("spmi-ctl")
+    }
+
+    #[test]
+    fn test_spmi_ctl_excluded_without_board_feature() {
+        assert!(!has_spmi_ctl(vec![], &BuildType::Eng, &FeatureSetLevel::Bootstrap));
+        assert!(!has_spmi_ctl(vec![], &BuildType::Eng, &FeatureSetLevel::Utility));
+        assert!(!has_spmi_ctl(vec![], &BuildType::Eng, &FeatureSetLevel::Standard));
+    }
+
+    #[test]
+    fn test_spmi_ctl_included_on_eng_with_board_feature() {
+        let features = vec![BoardFeature::Spmi.as_ref().to_string()];
+        assert!(has_spmi_ctl(features.clone(), &BuildType::Eng, &FeatureSetLevel::Bootstrap));
+        assert!(has_spmi_ctl(features.clone(), &BuildType::Eng, &FeatureSetLevel::Utility));
+        assert!(has_spmi_ctl(features, &BuildType::Eng, &FeatureSetLevel::Standard));
+    }
+
+    #[test]
+    fn test_spmi_ctl_excluded_on_non_eng_or_embeddable() {
+        let features = vec![BoardFeature::Spmi.as_ref().to_string()];
+        assert!(!has_spmi_ctl(features.clone(), &BuildType::UserDebug, &FeatureSetLevel::Standard));
+        assert!(!has_spmi_ctl(features.clone(), &BuildType::User, &FeatureSetLevel::Standard));
+        assert!(!has_spmi_ctl(features, &BuildType::Eng, &FeatureSetLevel::Embeddable));
     }
 }

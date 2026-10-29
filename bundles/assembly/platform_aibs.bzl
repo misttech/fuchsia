@@ -165,6 +165,9 @@ bringup_platform_aib_names = [
 
     # UFS device user-space utility.
     "ufsutil",
+
+    # SPMI device user-space utility.
+    "spmi-ctl",
 ]
 
 platform_aib_names = bringup_platform_aib_names + [

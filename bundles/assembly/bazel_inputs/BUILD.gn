@@ -439,7 +439,6 @@ fuchsia_package("bootstrap_eng.bootfs_files_package") {
     "//src/devices/registers/bin/register-util:bootfs",
     "//src/devices/serial/bin/serialutil:bootfs",
     "//src/devices/spi/bin/spiutil:bootfs",
-    "//src/devices/spmi/bin/spmi-ctl:bootfs",
     "//src/devices/suspend/bin/suspendctl:bootfs",
     "//src/devices/tee/bin:bootfs",
     "//src/devices/thermal/bin/temperature-cli:bootfs",
@@ -483,6 +482,18 @@ fuchsia_package("ufsutil.bootfs_files_package") {
 
 export_fuchsia_package_to_bazel("ufsutil.bootfs_files_package.bazel_input") {
   package = ":ufsutil.bootfs_files_package"
+}
+
+group("spmi-ctl") {
+  deps = [ ":spmi-ctl.bootfs_files_package.bazel_input" ]
+}
+
+fuchsia_package("spmi-ctl.bootfs_files_package") {
+  deps = [ "//src/devices/spmi/bin/spmi-ctl:bootfs" ]
+}
+
+export_fuchsia_package_to_bazel("spmi-ctl.bootfs_files_package.bazel_input") {
+  package = ":spmi-ctl.bootfs_files_package"
 }
 
 group("kernel_debug_broker_userdebug") {
