@@ -1,0 +1,272 @@
+#!/bin/bash
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+#### CATEGORY=Toolchain
+#### PREBUILTS=${PREBUILT_BB} ${PREBUILT_CAS} ${PREBUILT_JQ}
+### Download prebuilt toolchains (clang, rust) from CI
+
+## usage: fx download-toolchain <toolchain>[:<target>] [...]
+##
+## Downloads one or more prebuilt toolchains (`clang` or `rust`)
+## for the current host architecture (${HOST_PLATFORM}) into
+## `//local/<toolchain>` and prints the GN arguments needed to use them.
+##
+## Arguments:
+##   <toolchain>              One of `clang` or `rust`.
+##                            Downloads the latest green build from toolchain.ci
+##                            for the current host architecture.
+##   <toolchain>:<target>     Download `<toolchain>` from a specific build or
+##                            builder. `<target>` can be:
+##                              - A LUCI / Milo build URL (e.g.
+##                                https://ci.chromium.org/ui/p/fuchsia/builders/.../b8666755190352362065/overview
+##                                or https://ci.chromium.org/b/8666755190352362065)
+##                              - A Buildbucket build ID (e.g. b8666755190352362065
+##                                or 8666755190352362065)
+##                              - A CAS digest (e.g. <sha256>/<size_bytes>)
+##                              - A LUCI builder URL or builder name (e.g.
+##                                fuchsia/toolchain.ci/rust_llvm-linux-x64 or
+##                                rust_llvm-linux-x64), which resolves to the
+##                                latest green build on that builder.
+##
+## Examples:
+##   fx download-toolchain rust
+##   fx download-toolchain clang rust
+##   fx download-toolchain \
+##     clang:https://ci.chromium.org/ui/p/fuchsia/builders/toolchain.ci/clang-linux-x64/b8666747240201415809/overview \
+##     rust:https://ci.chromium.org/ui/p/fuchsia/builders/toolchain.ci/rust_llvm-linux-x64/b8666927100188196401/overview
+
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"/../lib/vars.sh || exit $?
+
+function usage {
+  fx-command-help
+  exit 1
+}
+
+if [[ $# -eq 0 ]]; then
+  echo "Error: At least one toolchain specification (clang or rust) is required." >&2
+  usage
+fi
+
+for arg in "$@"; do
+  case "${arg}" in
+    -h|--help)
+      usage
+      ;;
+  esac
+done
+
+set -euo pipefail
+
+# Resolve tool paths declared in the `#### PREBUILTS=` metadata header above.
+readarray -t _declared_prebuilts < <(get_prebuilts_from_metadata "${BASH_SOURCE[0]}")
+if [[ ${#_declared_prebuilts[@]} -gt 0 ]]; then
+  fx-ensure-prebuilt "${_declared_prebuilts[@]}"
+fi
+
+BB_TOOL="${_declared_prebuilts[0]:-}"
+CAS_TOOL="${_declared_prebuilts[1]:-}"
+JQ_CANDIDATE="${_declared_prebuilts[2]:-${jq:-}}"
+
+# Locate jq (prefer Fuchsia prebuilt jq, fall back to system PATH).
+if [[ -n "${JQ_CANDIDATE}" && -x "${JQ_CANDIDATE}" ]]; then
+  JQ_TOOL="${JQ_CANDIDATE}"
+elif command -v jq >/dev/null 2>&1; then
+  JQ_TOOL="$(command -v jq)"
+else
+  echo "jq could not be found at ${JQ_CANDIDATE} or in PATH." >&2
+  exit 1
+fi
+
+if [[ -z "${BB_TOOL}" || ! -x "${BB_TOOL}" ]]; then
+  echo "bb tool not found or not executable at ${BB_TOOL}" >&2
+  exit 1
+fi
+
+if [[ -z "${CAS_TOOL}" || ! -x "${CAS_TOOL}" ]]; then
+  echo "cas tool not found or not executable at ${CAS_TOOL}" >&2
+  exit 1
+fi
+
+# Check authentication once up front.
+if ! "${BB_TOOL}" auth-info >/dev/null 2>&1; then
+  echo "Login required, run \`${BB_TOOL} auth-login\`" >&2
+  exit 1
+fi
+
+if ! "${CAS_TOOL}" whoami >/dev/null 2>&1; then
+  echo "Login required, run \`${CAS_TOOL} login\`" >&2
+  exit 1
+fi
+
+function default_builder_for_toolchain {
+  local toolchain="$1"
+  case "${toolchain}" in
+    clang)
+      echo "fuchsia/toolchain.ci/clang-${HOST_PLATFORM}"
+      ;;
+    rust)
+      echo "fuchsia/toolchain.ci/rust-${HOST_PLATFORM}"
+      ;;
+    *)
+      echo "Error: Unknown toolchain '${toolchain}'. Must be 'clang' or 'rust'." >&2
+      return 1
+      ;;
+  esac
+}
+
+function latest_green_build_id {
+  local builder="$1"
+  local build_info
+  build_info="$("${BB_TOOL}" ls "${builder}" -status SUCCESS -n 1 -json)" || return 1
+  if [[ -z "${build_info}" || "${build_info}" == "[]" ]]; then
+    return 1
+  fi
+  local build_id
+  build_id="$(printf '%s\n' "${build_info}" | "${JQ_TOOL}" -s -r '.[0].id // empty')"
+  if [[ -z "${build_id}" || "${build_id}" == "null" ]]; then
+    return 1
+  fi
+  echo "${build_id}"
+}
+
+function extract_cas_digest_from_build {
+  local toolchain="$1"
+  local build_details="$2"
+
+  case "${toolchain}" in
+    clang)
+      printf '%s\n' "${build_details}" | "${JQ_TOOL}" -r '
+        .input.properties["$fuchsia/checkout"].clang_toolchain.cas_digest
+        // .output.properties.isolated
+        // .output.properties.cas_digest
+        // empty
+      '
+      ;;
+    rust)
+      printf '%s\n' "${build_details}" | "${JQ_TOOL}" -r '
+        .input.properties["$fuchsia/checkout"].rust_toolchain.cas_digest
+        // .input.properties.rust_cas_digest
+        // .output.properties.isolated
+        // .output.properties.cas_digest
+        // empty
+      '
+      ;;
+  esac
+}
+
+GN_ARGS_SUGGESTIONS=()
+
+for spec in "$@"; do
+  toolchain="${spec%%:*}"
+  if [[ "${spec}" == *:* ]]; then
+    target="${spec#*:}"
+  else
+    target=""
+  fi
+
+  case "${toolchain}" in
+    clang|rust)
+      ;;
+    *)
+      echo "Error: Invalid toolchain '${toolchain}' in argument '${spec}'. Must be 'clang' or 'rust'." >&2
+      usage
+      ;;
+  esac
+
+  build_id=""
+  cas_digest=""
+  builder=""
+
+  if [[ -z "${target}" ]]; then
+    builder="$(default_builder_for_toolchain "${toolchain}")"
+    echo "[${toolchain}] Fetching latest green build for ${builder}..."
+    if ! build_id="$(latest_green_build_id "${builder}")"; then
+      if [[ -z "${build_id}" ]]; then
+        echo "Error: No successful builds found for ${builder}." >&2
+        exit 1
+      fi
+    fi
+  elif [[ "${target}" =~ ^[0-9a-fA-F]{64}/[0-9]+$ ]]; then
+    cas_digest="${target}"
+  elif [[ "${target}" =~ ^b?([0-9]{15,})$ ]]; then
+    build_id="${BASH_REMATCH[1]}"
+  elif [[ "${target}" =~ /b/?([0-9]{15,}) ]]; then
+    build_id="${BASH_REMATCH[1]}"
+  elif [[ "${target}" =~ /p/([^/]+)/builders/([^/]+)/([^/?#]+) ]]; then
+    builder="${BASH_REMATCH[1]}/${BASH_REMATCH[2]}/${BASH_REMATCH[3]}"
+    echo "[${toolchain}] Fetching latest green build for ${builder}..."
+    if ! build_id="$(latest_green_build_id "${builder}")"; then
+      echo "Error: No successful builds found for ${builder}." >&2
+      exit 1
+    fi
+  elif [[ "${target}" == http://* || "${target}" == https://* ]]; then
+    echo "Error: Unrecognized build/builder URL '${target}'." >&2
+    exit 1
+  else
+    if [[ "${target}" == */*/* ]]; then
+      builder="${target}"
+    elif [[ "${target}" == */* ]]; then
+      builder="fuchsia/${target}"
+    else
+      builder="fuchsia/toolchain.ci/${target}"
+    fi
+    echo "[${toolchain}] Fetching latest green build for ${builder}..."
+    if ! build_id="$(latest_green_build_id "${builder}")"; then
+      echo "Error: No successful builds found for ${builder}." >&2
+      exit 1
+    fi
+  fi
+
+  if [[ -z "${cas_digest}" ]]; then
+    echo "[${toolchain}] Fetching details for build ${build_id}..."
+    build_details="$("${BB_TOOL}" get "${build_id}" -json -p)"
+    cas_digest="$(extract_cas_digest_from_build "${toolchain}" "${build_details}")"
+    if [[ -z "${cas_digest}" || "${cas_digest}" == "null" ]]; then
+      echo "Error: Could not find CAS digest for '${toolchain}' in build ${build_id}." >&2
+      exit 1
+    fi
+    echo "[${toolchain}] Found build ID: ${build_id}"
+  fi
+
+  echo "[${toolchain}] Found CAS digest: ${cas_digest}"
+
+  download_dir="${FUCHSIA_DIR}/local/${toolchain}"
+  echo "[${toolchain}] Cleaning up old artifacts in ${download_dir}..."
+  rm -rf "${download_dir}"
+  mkdir -p "${download_dir}"
+
+  echo "[${toolchain}] Downloading artifacts to ${download_dir}..."
+  "${CAS_TOOL}" download \
+    -cas-instance projects/chromium-swarm/instances/default_instance \
+    -digest "${cas_digest}" \
+    -dir "${download_dir}"
+
+  # Record the CAS digest in .versions/<toolchain>.cipd_version so Bazel
+  # workspace content hashing hashes this single file instead of walking the
+  # entire local toolchain directory tree.
+  mkdir -p "${download_dir}/.versions"
+  printf '{"package_name":"%s","instance_id":"%s"}\n' \
+    "${toolchain}" "${cas_digest}" \
+    > "${download_dir}/.versions/${toolchain}.cipd_version"
+
+  echo "[${toolchain}] Download complete."
+
+  case "${toolchain}" in
+    clang)
+      GN_ARGS_SUGGESTIONS+=('  clang_prefix = "//local/clang/bin"')
+      ;;
+    rust)
+      GN_ARGS_SUGGESTIONS+=('  rustc_prefix = "//local/rust"')
+      ;;
+  esac
+done
+
+echo ""
+echo "To use the downloaded toolchain(s), modify your GN arguments (using fx args) to include:"
+for line in "${GN_ARGS_SUGGESTIONS[@]}"; do
+  echo "${line}"
+done
+echo ""
+echo "Then run: fx build"
