@@ -1,0 +1,96 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "devpts",
+    srcs = ["lib.rs"],
+    crate_name = "starnix_modules_devpts",
+    crate_root = "lib.rs",
+    edition = "2024",
+    lint_config = "//src/starnix/build:kernel_library_config",
+    visibility = ["//src/starnix/modules:__subpackages__"],
+    deps = [
+        "//src/starnix/kernel/core",
+        "//src/starnix/lib/starnix_logging",
+        "//src/starnix/lib/starnix_sync",
+        "//src/starnix/lib/starnix_syscalls",
+        "//src/starnix/lib/starnix_types",
+        "//src/starnix/lib/starnix_uapi",
+    ],
+)
+
+# TODO(https://fxbug.dev/42059075): Re-enable starnix in these environments.
+# @bazel2gn:raw_attribute:exclude_toolchain_tags = [ "asan", "hwasan" ]
+# @bazel2gn:raw_attribute:output_name = "starnix_modules_devpts_lib_test"
+rustc_test(
+    name = "devpts_test",
+    crate = ":devpts",
+    edition = "2024",
+    lint_config = "//src/starnix/config:starnix_clippy_lints_test",
+    deps = [
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
+
+fx_packaged_binary(
+    name = "devpts_test_packaged_bin",
+    testonly = True,
+    binary = ":devpts_test",
+    binary_name = "starnix_modules_devpts_lib_test",
+)
+
+fx_component_manifest(
+    name = "starnix-devpts-tests-manifest",
+    testonly = True,
+    component_name = "starnix-devpts-tests",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/starnix:unit_test.shard.cml",
+    ],
+    manifest = "meta/starnix_devpts_tests.cml",
+)
+
+fx_test_component(
+    name = "starnix-devpts-tests-component",
+    compiled_manifest = ":starnix-devpts-tests-manifest",
+    component_name = "starnix-devpts-tests",
+    test_type = "starnix",
+    deps = [
+        ":devpts_test_packaged_bin",
+        # In GN, //src/starnix/kernel/vdso is a resource() propagated through
+        # //src/starnix/kernel/core's deps.
+        "//src/starnix/kernel/vdso",
+    ],
+)
+
+fx_package(
+    name = "starnix-devpts-tests-package",
+    package_name = "starnix-devpts-tests",
+    test_components = [":starnix-devpts-tests-component"],
+)
+
+fx_test(
+    name = "starnix-devpts-tests",
+    # Tests exercise failure cases, so ERROR logs are expected.
+    max_log_severity = "ERROR",
+    package = ":starnix-devpts-tests-package",
+)
