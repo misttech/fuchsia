@@ -32,9 +32,9 @@ namespace fdf::internal {
 template <typename T>
 inline MMIO_PTR volatile T* GetAddr(const void* ctx, const MmioBuffer& mmio, zx_off_t offs,
                                     size_t access_size = sizeof(T)) {
-  ZX_DEBUG_ASSERT(offs <= mmio.get_size() && access_size <= mmio.get_size() - offs);
+  ZX_ASSERT(offs <= mmio.get_size() && access_size <= mmio.get_size() - offs);
   const uintptr_t ptr = reinterpret_cast<uintptr_t>(mmio.get());
-  ZX_DEBUG_ASSERT(ptr);
+  ZX_ASSERT(ptr);
   return reinterpret_cast<MMIO_PTR T*>(ptr + offs);
 }
 
