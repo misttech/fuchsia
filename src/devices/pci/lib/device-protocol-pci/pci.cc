@@ -2,15 +2,39 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fidl/fuchsia.hardware.pci/cpp/wire_types.h>
 #include <lib/device-protocol/pci.h>
-#include <lib/driver/mmio/cpp/mmio.h>
+#include <zircon/syscalls.h>
 
-namespace ddk {
+#include <utility>
+
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+
+namespace fdf {
 
 namespace fpci = fuchsia_hardware_pci;
 
+Pci::Pci(fidl::ClientEnd<fpci::Device> client) : client_(std::move(client)) {}
+
+zx::result<Pci> Pci::Connect(const std::shared_ptr<fdf::Namespace>& incoming,
+                             std::string_view instance) {
+  if (!incoming) {
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+  return Connect(*incoming, instance);
+}
+
+zx::result<Pci> Pci::Connect(const fdf::Namespace& incoming, std::string_view instance) {
+  zx::result client = incoming.Connect<fpci::Service::Device>(instance);
+  if (client.is_error()) {
+    return client.take_error();
+  }
+  return zx::ok(Pci(std::move(*client)));
+}
+
 zx_status_t Pci::GetDeviceInfo(fpci::wire::DeviceInfo* out_info) const {
+  if (!out_info) {
+    return ZX_ERR_INVALID_ARGS;
+  }
   auto result = client_->GetDeviceInfo();
   if (!result.ok()) {
     return result.status();
@@ -20,6 +44,9 @@ zx_status_t Pci::GetDeviceInfo(fpci::wire::DeviceInfo* out_info) const {
 }
 
 zx_status_t Pci::GetBar(fidl::AnyArena& arena, uint32_t bar_id, fpci::wire::Bar* out_result) const {
+  if (!out_result) {
+    return ZX_ERR_INVALID_ARGS;
+  }
   auto result = client_.buffer(arena)->GetBar(bar_id);
   if (!result.ok()) {
     return result.status();
@@ -72,6 +99,9 @@ zx_status_t Pci::AckInterrupt() const {
 }
 
 zx_status_t Pci::MapInterrupt(uint32_t which_irq, zx::interrupt* out_interrupt) const {
+  if (!out_interrupt) {
+    return ZX_ERR_INVALID_ARGS;
+  }
   auto result = client_->MapInterrupt(which_irq);
   if (!result.ok()) {
     return result.status();
@@ -84,11 +114,16 @@ zx_status_t Pci::MapInterrupt(uint32_t which_irq, zx::interrupt* out_interrupt) 
 }
 
 void Pci::GetInterruptModes(fpci::wire::InterruptModes* out_modes) const {
+  if (out_modes) {
+    *out_modes = {};
+  }
   auto result = client_->GetInterruptModes();
   if (!result.ok()) {
     return;
   }
-  *out_modes = result.value().modes;
+  if (out_modes) {
+    *out_modes = result.value().modes;
+  }
 }
 
 zx_status_t Pci::SetInterruptMode(fpci::InterruptMode mode, uint32_t requested_irq_count) const {
@@ -103,6 +138,9 @@ zx_status_t Pci::SetInterruptMode(fpci::InterruptMode mode, uint32_t requested_i
 }
 
 zx_status_t Pci::ReadConfig8(uint16_t offset, uint8_t* out_value) const {
+  if (!out_value) {
+    return ZX_ERR_INVALID_ARGS;
+  }
   auto result = client_->ReadConfig8(offset);
   if (!result.ok()) {
     return result.status();
@@ -119,6 +157,9 @@ zx_status_t Pci::ReadConfig8(fpci::Config offset, uint8_t* out_value) const {
 }
 
 zx_status_t Pci::ReadConfig16(uint16_t offset, uint16_t* out_value) const {
+  if (!out_value) {
+    return ZX_ERR_INVALID_ARGS;
+  }
   auto result = client_->ReadConfig16(offset);
   if (!result.ok()) {
     return result.status();
@@ -135,6 +176,9 @@ zx_status_t Pci::ReadConfig16(fpci::Config offset, uint16_t* out_value) const {
 }
 
 zx_status_t Pci::ReadConfig32(uint16_t offset, uint32_t* out_value) const {
+  if (!out_value) {
+    return ZX_ERR_INVALID_ARGS;
+  }
   auto result = client_->ReadConfig32(offset);
   if (!result.ok()) {
     return result.status();
@@ -184,27 +228,31 @@ zx_status_t Pci::WriteConfig32(uint16_t offset, uint32_t value) const {
 }
 
 zx_status_t Pci::GetFirstCapability(fpci::CapabilityId id, uint8_t* out_offset) const {
+  if (!out_offset) {
+    return ZX_ERR_INVALID_ARGS;
+  }
   auto result = client_->GetCapabilities(id);
   if (!result.ok()) {
     return result.status();
   }
-
-  if (result.value().offsets.size() == 0) {
+  if (result.value().offsets.empty()) {
     return ZX_ERR_NOT_FOUND;
   }
-
   *out_offset = result.value().offsets[0];
   return ZX_OK;
 }
 
 zx_status_t Pci::GetNextCapability(fpci::CapabilityId id, uint8_t start_offset,
                                    uint8_t* out_offset) const {
+  if (!out_offset) {
+    return ZX_ERR_INVALID_ARGS;
+  }
   auto result = client_->GetCapabilities(id);
   if (!result.ok()) {
     return result.status();
   }
   fidl::VectorView<uint8_t> offsets = result.value().offsets;
-  for (uint64_t i = 0; i < offsets.size() - 1; i++) {
+  for (size_t i = 0; i + 1 < offsets.size(); i++) {
     if (offsets[i] == start_offset) {
       *out_offset = offsets[i + 1];
       return ZX_OK;
@@ -215,27 +263,31 @@ zx_status_t Pci::GetNextCapability(fpci::CapabilityId id, uint8_t start_offset,
 
 zx_status_t Pci::GetFirstExtendedCapability(fpci::ExtendedCapabilityId id,
                                             uint16_t* out_offset) const {
+  if (!out_offset) {
+    return ZX_ERR_INVALID_ARGS;
+  }
   auto result = client_->GetExtendedCapabilities(id);
   if (!result.ok()) {
     return result.status();
   }
-
-  if (result.value().offsets.size() == 0) {
+  if (result.value().offsets.empty()) {
     return ZX_ERR_NOT_FOUND;
   }
-
   *out_offset = result.value().offsets[0];
   return ZX_OK;
 }
 
 zx_status_t Pci::GetNextExtendedCapability(fpci::ExtendedCapabilityId id, uint16_t start_offset,
                                            uint16_t* out_offset) const {
+  if (!out_offset) {
+    return ZX_ERR_INVALID_ARGS;
+  }
   auto result = client_->GetExtendedCapabilities(id);
   if (!result.ok()) {
     return result.status();
   }
-  auto offsets = result.value().offsets;
-  for (uint64_t i = 0; i < offsets.size() - 1; i++) {
+  fidl::VectorView<uint16_t> offsets = result.value().offsets;
+  for (size_t i = 0; i + 1 < offsets.size(); i++) {
     if (offsets[i] == start_offset) {
       *out_offset = offsets[i + 1];
       return ZX_OK;
@@ -245,6 +297,9 @@ zx_status_t Pci::GetNextExtendedCapability(fpci::ExtendedCapabilityId id, uint16
 }
 
 zx_status_t Pci::GetBti(uint32_t index, zx::bti* out_bti) const {
+  if (!out_bti) {
+    return ZX_ERR_INVALID_ARGS;
+  }
   auto result = client_->GetBti(index);
   if (!result.ok()) {
     return result.status();
@@ -256,26 +311,30 @@ zx_status_t Pci::GetBti(uint32_t index, zx::bti* out_bti) const {
   return ZX_OK;
 }
 
-zx_status_t Pci::MapMmio(uint32_t index, uint32_t cache_policy,
-                         std::optional<fdf::MmioBuffer>* mmio) const {
+zx::result<fdf::MmioBuffer> Pci::MapMmio(uint32_t bar_id, uint32_t cache_policy) const {
   fidl::Arena arena;
   fpci::wire::Bar bar;
-  zx_status_t status = GetBar(arena, index, &bar);
+  zx_status_t status = GetBar(arena, bar_id, &bar);
   if (status != ZX_OK) {
-    return status;
+    return zx::error(status);
   }
-
   if (!bar.result.is_vmo()) {
-    return ZX_ERR_WRONG_TYPE;
+    return zx::error(ZX_ERR_WRONG_TYPE);
   }
   size_t vmo_size;
   status = bar.result.vmo().get_size(&vmo_size);
   if (status != ZX_OK) {
-    return status;
+    return zx::error(status);
   }
+  return fdf::MmioBuffer::Create(0, vmo_size, std::move(bar.result.vmo()), cache_policy);
+}
 
-  zx::result<fdf::MmioBuffer> result =
-      fdf::MmioBuffer::Create(0, vmo_size, std::move(bar.result.vmo()), cache_policy);
+zx_status_t Pci::MapMmio(uint32_t bar_id, uint32_t cache_policy,
+                         std::optional<fdf::MmioBuffer>* mmio) const {
+  if (!mmio) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+  zx::result<fdf::MmioBuffer> result = MapMmio(bar_id, cache_policy);
   if (result.is_ok()) {
     *mmio = std::move(result.value());
   }
@@ -284,28 +343,26 @@ zx_status_t Pci::MapMmio(uint32_t index, uint32_t cache_policy,
 
 zx_status_t Pci::ConfigureInterruptMode(uint32_t requested_irq_count,
                                         fpci::InterruptMode* out_mode) const {
-  // NOTE: Any changes to this method should likely also be reflected in the C
-  // version, pci_configure_interrupt_mode. These two implementations are
-  // temporarily coexisting while we migrate PCI from Banjo to FIDL. Eventually
-  // the C version will go away.
-  //
-  // TODO(https://fxbug.dev/42182407): Remove this notice once PCI over Banjo is removed.
   if (requested_irq_count == 0) {
     return ZX_ERR_INVALID_ARGS;
   }
 
-  fpci::wire::InterruptModes modes;
-  GetInterruptModes(&modes);
+  auto result = client_->GetInterruptModes();
+  if (!result.ok()) {
+    return result.status();
+  }
+  const auto& modes = result.value().modes;
   std::pair<fpci::InterruptMode, uint32_t> pairs[] = {
       {fpci::InterruptMode::kMsiX, modes.msix_count},
       {fpci::InterruptMode::kMsi, modes.msi_count},
-      {fpci::InterruptMode::kLegacy, modes.has_legacy}};
+      {fpci::InterruptMode::kLegacy, modes.has_legacy ? 1u : 0u},
+  };
   for (auto& [mode, irq_cnt] : pairs) {
     if (irq_cnt >= requested_irq_count) {
       zx_status_t status = SetInterruptMode(mode, requested_irq_count);
       if (status == ZX_OK) {
         if (out_mode) {
-          *out_mode = fpci::InterruptMode{mode};
+          *out_mode = mode;
         }
         return status;
       }
@@ -314,42 +371,6 @@ zx_status_t Pci::ConfigureInterruptMode(uint32_t requested_irq_count,
   return ZX_ERR_NOT_SUPPORTED;
 }
 
-pci_device_info_t convert_device_info_to_banjo(const fuchsia_hardware_pci::wire::DeviceInfo& info) {
-  pci_device_info_t out_info{};
-  out_info.vendor_id = info.vendor_id;
-  out_info.device_id = info.device_id;
-  out_info.base_class = info.base_class;
-  out_info.sub_class = info.sub_class;
-  out_info.program_interface = info.program_interface;
-  out_info.revision_id = info.revision_id;
-  out_info.bus_id = info.bus_id;
-  out_info.dev_id = info.dev_id;
-  out_info.func_id = info.func_id;
-  return out_info;
-}
+}  // namespace fdf
 
-pci_interrupt_modes_t convert_interrupt_modes_to_banjo(
-    const fuchsia_hardware_pci::wire::InterruptModes& modes) {
-  pci_interrupt_modes_t out_modes{};
-  out_modes.has_legacy = modes.has_legacy;
-  out_modes.msi_count = modes.msi_count;
-  out_modes.msix_count = modes.msix_count;
-  return out_modes;
-}
-
-pci_bar_t convert_bar_to_banjo(fuchsia_hardware_pci::wire::Bar bar) {
-  pci_bar_t out_bar{};
-  out_bar.bar_id = bar.bar_id;
-  out_bar.size = bar.size;
-  if (bar.result.is_io()) {
-    out_bar.type = PCI_BAR_TYPE_IO;
-    out_bar.result.io.address = bar.result.io().address;
-    out_bar.result.io.resource = bar.result.io().resource.release();
-  } else {
-    out_bar.type = PCI_BAR_TYPE_MMIO;
-    out_bar.result.vmo = bar.result.vmo().release();
-  }
-  return out_bar;
-}
-
-}  // namespace ddk
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(HEAD)

@@ -16,6 +16,8 @@
 #include <algorithm>
 #include <utility>
 
+#include <ddktl/device.h>
+
 #include "debug-logging.h"
 #include "device-ids.h"
 #include "intel-dsp.h"
@@ -223,11 +225,14 @@ zx_status_t IntelHDAController::SetupPCIDevice(zx_device_t* pci_dev) {
   pci_dev_ = pci_dev;
 
   // The device had better be a PCI device, or we are very confused.
-  pci_ = ddk::Pci::FromFragment(pci_dev_);
-  if (!pci_.is_valid()) {
-    LOG(ERROR, "PCI device does not support PCI protocol!");
-    return ZX_ERR_NOT_FOUND;
+  auto client =
+      ddk::Device<void>::DdkConnectFragmentFidlProtocol<fuchsia_hardware_pci::Service::Device>(
+          pci_dev_, fdf::Pci::kFragmentName);
+  if (client.is_error()) {
+    LOG(ERROR, "Failed to connect to PCI protocol: %s", client.status_string());
+    return client.error_value();
   }
+  pci_ = fdf::Pci(std::move(*client));
 
   // Fetch our device info and use it to re-generate our debug tag once we
   // know our BDF address.

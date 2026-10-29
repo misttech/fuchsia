@@ -25,6 +25,7 @@ test("virtio-backend-test") {
     "//src/devices/pci/testing:pci-protocol-fake",
     "//src/devices/testing/fake-bti",
     "//src/devices/testing/mock-ddk",
+    "//src/lib/ddktl",
     "//zircon/system/ulib/zxtest",
   ]
 }

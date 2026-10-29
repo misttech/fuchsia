@@ -39,7 +39,7 @@ class TestNvme : public Nvme {
 
  protected:
   zx::result<fit::function<void()>> InitResources() override {
-    pci_ = ddk::Pci{};
+    pci_ = fdf::Pci{};
     mmio_ = controller_.registers().GetBuffer();
 
     // Create a fake BTI.

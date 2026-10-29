@@ -1933,7 +1933,7 @@ zx::result<> UsbXhci::Start(fdf::DriverContext context) {
   }
   zx::result pci_result = incoming_->Connect<fuchsia_hardware_pci::Service::Device>("pdev");
   if (pci_result.is_ok()) {
-    pci_ = ddk::Pci(std::move(*pci_result));
+    pci_ = fdf::Pci(std::move(*pci_result));
   }
 
   if (!(pci_.is_valid() || pdev_.is_valid())) {

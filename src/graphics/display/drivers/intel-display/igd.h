@@ -239,7 +239,7 @@ class IgdOpRegion {
   // Returns ZX_ERR_NOT_SUPPORTED if the boot firmware doesn't support the
   // OpRegion protocol. The firmware might be completely missing OpRegion
   // support, or may have a broken implementation that reports invalid data.
-  zx_status_t Init(zx::unowned_resource mmio_resource, ddk::Pci& pci);
+  zx_status_t Init(zx::unowned_resource mmio_resource, const fdf::Pci& pci);
 
   bool HasDdi(DdiId ddi_id) const { return ddi_features_.find(ddi_id) != ddi_features_.end(); }
   bool SupportsHdmi(DdiId ddi_id) const {
@@ -286,10 +286,10 @@ class IgdOpRegion {
   T* GetSection(uint16_t* size);
   uint8_t* GetSection(uint8_t tag, uint16_t* size);
   bool ProcessDdiConfigs();
-  bool CheckForLowVoltageEdp(ddk::Pci& pci);
-  bool GetPanelType(ddk::Pci& pci, uint8_t* type);
-  bool Swsci(ddk::Pci& pci, uint16_t function, uint16_t subfunction, uint32_t additional_param,
-             uint16_t* exit_param, uint32_t* additional_res);
+  bool CheckForLowVoltageEdp(const fdf::Pci& pci);
+  bool GetPanelType(const fdf::Pci& pci, uint8_t* type);
+  bool Swsci(const fdf::Pci& pci, uint16_t function, uint16_t subfunction,
+             uint32_t additional_param, uint16_t* exit_param, uint32_t* additional_res);
   void ProcessBacklightData();
 
   AcpiMemoryRegion memory_op_region_;

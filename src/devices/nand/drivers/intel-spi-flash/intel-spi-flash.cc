@@ -371,7 +371,13 @@ std::optional<FlashChipInfo> SpiFlashDevice::DetermineFlashChip() {
 }
 
 static zx_status_t CreateSpiFlash(void *ctx, zx_device_t *parent) {
-  ddk::Pci pci(parent, "pci");
+  auto client =
+      ddk::Device<void>::DdkConnectFragmentFidlProtocol<fuchsia_hardware_pci::Service::Device>(
+          parent, fdf::Pci::kFragmentName);
+  if (client.is_error()) {
+    return client.error_value();
+  }
+  fdf::Pci pci(std::move(*client));
   std::optional<fdf::MmioBuffer> mmio;
   zx_status_t status = pci.MapMmio(0, ZX_CACHE_POLICY_UNCACHED_DEVICE, &mmio);
   if (status != ZX_OK) {

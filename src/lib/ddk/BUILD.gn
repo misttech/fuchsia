@@ -179,7 +179,6 @@ static_library("ddk") {
     "//src/devices/nand/drivers/skip-block:*",
     "//src/devices/pci/drivers/pci:*",
     "//src/devices/pci/drivers/pci/test:*",
-    "//src/devices/pci/lib/device-protocol-pci:*",
     "//src/devices/pci/lib/pci:*",
     "//src/devices/power/drivers/aml-meson-power:*",
     "//src/devices/power/drivers/aml-pwm-regulator:*",
@@ -403,6 +402,22 @@ library_headers("ddk-deprecated-binding-headers") {
 library_headers("ddk-device-headers") {
   headers = [ "lib/ddk/device.h" ]
   public_deps = [ "//sdk/lib/driver/runtime:driver_runtime" ]
+}
+
+# DFv2 drivers that link the DFv1 io-buffer library must define a weak
+# __zircon_driver_rec__ for it to link. They need the zx_driver_rec declaration
+# but none of the DDK implementation, so they take this instead of ":ddk".
+library_headers("ddk-driver-headers") {
+  # driver.h x-macro-includes protodefs.h to build the protocol id enum.
+  headers = [
+    "lib/ddk/driver.h",
+    "lib/ddk/protodefs.h",
+  ]
+  public_deps = [ "//sdk/lib/async" ]
+  visibility = [
+    "//src/connectivity/ethernet/drivers/third_party/igc:*",
+    "//zircon/third_party/dev/ethernet/e1000:*",
+  ]
 }
 
 # Drivers should use //sdk/lib/mmio-ptr instead.

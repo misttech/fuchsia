@@ -7,7 +7,6 @@
 
 #include <lib/async/cpp/irq.h>
 #include <lib/async/cpp/task.h>
-#include <lib/device-protocol/pci.h>
 #include <lib/driver/power/cpp/wake-lease.h>
 #include <lib/sync/cpp/completion.h>
 #include <lib/zx/interrupt.h>

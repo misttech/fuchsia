@@ -8,22 +8,15 @@ zx_library("device-protocol-pci") {
   sdk = "source"
   sdk_headers = [ "lib/device-protocol/pci.h" ]
   sources = [ "pci.cc" ]
-  deps = [ "//src/lib/ddk" ]
   public_deps = [
     "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp",
-
-    # <lib/device-protocol/pci.h> has #include <lib/mmio/mmio-buffer.h>
+    "//sdk/lib/driver/incoming/cpp",
     "//sdk/lib/driver/mmio/cpp",
-
-    # <lib/device-protocol/pci.h> has #include <ddktl/device.h>
-    "//src/lib/ddktl",
-
-    # <lib/device-protocol/pci.h> has #include <zircon/syscalls.h>
     "//zircon/system/ulib/zx",
   ]
 }
 
 group("tests") {
   testonly = true
-  deps = [ "test:device-protocol-pci-test" ]
+  deps = [ "test:device-protocol-pci-test-package" ]
 }

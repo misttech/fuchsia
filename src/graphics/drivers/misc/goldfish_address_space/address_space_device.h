@@ -66,7 +66,7 @@ class AddressSpaceDevice : public DeviceType {
  private:
   uint32_t CommandMmioLocked(uint32_t cmd) TA_REQ(mmio_lock_);
 
-  ddk::Pci pci_;
+  fdf::Pci pci_;
   zx::bti bti_;
   zx::vmo dma_region_;
   uint64_t dma_region_paddr_;

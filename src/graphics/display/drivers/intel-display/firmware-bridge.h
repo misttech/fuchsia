@@ -25,7 +25,7 @@ namespace intel_display {
 // 621530: Section 2.3 "GMCH PCI Config OpRegion", page 10
 class PciConfigOpRegion {
  public:
-  explicit PciConfigOpRegion(ddk::Pci& pci);
+  explicit PciConfigOpRegion(const fdf::Pci& pci);
 
   PciConfigOpRegion(const PciConfigOpRegion&) = delete;
   PciConfigOpRegion& operator=(const PciConfigOpRegion&) = delete;
@@ -80,7 +80,7 @@ class PciConfigOpRegion {
   zx::result<bool> IsSystemControlInterruptInUse();
 
  private:
-  ddk::Pci& pci_;
+  const fdf::Pci& pci_;
 };
 
 }  // namespace intel_display

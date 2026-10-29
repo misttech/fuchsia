@@ -4,7 +4,6 @@
 
 #include "src/devices/block/drivers/ufs/test/mock-device/task-management-request-processor.h"
 
-#include <lib/ddk/debug.h>
 #include <lib/driver/logging/cpp/logger.h>
 
 #include "safemath/safe_conversions.h"

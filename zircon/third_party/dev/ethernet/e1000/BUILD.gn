@@ -110,7 +110,7 @@ foreach(variant, e1000_variants) {
       "//sdk/lib/driver/mmio/cpp",
       "//sdk/lib/syslog/structured_backend",
       "//src/connectivity/network/drivers/network-device/device:shared_lock",
-      "//src/devices/pci/lib/device-protocol-pci",
+      "//src/lib/ddk:ddk-driver-headers",
       "//zircon/system/public",
     ]
   }

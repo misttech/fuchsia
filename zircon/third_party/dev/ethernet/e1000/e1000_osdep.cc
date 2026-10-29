@@ -39,6 +39,31 @@
 
 #include "e1000_api.h"
 
+namespace {
+
+pci_device_info_t convert_device_info_to_banjo(const fuchsia_hardware_pci::wire::DeviceInfo& info) {
+  pci_device_info_t out_info{};
+  out_info.vendor_id = info.vendor_id;
+  out_info.device_id = info.device_id;
+  out_info.revision_id = info.revision_id;
+  return out_info;
+}
+
+pci_bar_t convert_bar_to_banjo(const fuchsia_hardware_pci::wire::Bar& bar) {
+  pci_bar_t out_bar{};
+  if (bar.result.is_io()) {
+    out_bar.type = PCI_BAR_TYPE_IO;
+    out_bar.result.io.address = bar.result.io().address;
+  } else if (bar.result.is_vmo()) {
+    out_bar.type = PCI_BAR_TYPE_MMIO;
+  } else {
+    out_bar.type = PCI_BAR_TYPE_UNUSED;
+  }
+  return out_bar;
+}
+
+}  // namespace
+
 /*
  * NOTE: the following routines using the e1000
  *  naming style are provided to the shared
@@ -46,7 +71,7 @@
  */
 
 struct e1000_pci {
-  std::unique_ptr<ddk::Pci> pci;
+  std::unique_ptr<fdf::Pci> pci;
 };
 
 void e1000_write_pci_cfg(struct e1000_hw* hw, u32 reg, u16* value) {
@@ -121,7 +146,7 @@ zx_status_t e1000_pci_get_device_info(const struct e1000_pci* pci, pci_device_in
   fuchsia_hardware_pci::wire::DeviceInfo info;
   zx_status_t status = pci->pci->GetDeviceInfo(&info);
   if (status == ZX_OK) {
-    *out_info = ddk::convert_device_info_to_banjo(info);
+    *out_info = convert_device_info_to_banjo(info);
   }
   return status;
 }
@@ -136,7 +161,7 @@ zx_status_t e1000_pci_get_bar(const struct e1000_pci* pci, uint32_t bar_id, pci_
   fidl::Arena arena;
   zx_status_t status = pci->pci->GetBar(arena, bar_id, &bar);
   if (status == ZX_OK) {
-    *out_result = ddk::convert_bar_to_banjo(std::move(bar));
+    *out_result = convert_bar_to_banjo(bar);
   }
   return status;
 }
@@ -174,7 +199,7 @@ zx_status_t e1000_pci_map_interrupt(const struct e1000_pci* pci, uint32_t which_
 zx_status_t e1000_pci_create(fidl::ClientEnd<fuchsia_hardware_pci::Device> client_end,
                              struct e1000_pci** out_pci) {
   std::unique_ptr pci = std::make_unique<e1000_pci>();
-  pci->pci = std::make_unique<ddk::Pci>(std::move(client_end));
+  pci->pci = std::make_unique<fdf::Pci>(std::move(client_end));
 
   if (!pci->pci->is_valid()) {
     return ZX_ERR_CONNECTION_REFUSED;

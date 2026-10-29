@@ -100,7 +100,7 @@ class FakePciProtocol : public FakePciProtocolInternal,
         status == ZX_OK,
         "FakePciProtocol Error: failed to set cache policy for BAR (bar_id = %u, status = %s)",
         status, zx_status_get_string(status));
-    bars()[bar_id].type = (is_mmio) ? PCI_BAR_TYPE_MMIO : PCI_BAR_TYPE_IO;
+    bars()[bar_id].is_mmio = is_mmio;
     bars()[bar_id].size = size;
     bars()[bar_id].vmo = std::move(vmo);
     return GetBar(bar_id);
@@ -165,7 +165,7 @@ class FakePciProtocol : public FakePciProtocolInternal,
   }
 
   // Convenience method to set up a FIDL server in tests.
-  ddk::Pci SetUpFidlServer(async::Loop& loop);
+  fdf::Pci SetUpFidlServer(async::Loop& loop);
 };
 
 // Any test code which calls a helper method on FakePciProtocol must be executed

@@ -271,7 +271,7 @@ bool IgdOpRegion::ProcessDdiConfigs() {
   return true;
 }
 
-bool IgdOpRegion::Swsci(ddk::Pci& pci, uint16_t function, uint16_t subfunction,
+bool IgdOpRegion::Swsci(const fdf::Pci& pci, uint16_t function, uint16_t subfunction,
                         uint32_t additional_param, uint16_t* exit_param, uint32_t* additional_res) {
   PciConfigOpRegion pci_op_region(pci);
   zx::result<bool> in_use_result = pci_op_region.IsSystemControlInterruptInUse();
@@ -325,7 +325,7 @@ bool IgdOpRegion::Swsci(ddk::Pci& pci, uint16_t function, uint16_t subfunction,
   return false;
 }
 
-bool IgdOpRegion::GetPanelType(ddk::Pci& pci, uint8_t* type) {
+bool IgdOpRegion::GetPanelType(const fdf::Pci& pci, uint8_t* type) {
   uint16_t exit_param;
   uint32_t additional_res;
   // TODO(stevensd): cache the supported calls when we need to use Swsci more than once
@@ -357,7 +357,7 @@ bool IgdOpRegion::GetPanelType(ddk::Pci& pci, uint8_t* type) {
   return true;
 }
 
-bool IgdOpRegion::CheckForLowVoltageEdp(ddk::Pci& pci) {
+bool IgdOpRegion::CheckForLowVoltageEdp(const fdf::Pci& pci) {
   bool has_edp = true;
   for (const auto& kv : ddi_features_) {
     has_edp |= kv.second.is_edp;
@@ -396,7 +396,7 @@ void IgdOpRegion::ProcessBacklightData() {
   }
 }
 
-zx_status_t IgdOpRegion::Init(zx::unowned_resource mmio_resource, ddk::Pci& pci) {
+zx_status_t IgdOpRegion::Init(zx::unowned_resource mmio_resource, const fdf::Pci& pci) {
   PciConfigOpRegion pci_op_region(pci);
 
   zx::result<zx_paddr_t> memory_op_region_address = pci_op_region.ReadMemoryOpRegionAddress();

@@ -431,7 +431,7 @@ class UsbXhci : public fdf::DriverBase2,
   fidl::ClientEnd<fuchsia_power_system::ActivityGovernor> activity_governer_;
 
   // PCI protocol client (if x86)
-  ddk::Pci pci_;
+  fdf::Pci pci_;
 
   // PDev (if ARM)
   fdf::PDev pdev_;

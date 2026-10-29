@@ -82,7 +82,7 @@ class Nvme : public fdf::DriverBase2 {
   // unit testing.
   virtual zx::result<fit::function<void()>> InitResources();
 
-  ddk::Pci pci_;
+  fdf::Pci pci_;
   std::optional<fdf::MmioBuffer> mmio_;
   fuchsia_hardware_pci::InterruptMode irq_mode_;
   zx::interrupt irq_;

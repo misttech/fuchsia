@@ -10,6 +10,7 @@
 #include <fidl/fuchsia.system.state/cpp/fidl.h>
 #include <fuchsia/hardware/intelgpucore/cpp/banjo.h>
 #include <lib/device-protocol/pci.h>
+#include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/component/cpp/start_completer.h>
 #include <lib/driver/component/cpp/stop_completer.h>
 #include <lib/driver/mmio/cpp/mmio.h>
@@ -76,14 +77,12 @@ class Controller final : public display::DisplayEngineInterface,
   // `engine_events` must be non-null and must outlive the created `Controller`
   // instance.
   static zx::result<std::unique_ptr<Controller>> Create(
-      fidl::ClientEnd<fuchsia_sysmem2::Allocator> sysmem,
-      fidl::ClientEnd<fuchsia_hardware_pci::Device> pci, ControllerResources resources,
-      std::optional<zbi_swfb_t> framebuffer_info,
+      fidl::ClientEnd<fuchsia_sysmem2::Allocator> sysmem, fdf::Pci pci,
+      ControllerResources resources, std::optional<zbi_swfb_t> framebuffer_info,
       display::DisplayEngineEventsInterface* engine_events, inspect::Inspector inspector);
 
   // Prefer to use the `Create()` factory function in production code.
-  explicit Controller(fidl::ClientEnd<fuchsia_sysmem2::Allocator> sysmem,
-                      fidl::ClientEnd<fuchsia_hardware_pci::Device> pci,
+  explicit Controller(fidl::ClientEnd<fuchsia_sysmem2::Allocator> sysmem, fdf::Pci pci,
                       ControllerResources resources, std::optional<zbi_swfb_t> framebuffer_info,
                       display::DisplayEngineEventsInterface* engine_events,
                       inspect::Inspector inspector);
@@ -187,7 +186,7 @@ class Controller final : public display::DisplayEngineInterface,
     return ZX_OK;
   }
 
-  zx_status_t InitGttForTesting(const ddk::Pci& pci, fdf::MmioBuffer buffer, uint32_t fb_offset);
+  zx_status_t InitGttForTesting(const fdf::Pci& pci, fdf::MmioBuffer buffer, uint32_t fb_offset);
 
   // For every frame, in order to use the imported image, it is required to set
   // up the image based on given rotation in GTT and use the handle offset in
@@ -202,7 +201,7 @@ class Controller final : public display::DisplayEngineInterface,
   // was not released.
   PixelFormatAndModifier GetImportedImagePixelFormat(display::DriverImageId image_id) const;
 
-  zx::result<ddk::AnyProtocol> GetProtocol(uint32_t proto_id);
+  zx::result<compat::DeviceServer::GenericProtocol> GetProtocol(uint32_t proto_id);
 
   inspect::Inspector& inspector() { return inspector_; }
 
@@ -309,7 +308,7 @@ class Controller final : public display::DisplayEngineInterface,
   IgdOpRegion igd_opregion_;  // Read only, no locking
   Interrupts interrupts_;     // Internal locking
 
-  ddk::Pci pci_;
+  fdf::Pci pci_;
   std::array<std::optional<fdf::MmioBuffer>, pci::kMaxBarCount> mapped_bars_
       __TA_GUARDED(bar_lock_);
   fbl::Mutex bar_lock_;

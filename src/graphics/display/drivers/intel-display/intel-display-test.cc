@@ -161,7 +161,7 @@ TEST(IntelDisplay, ImportImage) {
 
   // Prepare fake PCI.
   pci::FakePciProtocol fake_pci;
-  ddk::Pci pci = fake_pci.SetUpFidlServer(loop);
+  fdf::Pci pci = fake_pci.SetUpFidlServer(loop);
 
   fake_sysmem.SetNewBufferCollectionConfig({
       .cpu_domain_supported = false,

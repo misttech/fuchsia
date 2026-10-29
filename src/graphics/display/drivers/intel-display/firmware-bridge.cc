@@ -34,7 +34,7 @@
 
 namespace intel_display {
 
-PciConfigOpRegion::PciConfigOpRegion(ddk::Pci& pci) : pci_(pci) {}
+PciConfigOpRegion::PciConfigOpRegion(const fdf::Pci& pci) : pci_(pci) {}
 
 PciConfigOpRegion::~PciConfigOpRegion() = default;
 

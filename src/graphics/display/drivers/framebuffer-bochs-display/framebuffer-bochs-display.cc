@@ -132,7 +132,7 @@ class FramebufferBochsDisplayDriver final : public FramebufferDisplayDriver {
   zx::result<DisplayProperties> GetDisplayProperties() override;
 
  private:
-  zx::result<ddk::Pci> GetPciClient();
+  zx::result<fdf::Pci> GetPciClient();
 };
 
 FramebufferBochsDisplayDriver::FramebufferBochsDisplayDriver()
@@ -140,24 +140,21 @@ FramebufferBochsDisplayDriver::FramebufferBochsDisplayDriver()
 
 FramebufferBochsDisplayDriver::~FramebufferBochsDisplayDriver() = default;
 
-zx::result<ddk::Pci> FramebufferBochsDisplayDriver::GetPciClient() {
-  zx::result<fidl::ClientEnd<fuchsia_hardware_pci::Device>> pci_result =
-      incoming().Connect<fuchsia_hardware_pci::Service::Device>("pci");
-  if (pci_result.is_error()) {
-    fdf::error("Failed to connect to PCI protocol: {}", pci_result);
-    return pci_result.take_error();
+zx::result<fdf::Pci> FramebufferBochsDisplayDriver::GetPciClient() {
+  zx::result<fdf::Pci> pci = fdf::Pci::Connect(incoming(), fdf::Pci::kFragmentName);
+  if (pci.is_error()) {
+    fdf::error("Failed to connect to PCI protocol: {}", pci);
+    return pci.take_error();
   }
-  ddk::Pci pci(std::move(pci_result).value());
-  ZX_DEBUG_ASSERT(pci.is_valid());
-  return zx::ok(std::move(pci));
+  return pci;
 }
 
 zx::result<> FramebufferBochsDisplayDriver::ConfigureHardware() {
-  zx::result<ddk::Pci> pci_result = GetPciClient();
+  zx::result<fdf::Pci> pci_result = GetPciClient();
   if (pci_result.is_error()) {
     return pci_result.take_error();
   }
-  ddk::Pci pci = std::move(pci_result).value();
+  fdf::Pci pci = std::move(pci_result).value();
 
   std::optional<fdf::MmioBuffer> mmio;
 
@@ -200,11 +197,11 @@ zx::result<> FramebufferBochsDisplayDriver::ConfigureHardware() {
 }
 
 zx::result<fdf::MmioBuffer> FramebufferBochsDisplayDriver::GetFrameBufferMmioBuffer() {
-  zx::result<ddk::Pci> pci_result = GetPciClient();
+  zx::result<fdf::Pci> pci_result = GetPciClient();
   if (pci_result.is_error()) {
     return pci_result.take_error();
   }
-  ddk::Pci pci = std::move(pci_result).value();
+  fdf::Pci pci = std::move(pci_result).value();
 
   std::optional<fdf::MmioBuffer> framebuffer_mmio;
 

@@ -32,6 +32,7 @@
 #include <fidl/fuchsia.hardware.pci/cpp/wire.h>
 #include <lib/async/cpp/irq.h>
 #include <lib/async/cpp/task.h>
+#include <lib/ddk/driver.h>
 #include <lib/device-protocol/pci.h>
 #include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/component/cpp/driver_base2.h>

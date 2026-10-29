@@ -2,50 +2,70 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/fake-resource/resource.h>
+#include <zircon/syscalls/resource.h>
+
 #include "src/devices/pci/testing/pci_protocol_fake.h"
 
 namespace pci {
 
 void FakePciProtocol::GetBar(GetBarRequestView request, GetBarCompleter::Sync& completer) {
-  pci_bar_t bar;
-  zx_status_t status = PciGetBar(request->bar_id, &bar);
-  if (status != ZX_OK) {
-    completer.ReplyError(status);
+  if (request->bar_id >= PCI_DEVICE_BAR_COUNT) {
+    completer.ReplyError(ZX_ERR_INVALID_ARGS);
     return;
   }
 
-  if (bar.type == PCI_BAR_TYPE_IO) {
-    fidl::Arena arena;
-    completer.ReplySuccess({.bar_id = request->bar_id,
-                            .size = bar.size,
-                            .result = fuchsia_hardware_pci::wire::BarResult::WithIo(
-                                arena, fuchsia_hardware_pci::wire::IoBar{
-                                           .address = bar.result.io.address,
-                                           .resource = zx::resource(bar.result.io.resource)})});
+  auto& bar = bars()[request->bar_id];
+  if (!bar.vmo.has_value()) {
+    completer.ReplyError(ZX_ERR_NOT_FOUND);
+    return;
+  }
+
+  if (bar.is_mmio) {
+    zx::vmo dup;
+    if (zx_status_t status = bar.vmo->duplicate(ZX_RIGHT_SAME_RIGHTS, &dup); status != ZX_OK) {
+      completer.ReplyError(status);
+      return;
+    }
+    completer.ReplySuccess({
+        .bar_id = request->bar_id,
+        .size = bar.size,
+        .result = fuchsia_hardware_pci::wire::BarResult::WithVmo(std::move(dup)),
+    });
   } else {
-    completer.ReplySuccess(
-        {.bar_id = request->bar_id,
-         .size = bar.size,
-         .result = fuchsia_hardware_pci::wire::BarResult::WithVmo(zx::vmo(bar.result.vmo))});
+    zx::resource fake_ioport_resource;
+    if (zx_status_t status =
+            fake_resource_create(ZX_RSRC_KIND_IOPORT, fake_ioport_resource.reset_and_get_address());
+        status != ZX_OK) {
+      completer.ReplyError(status);
+      return;
+    }
+    char name[] = "fake IO";
+    zx::resource rsrc;
+    if (zx_status_t status = zx::resource::create(fake_ioport_resource, ZX_RSRC_KIND_IOPORT, 0,
+                                                  bar.size, name, sizeof(name), &rsrc);
+        status != ZX_OK) {
+      completer.ReplyError(status);
+      return;
+    }
+    fidl::Arena arena;
+    completer.ReplySuccess({
+        .bar_id = request->bar_id,
+        .size = bar.size,
+        .result = fuchsia_hardware_pci::wire::BarResult::WithIo(arena,
+                                                                fuchsia_hardware_pci::wire::IoBar{
+                                                                    .address = 0,
+                                                                    .resource = std::move(rsrc),
+                                                                }),
+    });
   }
 }
 
 void FakePciProtocol::GetDeviceInfo(GetDeviceInfoCompleter::Sync& completer) {
-  pci_device_info_t out_info;
+  fuchsia_hardware_pci::wire::DeviceInfo out_info;
   zx_status_t status = PciGetDeviceInfo(&out_info);
   if (status == ZX_OK) {
-    completer.Reply(fuchsia_hardware_pci::wire::DeviceInfo{
-        .vendor_id = out_info.vendor_id,
-        .device_id = out_info.device_id,
-        .base_class = out_info.base_class,
-        .sub_class = out_info.sub_class,
-        .program_interface = out_info.program_interface,
-        .revision_id = out_info.revision_id,
-        .bus_id = out_info.bus_id,
-        .dev_id = out_info.dev_id,
-        .func_id = out_info.func_id,
-    });
-
+    completer.Reply(out_info);
   } else {
     completer.Close(status);
   }
@@ -206,7 +226,7 @@ void FakePciProtocol::AckInterrupt(AckInterruptCompleter::Sync& completer) {
   }
 }
 
-ddk::Pci FakePciProtocol::SetUpFidlServer(async::Loop& loop) {
+fdf::Pci FakePciProtocol::SetUpFidlServer(async::Loop& loop) {
   auto endpoints = fidl::Endpoints<fuchsia_hardware_pci::Device>::Create();
 
   auto fake_pci = std::make_unique<FakePciProtocol>();
@@ -215,7 +235,7 @@ ddk::Pci FakePciProtocol::SetUpFidlServer(async::Loop& loop) {
       fidl::ServerEnd<fuchsia_hardware_pci::Device>(endpoints.server.TakeChannel()), this);
   ZX_ASSERT(binding.has_value());
 
-  ddk::Pci pci = ddk::Pci(std::move(endpoints.client));
+  fdf::Pci pci = fdf::Pci(std::move(endpoints.client));
   ZX_ASSERT(pci.is_valid());
   return pci;
 }

@@ -89,7 +89,7 @@ class Gtt {
   // |pci|: The PCI protocol implementation
   // |buffer|: The MMIO region that stores the GTT. The contents of the GTT must start at offset 0.
   // |fb_offset|: The offset to the end of the bootloader framebuffer in GTT-mapped memory.
-  zx_status_t Init(const ddk::Pci& pci, fdf::MmioBuffer buffer, uint32_t fb_offset);
+  zx_status_t Init(const fdf::Pci& pci, fdf::MmioBuffer buffer, uint32_t fb_offset);
   zx_status_t AllocRegion(uint32_t length, uint32_t align_pow2,
                           std::unique_ptr<GttRegionImpl>* region_out);
 

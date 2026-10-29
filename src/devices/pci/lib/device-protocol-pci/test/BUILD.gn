@@ -5,22 +5,25 @@
 import("//build/components.gni")
 import("//build/test.gni")
 
-test("device-protocol-pci") {
+test("device-protocol-pci-test") {
   sources = [ "pci-test.cc" ]
 
   deps = [
+    "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp_testing",
+    "//sdk/lib/async-default",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
-    "//sdk/lib/driver/mmio/cpp",
-    "//sdk/lib/fdio",
+    "//sdk/lib/async_patterns/testing/cpp",
+    "//sdk/lib/component/outgoing/cpp",
+    "//sdk/lib/driver/fake-bti/cpp",
+    "//sdk/lib/driver/fake-resource/cpp",
     "//src/devices/pci/lib/device-protocol-pci",
-    "//src/devices/pci/testing:pci-protocol-fake",
-    "//zircon/system/ulib/sync",
-    "//zircon/system/ulib/zx",
-    "//zircon/system/ulib/zxtest",
+    "//src/lib/fxl/test:gtest_main",
+    "//src/lib/testing/predicates",
   ]
 }
 
-fuchsia_unittest_package("device-protocol-pci-test") {
-  deps = [ ":device-protocol-pci" ]
+fuchsia_unittest_package("device-protocol-pci-test-package") {
+  package_name = "device-protocol-pci-test"
+  deps = [ ":device-protocol-pci-test" ]
 }

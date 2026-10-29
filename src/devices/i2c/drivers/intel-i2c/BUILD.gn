@@ -65,6 +65,7 @@ fuchsia_cc_driver("intel-i2c-driver") {
     "//src/devices/pci/lib/pci",
     "//src/lib/ddk",
     "//src/lib/ddk:ddk-metadata-headers",
+    "//src/lib/ddktl",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/sync",
     "//zircon/system/ulib/zircon-internal",

@@ -138,9 +138,7 @@ class IntelI2cController : public IntelI2cControllerType,
                            public fdf::WireServer<fuchsia_hardware_i2cimpl::Device> {
  public:
   explicit IntelI2cController(zx_device_t* parent)
-      : IntelI2cControllerType(parent),
-        pci_(parent, "pci"),
-        outgoing_(fdf::Dispatcher::GetCurrent()->get()) {}
+      : IntelI2cControllerType(parent), outgoing_(fdf::Dispatcher::GetCurrent()->get()) {}
 
   static zx_status_t Create(void* ctx, zx_device_t* parent);
 
@@ -184,7 +182,7 @@ class IntelI2cController : public IntelI2cControllerType,
 
  private:
   zx_status_t Init();
-  ddk::Pci pci_;
+  fdf::Pci pci_;
   fuchsia_hardware_pci::InterruptMode irq_mode_;
   fidl::WireSyncClient<fuchsia_hardware_acpi::Device> acpi_;
 

@@ -34,7 +34,7 @@ class IntelDisplayDriver : public fdf::DriverBase2 {
   void Start(fdf::DriverContext context, fdf::StartCompleter completer) override;
   void Stop(fdf::StopCompleter completer) override;
 
-  zx::result<ddk::AnyProtocol> GetProtocol(uint32_t proto_id);
+  zx::result<compat::DeviceServer::GenericProtocol> GetProtocol(uint32_t proto_id);
 
   Controller* controller() const { return controller_.get(); }
 

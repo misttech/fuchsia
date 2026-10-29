@@ -25,12 +25,12 @@ namespace sdhci {
 // PciSdhci::Start implements the DFv2 driver start hook.
 // It connects to parent services and sets up child nodes.
 zx::result<> PciSdhci::Start(fdf::DriverContext context) {
-  auto pci_client_end = context.incoming().Connect<fuchsia_hardware_pci::Service::Device>();
-  if (pci_client_end.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to PCI: %s", pci_client_end.status_string());
-    return pci_client_end.take_error();
+  auto pci = fdf::Pci::Connect(context.incoming(), fdf::Pci::kFragmentName);
+  if (pci.is_error()) {
+    FDF_LOG(ERROR, "Failed to connect to PCI: %s", pci.status_string());
+    return pci.take_error();
   }
-  pci_ = ddk::Pci(std::move(pci_client_end.value()));
+  pci_ = std::move(pci.value());
 
   zx_status_t status = pci_.SetBusMastering(true);
   if (status != ZX_OK) {

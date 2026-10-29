@@ -92,6 +92,7 @@ source_set("src") {
     "//src/devices/bind/fuchsia.audio.intelhda:fuchsia.audio.intelhda_cpp",
     "//src/devices/pci/lib/device-protocol-pci",
     "//src/lib/ddk",
+    "//src/lib/ddktl",
     "//src/media/audio/drivers/lib/intel-hda",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fzl",

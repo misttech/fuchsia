@@ -42,7 +42,7 @@ class PciSdhci final : public fdf::DriverBase2,
                            VendorPerformTuningCompleter::Sync& completer) override;
 
  private:
-  ddk::Pci pci_;
+  fdf::Pci pci_;
 
   std::optional<fdf::MmioBuffer> mmio_;
   zx::bti bti_;

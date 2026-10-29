@@ -9,7 +9,6 @@
 #include <fidl/fuchsia.hardware.pci/cpp/wire.h>
 #include <fidl/fuchsia.hardware.pci/cpp/wire_types.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
-#include <lib/device-protocol/pci.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/pci/constants.h>
 #include <lib/zx/channel.h>
@@ -196,7 +195,7 @@ class Device : public DeviceType, public fidl::WireServer<fuchsia_hardware_pci::
   // initialization as well.
   zx::result<uint32_t> QueryIrqMode(fuchsia_hardware_pci::InterruptMode mode)
       __TA_EXCLUDES(dev_lock_);
-  pci_interrupt_modes_t GetInterruptModes() __TA_EXCLUDES(dev_lock_);
+  fuchsia_hardware_pci::wire::InterruptModes GetInterruptModes() __TA_EXCLUDES(dev_lock_);
   zx_status_t SetIrqMode(fuchsia_hardware_pci::InterruptMode mode, uint32_t irq_cnt)
       __TA_EXCLUDES(dev_lock_);
   zx::result<zx::interrupt> MapInterrupt(uint32_t which_irq) __TA_EXCLUDES(dev_lock_);

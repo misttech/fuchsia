@@ -112,13 +112,12 @@ zx::result<> IntelDisplayDriver::InitController() {
   }
   fidl::ClientEnd<fuchsia_sysmem2::Allocator> sysmem = std::move(sysmem_result).value();
 
-  zx::result<fidl::ClientEnd<fuchsia_hardware_pci::Device>> pci_result =
-      incoming_->Connect<fuchsia_hardware_pci::Service::Device>("pci");
+  zx::result<fdf::Pci> pci_result = fdf::Pci::Connect(*incoming_, fdf::Pci::kFragmentName);
   if (pci_result.is_error()) {
     fdf::error("Failed to connect to pci protocol: {}", pci_result);
     return pci_result.take_error();
   }
-  fidl::ClientEnd<fuchsia_hardware_pci::Device> pci = std::move(pci_result).value();
+  fdf::Pci pci = std::move(pci_result).value();
 
   zx::result<zbi_swfb_t> framebuffer_info = GetFramebufferInfo(*incoming_);
   if (framebuffer_info.is_ok()) {
@@ -236,7 +235,8 @@ void IntelDisplayDriver::Stop(fdf::StopCompleter completer) {
   PrepareStopOnPowerStateTransition(system_power_state, std::move(completer));
 }
 
-zx::result<ddk::AnyProtocol> IntelDisplayDriver::GetProtocol(uint32_t proto_id) {
+zx::result<compat::DeviceServer::GenericProtocol> IntelDisplayDriver::GetProtocol(
+    uint32_t proto_id) {
   return controller_->GetProtocol(proto_id);
 }
 
@@ -275,10 +275,10 @@ zx::result<> IntelDisplayDriver::InitGpuCoreNode(const std::optional<std::string
 
   // Serves the [`fuchsia.hardware.intelgpucore/IntelGpuCore`] protocol
   // over the compatibility server.
-  zx::result<ddk::AnyProtocol> protocol_result =
+  zx::result<compat::DeviceServer::GenericProtocol> protocol_result =
       controller_->GetProtocol(ZX_PROTOCOL_INTEL_GPU_CORE);
   ZX_DEBUG_ASSERT(protocol_result.is_ok());
-  ddk::AnyProtocol protocol = std::move(protocol_result).value();
+  compat::DeviceServer::GenericProtocol protocol = std::move(protocol_result).value();
 
   gpu_banjo_server_ = compat::BanjoServer(ZX_PROTOCOL_INTEL_GPU_CORE, protocol.ctx, protocol.ops);
   compat::DeviceServer::BanjoConfig banjo_config;

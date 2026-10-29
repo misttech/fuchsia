@@ -15,6 +15,7 @@
 
 #include <fidl/fuchsia.hardware.network/cpp/wire.h>
 #include <fidl/fuchsia.hardware.pci/cpp/fidl.h>
+#include <lib/ddk/driver.h>
 #include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
@@ -98,7 +99,7 @@ zx_status_t IgcDriver::ConfigurePci(fdf::Namespace& incoming) {
     return pci_client_end.status_value();
   }
 
-  adapter_->osdep.pci = ddk::Pci(std::move(pci_client_end.value()));
+  adapter_->osdep.pci = fdf::Pci(std::move(pci_client_end.value()));
   auto& pci = adapter_->osdep.pci;
 
   if (!pci.is_valid()) {
@@ -335,7 +336,7 @@ zx_status_t IgcDriver::AddNetworkDevice() {
 }
 
 void IgcDriver::IdentifyHardware() {
-  ddk::Pci& pci = adapter_->osdep.pci;
+  fdf::Pci& pci = adapter_->osdep.pci;
   struct igc_hw* hw = &adapter_->hw;
 
   // Make sure our PCI configuration space has the necessary stuff set.
@@ -362,7 +363,7 @@ void IgcDriver::IdentifyHardware() {
 }
 
 zx_status_t IgcDriver::AllocatePCIResources() {
-  ddk::Pci& pci = adapter_->osdep.pci;
+  fdf::Pci& pci = adapter_->osdep.pci;
 
   // Map BAR0 memory
   zx_status_t status =

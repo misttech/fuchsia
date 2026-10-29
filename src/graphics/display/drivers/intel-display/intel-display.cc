@@ -8,7 +8,6 @@
 #include <fuchsia/hardware/intelgpucore/c/banjo.h>
 #include <lib/ddk/driver.h>
 #include <lib/ddk/hw/inout.h>
-#include <lib/device-protocol/pci.h>
 #include <lib/driver/component/cpp/prepare_stop_completer.h>
 #include <lib/driver/component/cpp/start_completer.h>
 #include <lib/driver/logging/cpp/logger.h>
@@ -497,7 +496,7 @@ bool Controller::ResetDdi(DdiId ddi_id, std::optional<TranscoderId> transcoder_i
   return true;
 }
 
-zx_status_t Controller::InitGttForTesting(const ddk::Pci& pci, fdf::MmioBuffer buffer,
+zx_status_t Controller::InitGttForTesting(const fdf::Pci& pci, fdf::MmioBuffer buffer,
                                           uint32_t fb_offset) {
   fbl::AutoLock gtt_lock(&gtt_lock_);
   return gtt_.Init(pci, std::move(buffer), fb_offset);
@@ -2101,10 +2100,10 @@ zx_status_t Controller::Init() {
   return ZX_OK;
 }
 
-zx::result<ddk::AnyProtocol> Controller::GetProtocol(uint32_t proto_id) {
+zx::result<compat::DeviceServer::GenericProtocol> Controller::GetProtocol(uint32_t proto_id) {
   switch (proto_id) {
     case ZX_PROTOCOL_INTEL_GPU_CORE:
-      return zx::ok(ddk::AnyProtocol{
+      return zx::ok(compat::DeviceServer::GenericProtocol{
           .ops = &intel_gpu_core_protocol_ops_,
           .ctx = this,
       });
@@ -2112,8 +2111,7 @@ zx::result<ddk::AnyProtocol> Controller::GetProtocol(uint32_t proto_id) {
   return zx::error(ZX_ERR_NOT_SUPPORTED);
 }
 
-Controller::Controller(fidl::ClientEnd<fuchsia_sysmem2::Allocator> sysmem,
-                       fidl::ClientEnd<fuchsia_hardware_pci::Device> pci,
+Controller::Controller(fidl::ClientEnd<fuchsia_sysmem2::Allocator> sysmem, fdf::Pci pci,
                        ControllerResources resources, std::optional<zbi_swfb_t> framebuffer_info,
                        display::DisplayEngineEventsInterface* engine_events,
                        inspect::Inspector inspector)
@@ -2144,8 +2142,7 @@ Controller::~Controller() {
 
 // static
 zx::result<std::unique_ptr<Controller>> Controller::Create(
-    fidl::ClientEnd<fuchsia_sysmem2::Allocator> sysmem,
-    fidl::ClientEnd<fuchsia_hardware_pci::Device> pci, ControllerResources resources,
+    fidl::ClientEnd<fuchsia_sysmem2::Allocator> sysmem, fdf::Pci pci, ControllerResources resources,
     std::optional<zbi_swfb_t> framebuffer_info,
     display::DisplayEngineEventsInterface* engine_events, inspect::Inspector inspector) {
   ZX_DEBUG_ASSERT(engine_events != nullptr);

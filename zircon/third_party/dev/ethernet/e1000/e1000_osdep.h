@@ -104,6 +104,33 @@ struct e1000_pci;
 
 __BEGIN_CDECLS
 
+typedef uint8_t pci_interrupt_mode_t;
+#define PCI_INTERRUPT_MODE_DISABLED UINT8_C(0)
+
+typedef uint8_t pci_bar_type_t;
+#define PCI_BAR_TYPE_UNUSED UINT8_C(0)
+#define PCI_BAR_TYPE_MMIO UINT8_C(1)
+#define PCI_BAR_TYPE_IO UINT8_C(2)
+
+typedef struct pci_io_bar {
+  uint64_t address;
+} pci_io_bar_t;
+
+typedef union pci_bar_result {
+  pci_io_bar_t io;
+} pci_bar_result_t;
+
+typedef struct pci_bar {
+  pci_bar_type_t type;
+  pci_bar_result_t result;
+} pci_bar_t;
+
+typedef struct pci_device_info {
+  uint16_t vendor_id;
+  uint16_t device_id;
+  uint8_t revision_id;
+} pci_device_info_t;
+
 // A set of C wrappers around the C++ PCI methods.
 zx_status_t e1000_pci_set_bus_mastering(const struct e1000_pci* pci, bool enabled);
 zx_status_t e1000_pci_ack_interrupt(const struct e1000_pci* pci);

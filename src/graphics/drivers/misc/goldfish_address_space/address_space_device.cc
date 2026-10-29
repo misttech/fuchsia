@@ -77,15 +77,18 @@ zx_status_t AddressSpaceDevice::Create(void* ctx, zx_device_t* device) {
 }
 
 AddressSpaceDevice::AddressSpaceDevice(zx_device_t* parent, async_dispatcher_t* dispatcher)
-    : DeviceType(parent), pci_(parent, "pci"), outgoing_(dispatcher), dispatcher_(dispatcher) {}
+    : DeviceType(parent), outgoing_(dispatcher), dispatcher_(dispatcher) {}
 
 AddressSpaceDevice::~AddressSpaceDevice() = default;
 
 zx_status_t AddressSpaceDevice::Bind() {
-  if (!pci_.is_valid()) {
-    zxlogf(ERROR, "%s: no pci protocol", kTag);
-    return ZX_ERR_NOT_SUPPORTED;
+  auto client = DdkConnectFragmentFidlProtocol<fuchsia_hardware_pci::Service::Device>(
+      fdf::Pci::kFragmentName);
+  if (client.is_error()) {
+    zxlogf(ERROR, "%s: failed to connect to pci fragment: %s", kTag, client.status_string());
+    return client.error_value();
   }
+  pci_ = fdf::Pci(std::move(*client));
 
   zx_status_t status = pci_.GetBti(0, &bti_);
   if (status != ZX_OK) {

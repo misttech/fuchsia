@@ -47,9 +47,9 @@ zx::result<uint32_t> Device::QueryIrqMode(fpci::InterruptMode mode) {
   return zx::error(ZX_ERR_NOT_SUPPORTED);
 }
 
-pci_interrupt_modes_t Device::GetInterruptModes() {
+fuchsia_hardware_pci::wire::InterruptModes Device::GetInterruptModes() {
   const fbl::AutoLock dev_lock(&dev_lock_);
-  pci_interrupt_modes_t modes{};
+  fuchsia_hardware_pci::wire::InterruptModes modes{};
 
   if (cfg_->Read(Config::kInterruptLine) != 0) {
     modes.has_legacy = true;

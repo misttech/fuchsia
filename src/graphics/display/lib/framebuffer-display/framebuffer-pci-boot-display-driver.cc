@@ -26,25 +26,20 @@ FramebufferPciBootDisplayDriver::~FramebufferPciBootDisplayDriver() = default;
 zx::result<> FramebufferPciBootDisplayDriver::ConfigureHardware() { return zx::ok(); }
 
 zx::result<fdf::MmioBuffer> FramebufferPciBootDisplayDriver::GetFrameBufferMmioBuffer() {
-  zx::result<fidl::ClientEnd<fuchsia_hardware_pci::Device>> pci_result =
-      incoming().Connect<fuchsia_hardware_pci::Service::Device>("pci");
-  if (pci_result.is_error()) {
-    fdf::error("Failed to connect to PCI protocol: {}", pci_result);
-    return pci_result.take_error();
-  }
-  ddk::Pci pci(std::move(pci_result).value());
-  ZX_DEBUG_ASSERT(pci.is_valid());
-
-  std::optional<fdf::MmioBuffer> framebuffer_mmio;
-  zx_status_t status =
-      pci.MapMmio(pci_bar_index_, ZX_CACHE_POLICY_WRITE_COMBINING, &framebuffer_mmio);
-  if (status != ZX_OK) {
-    fdf::error("Failed to map PCI bar {}: {}", pci_bar_index_, zx::make_result(status));
-    return zx::error(status);
+  zx::result<fdf::Pci> pci = fdf::Pci::Connect(incoming(), fdf::Pci::kFragmentName);
+  if (pci.is_error()) {
+    fdf::error("Failed to connect to PCI protocol: {}", pci);
+    return pci.take_error();
   }
 
-  ZX_DEBUG_ASSERT(framebuffer_mmio.has_value());
-  return zx::ok(std::move(framebuffer_mmio).value());
+  zx::result<fdf::MmioBuffer> framebuffer_mmio =
+      pci->MapMmio(pci_bar_index_, ZX_CACHE_POLICY_WRITE_COMBINING);
+  if (framebuffer_mmio.is_error()) {
+    fdf::error("Failed to map PCI bar {}: {}", pci_bar_index_, framebuffer_mmio);
+    return framebuffer_mmio.take_error();
+  }
+
+  return zx::ok(std::move(*framebuffer_mmio));
 }
 
 zx::result<zbi_swfb_t> FramebufferPciBootDisplayDriver::GetFramebufferInfo() {

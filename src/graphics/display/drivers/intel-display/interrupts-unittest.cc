@@ -50,7 +50,7 @@ class InterruptTest : public testing::Test {
       driver_runtime_.StartBackgroundDispatcher();
 
   async::Loop loop_;
-  ddk::Pci pci_;
+  fdf::Pci pci_;
   pci::FakePciProtocol fake_pci_;
 
   fake_mmio::FakeMmioRegRegion mmio_space_{32, kMmioRegCount};

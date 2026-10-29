@@ -876,10 +876,7 @@ void Device::SetInterruptMode(SetInterruptModeRequestView request,
 }
 
 void Device::GetInterruptModes(GetInterruptModesCompleter::Sync& completer) {
-  pci_interrupt_modes_t modes = GetInterruptModes();
-  completer.Reply({.has_legacy = modes.has_legacy,
-                   .msi_count = modes.msi_count,
-                   .msix_count = modes.msix_count});
+  completer.Reply(GetInterruptModes());
   RETURN_DEBUG(ZX_OK, "");
 }
 

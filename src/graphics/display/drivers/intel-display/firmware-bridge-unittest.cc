@@ -39,7 +39,7 @@ class PciConfigOpRegionTest : public ::testing::Test {
   fdf_testing::ScopedGlobalLogger logger_;
   async::Loop loop_{&kAsyncLoopConfigNeverAttachToThread};
   pci::FakePciProtocol fake_pci_;
-  ddk::Pci pci_;
+  fdf::Pci pci_;
   std::optional<PciConfigOpRegion> pci_op_region_;
 };
 
@@ -62,7 +62,7 @@ TEST_F(PciConfigOpRegionTest, ReadMemoryOpRegionAddressError) {
   auto [pci_client, pci_server] = fidl::Endpoints<fuchsia_hardware_pci::Device>::Create();
   pci_server.Close(ZX_OK);
 
-  ddk::Pci disconnected_pci(std::move(pci_client));
+  fdf::Pci disconnected_pci(std::move(pci_client));
   PciConfigOpRegion disconnected_pci_op_region(disconnected_pci);
 
   const zx::result<zx_paddr_t> address = disconnected_pci_op_region.ReadMemoryOpRegionAddress();
@@ -101,7 +101,7 @@ TEST_F(PciConfigOpRegionTest, IsSystemControlInterruptInUseError) {
   auto [pci_client, pci_server] = fidl::Endpoints<fuchsia_hardware_pci::Device>::Create();
   pci_server.Close(ZX_OK);
 
-  ddk::Pci disconnected_pci(std::move(pci_client));
+  fdf::Pci disconnected_pci(std::move(pci_client));
   PciConfigOpRegion disconnected_pci_op_region(disconnected_pci);
 
   const zx::result<bool> in_use = disconnected_pci_op_region.IsSystemControlInterruptInUse();
@@ -142,7 +142,7 @@ TEST_F(PciConfigOpRegionTest, TriggerSystemControlInterruptPciError) {
   auto [pci_client, pci_server] = fidl::Endpoints<fuchsia_hardware_pci::Device>::Create();
   pci_server.Close(ZX_OK);
 
-  ddk::Pci disconnected_pci(std::move(pci_client));
+  fdf::Pci disconnected_pci(std::move(pci_client));
   PciConfigOpRegion disconnected_pci_op_region(disconnected_pci);
 
   const zx::result<> result = disconnected_pci_op_region.TriggerSystemControlInterrupt();

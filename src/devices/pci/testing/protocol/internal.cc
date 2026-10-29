@@ -26,37 +26,6 @@ __EXPORT FakePciProtocolInternal::FakePciProtocolInternal() {
   reset();
 }
 
-zx_status_t FakePciProtocolInternal::FakePciProtocolInternal::PciGetBar(uint32_t bar_id,
-                                                                        pci_bar_t* out_res) {
-  if (!out_res) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-
-  if (bar_id >= PCI_DEVICE_BAR_COUNT) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-
-  auto& bar = bars_[bar_id];
-  if (!bar.vmo.has_value()) {
-    return ZX_ERR_NOT_FOUND;
-  }
-
-  out_res->bar_id = bar_id;
-  out_res->size = bar.size;
-  out_res->type = bar.type;
-  if (bar.type == PCI_BAR_TYPE_MMIO) {
-    out_res->result.vmo = bar.vmo->get();
-  } else {
-    out_res->result.io.address = 0;
-    zx_handle_t fake_ioport_resource;
-    fake_resource_create(ZX_RSRC_KIND_IOPORT, &fake_ioport_resource);
-    char name[] = "fake IO";
-    return zx_resource_create(fake_ioport_resource, ZX_RSRC_KIND_IOPORT, out_res->result.io.address,
-                              out_res->size, name, sizeof(name), &out_res->result.io.resource);
-  }
-  return ZX_OK;
-}
-
 zx_status_t FakePciProtocolInternal::PciAckInterrupt() {
   return (irq_mode_ == fpci::InterruptMode::kLegacy) ? ZX_OK : ZX_ERR_BAD_STATE;
 }
@@ -168,17 +137,10 @@ zx_status_t FakePciProtocolInternal::PciResetDevice() {
   return ZX_OK;
 }
 
-zx_status_t FakePciProtocolInternal::PciGetDeviceInfo(pci_device_info_t* out_info) {
+zx_status_t FakePciProtocolInternal::PciGetDeviceInfo(
+    fuchsia_hardware_pci::wire::DeviceInfo* out_info) {
   ZX_ASSERT(out_info);
-  out_info->vendor_id = info_.vendor_id;
-  out_info->device_id = info_.device_id;
-  out_info->base_class = info_.base_class;
-  out_info->sub_class = info_.sub_class;
-  out_info->program_interface = info_.program_interface;
-  out_info->revision_id = info_.revision_id;
-  out_info->bus_id = info_.bus_id;
-  out_info->dev_id = info_.dev_id;
-  out_info->func_id = info_.func_id;
+  *out_info = info_;
   return ZX_OK;
 }
 

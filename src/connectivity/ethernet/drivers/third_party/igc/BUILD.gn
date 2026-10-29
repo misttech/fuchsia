@@ -40,6 +40,8 @@ source_set("igc_core") {
     "//sdk/fidl/fuchsia.driver.compat:fuchsia.driver.compat_cpp",
     "//sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_cpp",
     "//sdk/lib/driver/compat/cpp",
+    "//src/devices/pci/lib/device-protocol-pci",
+    "//src/devices/pci/lib/pci",
     "//src/lib/vmo_store",
   ]
 
@@ -51,8 +53,7 @@ source_set("igc_core") {
     "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/driver/mmio/cpp",
     "//src/connectivity/network/drivers/network-device/device:shared_lock",
-    "//src/devices/pci/lib/device-protocol-pci",
-    "//src/devices/pci/lib/pci",
+    "//src/lib/ddk:ddk-driver-headers",
     "//src/lib/listnode",
   ]
 }

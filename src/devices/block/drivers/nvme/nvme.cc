@@ -715,18 +715,13 @@ zx_status_t Nvme::Init() {
 }
 
 zx::result<fit::function<void()>> Nvme::InitResources() {
-  zx::result<fidl::ClientEnd<fuchsia_hardware_pci::Device>> pci_client_result =
-      incoming_->Connect<fuchsia_hardware_pci::Service::Device>();
-  if (pci_client_result.is_error()) {
-    fdf::error("Failed to get pci client: {}", pci_client_result.status_string());
-    return pci_client_result.take_error();
+  zx::result<fdf::Pci> pci = fdf::Pci::Connect(incoming_, fdf::Pci::kFragmentName);
+  if (pci.is_error()) {
+    fdf::error("Failed to connect to PCI: {}", pci.status_string());
+    return pci.take_error();
   }
 
-  pci_ = ddk::Pci(std::move(pci_client_result).value());
-  if (!pci_.is_valid()) {
-    fdf::error("Failed to find PCI fragment");
-    return zx::error(ZX_ERR_NOT_SUPPORTED);
-  }
+  pci_ = std::move(pci.value());
 
   std::optional<fdf::MmioBuffer> mmio;
   zx_status_t status = pci_.MapMmio(0u, ZX_CACHE_POLICY_UNCACHED_DEVICE, &mmio);

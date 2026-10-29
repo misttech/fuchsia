@@ -97,6 +97,13 @@ zx_status_t IntelI2cController::Init() {
 
   acpi_.Bind(std::move(*acpi_result));
 
+  auto pci_result = DdkConnectFragmentFidlProtocol<fuchsia_hardware_pci::Service::Device>(
+      fdf::Pci::kFragmentName);
+  if (pci_result.is_error()) {
+    return pci_result.error_value();
+  }
+  pci_ = fdf::Pci(std::move(*pci_result));
+
   uint16_t vendor_id;
   uint16_t device_id;
   pci_.ReadConfig16(fuchsia_hardware_pci::Config::kVendorId, &vendor_id);

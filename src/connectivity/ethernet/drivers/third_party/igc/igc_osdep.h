@@ -54,7 +54,7 @@ typedef int8_t s8;
 #define __le64 u64
 
 struct igc_osdep {
-  ddk::Pci pci;
+  fdf::Pci pci;
   std::optional<fdf::MmioBuffer> mmio_buffer;
 };
 

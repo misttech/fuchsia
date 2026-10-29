@@ -37,19 +37,19 @@ class FakePciProtocolTests : public zxtest::Test {
                      fidl::ServerEnd<fuchsia_hardware_pci::Device>(endpoints.server.TakeChannel()),
                      &fake_pci_);
 
-    pci_ = ddk::Pci(std::move(endpoints.client));
+    pci_ = fdf::Pci(std::move(endpoints.client));
     ASSERT_TRUE(pci_.is_valid());
 
     loop_.StartThread("pci-fidl-server-thread");
   }
   pci::FakePciProtocol& fake_pci() { return fake_pci_; }
-  ddk::Pci& pci() { return pci_; }
+  fdf::Pci& pci() { return pci_; }
 
   async::Loop loop_{&kAsyncLoopConfigNeverAttachToThread};
 
  private:
   pci::FakePciProtocol fake_pci_;
-  ddk::Pci pci_;
+  fdf::Pci pci_;
 };
 
 TEST_F(FakePciProtocolTests, CreateBar) {

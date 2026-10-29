@@ -12,6 +12,7 @@
 #include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/ddk/driver.h>
+#include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/fake-resource/resource.h>
@@ -261,6 +262,23 @@ class IntegrationTest : public ::testing::Test {
   void TearDown() override {}
 
  protected:
+  zx::result<ddk::IntelGpuCoreProtocolClient> GetGpuCoreClient() {
+    zx::result<compat::DeviceServer::GenericProtocol> gpu_protocol_result =
+        driver_test_.RunInDriverContext<zx::result<compat::DeviceServer::GenericProtocol>>(
+            [](IntelDisplayDriver& driver) {
+              return driver.GetProtocol(ZX_PROTOCOL_INTEL_GPU_CORE);
+            });
+    if (gpu_protocol_result.is_error()) {
+      return gpu_protocol_result.take_error();
+    }
+    compat::DeviceServer::GenericProtocol gpu_protocol = std::move(gpu_protocol_result).value();
+    intel_gpu_core_protocol_t proto = {
+        .ops = static_cast<const intel_gpu_core_protocol_ops_t*>(gpu_protocol.ops),
+        .ctx = gpu_protocol.ctx,
+    };
+    return zx::ok(ddk::IntelGpuCoreProtocolClient(&proto));
+  }
+
   fdf_testing::BackgroundDriverTest<IntelDisplayTestConfig> driver_test_;
 };
 
@@ -331,18 +349,12 @@ TEST_F(IntegrationTest, InitFailsIfBootloaderGetInfoFails) {
   zx::result<> start_result = driver_test_.StartDriver();
   ASSERT_OK(start_result);
 
-  zx::result<ddk::AnyProtocol> gpu_protocol_result =
-      driver_test_.RunInDriverContext<zx::result<ddk::AnyProtocol>>([](IntelDisplayDriver& driver) {
-        return driver.GetProtocol(ZX_PROTOCOL_INTEL_GPU_CORE);
-      });
-  ASSERT_OK(gpu_protocol_result);
-  ddk::AnyProtocol gpu_protocol = std::move(gpu_protocol_result).value();
-  ddk::IntelGpuCoreProtocolClient gpu(
-      reinterpret_cast<const intel_gpu_core_protocol_t*>(&gpu_protocol));
+  zx::result<ddk::IntelGpuCoreProtocolClient> gpu = GetGpuCoreClient();
+  ASSERT_OK(gpu);
 
   uint64_t addr;
 
-  zx_status_t alloc_status = gpu.GttAlloc(1, &addr);
+  zx_status_t alloc_status = gpu->GttAlloc(1, &addr);
   EXPECT_OK(alloc_status);
   EXPECT_EQ(0u, addr);
 
@@ -373,17 +385,11 @@ TEST_F(IntegrationTest, GttAllocationDoesNotOverlapBootloaderFramebuffer) {
   zx::result<> start_result = driver_test_.StartDriver();
   ASSERT_OK(start_result);
 
-  zx::result<ddk::AnyProtocol> gpu_protocol_result =
-      driver_test_.RunInDriverContext<zx::result<ddk::AnyProtocol>>([](IntelDisplayDriver& driver) {
-        return driver.GetProtocol(ZX_PROTOCOL_INTEL_GPU_CORE);
-      });
-  ASSERT_OK(gpu_protocol_result);
-  ddk::AnyProtocol gpu_protocol = std::move(gpu_protocol_result).value();
-  ddk::IntelGpuCoreProtocolClient gpu(
-      reinterpret_cast<const intel_gpu_core_protocol_t*>(&gpu_protocol));
+  zx::result<ddk::IntelGpuCoreProtocolClient> gpu = GetGpuCoreClient();
+  ASSERT_OK(gpu);
 
   uint64_t addr;
-  zx_status_t alloc_status = gpu.GttAlloc(1, &addr);
+  zx_status_t alloc_status = gpu->GttAlloc(1, &addr);
   EXPECT_OK(alloc_status);
   EXPECT_EQ(ZX_ROUNDUP(kHeight * kStride * 3, zx_system_get_page_size()), addr);
 

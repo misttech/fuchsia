@@ -30,7 +30,7 @@ const uint32_t kPageSize = zx_system_get_page_size();
 // Initialize the GTT to the smallest allowed size (which is 2MB with the |gtt_size| bits of the
 // graphics control register set to 0x01.
 constexpr size_t kTableSize = (1 << 21);
-void Configure2MbGtt(ddk::Pci& pci) {
+void Configure2MbGtt(fdf::Pci& pci) {
   zx_status_t status = pci.WriteConfig16(registers::GmchGfxControl::kAddr, 0x40);
   EXPECT_OK(status);
 }
@@ -47,7 +47,7 @@ class GttTest : public testing::Test {
  protected:
   fdf_testing::ScopedGlobalLogger logger_;
   async::Loop loop_;
-  ddk::Pci pci_;
+  fdf::Pci pci_;
   pci::FakePciProtocol fake_pci_;
 };
 
