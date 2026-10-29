@@ -22,5 +22,6 @@ test_suite(
     target_compatible_with = ["@platforms//os:fuchsia"],
     tests = [
         "//src/lib/diagnostics/inspect/derive/tests:fuchsia-inspect-derive-tests",
+        "//src/lib/diagnostics/selectors-ext:selectors-ext-test",
     ],
 )
