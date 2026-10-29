@@ -19,13 +19,14 @@ import (
 func WriteRs(buf *bytes.Buffer,
 	m *measurer.Measurer,
 	targetMts []*measurer.MeasuringTape,
-	allMethods map[measurer.MethodID]*measurer.Method) {
+	allMethods map[measurer.MethodID]*measurer.Method,
+	rustCommon bool) {
 
-	if err := topOfRs.Execute(buf, newTmplParams(m, targetMts)); err != nil {
+	if err := topOfRs.Execute(buf, newTmplParams(m, targetMts, rustCommon)); err != nil {
 		panic(err)
 	}
 
-	cb := codeBuffer{buf: buf}
+	cb := codeBuffer{buf: buf, rustCommon: rustCommon}
 	utils.ForAllMethodsInOrder(allMethods, func(m *measurer.Method) {
 		buf.WriteString("\n")
 		cb.writeMethod(m)
@@ -35,13 +36,14 @@ func WriteRs(buf *bytes.Buffer,
 }
 
 type codeBuffer struct {
-	level int
-	buf   *bytes.Buffer
+	level      int
+	buf        *bytes.Buffer
+	rustCommon bool
 }
 
 func (cb *codeBuffer) writeMethod(m *measurer.Method) {
 	traitName, methodName := toTraitAndMethodName(m.ID.Kind)
-	cb.writef("impl %s for %s {\n", traitName, toTypeName(m.ID.TargetType))
+	cb.writef("impl %s for %s {\n", traitName, toTypeName(m.ID.TargetType, cb.rustCommon))
 	cb.indent(func() {
 		// TODO(https://fxbug.dev/42128549): With improved locals handling, we could
 		// conditionally define the alias below. Of course, this would be
@@ -135,10 +137,10 @@ func (cb *codeBuffer) CaseSelectVariant(
 		utils.ForAllVariantsInOrder(variants, func(member string, localWithBlock measurer.LocalWithBlock) {
 			if member != measurer.UnknownVariant {
 				cb.writef("%s::%s(%s) => {\n",
-					toTypeName(targetType), fidlgen.ToUpperCamelCase(member),
+					toTypeName(targetType, cb.rustCommon), fidlgen.ToUpperCamelCase(member),
 					formatExpr{localWithBlock.Local})
 			} else {
-				cb.writef("%sUnknown!() => {\n", toTypeName(targetType))
+				cb.writef("%sUnknown!() => {\n", toTypeName(targetType, cb.rustCommon))
 			}
 			cb.indent(func() {
 				cb.writeBlock(localWithBlock.Body)
@@ -223,13 +225,17 @@ func maybeUnwrap(val measurer.Expression) string {
 	return ""
 }
 
-func toCrateName(libraryName fidlgen.LibraryName) string {
-	return fmt.Sprintf("fidl_%s", strings.Join(libraryName.Parts(), "_"))
+func toCrateName(libraryName fidlgen.LibraryName, rustCommon bool) string {
+	suffix := ""
+	if rustCommon {
+		suffix = "_common"
+	}
+	return fmt.Sprintf("fidl_%s%s", strings.Join(libraryName.Parts(), "_"), suffix)
 }
 
-func toTypeName(declName fidlgen.Name) string {
+func toTypeName(declName fidlgen.Name, rustCommon bool) string {
 	return fmt.Sprintf("%s::%s",
-		toCrateName(declName.LibraryName()),
+		toCrateName(declName.LibraryName(), rustCommon),
 		fidlgen.ToUpperCamelCase(declName.DeclarationName()))
 }
 
@@ -239,17 +245,18 @@ type tmplParams struct {
 }
 
 func newTmplParams(m *measurer.Measurer,
-	targetMts []*measurer.MeasuringTape) tmplParams {
+	targetMts []*measurer.MeasuringTape,
+	rustCommon bool) tmplParams {
 
 	var uses []string
 	for _, libraryName := range m.RootLibraries() {
-		uses = append(uses, toCrateName(libraryName))
+		uses = append(uses, toCrateName(libraryName, rustCommon))
 	}
 	sort.Strings(uses)
 
 	var targetTypes []string
 	for _, targetMt := range targetMts {
-		targetTypes = append(targetTypes, toTypeName(targetMt.Name()))
+		targetTypes = append(targetTypes, toTypeName(targetMt.Name(), rustCommon))
 	}
 	return tmplParams{
 		Uses:        uses,

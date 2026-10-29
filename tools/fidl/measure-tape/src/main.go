@@ -44,6 +44,8 @@ var onlyCheckToFile = flag.String("only-check-to-file", "",
 	"Enables verification only mode, which checks the .cc and .h\nRequired for target binding hlcpp")
 var outRs = flag.String("out-rs", "",
 	"Write path for .rs file\nRequired for target binding rust")
+var rustCommon = flag.Bool("rust-common", false,
+	"Whether to use _common crate names for Rust bindings")
 
 func flagsValid() bool {
 	if len(jsonFiles) == 0 {
@@ -177,6 +179,6 @@ func rustGen(m *measurer.Measurer,
 	allMethods map[measurer.MethodID]*measurer.Method) {
 
 	var bufRs bytes.Buffer
-	rust.WriteRs(&bufRs, m, targetMts, allMethods)
+	rust.WriteRs(&bufRs, m, targetMts, allMethods, *rustCommon)
 	writeFile(*outRs, bufRs.Bytes())
 }

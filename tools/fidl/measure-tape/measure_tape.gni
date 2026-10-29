@@ -22,6 +22,10 @@ import("//build/fidl/toolchain.gni")
 #     A list of fully qualified FIDL types for which to generate a measuring
 #     tape.
 #
+#   use_rust_common (optional)
+#     For `target_binding == "rust"`, whether to use `_rust_common` bindings.
+#     Defaults to `is_host`.
+#
 # LINT.IfChange
 template("measure_tape") {
   assert(defined(invoker.target_binding))
@@ -102,6 +106,14 @@ template("measure_tape") {
       out_h,
     ]
   } else if (invoker.target_binding == "rust") {
+    use_rust_common = is_host
+    if (defined(invoker.use_rust_common)) {
+      use_rust_common = invoker.use_rust_common
+    }
+    if (use_rust_common) {
+      gen_args += [ "--rust-common" ]
+    }
+
     import("//build/rust/rustc_library.gni")
 
     rustc_library(name) {
@@ -117,7 +129,11 @@ template("measure_tape") {
       ]
       foreach(fidl_target, fidl_targets) {
         label = get_label_info(fidl_target, "label_no_toolchain")
-        deps += [ "${label}_rust" ]
+        if (use_rust_common) {
+          deps += [ "${label}_rust_common" ]
+        } else {
+          deps += [ "${label}_rust" ]
+        }
       }
       non_rust_deps = [ ":$gen_target_name" ]
       source_root = out_rs

@@ -34,6 +34,8 @@ def _measure_tape_gen_impl(ctx):
         outputs = [ctx.outputs.out_cc, ctx.outputs.out_h]
     elif target_binding == "rust":
         args.add("--out-rs", ctx.outputs.out_rs)
+        if ctx.attr.use_rust_common:
+            args.add("--rust-common")
         outputs = [ctx.outputs.out_rs]
     else:
         fail("Unsupported `target_binding`: %s" % target_binding)
@@ -70,6 +72,10 @@ _measure_tape_gen = rule(
             mandatory = True,
             allow_empty = False,
         ),
+        "use_rust_common": attr.bool(
+            doc = "Whether to use _common crate names for Rust bindings (Rust only).",
+            default = False,
+        ),
         "h_include_path": attr.string(
             doc = "Path used to `#include` the generated header (HLCPP only).",
         ),
@@ -90,6 +96,7 @@ def _measure_tape_impl(
         bindings_deps,
         target_binding,
         target_types,
+        use_rust_common,
         target_compatible_with,
         testonly,
         visibility):
@@ -133,6 +140,7 @@ def _measure_tape_impl(
             fidls = fidls,
             target_binding = target_binding,
             target_types = target_types,
+            use_rust_common = use_rust_common,
             out_rs = out_rs,
             target_compatible_with = target_compatible_with,
             testonly = testonly,
@@ -190,13 +198,16 @@ _measure_tape = macro(
         "bindings_deps": attr.label_list(
             doc = "The `target_binding` bindings libraries of `fidls`. Set by the wrapper macro.",
             mandatory = True,
-            configurable = False,
         ),
         "target_types": attr.string_list(
             doc = "Fully qualified FIDL types (e.g. 'fuchsia.pkg/BlobInfo') for which to generate a measuring tape.",
             mandatory = True,
             allow_empty = False,
             configurable = False,
+        ),
+        "use_rust_common": attr.bool(
+            doc = "Whether to use _common crate names for Rust bindings.",
+            default = False,
         ),
         "target_compatible_with": attr.label_list(
             doc = "Standard meaning.",
@@ -210,7 +221,7 @@ _measure_tape = macro(
     },
 )
 
-def measure_tape(*, name, fidls, target_binding, **kwargs):
+def measure_tape(*, name, fidls, target_binding, use_rust_common = None, **kwargs):
     """Declares a Measure Tape.
 
     This is a wrapper around `_measure_tape()` that computes the labels of the
@@ -224,22 +235,50 @@ def measure_tape(*, name, fidls, target_binding, **kwargs):
       name: Standard meaning.
       fidls: See `_measure_tape()`.
       target_binding: See `_measure_tape()`.
+      use_rust_common: For `target_binding == "rust"`, whether to use
+        `_rust_common` bindings. Defaults to `True` on host and `False` on
+        Fuchsia.
       **kwargs: Passed to `_measure_tape()`.
     """
-    bindings_suffix = {"hlcpp": "_hlcpp", "rust": "_rust"}.get(target_binding)
-    if not bindings_suffix:
+    if target_binding == "hlcpp":
+        if use_rust_common != None:
+            fail('`use_rust_common` is only supported when `target_binding` is "rust"')
+        bindings_deps = []
+        for fidl in fidls:
+            fidl_label = native.package_relative_label(fidl)
+            bindings_deps.append(fidl_label.same_package_label(fidl_label.name + "_hlcpp"))
+        use_rust_common_val = False
+    elif target_binding == "rust":
+        rust_deps = []
+        rust_common_deps = []
+        for fidl in fidls:
+            fidl_label = native.package_relative_label(fidl)
+            rust_deps.append(fidl_label.same_package_label(fidl_label.name + "_rust"))
+            rust_common_deps.append(fidl_label.same_package_label(fidl_label.name + "_rust_common"))
+        if use_rust_common == None:
+            use_rust_common_val = select({
+                "@platforms//os:fuchsia": False,
+                "//conditions:default": True,
+            })
+            bindings_deps = select({
+                "@platforms//os:fuchsia": rust_deps,
+                "//conditions:default": rust_common_deps,
+            })
+        elif use_rust_common:
+            use_rust_common_val = True
+            bindings_deps = rust_common_deps
+        else:
+            use_rust_common_val = False
+            bindings_deps = rust_deps
+    else:
         fail('`target_binding` must be "hlcpp" or "rust", got: %s' % target_binding)
-
-    bindings_deps = []
-    for fidl in fidls:
-        fidl_label = native.package_relative_label(fidl)
-        bindings_deps.append(fidl_label.same_package_label(fidl_label.name + bindings_suffix))
 
     _measure_tape(
         name = name,
         fidls = fidls,
         bindings_deps = bindings_deps,
         target_binding = target_binding,
+        use_rust_common = use_rust_common_val,
         **kwargs
     )
 
