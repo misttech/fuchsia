@@ -632,4 +632,12 @@ CRATE_ANNOTATIONS = {
             },
         ),
     ],
+    "zmij": [
+        crate.annotation(
+            version = "1.0.23",
+            rustc_flags = [
+                '--cfg=opt_level="s"',
+            ],
+        ),
+    ],
 }

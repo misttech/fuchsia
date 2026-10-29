@@ -20805,7 +20805,7 @@ rustc_library("serde_json-v1_0_151") {
   deps += [ ":indexmap-v2_14_2" ]
   deps += [ ":itoa-v1_0_18" ]
   deps += [ ":serde_core-v1_0_229" ]
-  deps += [ ":zmij-v1_0_21" ]
+  deps += [ ":zmij-v1_0_23" ]
   if (true) {
     deps += [ ":serde-v1_0_229" ]
   }
@@ -26674,15 +26674,15 @@ rustc_library("zlib-rs-v0_6_8") {
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
-license("zmij-v1_0_21.license") {
+license("zmij-v1_0_23.license") {
   public_package_name = "zmij"
-  license_files = [ "//third_party/rust_crates/vendor/zmij-1.0.21/LICENSE-MIT" ]
+  license_files = [ "//third_party/rust_crates/vendor/zmij-1.0.23/LICENSE-MIT" ]
 }
 
-rustc_library("zmij-v1_0_21") {
+rustc_library("zmij-v1_0_23") {
   crate_name = "zmij"
-  source_root = "//third_party/rust_crates/vendor/zmij-1.0.21/src/lib.rs"
-  output_name = "zmij-341919bc4ef9cf14"
+  source_root = "//third_party/rust_crates/vendor/zmij-1.0.23/src/lib.rs"
+  output_name = "zmij-777fb1d360110bec"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -26694,13 +26694,14 @@ rustc_library("zmij-v1_0_21") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=341919bc4ef9cf14",
-    "-Cextra-filename=-341919bc4ef9cf14",
+    "-Cmetadata=777fb1d360110bec",
+    "-Cextra-filename=-777fb1d360110bec",
+    "--cfg=opt_level=\"s\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":zmij-v1_0_21.license" ]
+  applicable_licenses = [ ":zmij-v1_0_23.license" ]
 }
 
 license("zstd-v0_14_3.license") {

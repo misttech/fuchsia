@@ -1452,8 +1452,8 @@ group_visibility = { import = "//third_party/rust_crates/visibility.gni", variab
 [gn.package.zip."9.0.5"]
 env_vars = [ "CARGO_PKG_VERSION=9.0.5" ]
 
-[gn.package.zmij."1.0.21"]
-rustflags = []
+[gn.package.zmij."1.0.23"]
+rustflags = ["--cfg=opt_level=\\\"s\\\""]
 
 [gn.package.zstd-safe."8.2.0"]
 rustflags = []
