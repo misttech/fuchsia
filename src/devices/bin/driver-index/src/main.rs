@@ -10,7 +10,6 @@ use crate::resolved_driver::ResolvedDriver;
 use anyhow::{Context, Result, anyhow};
 use driver_index_config::Config;
 use fidl_fuchsia_component_resolution as fresolution;
-use fidl_fuchsia_component_sandbox as fsandbox;
 use fidl_fuchsia_driver_development as fdd;
 use fidl_fuchsia_driver_framework as fdf;
 use fidl_fuchsia_driver_index::{
@@ -21,6 +20,7 @@ use fidl_fuchsia_driver_registrar as fdr;
 use fuchsia_async as fasync;
 use fuchsia_component::client;
 use fuchsia_component::escrow::EscrowOperation;
+use fuchsia_component::runtime::Dictionary;
 use fuchsia_component::server::{Item, ServiceFs, ServiceObjTrait, StallableServiceFs};
 use fuchsia_sync::Mutex;
 use futures::prelude::*;
@@ -416,9 +416,6 @@ async fn run_driver_index(
     idle_timeout: fasync::MonotonicDuration,
     full_resolver: Option<fresolution::ResolverProxy>,
     escrow_operation: EscrowOperation,
-    capability_store: fsandbox::CapabilityStoreProxy,
-    id_gen: sandbox::CapabilityIdGenerator,
-    dict_id: u64,
     load_base_drivers: impl Future<Output = ()>,
 ) -> Result<()> {
     let mut service_fs = ServiceFs::new();
@@ -466,15 +463,8 @@ async fn run_driver_index(
                 }
             }
             Item::Stalled(outgoing_directory) => {
-                let stall_result = handle_stall(
-                    index.clone(),
-                    &escrow_operation,
-                    outgoing_directory,
-                    &capability_store,
-                    &id_gen,
-                    dict_id,
-                )
-                .await;
+                let stall_result =
+                    handle_stall(index.clone(), &escrow_operation, outgoing_directory).await;
                 if let Err(e) = stall_result {
                     panic!(
                         "Stall handler failed with '{e:?}'. Next index run will have incomplete \
@@ -508,29 +498,15 @@ async fn main() -> Result<()> {
         None
     };
 
-    let capability_store = client::connect_to_protocol::<fsandbox::CapabilityStoreMarker>()
-        .expect("Could not connect to CapabilityStore protocol.");
-    let id_gen = sandbox::CapabilityIdGenerator::new();
-    let dict_id = id_gen.next();
     let resumed_state = match fuchsia_runtime::take_startup_handle(
         fuchsia_runtime::HandleType::EscrowedDictionary.into(),
     ) {
         Some(dictionary) => {
-            let dictionary = fsandbox::Capability::Dictionary(fsandbox::DictionaryRef {
-                token: dictionary.into(),
-            });
-            capability_store
-                .import(dict_id, dictionary)
-                .await
-                .map_err(|e| anyhow!("Failed to call import: {:?}", e))?
-                .map_err(|e| anyhow!("Failed to import with store error: {:?}", e))?;
-
-            Some(resume_state(&capability_store, &id_gen, dict_id).await?)
+            let dictionary = Dictionary::from(zx::EventPair::from(dictionary));
+            Some(resume_state(&dictionary).await?)
         }
         None => None,
     };
-
-    let dict_id = id_gen.next();
 
     let eager_drivers: HashSet<cm_types::Url> = config
         .bind_eager
@@ -633,17 +609,9 @@ async fn main() -> Result<()> {
     // this process if such an instruction is received.
     escrow_operation.watch_for_stop().expect("failed to watch for stop on lifecycle channel");
 
-    let main_task = run_driver_index(
-        &index,
-        idle_timeout,
-        full_resolver,
-        escrow_operation,
-        capability_store,
-        id_gen,
-        dict_id,
-        load_base_drivers,
-    )
-    .fuse();
+    let main_task =
+        run_driver_index(&index, idle_timeout, full_resolver, escrow_operation, load_base_drivers)
+            .fuse();
 
     let index_result = main_task.await;
     log::info!("driver-index stopping because it is idle.");

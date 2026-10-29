@@ -6,8 +6,8 @@ use crate::composite_node_spec_manager::CompositeNodeSpecManager;
 use crate::indexer::*;
 use crate::resolved_driver::ResolvedDriver;
 use anyhow::anyhow;
-use fidl_fuchsia_component_sandbox as fsandbox;
 use fuchsia_component::escrow::EscrowOperation;
+use fuchsia_component::runtime::{Capability, Data, DataValue, Dictionary, Handle};
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -57,49 +57,28 @@ pub fn apply_state(resume_state: ResumedState, index: Rc<Indexer>) -> bool {
     base_loaded
 }
 
-// This wraps the logic for storing our state to a `fuchsia.component.sandbox.Dictionary`, and
+// This wraps the logic for storing our state to a `fuchsia.component.runtime.Dictionary`, and
 // sending an OnEscrow event to the `fuchsia.process.lifecycle.Lifecycle` with the dictionary
 // we saved our state to, as well as our outgoing directory server end.
 pub async fn handle_stall(
     index: Rc<Indexer>,
     escrow_operation: &EscrowOperation,
     outgoing_directory: zx::Channel,
-    capability_store: &fsandbox::CapabilityStoreProxy,
-    id_gen: &sandbox::CapabilityIdGenerator,
-    dict_id: u64,
 ) -> Result<(), anyhow::Error> {
     // Create a new dictionary, save our state to it.
-    capability_store
-        .dictionary_create(dict_id)
-        .await
-        .map_err(|e| anyhow!("Could not call dictionary_create {:?}", e))?
-        .map_err(|e| anyhow!("Received error from dictionary_create {:?}.", e))?;
+    let dictionary = Dictionary::new().await;
 
-    save_state(index.clone(), &capability_store, &id_gen, dict_id).await?;
+    save_state(index.clone(), &dictionary).await?;
 
     // Send the dictionary away.
-    let fsandbox::Capability::Dictionary(dictionary_ref) = capability_store
-        .export(dict_id)
-        .await
-        .map_err(|e| anyhow!("Could not call export {:?}", e))?
-        .map_err(|e| anyhow!("Received error from export {:?}.", e))?
-    else {
-        panic!("capability is not Dictionary?");
-    };
-
-    escrow_operation.with_fsandbox_dictionary(dictionary_ref);
+    escrow_operation.with_dictionary(dictionary);
     escrow_operation
         .run(outgoing_directory.into())
         .map_err(|e| anyhow!("Could not perform escrow {:?}", e))
 }
 
-pub async fn resume_state(
-    capability_store: &fsandbox::CapabilityStoreProxy,
-    id_gen: &sandbox::CapabilityIdGenerator,
-    dict_id: u64,
-) -> Result<ResumedState, anyhow::Error> {
-    let notifier_result =
-        get_handle_from_dictionary(capability_store, id_gen, dict_id, STATE_DRIVER_NOTIFIER).await;
+pub async fn resume_state(dictionary: &Dictionary) -> Result<ResumedState, anyhow::Error> {
+    let notifier_result = get_handle_from_dictionary(dictionary, STATE_DRIVER_NOTIFIER).await;
     let notifier = match notifier_result {
         Ok(notifier) => Some(notifier),
         Err(e) => {
@@ -110,13 +89,8 @@ pub async fn resume_state(
 
     let now = std::time::Instant::now();
 
-    let saved_state_bytes = read_vmo_and_decompress_from_dictionary(
-        capability_store,
-        id_gen,
-        dict_id,
-        STATE_SAVED_STATE,
-    )
-    .await?;
+    let saved_state_bytes =
+        read_vmo_and_decompress_from_dictionary(dictionary, STATE_SAVED_STATE).await?;
     let read_and_decompress_time = now.elapsed();
     let saved_state = rkyv::from_bytes::<SavedState, rkyv::rancor::Failure>(&saved_state_bytes)?;
     let deserialize_time = now.elapsed();
@@ -140,36 +114,14 @@ pub async fn resume_state(
     Ok(ResumedState { notifier, composite_specs, boot_repo, base_repo, ephemeral_repo })
 }
 
-async fn save_state(
-    index: Rc<Indexer>,
-    capability_store: &fsandbox::CapabilityStoreProxy,
-    id_gen: &sandbox::CapabilityIdGenerator,
-    dict_id: u64,
-) -> Result<(), anyhow::Error> {
-    {
-        let id = id_gen.next();
-        match index.take_notifier() {
-            Some(notifier) => {
-                capability_store
-                    .import(id, fsandbox::Capability::Handle(notifier.into()))
-                    .await
-                    .map_err(|e| anyhow!("Failed to call import: {:?}", e))?
-                    .map_err(|e| anyhow!("Failed to import with store error: {:?}", e))?;
-
-                capability_store
-                    .dictionary_insert(
-                        dict_id,
-                        &fsandbox::DictionaryItem { key: STATE_DRIVER_NOTIFIER.into(), value: id },
-                    )
-                    .await
-                    .map_err(|e| anyhow!("Failed to call dictionary_insert: {:?}", e))?
-                    .map_err(|e| {
-                        anyhow!("Failed to dictionary_insert with store error: {:?}", e)
-                    })?;
-            }
-            None => {
-                log::debug!("No notifier to store.");
-            }
+async fn save_state(index: Rc<Indexer>, dictionary: &Dictionary) -> Result<(), anyhow::Error> {
+    match index.take_notifier() {
+        Some(notifier) => {
+            let handle = Handle::new(notifier).await;
+            dictionary.insert(STATE_DRIVER_NOTIFIER, handle).await;
+        }
+        None => {
+            log::debug!("No notifier to store.");
         }
     }
 
@@ -192,8 +144,7 @@ async fn save_state(
         .map_err(|e| anyhow!("Failed to serialize saved state with rkyv: {:?}", e))?;
 
     let serialize_time = now.elapsed();
-    compress_and_save_to_dictionary_vmo(data, capability_store, id_gen, dict_id, STATE_SAVED_STATE)
-        .await?;
+    compress_and_save_to_dictionary_vmo(data, dictionary, STATE_SAVED_STATE).await?;
     let compress_and_save_time = now.elapsed();
 
     log::debug!(
@@ -206,9 +157,7 @@ async fn save_state(
 
 async fn save_to_dictionary_vmo(
     data: Vec<u8>,
-    capability_store: &fsandbox::CapabilityStoreProxy,
-    id_gen: &sandbox::CapabilityIdGenerator,
-    dict_id: u64,
+    dictionary: &Dictionary,
     key: &str,
 ) -> Result<(), anyhow::Error> {
     let size = data.len() as u64;
@@ -219,93 +168,49 @@ async fn save_to_dictionary_vmo(
 
     log::debug!("{} vmo size: {}", key, size);
 
-    let id = id_gen.next();
-    capability_store
-        .import(id, fsandbox::Capability::Handle(vmo.into()))
-        .await
-        .map_err(|e| anyhow!("Failed to call import: {:?}", e))?
-        .map_err(|e| anyhow!("Failed to import with store error: {:?}", e))?;
-
-    capability_store
-        .dictionary_insert(dict_id, &fsandbox::DictionaryItem { key: key.into(), value: id })
-        .await
-        .map_err(|e| anyhow!("Failed to call dictionary_insert: {:?}", e))?
-        .map_err(|e| anyhow!("Failed to dictionary_insert with store error: {:?}", e))
+    let handle = Handle::new(vmo).await;
+    dictionary.insert(key, handle).await;
+    Ok(())
 }
 
 async fn compress_and_save_to_dictionary_vmo(
     data: Vec<u8>,
-    capability_store: &fsandbox::CapabilityStoreProxy,
-    id_gen: &sandbox::CapabilityIdGenerator,
-    dict_id: u64,
+    dictionary: &Dictionary,
     key: &str,
 ) -> Result<(), anyhow::Error> {
     log::debug!("{} uncompressed size: {}", key, data.len());
-    write_size_to_dictionary(
-        data.len(),
-        capability_store,
-        id_gen.next(),
-        dict_id,
-        format!("{}_uncompressed_len", key).as_str(),
-    )
-    .await?;
+    write_size_to_dictionary(data.len(), dictionary, format!("{}_uncompressed_len", key).as_str())
+        .await;
 
     let compressed = lz4::compress(data.as_slice());
-    save_to_dictionary_vmo(compressed, capability_store, id_gen, dict_id, key).await
+    save_to_dictionary_vmo(compressed, dictionary, key).await
 }
 
-async fn write_size_to_dictionary(
-    size: usize,
-    capability_store: &fsandbox::CapabilityStoreProxy,
-    id: u64,
-    dict_id: u64,
-    key: &str,
-) -> Result<(), anyhow::Error> {
-    capability_store
-        .import(id, fsandbox::Capability::Data(fsandbox::Data::Uint64(size as u64)))
-        .await
-        .map_err(|e| anyhow!("Failed to call import: {:?}", e))?
-        .map_err(|e| anyhow!("Failed to import with store error: {:?}", e))?;
-
-    capability_store
-        .dictionary_insert(dict_id, &fsandbox::DictionaryItem { key: key.into(), value: id })
-        .await
-        .map_err(|e| anyhow!("Failed to call dictionary_insert: {:?}", e))?
-        .map_err(|e| anyhow!("Failed to dictionary_insert with store error: {:?}", e))
+async fn write_size_to_dictionary(size: usize, dictionary: &Dictionary, key: &str) {
+    let data = Data::new(DataValue::Uint64(size as u64)).await;
+    dictionary.insert(key, data).await;
 }
 
 async fn get_handle_from_dictionary(
-    capability_store: &fsandbox::CapabilityStoreProxy,
-    id_gen: &sandbox::CapabilityIdGenerator,
-    dict_id: u64,
+    dictionary: &Dictionary,
     key: &str,
 ) -> Result<zx::NullableHandle, anyhow::Error> {
-    let dest_id = id_gen.next();
-    capability_store
-        .dictionary_remove(dict_id, key, Some(&fsandbox::WrappedNewCapabilityId { id: dest_id }))
-        .await
-        .map_err(|e| anyhow!("Failed to call dictionary_remove: {:?}", e))?
-        .map_err(|e| anyhow!("dictionary_remove failed with store error: {:?}", e))?;
-
-    let capability = capability_store
-        .export(dest_id)
-        .await
-        .map_err(|e| anyhow!("Failed to call export: {:?}", e))?
-        .map_err(|e| anyhow!("Failed to export with store error: {:?}", e))?;
+    let capability =
+        dictionary.remove(key).await.ok_or_else(|| anyhow!("key {key} not found in dictionary"))?;
 
     match capability {
-        fsandbox::Capability::Handle(handle) => Ok(handle),
+        Capability::Handle(handle) => {
+            handle.take().await.ok_or_else(|| anyhow!("handle for {key} was already taken"))
+        }
         _ => Err(anyhow!("unexpected capability type from dictionary for {key}: {capability:?}")),
     }
 }
 
 async fn read_vmo_from_dictionary(
-    capability_store: &fsandbox::CapabilityStoreProxy,
-    id_gen: &sandbox::CapabilityIdGenerator,
-    dict_id: u64,
+    dictionary: &Dictionary,
     key: &str,
 ) -> Result<Vec<u8>, anyhow::Error> {
-    let handle = get_handle_from_dictionary(capability_store, id_gen, dict_id, key).await?;
+    let handle = get_handle_from_dictionary(dictionary, key).await?;
 
     let vmo = zx::Vmo::from(handle);
     let size =
@@ -314,47 +219,28 @@ async fn read_vmo_from_dictionary(
 }
 
 async fn read_vmo_and_decompress_from_dictionary(
-    capability_store: &fsandbox::CapabilityStoreProxy,
-    id_gen: &sandbox::CapabilityIdGenerator,
-    dict_id: u64,
+    dictionary: &Dictionary,
     key: &str,
 ) -> Result<Vec<u8>, anyhow::Error> {
-    let bytes = read_vmo_from_dictionary(capability_store, id_gen, dict_id, key).await?;
-    let size = read_size_from_dictionary(
-        capability_store,
-        id_gen,
-        dict_id,
-        format!("{}_uncompressed_len", key).as_str(),
-    )
-    .await?;
+    let bytes = read_vmo_from_dictionary(dictionary, key).await?;
+    let size =
+        read_size_from_dictionary(dictionary, format!("{}_uncompressed_len", key).as_str()).await?;
 
     lz4::decompress(bytes.as_slice(), size)
         .map_err(|e| anyhow!("Failed to decompress {} {:?}", key, e))
 }
 
 async fn read_size_from_dictionary(
-    capability_store: &fsandbox::CapabilityStoreProxy,
-    id_gen: &sandbox::CapabilityIdGenerator,
-    dict_id: u64,
+    dictionary: &Dictionary,
     key: &str,
 ) -> Result<usize, anyhow::Error> {
-    let dest_id = id_gen.next();
-    capability_store
-        .dictionary_remove(dict_id, key, Some(&fsandbox::WrappedNewCapabilityId { id: dest_id }))
-        .await
-        .map_err(|e| anyhow!("Failed to call dictionary_remove: {:?}", e))?
-        .map_err(|e| anyhow!("dictionary_remove failed with store error: {:?}", e))?;
-
-    let capability = capability_store
-        .export(dest_id)
-        .await
-        .map_err(|e| anyhow!("Failed to call export: {:?}", e))?
-        .map_err(|e| anyhow!("Failed to export with store error: {:?}", e))?;
+    let capability =
+        dictionary.remove(key).await.ok_or_else(|| anyhow!("key {key} not found in dictionary"))?;
 
     match capability {
-        fsandbox::Capability::Data(data) => match data {
-            fsandbox::Data::Uint64(result) => Ok(result as usize),
-            _ => Err(anyhow!("unexpected data type {data:?}")),
+        Capability::Data(data) => match data.get_value().await {
+            DataValue::Uint64(result) => Ok(result as usize),
+            other => Err(anyhow!("unexpected data type {other:?}")),
         },
         _ => Err(anyhow!("unexpected capability type from dictionary for {key}: {capability:?}")),
     }
