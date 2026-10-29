@@ -358,15 +358,18 @@ void CoordinatorProxy::CheckDisplayId(const DisplayId& display_id) {
 void CoordinatorProxy::ResetDraftState() {
   TRACE_DURATION("gfx", "display::CoordinatorProxy::ResetDraftState");
 
+  // Only the layers in the draft display list had their diffs sent; see `SendDiffsToCoordinator()`.
+  // Every other layer keeps its draft, unsent, until it is displayed.  Resetting it here would lose
+  // a draft that was never sent, such as a color config set once while the layer is undisplayed.
+  for (const LayerId& layer_id : draft_display_layers_) {
+    GetLayer(layer_id).ResetDraftState();
+  }
+
   draft_display_layers_ = applied_display_layers_;
   draft_display_mode_ = applied_display_mode_;
   draft_color_conversion_preoffsets_ = applied_color_conversion_preoffsets_;
   draft_color_conversion_coefficients_ = applied_color_conversion_coefficients_;
   draft_color_conversion_postoffsets_ = applied_color_conversion_postoffsets_;
-
-  for (auto& layer : layers_) {
-    layer.second.ResetDraftState();
-  }
 }
 
 void CoordinatorProxy::AcceptDraftState() {
@@ -378,19 +381,23 @@ void CoordinatorProxy::AcceptDraftState() {
   applied_color_conversion_coefficients_ = draft_color_conversion_coefficients_;
   applied_color_conversion_postoffsets_ = draft_color_conversion_postoffsets_;
 
-  for (auto& layer : layers_) {
-    layer.second.AcceptDraftState();
+  // Only the displayed layers had their diffs sent; see `SendDiffsToCoordinator()`.  Every other
+  // layer keeps its draft, unsent, until it is displayed.
+  for (const LayerId& layer_id : applied_display_layers_) {
+    GetLayer(layer_id).AcceptDraftState();
   }
 }
 
 void CoordinatorProxy::SendDiffsToCoordinator() {
   TRACE_DURATION("gfx", "display::CoordinatorProxy::SendDiffsToCoordinator");
 
-  // We send diffs for all layers, even those that aren't in the list set by `SetDisplayLayers()`.
-  // This matches the semantics implemented by the display coordinator, and is sensible: doing
-  // otherwise would complicate both the user's mental model and the state tracking implementation.
-  for (auto& [id, layer] : layers_) {
-    uint64_t api_calls_sent_for_layer = layer.SendDiffsToCoordinator(id, coordinator_);
+  // Diffs are sent, and later accepted, only for the layers in the draft display list.  The
+  // Coordinator's `CommitConfig()` applies draft changes only to layers on a display, and
+  // `DiscardConfig()` drops the rest, so this keeps each layer's applied state in this proxy equal
+  // to the Coordinator's committed state.
+  for (const LayerId& layer_id : draft_display_layers_) {
+    uint64_t api_calls_sent_for_layer =
+        GetLayer(layer_id).SendDiffsToCoordinator(layer_id, coordinator_);
     IncrementApiCallsSent(api_calls_sent_for_layer);
   }
 

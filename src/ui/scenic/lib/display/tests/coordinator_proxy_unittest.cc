@@ -14,6 +14,7 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -342,6 +343,10 @@ TEST_F(CoordinatorProxyTest, SetAndApplyLayerImage) {
   const EventId kWaitEventId(1);
   coordinator_proxy_->SetLayerImage(layer_id, kImageId, kWaitEventId);
 
+  // The proxy sends layer diffs only for displayed layers.
+  const DisplayId kDisplayId(1);
+  coordinator_proxy_->SetDisplayLayers(kDisplayId, std::span<const LayerId>(&layer_id, 1));
+
   PingMockDisplayCoordinator();
   EXPECT_FALSE(set_layer_primary_config_called);
   EXPECT_FALSE(set_layer_primary_position_called);
@@ -352,6 +357,7 @@ TEST_F(CoordinatorProxyTest, SetAndApplyLayerImage) {
   const WireConfigStamp config_stamp{.value = 1};
   EXPECT_EQ(coordinator_proxy_->ApplyConfig(config_stamp).status_value(), ZX_OK);
   PingMockDisplayCoordinator();
+  EXPECT_EQ(mock_coordinator_->set_display_layers_count(), 1u);
 
   EXPECT_TRUE(set_layer_primary_config_called);
   EXPECT_EQ(captured_config_layer_id.value, layer_id.value());
@@ -459,8 +465,11 @@ TEST_F(CoordinatorProxyTest, SetLayerPrimaryConfigResetsPositionAndAlpha) {
   };
 
   set_image_layer(types::Extent2({.width = 100, .height = 100}));
+  // The proxy sends layer diffs only for displayed layers.
+  coordinator_proxy_->SetDisplayLayers(DisplayId(1), std::span<const LayerId>(&layer_id, 1));
   EXPECT_EQ(coordinator_proxy_->ApplyConfig(WireConfigStamp{.value = 1}).status_value(), ZX_OK);
   PingMockDisplayCoordinator();
+  EXPECT_EQ(mock_coordinator_->set_display_layers_count(), 1u);
   EXPECT_EQ(set_layer_primary_config_count, 1);
   EXPECT_EQ(set_layer_primary_position_count, 1);
   EXPECT_EQ(set_layer_primary_alpha_count, 1);
@@ -618,6 +627,9 @@ TEST_F(CoordinatorProxyTest, SetAndApplyLayerColor) {
   const Rectangle kDestFrame({.x = 10, .y = 20, .width = 100, .height = 200});
   coordinator_proxy_->SetLayerColorConfig(layer_id, kWireColor, kDestFrame);
 
+  // The proxy sends layer diffs only for displayed layers.
+  coordinator_proxy_->SetDisplayLayers(DisplayId(1), std::span<const LayerId>(&layer_id, 1));
+
   PingMockDisplayCoordinator();
   EXPECT_FALSE(set_layer_color_config_called);
 
@@ -625,6 +637,7 @@ TEST_F(CoordinatorProxyTest, SetAndApplyLayerColor) {
   const WireConfigStamp config_stamp1{.value = 1};
   EXPECT_EQ(coordinator_proxy_->ApplyConfig(config_stamp1).status_value(), ZX_OK);
   PingMockDisplayCoordinator();
+  EXPECT_EQ(mock_coordinator_->set_display_layers_count(), 1u);
 
   EXPECT_TRUE(set_layer_color_config_called);
   EXPECT_EQ(captured_layer_id.value, layer_id.value());
@@ -669,6 +682,229 @@ TEST_F(CoordinatorProxyTest, SetAndApplyLayerColor) {
   EXPECT_EQ(captured_color.format, fuchsia_images2::wire::PixelFormat::kR8G8B8A8);
   EXPECT_EQ(captured_color.bytes, kWireColor2.bytes);
   EXPECT_EQ(Rectangle::From(captured_dest_frame), kDestFrame2);
+  EXPECT_EQ(mock_coordinator_->illegal_action_count(), 0u);
+}
+
+// Records the layer calls that a mock coordinator receives, in order, as "<method>:<layer id>",
+// along with the last values sent.
+struct LayerCallRecorder {
+  static std::string Call(std::string_view method, const LayerId& layer_id) {
+    return std::string(method) + ":" + std::to_string(layer_id.value());
+  }
+
+  void Attach(MockDisplayCoordinator& mock) {
+    mock.set_set_layer_primary_config_fn([this](WireLayerId layer_id, WireImageMetadata metadata) {
+      calls.push_back(Call("config", LayerId(layer_id)));
+      image_metadata = metadata;
+    });
+    mock.set_layer_primary_position_fn([this](WireLayerId layer_id,
+                                              WireCoordinateTransformation transform,
+                                              WireRectU src_frame, WireRectU dest_frame) {
+      calls.push_back(Call("position", LayerId(layer_id)));
+      position_dest_frame = dest_frame;
+    });
+    mock.set_set_layer_primary_alpha_fn(
+        [this](WireLayerId layer_id, WireAlphaMode mode, float value) {
+          calls.push_back(Call("alpha", LayerId(layer_id)));
+          alpha_value = value;
+        });
+    mock.set_set_layer_image_fn(
+        [this](WireLayerId layer_id, WireImageId wire_image_id, WireEventId wait_event_id) {
+          calls.push_back(Call("image", LayerId(layer_id)));
+          image_id = wire_image_id;
+        });
+    mock.set_set_layer_color_config_fn(
+        [this](WireLayerId layer_id, WireColor wire_color, WireRectU dest_frame) {
+          calls.push_back(Call("color", LayerId(layer_id)));
+          color = wire_color;
+        });
+  }
+
+  std::vector<std::string> calls;
+  WireImageMetadata image_metadata = {};
+  WireRectU position_dest_frame = {};
+  float alpha_value = 0.f;
+  WireImageId image_id = {};
+  WireColor color = {};
+};
+
+// The Coordinator's `CommitConfig()` applies draft changes only to layers on a display, and
+// `DiscardConfig()` drops the rest.  Test that the proxy sends no diffs for layers that are not in
+// the display list, and sends all of them once the layers are displayed, because none were
+// accepted while the layers were not displayed.
+TEST_F(CoordinatorProxyTest, UndisplayedLayerDiffsAreHeldUntilDisplayed) {
+  LayerCallRecorder recorder;
+  recorder.Attach(*mock_coordinator_);
+
+  const LayerId image_layer_id = coordinator_proxy_->CreateLayer();
+  const LayerId color_layer_id = coordinator_proxy_->CreateLayer();
+
+  const types::Extent2 kImageExtent({.width = 100, .height = 100});
+  const Rectangle kDestFrame({.x = 0, .y = 0, .width = 200, .height = 200});
+  const float kAlpha = 0.5f;
+  const ImageId kImageId(1);
+  coordinator_proxy_->SetLayerPrimaryConfig(image_layer_id, kImageExtent, /*image_tiling_type=*/0);
+  coordinator_proxy_->SetLayerPrimaryPosition(
+      image_layer_id, RotateFlip::kIdentity(),
+      Rectangle({.x = 0, .y = 0, .width = 100, .height = 100}), kDestFrame);
+  coordinator_proxy_->SetLayerPrimaryAlpha(image_layer_id, BlendMode::kStraightAlpha(), kAlpha);
+  coordinator_proxy_->SetLayerImage(image_layer_id, kImageId, kInvalidEventId);
+
+  const WireColor kWireColor = {
+      .format = fuchsia_images2::wire::PixelFormat::kB8G8R8A8,
+      .bytes = {10, 20, 30, 40},
+  };
+  coordinator_proxy_->SetLayerColorConfig(color_layer_id, kWireColor,
+                                          Rectangle({.x = 0, .y = 0, .width = 50, .height = 50}));
+
+  // Neither layer is displayed, so none of their diffs are sent.
+  EXPECT_EQ(coordinator_proxy_->ApplyConfig(WireConfigStamp{.value = 1}).status_value(), ZX_OK);
+  PingMockDisplayCoordinator();
+  EXPECT_THAT(recorder.calls, testing::IsEmpty());
+  EXPECT_EQ(mock_coordinator_->set_display_layers_count(), 0u);
+
+  // Once displayed, all of each layer's diffs are sent, without any further `Set*()` calls.
+  const std::vector<LayerId> kBothLayers = {image_layer_id, color_layer_id};
+  coordinator_proxy_->SetDisplayLayers(DisplayId(1), kBothLayers);
+  EXPECT_EQ(coordinator_proxy_->ApplyConfig(WireConfigStamp{.value = 2}).status_value(), ZX_OK);
+  PingMockDisplayCoordinator();
+  EXPECT_EQ(recorder.calls, (std::vector<std::string>{
+                                LayerCallRecorder::Call("config", image_layer_id),
+                                LayerCallRecorder::Call("position", image_layer_id),
+                                LayerCallRecorder::Call("alpha", image_layer_id),
+                                LayerCallRecorder::Call("image", image_layer_id),
+                                LayerCallRecorder::Call("color", color_layer_id),
+                            }));
+  EXPECT_EQ(Extent2::From(recorder.image_metadata.dimensions), kImageExtent);
+  EXPECT_EQ(Rectangle::From(recorder.position_dest_frame), kDestFrame);
+  EXPECT_EQ(recorder.alpha_value, kAlpha);
+  EXPECT_EQ(recorder.image_id.value, kImageId.value());
+  EXPECT_EQ(recorder.color.bytes, kWireColor.bytes);
+  EXPECT_EQ(mock_coordinator_->set_display_layers_count(), 1u);
+  EXPECT_EQ(mock_coordinator_->illegal_action_count(), 0u);
+}
+
+// Test that a layer removed from the display list in the same frame that its properties change
+// sends no diffs, and that when it is displayed again, its diffs are computed against the state
+// that was last applied while it was displayed.  If the proxy accepted the undisplayed layer's
+// draft, it would disagree with the Coordinator, which drops such drafts on `DiscardConfig()`.
+TEST_F(CoordinatorProxyTest, RemovedLayerDiffsAreHeldUntilDisplayedAgain) {
+  LayerCallRecorder recorder;
+  recorder.Attach(*mock_coordinator_);
+
+  const LayerId image_layer_id = coordinator_proxy_->CreateLayer();
+  const LayerId color_layer_id = coordinator_proxy_->CreateLayer();
+  const DisplayId kDisplayId(1);
+  const std::vector<LayerId> kBothLayers = {image_layer_id, color_layer_id};
+
+  const RotateFlip kTransform = RotateFlip::kIdentity();
+  const Rectangle kSrcFrame({.x = 0, .y = 0, .width = 100, .height = 100});
+  const Rectangle kDestFrame({.x = 0, .y = 0, .width = 200, .height = 200});
+  const BlendMode kBlendMode = BlendMode::kStraightAlpha();
+  const float kAlpha = 0.5f;
+  const ImageId kImageId(1);
+  coordinator_proxy_->SetLayerPrimaryConfig(image_layer_id,
+                                            types::Extent2({.width = 100, .height = 100}),
+                                            /*image_tiling_type=*/0);
+  coordinator_proxy_->SetLayerPrimaryPosition(image_layer_id, kTransform, kSrcFrame, kDestFrame);
+  coordinator_proxy_->SetLayerPrimaryAlpha(image_layer_id, kBlendMode, kAlpha);
+  coordinator_proxy_->SetLayerImage(image_layer_id, kImageId, kInvalidEventId);
+
+  const Rectangle kColorDestFrame({.x = 0, .y = 0, .width = 50, .height = 50});
+  const WireColor kWireColor = {
+      .format = fuchsia_images2::wire::PixelFormat::kB8G8R8A8,
+      .bytes = {10, 20, 30, 40},
+  };
+  coordinator_proxy_->SetLayerColorConfig(color_layer_id, kWireColor, kColorDestFrame);
+
+  coordinator_proxy_->SetDisplayLayers(kDisplayId, kBothLayers);
+  EXPECT_EQ(coordinator_proxy_->ApplyConfig(WireConfigStamp{.value = 1}).status_value(), ZX_OK);
+  PingMockDisplayCoordinator();
+  recorder.calls.clear();
+
+  // Change both layers, and remove the image layer from the display list.  Only the color layer's
+  // diff is sent.
+  const Rectangle kNewDestFrame({.x = 0, .y = 0, .width = 300, .height = 300});
+  const float kNewAlpha = 0.25f;
+  coordinator_proxy_->SetLayerPrimaryPosition(image_layer_id, kTransform, kSrcFrame, kNewDestFrame);
+  coordinator_proxy_->SetLayerPrimaryAlpha(image_layer_id, kBlendMode, kNewAlpha);
+
+  const WireColor kNewWireColor = {
+      .format = fuchsia_images2::wire::PixelFormat::kB8G8R8A8,
+      .bytes = {50, 60, 70, 80},
+  };
+  coordinator_proxy_->SetLayerColorConfig(color_layer_id, kNewWireColor, kColorDestFrame);
+
+  coordinator_proxy_->SetDisplayLayers(kDisplayId, std::span<const LayerId>(&color_layer_id, 1));
+  EXPECT_EQ(coordinator_proxy_->ApplyConfig(WireConfigStamp{.value = 2}).status_value(), ZX_OK);
+  PingMockDisplayCoordinator();
+  EXPECT_EQ(recorder.calls,
+            (std::vector<std::string>{LayerCallRecorder::Call("color", color_layer_id)}));
+  EXPECT_EQ(recorder.color.bytes, kNewWireColor.bytes);
+  recorder.calls.clear();
+
+  // Display the image layer again, with its position set back to the applied value but its alpha
+  // left at the value set while it was not displayed.  The diff is against the state applied in
+  // the first frame: the alpha is sent, the position and config are not.
+  coordinator_proxy_->SetLayerPrimaryPosition(image_layer_id, kTransform, kSrcFrame, kDestFrame);
+  coordinator_proxy_->SetDisplayLayers(kDisplayId, kBothLayers);
+  EXPECT_EQ(coordinator_proxy_->ApplyConfig(WireConfigStamp{.value = 3}).status_value(), ZX_OK);
+  PingMockDisplayCoordinator();
+  EXPECT_EQ(recorder.calls,
+            (std::vector<std::string>{
+                LayerCallRecorder::Call("alpha", image_layer_id),
+                // TODO(https://fxbug.dev/449807074): the unchanged image is always re-sent.
+                LayerCallRecorder::Call("image", image_layer_id),
+            }));
+  EXPECT_EQ(recorder.alpha_value, kNewAlpha);
+  EXPECT_EQ(mock_coordinator_->set_display_layers_count(), 3u);
+  EXPECT_EQ(mock_coordinator_->illegal_action_count(), 0u);
+}
+
+// Test that a failed `ApplyConfig()` resets only the displayed layers' drafts.  An undisplayed
+// layer keeps a draft that was set once, as `DisplayCompositor` does for its empty-scene layer, and
+// sends it when the layer is later displayed.
+TEST_F(CoordinatorProxyTest, FailedApplyConfigKeepsUndisplayedLayerDraft) {
+  LayerCallRecorder recorder;
+  recorder.Attach(*mock_coordinator_);
+
+  const LayerId displayed_layer_id = coordinator_proxy_->CreateLayer();
+  const LayerId undisplayed_layer_id = coordinator_proxy_->CreateLayer();
+  const DisplayId kDisplayId(1);
+
+  const WireColor kUndisplayedColor = {
+      .format = fuchsia_images2::wire::PixelFormat::kB8G8R8A8,
+      .bytes = {0, 0, 0, 255},
+  };
+  coordinator_proxy_->SetLayerColorConfig(undisplayed_layer_id, kUndisplayedColor,
+                                          Rectangle({.x = 0, .y = 0, .width = 50, .height = 50}));
+
+  // A frame that displays only the other layer fails `CheckConfig()`.
+  mock_coordinator_->set_check_config_fn(
+      [](WireConfigResult* out) { *out = WireConfigResult::kInvalidConfig; });
+  coordinator_proxy_->SetLayerColorConfig(
+      displayed_layer_id,
+      {.format = fuchsia_images2::wire::PixelFormat::kB8G8R8A8, .bytes = {10, 20, 30, 40}},
+      Rectangle({.x = 0, .y = 0, .width = 100, .height = 100}));
+  coordinator_proxy_->SetDisplayLayers(kDisplayId,
+                                       std::span<const LayerId>(&displayed_layer_id, 1));
+  EXPECT_EQ(coordinator_proxy_->ApplyConfig(WireConfigStamp{.value = 1}).status_value(),
+            ZX_ERR_BAD_STATE);
+  PingMockDisplayCoordinator();
+  EXPECT_EQ(recorder.calls,
+            (std::vector<std::string>{LayerCallRecorder::Call("color", displayed_layer_id)}));
+  recorder.calls.clear();
+
+  // Displaying the undisplayed layer, with no further `Set*()` call for it, sends its draft.
+  mock_coordinator_->set_check_config_fn(
+      [](WireConfigResult* out) { *out = WireConfigResult::kOk; });
+  coordinator_proxy_->SetDisplayLayers(kDisplayId,
+                                       std::span<const LayerId>(&undisplayed_layer_id, 1));
+  EXPECT_EQ(coordinator_proxy_->ApplyConfig(WireConfigStamp{.value = 2}).status_value(), ZX_OK);
+  PingMockDisplayCoordinator();
+  EXPECT_EQ(recorder.calls,
+            (std::vector<std::string>{LayerCallRecorder::Call("color", undisplayed_layer_id)}));
+  EXPECT_EQ(recorder.color.bytes, kUndisplayedColor.bytes);
   EXPECT_EQ(mock_coordinator_->illegal_action_count(), 0u);
 }
 
@@ -774,8 +1010,9 @@ TEST_F(CoordinatorProxyTest, ApplyConfig_CheckConfigCache) {
             // 2 SetDisplayLayers
             9U);
   EXPECT_EQ(coordinator_proxy_->api_calls_sent(),
-            // TODO(https://fxbug.dev/449807074): +1 extra call to `SetLayerImage`.
-            9U + 1U);
+            // The image layer's diffs were held until it was displayed, so they are sent with the
+            // second config, and there is no extra `SetLayerImage` yet.
+            9U);
 
   // The two-layer config will fail.
   mock_coordinator_->set_check_config_fn(
@@ -798,8 +1035,8 @@ TEST_F(CoordinatorProxyTest, ApplyConfig_CheckConfigCache) {
             // 1 SetDisplayLayers
             10U);
   EXPECT_EQ(coordinator_proxy_->api_calls_sent(),
-            // TODO(https://fxbug.dev/449807074): +1 previous +1 new extra call to `SetLayerImage`.
-            10U + 2U);
+            // TODO(https://fxbug.dev/449807074): +1 extra call to `SetLayerImage`.
+            10U + 1U);
 
   // Go through the same 3 configs.  We should get the same results as before, but without needing
   // to call `CheckConfig()`.
@@ -849,8 +1086,9 @@ TEST_F(CoordinatorProxyTest, ApplyConfig_CheckConfigCache) {
             // NOTE: the third SetDisplayLayers is not sent because the proxy was able to determine
             //       that CheckConfig would fail without calling SetDisplayLayers, and then needing
             //       to subsequently call DiscardConfig to clean up afterward.
-            // TODO(https://fxbug.dev/449807074): +2 previous +2 new extra call to `SetLayerImage`.
-            12U + 4U);
+            // TODO(https://fxbug.dev/449807074): +1 previous +1 new extra call to `SetLayerImage`;
+            // the color-only config sends none.
+            12U + 2U);
 }
 
 // Helper for CheckConfigHeuristics test.  Sets up the display, and a simple config with one

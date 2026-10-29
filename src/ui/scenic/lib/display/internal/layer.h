@@ -21,16 +21,21 @@ namespace display::internal {
 // Workflow:
 // 1.  Calls to `Set*()` methods update the `draft_equiv_` and other draft fields
 //     (e.g., `draft_image_`).
-// 2.  `CoordinatorProxy` calls `SendDiffsToCoordinator()`. This method compares the current
-//     `draft_equiv_`, `draft_values_`, and `draft_image_` against the `applied_equiv_`,
-//     `applied_values_`, and `applied_image_`.  It sends the minimal set of FIDL commands to the
-//     `fuchsia.hardware.display.Coordinator` to make the coordinator's layer state match this
-//     `Layer`'s draft state.
+// 2.  If this layer is in the display list, `CoordinatorProxy` calls `SendDiffsToCoordinator()`.
+//     This method compares the current `draft_equiv_`, `draft_values_`, and `draft_image_` against
+//     the `applied_equiv_`, `applied_values_`, and `applied_image_`.  It sends the minimal set of
+//     FIDL commands to the `fuchsia.hardware.display.Coordinator` to make the coordinator's layer
+//     state match this `Layer`'s draft state.
 // 3a. *After* a successful `CheckConfig()` and `ApplyConfig()` sequence in `CoordinatorProxy`, the
-//     proxy calls this `Layer`'s `AcceptDraftState()` method to promote the draft state to the
-//     applied state.  Or:
-// 3b. If `CheckConfig()` fails, `CoordinatorProxy` calls `ResetDraftState()` to
-//     revert the draft state back to the last known good applied state.
+//     proxy calls the `AcceptDraftState()` method of each displayed `Layer` to promote the draft
+//     state to the applied state.  Or:
+// 3b. If `CheckConfig()` fails, `CoordinatorProxy` calls the `ResetDraftState()` method of each
+//     displayed `Layer` to revert the draft state back to the last known good applied state.
+//
+// A layer that is not in the display list neither sends, accepts, nor resets its draft state: it
+// keeps the draft until it is displayed.  The Coordinator commits draft changes only for displayed
+// layers and `DiscardConfig()` drops the rest, so accepting them would make this applied state
+// disagree with the Coordinator's.
 class Layer {
  public:
   // Values that are not directly held in a `LayerEquivalence`.  For example, the specific alpha
@@ -78,7 +83,7 @@ class Layer {
   // Reset all draft state to be identical to the currently-applied state.
   void ResetDraftState();
 
-  // Replace the accepted state with the draft state.  Afterward, they are identical.
+  // Replace the applied state with the draft state.  Afterward, they are identical.
   void AcceptDraftState();
 
   const LayerEquivalence& draft_equiv() const { return draft_equiv_; }

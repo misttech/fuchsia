@@ -193,14 +193,18 @@ class CoordinatorProxy {
   // subsequent ones against it.
   void CheckDisplayId(const DisplayId& display_id);
 
-  // Resets all draft state to be identical to the currently-applied state.
+  // Resets the draft state to be identical to the currently-applied state, for the display-wide
+  // state and for the layers in the draft display list.  Other layers keep their draft state,
+  // because their diffs were not sent.
   void ResetDraftState();
 
-  // Replaces the accepted state with the draft state.  Afterward, they are identical.
+  // Replaces the applied state with the draft state, for the display-wide state and for the layers
+  // in the display list.  Other layers keep their draft state, because their diffs were not sent.
   void AcceptDraftState();
 
-  // Checks for differences between the draft and applied state, and make FIDL calls to that the
-  // Coordinator's state matches this proxy.
+  // Checks for differences between the draft and applied state, and makes FIDL calls so that the
+  // Coordinator's draft state matches this proxy.  Layer diffs are sent only for the layers in the
+  // draft display list, because the Coordinator commits draft changes only for displayed layers.
   void SendDiffsToCoordinator();
 
   // Computes a `DisplayEquivalence` that is used by `ApplyConfig()` as the key for finding/caching

@@ -215,6 +215,9 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
     // The layer used to render an empty scene to the display through a solid black color.
     display::LayerId empty_scene_layer;
 
+    // The display area, which `empty_scene_layer` fills.
+    display::Rectangle empty_scene_destination;
+
     // The hardware layers we've created to use on this display.
     std::vector<display::LayerId> layers;
 
@@ -277,6 +280,10 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
 
   // Sets the provided layers onto the display referenced by the given `display_id`.
   void SetDisplayLayers(display::DisplayId display_id, const std::span<display::LayerId>& layers)
+      FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
+
+  // Shows only `data.empty_scene_layer`, filled with black, on the display.
+  void SetEmptySceneDisplayLayers(display::DisplayId display_id, DisplayEngineData& data)
       FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   // Takes a solid color rectangle and directly composites it to a hardware layer on the display.

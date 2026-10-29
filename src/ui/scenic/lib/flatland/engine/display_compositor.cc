@@ -800,6 +800,18 @@ void DisplayCompositor::SetDisplayLayers(const display::DisplayId display_id,
   display_coordinator_.SetDisplayLayers(display_id, layers);
 }
 
+void DisplayCompositor::SetEmptySceneDisplayLayers(const display::DisplayId display_id,
+                                                   DisplayEngineData& data) {
+  // The color config is set every time the layer is shown, not only once when the display is
+  // added: if the config that shows it fails, the proxy discards the layer's draft config.  Setting
+  // an unchanged config sends no FIDL call.
+  display_coordinator_.SetLayerColorConfig(
+      data.empty_scene_layer,
+      {.format = fuchsia_images2::PixelFormat::kB8G8R8A8, .bytes = {0, 0, 0, 255, 0, 0, 0, 0}},
+      data.empty_scene_destination);
+  SetDisplayLayers(display_id, std::span(&data.empty_scene_layer, 1));
+}
+
 bool DisplayCompositor::SetRenderDataOnDisplay(const RenderData& data) {
   TRACE_DURATION("gfx", "flatland::DisplayCompositor::SetRenderDataOnDisplay", "display_id",
                  data.display_id.value(), "rectangle_count", data.layers.size());
@@ -830,7 +842,7 @@ bool DisplayCompositor::SetRenderDataOnDisplay(const RenderData& data) {
   }
 
   if (num_layers == 0) {
-    SetDisplayLayers(data.display_id, std::span(&display_engine_data.empty_scene_layer, 1));
+    SetEmptySceneDisplayLayers(data.display_id, display_engine_data);
     return true;
   }
 
@@ -1377,16 +1389,14 @@ fpromise::promise<> DisplayCompositor::AddDisplay(
   {
     std::scoped_lock lock(lock_);
 
-    // Prepare the black layer to render an empty scene to the display.
+    // Prepare the black layer to render an empty scene to the display.  Its color config is set
+    // each time it is shown, by `SetEmptySceneDisplayLayers()`.
     display_engine_data.empty_scene_layer = display_coordinator_.CreateLayer();
-    const display::Rectangle display_destination({.x = 0,
-                                                  .y = 0,
-                                                  .width = static_cast<int32_t>(size.width()),
-                                                  .height = static_cast<int32_t>(size.height())});
-    display_coordinator_.SetLayerColorConfig(
-        display_engine_data.empty_scene_layer,
-        {.format = fuchsia_images2::PixelFormat::kB8G8R8A8, .bytes = {0, 0, 0, 255, 0, 0, 0, 0}},
-        display_destination);
+    display_engine_data.empty_scene_destination =
+        display::Rectangle({.x = 0,
+                            .y = 0,
+                            .width = static_cast<int32_t>(size.width()),
+                            .height = static_cast<int32_t>(size.height())});
 
     // When we add in a new display, we create a couple of layers for that display upfront to be
     // used when we directly composite render data in hardware via the display coordinator.
@@ -1537,7 +1547,7 @@ zx_status_t DisplayCompositor::SetDisplayPowerMode(
     }
     pending_apply_configs_.clear();
 
-    SetDisplayLayers(display_id, std::span(&data.empty_scene_layer, 1));
+    SetEmptySceneDisplayLayers(display_id, data);
     const bool applied_display_mode = MaybeSetPendingDisplayMode(display_id);
 
     const uint64_t trace_flow_id = TRACE_NONCE();
