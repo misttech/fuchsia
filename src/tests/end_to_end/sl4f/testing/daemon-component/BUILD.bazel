@@ -1,0 +1,45 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "bin",
+    srcs = ["src/main.rs"],
+    binary_name = "daemon-component",
+    edition = "2024",
+    tags = ["manual"],
+)
+
+fx_packaged_binary(
+    name = "bin_packaged_bin",
+    binary = ":bin",
+    binary_name = "daemon-component",
+)
+
+fx_component_manifest(
+    name = "daemon-component-manifest",
+    component_name = "daemon-component",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/daemon-component.cml",
+)
+
+fx_component(
+    name = "daemon-component",
+    compiled_manifest = ":daemon-component-manifest",
+    component_name = "daemon-component",
+    visibility = ["//src/tests/end_to_end/sl4f/testing:__pkg__"],
+    deps = [":bin_packaged_bin"],
+)
