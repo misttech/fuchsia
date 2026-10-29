@@ -91,7 +91,7 @@ def _verify_package_resources(package_info, attr):
             # different from other packages.
             # TODO(https://fxbug.dev/382485650): Determine whether they are correct and how to
             # perform similar validation.
-            print("Skipping resource validation for `expected_generated_blobs` test.")
+            pass
         else:
             expected_keys = attr.expected_blobs_to_file_names.keys() + expected_meta_resource_dests
             missing = [k for k in expected_keys if k not in dest_to_resource]
