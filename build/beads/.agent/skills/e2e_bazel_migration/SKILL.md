@@ -99,6 +99,12 @@ description: >
   the prompt (e.g., "assign reviewers", "use --assign-reviewer"). Otherwise, it
   is disabled.
 
+* **reviewer OOO threshold** : The number of working days a reviewer of a
+  migration CL can be out of office before they are swapped for another
+  reviewer from the reviewer routing table at
+  go/fuchsia-bazel-migration-reviewers. If the user specifies it in the
+  prompt, use that number. Otherwise, it defaults to 1.
+
 * **Planter check script** : The script in the "Script" section of the document
   at go/planter_check_and_update. It checks whether the installed Planter is up
   to date and updates it if it is not. If the user specifies a different script
@@ -234,6 +240,21 @@ the **migration packages**, one CL for each **migration group**.
 
 Refer to `references/cl_review.md` to review each created CL and update result
 to it.
+
+## Reviewer Availability
+
+Refer to `references/reviewer_availability.md` to check the human reviewers of
+each created CL, and swap each reviewer who is out of office for longer than
+the **reviewer OOO threshold** for an available reviewer from the reviewer
+routing table.
+  * If this step fails, ignore the failure and continue.
+
+If the user asks only about the reviewers of existing migration CLs (e.g., "my
+migration CL's reviewer is OOO", "check the reviewers of my migration CLs"),
+skip all the other steps and run only this step. Use the CL numbers given in
+the prompt, or find the user's open migration CLs with
+`curl -s "https://fuchsia-review.googlesource.com/changes/?q=owner:<ldap>@google.com+status:open+intitle:bazel_migration"`,
+where `<ldap>` is the user's LDAP.
 
 ## Error Handling
 

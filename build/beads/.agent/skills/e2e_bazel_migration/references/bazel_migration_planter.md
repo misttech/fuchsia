@@ -116,4 +116,5 @@ Assign a human reviewer to a created CL with Planter's `--assign-reviewer`. Plan
    * A CQ dry run can take hours; run the command in the background and wait for it to exit. Do not treat a slow run as a failure.
 2. Use "fuchsia-gerrit-cli" skill to get the reviewers of the CL, and record the assigned reviewer for the "Completed" notification.
    * If the command fails or no reviewer is assigned (e.g., CQ still fails after the fix rounds), do not fail the Bazel Migration and CL Creation step: the CL is created. Record "not assigned" with the reason for the "Completed" notification, and continue. The user can assign one later with `<planter> assign-reviewer <CL number>`.
+3. If a reviewer is assigned, refer to [Reviewer Availability](reviewer_availability.md) to check the reviewer, swap them if they are out of office, and record the swap for the "Completed" notification.
 

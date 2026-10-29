@@ -12,7 +12,13 @@ In the templates below:
   created, in the form `<CL number>: <paths of its packages>`. If there is one
   **migration group**, only its CL number. If **assign reviewer** is enabled,
   append ` (reviewer: <assigned reviewer>)`, or ` (reviewer: not assigned,
-  <reason>)`.
+  <reason>)`. If [Reviewer Availability](../references/reviewer_availability.md)
+  swapped the reviewer, append ` (reviewer swapped: <OOO reviewer> is OOO until
+  <date>, reassigned to <replacement>)`, or if no replacement was available,
+  ` (reviewer <OOO reviewer> is OOO until <date>, no available replacement)`.
+* `<reviewer_swaps>`: One line for each reviewer swapped by
+  [Reviewer Availability](../references/reviewer_availability.md), in the form
+  `<CL number>: <OOO reviewer> (OOO until <date>) -> <replacement>`.
 * `<failed_migration_groups>`: One line for each failed **migration group**, in
   the form `<paths of its packages>: <reason>`. If no **migration group**
   failed, `None`.
@@ -48,6 +54,21 @@ Failed Migration Groups:
 <failed_migration_groups>
 Planter Warnings:
 <planter_warnings>
+```
+
+## Reviewer Swapped Notification Template
+
+Used only when [Reviewer Availability](../references/reviewer_availability.md)
+runs alone, outside a migration run.
+
+**Notification Subject:**
+`Bazel Migration reviewers swapped for <CL numbers>`
+
+**Notification Body:**
+```
+These migration CL reviewers were out of office, so they were swapped at
+<current_time>:
+<reviewer_swaps>
 ```
 
 ## Interrupted Notification Template
