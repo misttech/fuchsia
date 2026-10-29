@@ -1,0 +1,25 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_component_manifest(
+    name = "realm_manifest",
+    component_name = "realm",
+    manifest = "meta/realm.cml",
+)
+
+# Create a `realm` component, which may be invoked by an instance of the
+# RealmBuilder to create a new test realm at test runtime.
+fx_component(
+    name = "realm",
+    compiled_manifest = ":realm_manifest",
+    visibility = ["//examples/fidl/new/canvas/baseline:__subpackages__"],
+)
