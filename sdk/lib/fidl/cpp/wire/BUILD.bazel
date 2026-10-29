@@ -158,8 +158,9 @@ idk_cc_source_library(
         "//sdk/lib/fidl_driver:__pkg__",
         "//sdk/lib/sys/component/cpp/testing:__pkg__",
         "//sdk/lib/sys/cpp:__pkg__",
-        "//src/storage/memfs:__pkg__",
+        "//src/connectivity/network/lib/udp_serde:__pkg__",
         "//src/lib/fidl/llcpp:__subpackages__",
+        "//src/storage/memfs:__pkg__",
     ],  # @bazel2gn:raw_overwrite:[ "//*" ]
     public_configs = [":include"],  # For bazel2gn.
 )

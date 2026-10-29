@@ -2,21 +2,77 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
 
 # TODO(https://fxbug.dev/571631316): Delete this once Fast UDP is no longer supported.
-cc_library(
+fx_cc_library(
     name = "udp_serde",
     srcs = ["udp_serde.cc"],
     hdrs = ["udp_serde.h"],
     implementation_deps = [
         "//sdk/lib/zxio:udp_socket_private",
     ],
-    visibility = ["//visibility:public"],
+    visibility = [
+        "//sdk/lib/fdio/tests:__pkg__",
+        "//sdk/lib/zxio:__pkg__",
+        "//src/connectivity/network/tests/socket:__pkg__",
+    ],
     deps = [
         "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_cpp",
     ],
     alwayslink = True,
+)
+
+fx_cc_library(
+    name = "udp_serde_test_util",
+    testonly = True,
+    srcs = ["udp_serde_test_util.cc"],
+    hdrs = ["udp_serde_test_util.h"],
+    deps = [
+        ":udp_serde",
+        "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_cpp",
+    ],
+    alwayslink = True,
+)
+
+fx_cc_binary(
+    name = "udp_serde_cpp_test",
+    testonly = True,
+    srcs = ["udp_serde_test.cc"],
+    # TODO(https://fxbug.dev/42085293): delete the below and fix compiler warnings
+    copts = ["-Wno-vla-cxx-extension"],
+    tags = ["manual"],
+    deps = [
+        ":udp_serde",
+        ":udp_serde_test_util",
+        "//sdk/lib/fidl/cpp/wire",
+        "//src/lib/fxl/test:gtest_main",
+    ],
+)
+
+fx_cc_binary(
+    name = "udp_serde_c_compilation_test",
+    testonly = True,
+    srcs = ["udp_serde_c_compilation_test.c"],
+    tags = ["manual"],
+    deps = [
+        ":udp_serde",
+        "//zircon/system/ulib/zxtest",
+    ],
+)
+
+fx_unittest_package(
+    name = "udp_serde-unittests",
+    unit_tests = [":udp_serde_cpp_test"],
+    visibility = ["//src/connectivity/network:__pkg__"],
+)
+
+fx_unittest_package(
+    name = "udp_serde_c_compilation-unittest",
+    unit_tests = [":udp_serde_c_compilation_test"],
+    visibility = ["//src/connectivity/network:__pkg__"],
 )
