@@ -45,6 +45,59 @@ rust_library(
 }`,
 		},
 		{
+			name: "select with cpu architecture",
+			bazel: `load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+	name = "cpu_select",
+	srcs = select({
+		"@platforms//cpu:x86_64": [ "x64.rs" ],
+		"@platforms//cpu:arm64": [ "arm64.rs" ],
+		"@platforms//cpu:aarch64": [ "aarch64.rs" ],
+		"@platforms//cpu:riscv64": [ "riscv64.rs" ],
+		"@platforms//cpu:arm": [ "arm.rs" ],
+		"@platforms//cpu:armv7": [ "armv7.rs" ],
+		"//build/bazel/platforms:linux_flavor_starnix": [ "starnix.rs" ],
+		"//conditions:default": [ "default.rs" ],
+	}),
+)`,
+			wantGN: `rustc_library("cpu_select") {
+	if (current_cpu == "x64") {
+		sources = [
+			"x64.rs",
+		]
+	} else if (current_cpu == "arm64") {
+		sources = [
+			"arm64.rs",
+		]
+	} else if (current_cpu == "arm64") {
+		sources = [
+			"aarch64.rs",
+		]
+	} else if (current_cpu == "riscv64") {
+		sources = [
+			"riscv64.rs",
+		]
+	} else if (current_cpu == "arm") {
+		sources = [
+			"arm.rs",
+		]
+	} else if (current_cpu == "arm") {
+		sources = [
+			"armv7.rs",
+		]
+	} else if (is_linux && !is_host) {
+		sources = [
+			"starnix.rs",
+		]
+	} else {
+		sources = [
+			"default.rs",
+		]
+	}
+}`,
+		},
+		{
 			name: "select with empty non-default",
 			bazel: `load("@rules_rust//rust:defs.bzl", "rust_library")
 
