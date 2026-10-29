@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use super::cache_stats::{AtomicCacheStats, CacheStats, ShardedCacheStats};
+use crate::HashStats;
 use crate::sync::{LockDepRwLock, SeLinuxQueryCacheResetLock};
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use core::arch::asm;
@@ -646,18 +647,7 @@ impl<
 
     #[cfg(test)]
     pub fn is_full(&self) -> bool {
-        let mut count = 0;
-        for bucket in self.buckets.iter() {
-            for way4 in 0..WAYS4 {
-                let tags = bucket.tags[way4].load(Ordering::Relaxed);
-                for i in 0..4 {
-                    if (tags >> (i * 8)) & 0xFF != 0 {
-                        count += 1;
-                    }
-                }
-            }
-        }
-        count >= self.capacity()
+        self.hash_stats().entries >= self.capacity()
     }
 
     #[cfg(test)]
@@ -686,6 +676,30 @@ impl<
 
     pub fn cache_stats(&self) -> CacheStats {
         self.stats.read()
+    }
+
+    /// Returns hash bucket occupancy statistics for the cache.
+    pub fn hash_stats(&self) -> HashStats {
+        let mut entries = 0;
+        let mut buckets_used = 0;
+        let mut longest_chain = 0;
+        for bucket in self.buckets.iter() {
+            let mut chain_len = 0;
+            for way4 in 0..WAYS4 {
+                let tags = bucket.tags[way4].load(Ordering::Relaxed);
+                for i in 0..4 {
+                    if (tags >> (i * 8)) & 0xFF != 0 {
+                        chain_len += 1;
+                    }
+                }
+            }
+            if chain_len > 0 {
+                entries += chain_len;
+                buckets_used += 1;
+                longest_chain = longest_chain.max(chain_len);
+            }
+        }
+        HashStats { entries, buckets_used, total_buckets: self.buckets.len(), longest_chain }
     }
 }
 

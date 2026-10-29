@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::policy::{Policy, SecurityContext, SecurityContextError};
-use crate::{InitialSid, ReferenceInitialSid, SecurityId};
+use crate::{HashStats, InitialSid, ReferenceInitialSid, SecurityId};
 
 use fuchsia_rcu::{RcuDroppable, RcuReadScope};
 use fuchsia_rcu_collections::rcu_array::RcuArray;
@@ -200,6 +200,23 @@ impl SidTable {
             Self::resolve_from_slice(entries, source_sid),
             Self::resolve_from_slice(entries, target_sid),
         )
+    }
+
+    /// Returns hash distribution statistics for the reverse lookup table.
+    pub(super) fn hash_stats(&self, scope: &RcuReadScope) -> HashStats {
+        let bucket_lengths = self.context_to_sid.bucket_lengths(scope);
+        let total_buckets = bucket_lengths.len();
+        let mut entries = 0;
+        let mut buckets_used = 0;
+        let mut longest_chain = 0;
+        for chain_len in bucket_lengths {
+            if chain_len > 0 {
+                entries += chain_len;
+                buckets_used += 1;
+                longest_chain = longest_chain.max(chain_len);
+            }
+        }
+        HashStats { entries, buckets_used, total_buckets, longest_chain }
     }
 }
 

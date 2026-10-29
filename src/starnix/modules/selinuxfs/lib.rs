@@ -8,7 +8,7 @@ use seq_lock::{SeqLock, SeqLockable, WriteSize};
 
 use selinux::policy::{AccessDecision, AccessVector, POLICYDB_VERSION_MAX, PolicyData, PolicyId};
 use selinux::{
-    ClassId, InitialSid, PolicyCap, SeLinuxStatus, SeLinuxStatusPublisher, SecurityId,
+    ClassId, HashStats, InitialSid, PolicyCap, SeLinuxStatus, SeLinuxStatusPublisher, SecurityId,
     SecurityPermission, SecurityServer,
 };
 use starnix_core::device::mem::DevNull;
@@ -142,6 +142,18 @@ impl SeLinuxFs {
             dir.entry(
                 "cache_stats",
                 AvcCacheStatsFile::new_node(security_server.clone()),
+                mode!(IFREG, 0o444),
+            );
+            dir.entry(
+                "hash_stats",
+                AvcHashStatsFile::new_node(security_server.clone()),
+                mode!(IFREG, 0o444),
+            );
+        });
+        dir.subdir("ss", 0o555, |dir| {
+            dir.entry(
+                "sidtab_hash_stats",
+                SidTableHashStatsFile::new_node(security_server.clone()),
                 mode!(IFREG, 0o444),
             );
         });
@@ -1091,6 +1103,48 @@ impl BytesFileOps for AvcCacheStatsFile {
         )
         .into_bytes()
         .into())
+    }
+}
+
+fn format_hash_stats(stats: HashStats) -> Vec<u8> {
+    format!(
+        "entries: {}\nbuckets used: {}/{}\nlongest chain: {}\n",
+        stats.entries, stats.buckets_used, stats.total_buckets, stats.longest_chain
+    )
+    .into_bytes()
+}
+
+/// Exposes AVC hash distribution statistics from the SELinux security server to userspace.
+struct AvcHashStatsFile {
+    security_server: Arc<SecurityServer>,
+}
+
+impl AvcHashStatsFile {
+    fn new_node(security_server: Arc<SecurityServer>) -> impl FsNodeOps {
+        BytesFile::new_node(Self { security_server })
+    }
+}
+
+impl BytesFileOps for AvcHashStatsFile {
+    fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
+        Ok(format_hash_stats(self.security_server.avc_hash_stats()).into())
+    }
+}
+
+/// Exposes SID table hash distribution statistics from the SELinux security server to userspace.
+struct SidTableHashStatsFile {
+    security_server: Arc<SecurityServer>,
+}
+
+impl SidTableHashStatsFile {
+    fn new_node(security_server: Arc<SecurityServer>) -> impl FsNodeOps {
+        BytesFile::new_node(Self { security_server })
+    }
+}
+
+impl BytesFileOps for SidTableHashStatsFile {
+    fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
+        Ok(format_hash_stats(self.security_server.sid_table_hash_stats()).into())
     }
 }
 

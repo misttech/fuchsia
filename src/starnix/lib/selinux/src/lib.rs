@@ -17,6 +17,32 @@ pub use policy::{ClassId, FsUseType, PolicyCap};
 pub use security_server::{PolicySeqNo, SecurityServer};
 pub use starnix_uapi::selinux::{InitialSid, ReferenceInitialSid, SecurityId, TaskAttrs};
 
+/// Hash table distribution statistics.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct HashStats {
+    /// Total number of active entries across all buckets.
+    pub entries: usize,
+    /// Number of buckets containing at least one entry.
+    pub buckets_used: usize,
+    /// Total number of buckets in the table.
+    pub total_buckets: usize,
+    /// Maximum number of entries in any single bucket.
+    pub longest_chain: usize,
+}
+
+impl std::ops::Add for &HashStats {
+    type Output = HashStats;
+
+    fn add(self, other: &HashStats) -> HashStats {
+        HashStats {
+            entries: self.entries + other.entries,
+            buckets_used: self.buckets_used + other.buckets_used,
+            total_buckets: self.total_buckets + other.total_buckets,
+            longest_chain: self.longest_chain.max(other.longest_chain),
+        }
+    }
+}
+
 /// A borrowed byte slice that contains no `NUL` characters by truncating the input slice at the
 /// first `NUL` (if any) upon construction.
 #[derive(Clone, Copy, Debug, PartialEq)]

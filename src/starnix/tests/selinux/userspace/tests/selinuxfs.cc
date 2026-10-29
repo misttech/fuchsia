@@ -827,4 +827,28 @@ TEST(SeLinuxFsPolicy, ReadPolicyPermission) {
   }));
 }
 
+TEST(SeLinuxFsHashStats, ReadAvcAndSidtabHashStats) {
+  for (const char* path :
+       {"/sys/fs/selinux/avc/hash_stats", "/sys/fs/selinux/ss/sidtab_hash_stats"}) {
+    auto stats = ReadFile(path);
+    ASSERT_THAT(stats, SyscallResultIsOk()) << path;
+    unsigned int entries = 0;
+    unsigned int buckets_used = 0;
+    unsigned int total_buckets = 0;
+    unsigned int longest_chain = 0;
+    int chars_read = 0;
+    ASSERT_EQ(
+        sscanf(stats.value().c_str(), "entries: %u\nbuckets used: %u/%u\nlongest chain: %u\n%n",
+               &entries, &buckets_used, &total_buckets, &longest_chain, &chars_read),
+        4)
+        << path << ": " << stats.value();
+    EXPECT_EQ(static_cast<size_t>(chars_read), stats.value().size())
+        << path << ": " << stats.value();
+    EXPECT_GT(total_buckets, 0u) << path;
+    EXPECT_LE(buckets_used, total_buckets) << path;
+    EXPECT_LE(buckets_used, entries) << path;
+    EXPECT_LE(longest_chain, entries) << path;
+  }
+}
+
 }  // namespace

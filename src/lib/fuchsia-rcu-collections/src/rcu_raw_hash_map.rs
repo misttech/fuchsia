@@ -371,6 +371,14 @@ where
     pub fn values<'a>(&'a self, scope: &'a RcuReadScope) -> impl Iterator<Item = &'a V> {
         self.insertion_chain.iter(scope).map(|entry| &entry.value)
     }
+
+    /// Returns an iterator yielding the collision chain length of each bucket in the table.
+    pub fn bucket_lengths<'a>(
+        &'a self,
+        scope: &'a RcuReadScope,
+    ) -> impl ExactSizeIterator<Item = usize> + 'a {
+        self.table.as_slice(scope).iter().map(move |bucket| bucket.iter(scope).count())
+    }
 }
 
 // TODO(https://fxbug.dev/482462174): switch back to #[derive(Debug)]

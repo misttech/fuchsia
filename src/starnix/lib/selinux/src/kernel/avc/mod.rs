@@ -7,12 +7,12 @@ mod concurrent_access_cache;
 mod concurrent_cache;
 mod local_cache;
 
-use crate::SecurityId;
 use crate::kernel::{
     KernelAccessDecision, KernelClass, KernelPermission, KernelXpermsAccessDecision,
 };
 use crate::policy::XpermsKind;
 use crate::security_server::SecurityServerBackend;
+use crate::{HashStats, SecurityId};
 use concurrent_access_cache::{ConcurrentSidCache, ConcurrentXpermsCache};
 use std::sync::Arc;
 
@@ -107,6 +107,11 @@ impl FifoQueryCache {
     fn cache_stats(&self) -> CacheStats {
         let stats = &self.access_cache.cache_stats() + &self.create_sid_cache.cache_stats();
         &stats + &self.xperms_access_cache.cache_stats()
+    }
+
+    fn hash_stats(&self) -> HashStats {
+        let stats = &self.access_cache.hash_stats() + &self.create_sid_cache.hash_stats();
+        &stats + &self.xperms_access_cache.hash_stats()
     }
 
     fn compute_kernel_access_decision(
@@ -204,6 +209,10 @@ impl AccessVectorCache {
 
     pub fn cache_stats(&self) -> CacheStats {
         self.cache.cache_stats()
+    }
+
+    pub fn hash_stats(&self) -> HashStats {
+        self.cache.hash_stats()
     }
 
     pub fn reset(&self) {

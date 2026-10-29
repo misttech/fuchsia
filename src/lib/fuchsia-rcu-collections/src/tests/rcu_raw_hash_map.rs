@@ -209,3 +209,37 @@ fn test_rcu_hash_map_capacity_zero() {
     std::mem::drop(scope);
     rcu_run_callbacks();
 }
+
+#[test]
+fn test_rcu_hash_map_bucket_lengths() {
+    #[derive(Default)]
+    struct ConstantHasher;
+    impl std::hash::Hasher for ConstantHasher {
+        fn finish(&self) -> u64 {
+            0
+        }
+        fn write(&mut self, _bytes: &[u8]) {}
+    }
+
+    let hasher = std::hash::BuildHasherDefault::<ConstantHasher>::default();
+    let map = RcuRawHashMap::with_capacity_and_hasher(10, hasher);
+    let scope = RcuReadScope::new();
+
+    assert_eq!(map.bucket_lengths(&scope).len(), 5);
+    assert_eq!(map.bucket_lengths(&scope).sum::<usize>(), 0);
+
+    unsafe {
+        map.insert(&scope, 1, 10);
+        map.insert(&scope, 2, 20);
+        map.insert(&scope, 3, 30);
+    }
+
+    let lengths: Vec<usize> = map.bucket_lengths(&scope).collect();
+    assert_eq!(lengths.len(), 5);
+    assert_eq!(lengths.iter().sum::<usize>(), 3);
+    assert_eq!(lengths.iter().filter(|&&len| len > 0).count(), 1);
+    assert_eq!(lengths.iter().copied().max(), Some(3));
+
+    std::mem::drop(scope);
+    rcu_run_callbacks();
+}

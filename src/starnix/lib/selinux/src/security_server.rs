@@ -17,8 +17,8 @@ use crate::sid_table::{PortableSidTable, SidTable};
 use crate::sync::{LockDepMutex, SeLinuxSecurityServerStateLock, SeLinuxStatusLock};
 use crate::{
     ClassPermission, FileSystemLabel, FileSystemLabelingScheme, FileSystemMountOptions,
-    FileSystemMountSids, InitialSid, KernelClass, KernelPermission, NullessByteStr, ObjectClass,
-    PolicyCap, SeLinuxStatus, SeLinuxStatusPublisher, SecurityId,
+    FileSystemMountSids, HashStats, InitialSid, KernelClass, KernelPermission, NullessByteStr,
+    ObjectClass, PolicyCap, SeLinuxStatus, SeLinuxStatusPublisher, SecurityId,
 };
 use anyhow::Context as _;
 use fuchsia_rcu::{RcuDroppable, RcuOptionArc, RcuReadScope};
@@ -398,6 +398,21 @@ impl SecurityServer {
     /// Returns a snapshot of the AVC usage statistics.
     pub fn avc_cache_stats(&self) -> CacheStats {
         self.access_vector_cache.cache_stats()
+    }
+
+    /// Returns a snapshot of the AVC hash distribution statistics.
+    pub fn avc_hash_stats(&self) -> HashStats {
+        self.access_vector_cache.hash_stats()
+    }
+
+    /// Returns a snapshot of the SID table hash distribution statistics.
+    pub fn sid_table_hash_stats(&self) -> HashStats {
+        let scope = RcuReadScope::new();
+        self.backend
+            .active_policy
+            .as_ref(&scope)
+            .map(|policy| policy.sid_table.hash_stats(&scope))
+            .unwrap_or_default()
     }
 
     /// Returns the current policy version.
@@ -2239,5 +2254,36 @@ mod tests {
             }
         );
         assert!(!result.permit());
+    }
+
+    #[test]
+    fn hash_stats() {
+        let security_server = SecurityServer::new_default();
+        assert_eq!(security_server.sid_table_hash_stats(), HashStats::default());
+        let initial_avc_stats = security_server.avc_hash_stats();
+        assert_eq!(initial_avc_stats.entries, 0);
+        assert_eq!(initial_avc_stats.buckets_used, 0);
+        assert_eq!(initial_avc_stats.longest_chain, 0);
+        assert!(initial_avc_stats.total_buckets > 0);
+
+        security_server.load_policy(TESTS_BINARY_POLICY.to_vec()).expect("load policy");
+        assert_eq!(security_server.sid_table_hash_stats().entries, 0);
+
+        let sid = security_server
+            .security_context_to_sid(b"user0:object_r:type0:s0:c0".into())
+            .expect("resolve sid");
+        let sid_stats = security_server.sid_table_hash_stats();
+        assert_eq!(sid_stats.entries, 1);
+        assert_eq!(sid_stats.buckets_used, 1);
+        assert_eq!(sid_stats.longest_chain, 1);
+        assert!(sid_stats.total_buckets > 0);
+
+        let local_cache = PerThreadCache::default();
+        let permission_check = security_server.as_permission_check(&local_cache);
+        let _ = permission_check.has_permission(sid, sid, ProcessPermission::Fork);
+        let avc_stats = security_server.avc_hash_stats();
+        assert_eq!(avc_stats.entries, 1);
+        assert_eq!(avc_stats.buckets_used, 1);
+        assert_eq!(avc_stats.longest_chain, 1);
     }
 }
