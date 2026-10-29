@@ -84,6 +84,8 @@ filegroup(
         "//build/bazel/bazel_idk/tests:analysis_tests",
         "//build/bazel/bazel_idk/tests:api_level_and_cpu_combinations_build_only_tests",
         "//build/bazel/bazel_idk/tests:build_only_tests",
+        "//build/bazel/rules/fidl/tests:api_level_and_cpu_combinations_build_only_tests",
+        "//build/bazel/rules/fidl/tests:build_only_tests",
         # Not yet built elsewhere.
         "//sdk/lib/zxio",
         # Tests `fx_cc_library_headers()`.
@@ -123,6 +125,7 @@ filegroup(
     testonly = True,
     srcs = [
         "//build/bazel/bazel_idk/tests:targets_to_build_in_host_configurations",
+        "//build/bazel/rules/fidl/tests:targets_to_build_in_host_configurations",
         "//build/bazel/toolchains/tests",
 
         # Aspect tests

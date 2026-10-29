@@ -1,0 +1,28 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+"""Tests for FIDL C++ bindings."""
+
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+cc_binary(
+    name = "test_executable_using_fidl_cc",
+    testonly = True,
+    srcs = ["fidl_test.cc"],
+    visibility = ["//build/bazel/rules/fidl/tests:__pkg__"],
+    deps = [
+        "//examples/fidl/fuchsia.examples:fuchsia.examples_cpp",
+        "//sdk/fidl/fuchsia.images2:fuchsia.images2_cpp_hlcpp_conversion",
+        "//sdk/fidl/fuchsia.math:fuchsia.math_cpp",
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp",
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_hlcpp",
+    ] + select(
+        {
+            "@platforms//os:fuchsia": ["//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp_testing"],
+            "//conditions:default": [],
+        },
+    ),
+)

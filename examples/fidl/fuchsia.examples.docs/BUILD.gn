@@ -56,7 +56,7 @@ fidl("fuchsia.examples.docs") {
   experimental_flags = []
   visibility = [
     ":*",
-    "//build/bazel/bazel_idk/tests:*",
+    "//build/bazel/rules/fidl/tests:*",
   ]
   public_deps = [
     "//sdk/fidl/fuchsia.math",
@@ -73,6 +73,6 @@ fidl("versioning") {
   available = [ "fuchsia:HEAD" ]
   visibility = [
     ":*",
-    "//build/bazel/bazel_idk/tests:*",
+    "//build/bazel/rules/fidl/tests:*",
   ]
 }

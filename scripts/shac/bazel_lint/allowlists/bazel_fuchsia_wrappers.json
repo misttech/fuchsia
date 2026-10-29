@@ -10,7 +10,6 @@
                 "test_executable_using_cc_source_library_zx",
                 "test_executable_using_cc_static_library",
                 "test_executable_using_cc_static_library_zx",
-                "test_executable_using_fidl_cc",
                 "test_executable_using_imported_cc_static_library",
                 "test_executable_using_platform_dependent_source_library",
                 "test_noop_atom"
@@ -56,6 +55,13 @@
         {
             "path": "build/bazel/rules/fidl/fidl_cc_library.bzl",
             "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/fidl/tests/cc/BUILD.bazel",
+            "bug": "https://fxbug.dev/570203009",
+            "targets": [
+                "test_executable_using_fidl_cc"
+            ]
         },
         {
             "path": "build/bazel/rules/host/defs.bzl",

@@ -868,15 +868,7 @@ idk_molecule(
     deps = [
         ":test_data_atom_idk",
         ":test_host_tools_for_configured_host_cpus_idk",
-
-        # Test FIDL using real libraries because there are no test libraries
-        # like there are for C++ libraries.
-        # Tests compatibility testing with different expectations per API level.
-        # As of F30+, this library has elements added at 28, 29, and NEXT.
-        "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_idk",
-        # This tests direct FIDL library dependencies.
-        "//sdk/fidl/fuchsia.images2:fuchsia.images2_idk",
-        "//zircon/vdso/zx:zx_idk",
+        "//build/bazel/rules/fidl/tests:main_platform_build_test_molecule_idk",
     ],
 )
 
@@ -971,24 +963,6 @@ cc_binary(
     deps = [":imported-test-static-library"],
 )
 
-cc_binary(
-    name = "test_executable_using_fidl_cc",
-    testonly = True,
-    srcs = ["fidl_test.cc"],
-    deps = [
-        "//examples/fidl/fuchsia.examples:fuchsia.examples_cpp",
-        "//sdk/fidl/fuchsia.images2:fuchsia.images2_cpp_hlcpp_conversion",
-        "//sdk/fidl/fuchsia.math:fuchsia.math_cpp",
-        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp",
-        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_hlcpp",
-    ] + select(
-        {
-            "@platforms//os:fuchsia": ["//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp_testing"],
-            "//conditions:default": [],
-        },
-    ),
-)
-
 # The `cc_library()` targets underlying each of the `idk_cc_source_library()` targets.
 filegroup(
     name = "all_underlying_source_libraries",
@@ -1021,7 +995,6 @@ filegroup(
         ":test_executable_using_cc_source_library_zx",
         ":test_executable_using_cc_static_library_zx",
         ":test_executable_using_imported_cc_static_library",
-        ":test_executable_using_fidl_cc",
     ],
 )
 
@@ -1029,7 +1002,7 @@ filegroup(
     name = "build_only_tests",
     testonly = True,
     srcs = [
-        # Depends on the IDK atom targets.
+        # Depend on the IDK atom targets.
         ":test_molecule_idk",
         ":main_platform_build_test_molecule_idk",
 
@@ -1037,8 +1010,7 @@ filegroup(
         # dependencies of the atoms.
         ":all_underlying_source_libraries",
 
-        # Linking executables verifies that all deps are properly specified and
-        # that FIDL bindings were generated correctly.
+        # Linking executables verifies that all deps are properly specified.
         ":all_test_executables",
 
         # Verify that the file paths of prebuilt libraries are correct.
@@ -1059,41 +1031,8 @@ filegroup(
         ":verify_test_static_library_atom_info",
         ":verify_platform_dependent_source_library_atom_info",
 
-        # Exercise various FIDL library cases.
-        # FIDL libraries with the same library name in the same package.
-        "//examples/fidl/fuchsia.examples.docs",
-        "//examples/fidl/fuchsia.examples.docs:versioning",
-        # Bindings for a library with dependencies.
-        # It also depends on "zx", which is handled uniquely and does not support HLCPP.
-        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp",
-        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp_testing",
-        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp_hlcpp_conversion",
-        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_hlcpp",
-        # A library with indirect dependencies.
-        # It is also a library not in a category.
-        "//sdk/fidl/fuchsia.hardware.display.engine",
-        "//sdk/fidl/fuchsia.hardware.display.engine:fuchsia.hardware.display.engine_cpp",
-        # fdomain uses `excluded_checks` and `experimental_flags`.
-        "//sdk/fidl/fuchsia.fdomain:fuchsia.fdomain_cpp",
-        "//sdk/fidl/fuchsia.fdomain:fuchsia.fdomain_rust",
-        "//sdk/fidl/fuchsia.fdomain:fuchsia.fdomain_rust_fdomain",
-        # TODO(https://fxbug.dev/546092413): Uncomment both once Rust next bindings are implemented.
-        # "//sdk/fidl/fuchsia.fdomain:fuchsia.fdomain_rust_next",
-        # "//sdk/fidl/fuchsia.fdomain:fuchsia.fdomain_rust_fdomain_next",
-        # Tests linting exemptions and a source file with the same base name as the target name.
-        "//sdk/fidl/zbi",
-        # This library is not in the IDK or a dependency of any other target in this list.
-        # This dependency can be used to verify that aspects find FIDL libraries
-        # via bindings targets. For example, by depending on this target in
-        # `//build/fidl:all_fidl_ir_json_files`.
-        "//sdk/fidl/fuchsia.camera2.debug:fuchsia.camera2.debug_cpp",
-        # A library with `contains_drivers = True`.
-        "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac_cpp",
-        "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac_rust",
-        "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac_rust_fdomain",
-        # TODO(https://fxbug.dev/546092413): Uncomment both once Rust next bindings are implemented.
-        # "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac_rust_next",
-        # "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac_rust_fdomain_next",
+        # Tests for FIDL macros are defined in their own directory.
+        "//build/bazel/rules/fidl/tests:build_only_tests",
 
         # Build some of the targets on the host toolchain.
         ":build_only_tests_in_host_configuration",
@@ -1121,7 +1060,6 @@ filegroup(
         # Test linking on the host toolchain where possible.
         ":test_executable_using_cc_source_library",
         ":test_executable_using_cc_source_library_zx",
-        ":test_executable_using_fidl_cc",
 
         # These libraries have Fuchsia-only dependencies and thus cannot be
         # linked into the executable on the host toolchain.
@@ -1131,12 +1069,7 @@ filegroup(
         # Fuchsia-only dependencies.
         # Note: The `cc_import()` targets only build the shared libraries when
         # building from GN via `bazel_build_action()`.
-
-        # Exercise FIDL bindings.
-        # Bindings for a library with dependencies.
-        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp",
-        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp_hlcpp_conversion",
-        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_hlcpp",
+        "//build/bazel/rules/fidl/tests:targets_to_build_in_host_configurations",
     ],
     target_compatible_with = HOST_OS_CONSTRAINTS,
     visibility = ["//build/bazel/rules/tests:__pkg__"],
@@ -1203,23 +1136,12 @@ filegroup(
         # Depend directly on the underlying source libraries since they are not
         # dependencies of the atoms.
         ":all_underlying_source_libraries",
-
-        # Exercise FIDL.
-        # TODO(https://fxbug.dev/443762519): Remove these once FIDL bindings are
-        # being used in API level configurations.
-        "//examples/fidl/fuchsia.examples.docs",
-        "//examples/fidl/fuchsia.examples.docs:versioning",
-        # This tests indirect FIDL library dependencies.
-        "//sdk/fidl/fuchsia.hardware.display.engine",
-        # A FIDL library in a category.
-        # Note that the "..._idk" IDK atom targets are not built in combinations.
-        "//sdk/fidl/fuchsia.feedback",
+        "//build/bazel/rules/fidl/tests:targets_to_build_for_each_cpu_and_api_level_combination",
     ] + select({
         # TODO(https://fxbug.dev/505380228): Merge these targets into the main
         # list once sysroots are available for all CPU architectures.
         "//build/bazel/platforms:is_fuchsia_" + target_cpu: [
-            # Linking executables verifies that all deps are properly specified
-            # and that FIDL bindings were generated correctly.
+            # Linking executables verifies that all deps are properly specified.
             ":all_test_executables",
         ],
         "//conditions:default": [],

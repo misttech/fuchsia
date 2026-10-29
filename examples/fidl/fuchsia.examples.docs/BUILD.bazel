@@ -27,7 +27,7 @@ fidl_library(
         "vector-bounds-not-specified",
     ],
     experimental_flags = [],
-    visibility = ["//build/bazel/bazel_idk/tests:__pkg__"],
+    visibility = ["//build/bazel/rules/fidl/tests:__pkg__"],
     deps = [
         "//sdk/fidl/fuchsia.math",
         "//sdk/fidl/fuchsia.mem",
@@ -50,5 +50,5 @@ fidl_library(
     # "unversioned" behavior for test-only libraries.
     versioned = "fuchsia",
     available = ["fuchsia:HEAD"],
-    visibility = ["//build/bazel/bazel_idk/tests:__pkg__"],
+    visibility = ["//build/bazel/rules/fidl/tests:__pkg__"],
 )

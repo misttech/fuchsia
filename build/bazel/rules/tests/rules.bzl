@@ -10,7 +10,10 @@ load(
     "stamp_group_impl",
 )
 
-visibility(["//build/bazel/bazel_idk/tests/..."])
+visibility([
+    "//build/bazel/bazel_idk/tests/...",
+    "//build/bazel/rules/fidl/tests/...",
+])
 
 build_for_host = rule(
     doc = "Builds `deps` using the host configuration.",

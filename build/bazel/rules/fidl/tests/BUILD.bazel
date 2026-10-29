@@ -1,0 +1,176 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+"""Tests of FIDL macros and bindings."""
+
+load("@fuchsia_build_info//:args.bzl", "target_cpu")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/idk:idk_molecule.bzl", "idk_molecule")
+load(
+    "//build/bazel/rules/idk:idk_transitions.bzl",
+    "build_in_all_idk_api_level_and_cpu_combinations",
+)
+load("//build/bazel/rules/tests:rules.bzl", "build_for_host")
+
+package(default_applicable_licenses = ["//:license"])
+
+# Contains atoms that can only be built in the main "PLATFORM" build.
+idk_molecule(
+    name = "main_platform_build_test_molecule_idk",
+    testonly = True,
+    allowed_in_configurations = "once",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//build/bazel/bazel_idk/tests:__pkg__"],
+    deps = [
+        # Test FIDL using real libraries because there are no test libraries
+        # like there are for C++ libraries.
+        # Tests compatibility testing with different expectations per API level.
+        # As of F30+, this library has elements added at 28, 29, and NEXT.
+        "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_idk",
+        # This tests direct FIDL library dependencies.
+        "//sdk/fidl/fuchsia.images2:fuchsia.images2_idk",
+        "//zircon/vdso/zx:zx_idk",
+    ],
+)
+
+filegroup(
+    name = "all_test_executables",
+    testonly = True,
+    srcs = [
+        "//build/bazel/rules/fidl/tests/cc:test_executable_using_fidl_cc",
+    ],
+)
+
+# Exercises various FIDL library cases.
+filegroup(
+    name = "build_only_tests",
+    testonly = True,
+    srcs = [
+        # Depend on the IDK atom targets.
+        ":main_platform_build_test_molecule_idk",
+
+        # Linking executables verifies that all deps are properly specified and
+        # that FIDL bindings were generated correctly.
+        ":all_test_executables",
+
+        # FIDL libraries with the same library name in the same package.
+        "//examples/fidl/fuchsia.examples.docs",
+        "//examples/fidl/fuchsia.examples.docs:versioning",
+
+        # Bindings for a library with dependencies.
+        # It also depends on "zx", which is handled uniquely and does not support HLCPP.
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp",
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp_testing",
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp_hlcpp_conversion",
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_hlcpp",
+
+        # A library with indirect dependencies.
+        # It is also a library not in a category.
+        "//sdk/fidl/fuchsia.hardware.display.engine",
+        "//sdk/fidl/fuchsia.hardware.display.engine:fuchsia.hardware.display.engine_cpp",
+
+        # fdomain uses `excluded_checks` and `experimental_flags`.
+        "//sdk/fidl/fuchsia.fdomain:fuchsia.fdomain_cpp",
+        "//sdk/fidl/fuchsia.fdomain:fuchsia.fdomain_rust",
+        "//sdk/fidl/fuchsia.fdomain:fuchsia.fdomain_rust_fdomain",
+        # TODO(https://fxbug.dev/546092413): Uncomment both once Rust next bindings are implemented.
+        # "//sdk/fidl/fuchsia.fdomain:fuchsia.fdomain_rust_next",
+        # "//sdk/fidl/fuchsia.fdomain:fuchsia.fdomain_rust_fdomain_next",
+
+        # Tests linting exemptions and a source file with the same base name as the target name.
+        "//sdk/fidl/zbi",
+
+        # This library is not in the IDK or a dependency of any other target in this list.
+        # This dependency can be used to verify that aspects find FIDL libraries
+        # via bindings targets. For example, by depending on this target in
+        # `//build/fidl:all_fidl_ir_json_files`.
+        "//sdk/fidl/fuchsia.camera2.debug:fuchsia.camera2.debug_cpp",
+
+        # A library with `contains_drivers = True`.
+        "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac_cpp",
+        "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac_rust",
+        "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac_rust_fdomain",
+        # TODO(https://fxbug.dev/546092413): Uncomment both once Rust next bindings are implemented.
+        # "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac_rust_next",
+        # "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac_rust_fdomain_next",
+
+        # Build some of the targets on the host toolchain.
+        ":build_only_tests_in_host_configuration",
+    ],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//build/bazel/bazel_idk/tests:__pkg__",
+        "//build/bazel/rules/tests:__pkg__",
+    ],
+)
+
+filegroup(
+    name = "targets_to_build_in_host_configurations",
+    testonly = True,
+    srcs = [
+        ":all_test_executables",
+
+        # Exercise FIDL bindings.
+        # Bindings for a library with dependencies.
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp",
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp_hlcpp_conversion",
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_hlcpp",
+    ],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//build/bazel/bazel_idk/tests:__pkg__",
+        "//build/bazel/rules/tests:__pkg__",
+    ],
+)
+
+build_for_host(
+    name = "build_only_tests_in_host_configuration",
+    testonly = True,
+    stamp = "build_only_tests_in_host_configuration.stamp",
+    # This target transitions to the host config ("exec") to build the test targets.
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [":targets_to_build_in_host_configurations"],
+)
+
+# A filegroup of non-atom targets to build for each CPU and API level combination.
+# Grouping the targets means that the transition will only run once per
+# combination and allows `select()` statements to run in the context of the
+# combination.
+filegroup(
+    name = "targets_to_build_for_each_cpu_and_api_level_combination",
+    testonly = True,
+    srcs = [
+        # Exercise FIDL.
+        # TODO(https://fxbug.dev/443762519): Remove these once FIDL bindings are
+        # being used in API level configurations.
+        "//examples/fidl/fuchsia.examples.docs",
+        "//examples/fidl/fuchsia.examples.docs:versioning",
+        # This tests indirect FIDL library dependencies.
+        "//sdk/fidl/fuchsia.hardware.display.engine",
+        # A FIDL library in a category.
+        # Note that the "..._idk" IDK atom targets are not built in combinations.
+        "//sdk/fidl/fuchsia.feedback",
+    ] + select({
+        # TODO(https://fxbug.dev/505380228): Merge these targets into the main
+        # list once sysroots are available for all CPU architectures.
+        "//build/bazel/platforms:is_fuchsia_" + target_cpu: [
+            # Linking executables verifies that all deps are properly specified
+            # and that FIDL bindings were generated correctly.
+            ":all_test_executables",
+        ],
+        "//conditions:default": [],
+    }),
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//build/bazel/bazel_idk/tests:__pkg__"],
+)
+
+build_in_all_idk_api_level_and_cpu_combinations(
+    name = "api_level_and_cpu_combinations_build_only_tests",
+    testonly = True,
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//build/bazel/rules/tests:__pkg__"],
+    # Do not add to this list. Add to
+    # ":targets_to_build_for_each_cpu_and_api_level_combination" instead.
+    deps = [":targets_to_build_for_each_cpu_and_api_level_combination"],
+)
