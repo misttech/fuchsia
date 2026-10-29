@@ -1202,6 +1202,11 @@ pub fn default_vfs_ioctl(
             )]
             let identifier = unsafe { fscrypt_remove_key_arg.key_spec.u.identifier.value };
             crypt_service.forget_wrapping_key(identifier, user_id)?;
+            // Directories that use the key can be locked now. Uses of cached entries in locked
+            // directories are not recorded, so drop the uses recorded while they were unlocked.
+            // A lookup that checked its directory before the key was removed can still record a
+            // use after this, which only keeps that entry cached for one more pass.
+            file.node().fs().forget_dir_entry_uses();
             Ok(Some(SUCCESS))
         }
         linux_uapi::FICLONE | linux_uapi::FICLONERANGE | linux_uapi::FIDEDUPERANGE => {

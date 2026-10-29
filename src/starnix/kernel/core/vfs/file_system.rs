@@ -131,10 +131,21 @@ impl FileSystemOptions {
     }
 }
 
+/// A bounded cache holding strong references to the entries that were used most recently.
+///
+/// Entries are evicted from the front of `entries` once it holds more than `capacity` of them.
+/// Uses of an entry are recorded with a flag on the entry (`DirEntryFlags::DCACHE_REFERENCED`)
+/// instead of moving it to the back, and an entry that has the flag set when it reaches the front
+/// gets a second chance (see `FileSystem::purge_old_entries`). This approximates
+/// least-recently-used eviction without taking the lock and rehashing the entry on every use.
 struct LruCache {
     capacity: usize,
     entries: LockDepMutex<LinkedHashMap<ArcKey<DirEntry>, ()>, FileSystemEntriesLock>,
 }
+
+/// The maximum number of entries `FileSystem::purge_old_entries` gives a second chance to in one
+/// call, which bounds the time spent holding the cache lock.
+const MAX_DCACHE_SECOND_CHANCES_PER_PURGE: usize = 32;
 
 enum DirEntryCache {
     Permanent(LockDepMutex<HashSet<ArcKey<DirEntry>>, FileSystemPermanentLock>),
@@ -438,10 +449,17 @@ impl FileSystem {
         };
     }
 
-    /// Informs the cache that the entry was used.
-    pub fn did_access_dir_entry(&self, entry: &DirEntryHandle) {
+    /// Forgets the uses recorded for the entries in the cache, so that none of them gets a second
+    /// chance unless it is used again.
+    ///
+    /// Called when an encryption key is removed. Uses of entries in a locked directory are not
+    /// recorded, so entries in directories that became locked must not keep the uses that were
+    /// recorded while the directories were unlocked.
+    pub fn forget_dir_entry_uses(&self) {
         if let DirEntryCache::Lru(LruCache { entries, .. }) = &self.dcache {
-            entries.lock().get_refresh(ArcKey::ref_cast(entry));
+            for entry in entries.lock().keys() {
+                entry.clear_dcache_referenced();
+            }
         }
     }
 
@@ -449,13 +467,26 @@ impl FileSystem {
     /// deadlocks that could occur if done at admission time (where locks might be held that are
     /// required when dropping old entries). This should be called after any new entries are
     /// admitted with no locks held that might be required for dropping entries.
+    ///
+    /// Entries that were used since they were inserted, or since their last second chance, are
+    /// moved to the back instead of being evicted. At most `MAX_DCACHE_SECOND_CHANCES_PER_PURGE`
+    /// entries are moved per call; after that, the oldest entries are evicted even if they were
+    /// used. The uses recorded for an entry are cleared whether it is moved or evicted.
     pub fn purge_old_entries(&self) {
         if let DirEntryCache::Lru(l) = &self.dcache {
             let mut purged = SmallVec::<[DirEntryHandle; 4]>::new();
             {
                 let mut entries = l.entries.lock();
+                let mut second_chances = 0;
                 while entries.len() > l.capacity {
-                    purged.push(entries.pop_front().unwrap().0.0);
+                    let (entry, ()) = entries.pop_front().unwrap();
+                    let referenced = entry.clear_dcache_referenced();
+                    if referenced && second_chances < MAX_DCACHE_SECOND_CHANCES_PER_PURGE {
+                        second_chances += 1;
+                        entries.insert(entry, ());
+                    } else {
+                        purged.push(entry.0);
+                    }
                 }
             }
             // Entries will get dropped here whilst we're not holding a lock.
