@@ -598,12 +598,16 @@ def host_pkg_stems(t):
         "_lib_test",
         "_bin_test",
         "_instrumented_test",
+        "_host_unittests",
+        "_host_unittest",
+        "_host_tests",
         "_host_test",
         "_unittest",
         "_unittests",
+        "_tests",
         "_test",
     )
-    generic = {"lib", "bin", "test", "tests", "unit", "unittest", "unittests"}
+    generic = {"lib", "bin", "host", "test", "tests", "unit", "unittest", "unittests"}
     pkg_stem = os.path.basename(pkg).replace("-", "_")
     for tok in raw_tokens:
         norm = tok.replace("-", "_")
@@ -617,8 +621,9 @@ def host_pkg_stems(t):
                 stems.add((t["os"], t["cpu"], pkg, pkg_stem))
         elif stem:
             stems.add((t["os"], t["cpu"], pkg, stem))
-            if stem.endswith(("_lib", "_bin")) and len(stem) > 4:
-                stems.add((t["os"], t["cpu"], pkg, stem[:-4]))
+            for mid in ("_lib", "_bin", "_host"):
+                if stem.endswith(mid) and len(stem) > len(mid):
+                    stems.add((t["os"], t["cpu"], pkg, stem[: -len(mid)]))
     return stems
 
 

@@ -543,6 +543,7 @@ def ancestor_suite_covers_subtree(anc_pkg, anc_suite, td):
     visited = set()
     queue = [(anc_pkg, anc_suite)]
     member_pkgs = set()
+    has_direct_leaf_tests = False
     while queue:
         cur_pkg, cur_suite = queue.pop(0)
         if (cur_pkg, cur_suite) in visited:
@@ -561,6 +562,8 @@ def ancestor_suite_covers_subtree(anc_pkg, anc_suite, td):
             member_pkgs.add(m_pkg)
             if m_name in bazel_suites_of(m_pkg):
                 queue.append((m_pkg, m_name))
+            elif cur_pkg == anc_pkg:
+                has_direct_leaf_tests = True
     if td in member_pkgs:
         return True
     if os.path.dirname(td) == anc_pkg:
@@ -568,7 +571,24 @@ def ancestor_suite_covers_subtree(anc_pkg, anc_suite, td):
     rel_td = os.path.relpath(td, anc_pkg)
     first_seg = rel_td.split("/")[0]
     sub_root = os.path.join(anc_pkg, first_seg) if anc_pkg else first_seg
-    return any(p == sub_root or p.startswith(sub_root + "/") for p in member_pkgs)
+    if any(p == sub_root or p.startswith(sub_root + "/") for p in member_pkgs):
+        return True
+    # For flat area test suites (outside multi-subsystem top-level roots like src/sdk/zircon)
+    # that directly list leaf test targets, cover all subdirectories unless an intermediate
+    # ancestor between anc_pkg and td defines its own test_suite or bazel_test_suite.
+    if anc_pkg not in ("src", "sdk", "zircon") and has_direct_leaf_tests:
+        cur_mid = os.path.dirname(td)
+        has_intermediate_suite = False
+        while cur_mid and cur_mid != anc_pkg and cur_mid.startswith(anc_pkg + "/"):
+            if bazel_suites_of(cur_mid) or SUITE_RE.search(
+                read_gn(os.path.join(cur_mid, "BUILD.gn"))
+            ):
+                has_intermediate_suite = True
+                break
+            cur_mid = os.path.dirname(cur_mid)
+        if not has_intermediate_suite:
+            return True
+    return False
 
 
 # Find any ancestor BUILD.bazel test_suite that newly hooks up //<td>:<t_name> directly.

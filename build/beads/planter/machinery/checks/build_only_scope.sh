@@ -135,7 +135,7 @@ changed = set()
 change_base = resolve_effective_change_base(os.environ.get("PLANTER_CHANGE_BASE", ""))
 raw_tdirs = re.split(
     r"[\s,]+",
-    (os.environ.get("PLANTER_TARGET_DIRS", "") or target_dir).strip(),
+    (os.environ.get("PLANTER_TARGET_DIRS", "") or raw_dirs).strip(),
 )
 check_dirs = []
 for d in raw_tdirs:

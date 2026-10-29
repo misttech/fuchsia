@@ -1298,7 +1298,7 @@ def downgrade_check_cfg_diff_findings(findings):
             ):
                 f["severity"] = "INFO"
         elif (
-            f["category"] in ("dep_alignment", "dropped_comment", "attribute_alignment", "template_parity")
+            f["category"] in ("dep_alignment", "dropped_comment", "attribute_alignment")
             and f["file"].endswith("BUILD.bazel")
             and f["message"].startswith('Target "')
             and os.path.isfile(os.path.join(workdir, f["file"]))
@@ -1339,9 +1339,10 @@ def downgrade_check_cfg_diff_findings(findings):
                 f["severity"] = "INFO"
 
 
-# Check whether a pre-existing BUILD.bazel outside the migrated target directories was
-# only modified to register tests in test_suite(), export files via exports_files(), or
-# update target visibility allowlists, without dual-build migrating that package.
+# Check whether a BUILD.bazel outside the migrated target directories (pre-existing or
+# newly created) only registers tests in test_suite(), exports files/shards via
+# exports_files()/cml_shard(), or updates target visibility allowlists, without dual-build
+# migrating that package.
 _REG_ONLY_PKG_CACHE = {}
 
 
@@ -1370,7 +1371,7 @@ def is_registration_only_bazel_pkg(pkg_dir):
     except OSError:
         _REG_ONLY_PKG_CACHE[pkg_dir] = False
         return False
-    prev_src = None
+    prev_src = ""
     for ref in dict.fromkeys([change_base, "HEAD", "HEAD~1"]):
         if not ref:
             continue
@@ -1386,9 +1387,6 @@ def is_registration_only_bazel_pkg(pkg_dir):
             break
         except Exception:
             continue
-    if prev_src is None:
-        _REG_ONLY_PKG_CACHE[pkg_dir] = False
-        return False
     try:
         import ast
 
@@ -1407,6 +1405,17 @@ def is_registration_only_bazel_pkg(pkg_dir):
 
     prev_dumps = {ast.dump(s) for s in prev_tree.body}
     prev_stripped = {d for d in (strip_vis_dump(s) for s in prev_tree.body) if d is not None}
+    reg_only_fns = (
+        "load",
+        "package",
+        "visibility",
+        "test_suite",
+        "exports_files",
+        "stamp_group",
+        "filegroup",
+        "package_group",
+        "cml_shard",
+    )
     for stmt in cur_tree.body:
         if ast.dump(stmt) in prev_dumps:
             continue
@@ -1419,10 +1428,7 @@ def is_registration_only_bazel_pkg(pkg_dir):
             if isinstance(call.func, ast.Name)
             else (call.func.attr if isinstance(call.func, ast.Attribute) else "")
         )
-        if (
-            fn in ("test_suite", "exports_files", "stamp_group", "filegroup")
-            or strip_vis_dump(stmt) in prev_stripped
-        ):
+        if fn in reg_only_fns or strip_vis_dump(stmt) in prev_stripped:
             continue
         _REG_ONLY_PKG_CACHE[pkg_dir] = False
         return False

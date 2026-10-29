@@ -644,7 +644,7 @@ def check_output_name_alignment_info(
 # translations (including default or bazel2gn-synthesized <name>-gn package_name
 # and component_name on fx_unittest_package / fx_unittest_component).
 def check_rule_and_config_alignment_info(
-    bazel_rel, name, tmpl, bt_rule, bt_line, bt_kws, top_vars, gn_top
+    bazel_rel, name, tmpl, bt_rule, bt_line, bt_kws, top_vars, gn_top, cur_top=None
 ):
     out = []
 
@@ -721,20 +721,30 @@ def check_rule_and_config_alignment_info(
                     "line": bt_line,
                     "message": f'Target "{name}" (Target Attributes): {c_note}',
                 })
+        # Emit INFO attribute_alignment for package_name and component_name synthesized by
+        # bazel2gn below the sentinel (or defaulted in base GN) on fx_unittest_package and
+        # fx_unittest_component targets.
         if bt_rule in ("fx_unittest_package", "fx_unittest_component"):
             ut_notes = []
+            gn_pnames = gn_top.get("package_name") or (
+                cur_top.get("package_name") if cur_top else None
+            )
             if (
-                "package_name" in gn_top
-                and "package_name" not in bt_kws
-                and gn_top.get("package_name") in ([name], [f"{name}-gn"])
-            ):
-                ut_notes.append("package_name in GN not carried over to Bazel")
-            if (
-                "component_name" in gn_top
-                and "component_name" not in bt_kws
+                "package_name" not in bt_kws
                 and (
                     bt_rule == "fx_unittest_package"
-                    or gn_top.get("component_name") == [name]
+                    or gn_pnames in ([name], [f"{name}-gn"])
+                )
+            ):
+                ut_notes.append("package_name in GN not carried over to Bazel")
+            gn_cnames = gn_top.get("component_name") or (
+                cur_top.get("component_name") if cur_top else None
+            )
+            if (
+                "component_name" not in bt_kws
+                and (
+                    bt_rule == "fx_unittest_package"
+                    or gn_cnames == [name]
                 )
             ):
                 ut_notes.append("component_name in GN not carried over to Bazel")
@@ -1220,6 +1230,46 @@ def is_gn_forwarding_group_dep_match(g_canon, b_canon):
     return b_canon.replace("-", "_") in forwarded
 
 
+# Accept a GN dependency that the migration dropped as unused (coder.md: "Name every removed
+# unused dependency in the summary"): the Bazel target is C/C++, the dependency is a first-party
+# label, and no `#include` in the target's own srcs/hdrs names a header under the dependency's
+# package directory (matched against every path suffix of that directory, so include roots such
+# as `sdk/` are covered). Sources hidden behind glob()/variables, and `//build/`, `//prebuilt/`
+# and `//third_party/` labels (often link-only), are never accepted.
+ANY_INCLUDE_RE = re.compile(r'^\s*#\s*include\s*[<"]([^>"]+)[>"]', re.M)
+
+
+def is_removed_unused_cc_dep(pkg, g_norm, bt_rule, bt_kws, top_vars):
+    if bt_rule not in CC_RULES or not g_norm.startswith("//"):
+        return False
+    d_pkg = g_norm[2:].partition(":")[0].strip("/")
+    if not d_pkg or d_pkg.startswith(("build/", "prebuilt/", "third_party/")):
+        return False
+    src_entries = []
+    for attr in ("srcs", "hdrs", "textual_hdrs"):
+        node = bt_kws.get(attr)
+        if node is not None and ast_has_glob(node):
+            return False
+        src_entries.extend(eval_starlark(node, top_vars))
+    parts = d_pkg.split("/")
+    suffixes = {"/".join(parts[i:]) for i in range(len(parts))}
+    scanned = 0
+    for entry in src_entries:
+        rel, _ = resolve_bazel_src_path(pkg, entry)
+        if not rel or not rel.endswith(CC_SRC_EXTS):
+            continue
+        try:
+            content = open(os.path.join(workdir, rel), encoding="utf-8", errors="ignore").read()
+        except OSError:
+            return False
+        scanned += 1
+        for inc in ANY_INCLUDE_RE.findall(content):
+            inc_dir = os.path.dirname(os.path.normpath(inc))
+            if any(inc_dir == s or inc_dir.startswith(s + "/") for s in suffixes):
+                return False
+    return scanned > 0
+
+
 def check_dep_alignment_info(
     pkg,
     bazel_rel,
@@ -1306,6 +1356,10 @@ def check_dep_alignment_info(
     } | hinted_norms
     for _, g_canon, g_norm in unmatched_gn_items:
         if g_norm.replace("-", "_") in all_bazel_norms:
+            covered_gn_canons.add(g_canon)
+        elif g_canon not in covered_gn_canons and is_removed_unused_cc_dep(
+            pkg, g_norm, bt_rule, bt_kws, top_vars
+        ):
             covered_gn_canons.add(g_canon)
     if unmatched_gn_canons - covered_gn_canons:
         return None
@@ -1952,7 +2006,128 @@ def ast_has_glob(node):
 
 # Verify that every quoted relative #include "..." in C/C++ sources and headers
 # across all preprocessor branches (including non-default target CPUs like
-# riscv64/arm64) is declared in the BUILD.bazel target's srcs/hdrs/textual_hdrs.
+# riscv64/arm64) is declared in the BUILD.bazel target's srcs/hdrs/textual_hdrs
+# or exported via hdrs/textual_hdrs/hdrs_for_internal_use of its deps.
+_bazel_pkg_ast_cache = {}
+
+
+def load_bazel_pkg_targets(b_pkg):
+    if b_pkg in _bazel_pkg_ast_cache:
+        return _bazel_pkg_ast_cache[b_pkg]
+    b_rel = f"{b_pkg}/BUILD.bazel"
+    b_abs = os.path.join(workdir, b_rel)
+    if not os.path.isfile(b_abs):
+        _bazel_pkg_ast_cache[b_pkg] = ({}, {})
+        return {}, {}
+    try:
+        b_tree = ast.parse(open(b_abs, encoding="utf-8").read(), filename=b_rel)
+    except Exception:
+        _bazel_pkg_ast_cache[b_pkg] = ({}, {})
+        return {}, {}
+    top_vars = {}
+    pkg_targets = {}
+    for stmt in b_tree.body:
+        if isinstance(stmt, ast.Assign):
+            for tgt in stmt.targets:
+                if isinstance(tgt, ast.Name):
+                    top_vars[tgt.id] = eval_starlark(stmt.value, top_vars)
+        elif isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
+            call = stmt.value
+            rule = call.func.id if isinstance(call.func, ast.Name) else None
+            if not rule:
+                continue
+            kws = {kw.arg: kw.value for kw in call.keywords if kw.arg}
+            tname_node = kws.get("name")
+            if isinstance(tname_node, ast.Constant) and isinstance(tname_node.value, str):
+                pkg_targets[tname_node.value] = (rule, call.lineno, kws)
+    _bazel_pkg_ast_cache[b_pkg] = (top_vars, pkg_targets)
+    return top_vars, pkg_targets
+
+
+def resolve_bazel_target_ref(cur_pkg, label):
+    s = label.strip()
+    if not s or "$" in s or s.startswith("@"):
+        return None, None
+    if s.startswith(":"):
+        return cur_pkg, s[1:]
+    if s.startswith("//"):
+        body = s[2:]
+        if ":" in body:
+            d_pkg, d_name = body.split(":", 1)
+            return d_pkg.strip("/"), d_name.strip()
+        d_pkg = body.strip("/")
+        return d_pkg, os.path.basename(d_pkg)
+    if "/" not in s:
+        return cur_pkg, s
+    return None, None
+
+
+def collect_target_declared_files(t_pkg, kws, top_vars, attrs):
+    raw_entries = []
+    for attr in attrs:
+        raw_entries.extend(eval_starlark(kws.get(attr), top_vars))
+    declared = {}
+    for rf in raw_entries:
+        ref_pkg, ref_name = resolve_bazel_target_ref(t_pkg, rf)
+        if ref_pkg is not None and ref_name:
+            fg_vars, fg_targets = load_bazel_pkg_targets(ref_pkg)
+            fg = fg_targets.get(ref_name)
+            if fg and fg[0] == "filegroup":
+                for fg_src in eval_starlark(fg[2].get("srcs"), fg_vars):
+                    norm_p, src_prefix = resolve_bazel_src_path(ref_pkg, fg_src)
+                    if norm_p:
+                        declared[norm_p] = src_prefix
+                continue
+        norm_p, src_prefix = resolve_bazel_src_path(t_pkg, rf)
+        if norm_p:
+            declared[norm_p] = src_prefix
+    return declared
+
+
+def collect_dep_exported_headers(b_pkg, kws, top_vars, src_prefixes):
+    direct_attrs = (
+        "deps",
+        "implementation_deps",
+        "fuchsia_deps",
+        "fuchsia_implementation_deps",
+        "non_fuchsia_deps",
+    )
+    transitive_attrs = ("deps", "fuchsia_deps", "non_fuchsia_deps", "actual")
+    hdr_attrs = ("hdrs", "textual_hdrs", "hdrs_for_internal_use")
+    queue = []
+    for attr in direct_attrs:
+        for lbl in eval_starlark(kws.get(attr), top_vars):
+            d_pkg, d_name = resolve_bazel_target_ref(b_pkg, lbl)
+            if d_pkg is not None and d_name:
+                queue.append((d_pkg, d_name))
+    visited = set()
+    exported_hdrs = set()
+    has_dep_glob = False
+    while queue:
+        d_pkg, d_name = queue.pop(0)
+        if (d_pkg, d_name) in visited:
+            continue
+        visited.add((d_pkg, d_name))
+        d_vars, d_targets = load_bazel_pkg_targets(d_pkg)
+        d_tgt = d_targets.get(d_name)
+        if not d_tgt:
+            continue
+        _, _, d_kws = d_tgt
+        if d_pkg in src_prefixes and any(ast_has_glob(d_kws.get(a)) for a in hdr_attrs):
+            has_dep_glob = True
+        exported_hdrs.update(
+            collect_target_declared_files(d_pkg, d_kws, d_vars, hdr_attrs).keys()
+        )
+        for t_attr in transitive_attrs:
+            for sub_lbl in eval_starlark(d_kws.get(t_attr), d_vars):
+                sub_pkg, sub_name = resolve_bazel_target_ref(d_pkg, sub_lbl)
+                if sub_pkg is not None and sub_name and (
+                    sub_pkg == d_pkg or sub_pkg in src_prefixes
+                ):
+                    queue.append((sub_pkg, sub_name))
+    return exported_hdrs, has_dep_glob
+
+
 def check_undeclared_cc_local_headers(pkg):
     out = []
     candidate_pkgs = [pkg]
@@ -1986,42 +2161,28 @@ def check_undeclared_cc_local_headers(pkg):
 
     for b_pkg in candidate_pkgs:
         b_rel = f"{b_pkg}/BUILD.bazel"
-        b_abs = os.path.join(workdir, b_rel)
-        if not os.path.isfile(b_abs):
+        top_vars, pkg_targets = load_bazel_pkg_targets(b_pkg)
+        if not pkg_targets:
             continue
-        try:
-            b_tree = ast.parse(open(b_abs, encoding="utf-8").read(), filename=b_rel)
-        except Exception:
-            continue
-        top_vars = {}
-        cc_targets = []
-        for stmt in b_tree.body:
-            if isinstance(stmt, ast.Assign):
-                for tgt in stmt.targets:
-                    if isinstance(tgt, ast.Name):
-                        top_vars[tgt.id] = eval_starlark(stmt.value, top_vars)
-            elif isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
-                call = stmt.value
-                rule = call.func.id if isinstance(call.func, ast.Name) else None
-                if rule not in CC_RULES:
-                    continue
-                kws = {kw.arg: kw.value for kw in call.keywords if kw.arg}
-                tname_node = kws.get("name")
-                if isinstance(tname_node, ast.Constant) and isinstance(tname_node.value, str):
-                    cc_targets.append((tname_node.value, rule, call.lineno, kws))
+        cc_targets = [
+            (tname, rule, lineno, kws)
+            for tname, (rule, lineno, kws) in pkg_targets.items()
+            if rule in CC_RULES
+        ]
 
         for tname, rule, lineno, kws in cc_targets:
             if any(ast_has_glob(kws.get(a)) for a in ("srcs", "hdrs", "textual_hdrs")):
                 continue
-            raw_files = []
-            for attr in ("srcs", "hdrs", "textual_hdrs"):
-                raw_files.extend(eval_starlark(kws.get(attr), top_vars))
-            declared = {}
-            for rf in raw_files:
-                norm_p, src_prefix = resolve_bazel_src_path(b_pkg, rf)
-                if norm_p:
-                    declared[norm_p] = src_prefix
+            declared = collect_target_declared_files(
+                b_pkg, kws, top_vars, ("srcs", "hdrs", "textual_hdrs", "hdrs_for_internal_use")
+            )
             if not declared:
+                continue
+            src_prefixes = set(declared.values()) | {b_pkg}
+            dep_hdrs, has_dep_glob = collect_dep_exported_headers(
+                b_pkg, kws, top_vars, src_prefixes
+            )
+            if has_dep_glob:
                 continue
             reported = set()
             for f_rel, src_prefix in sorted(declared.items()):
@@ -2042,7 +2203,7 @@ def check_undeclared_cc_local_headers(pkg):
                         continue
                     if not (cand_rel == src_prefix or cand_rel.startswith(src_prefix + "/")):
                         continue
-                    if cand_rel in declared or cand_rel in reported:
+                    if cand_rel in declared or cand_rel in dep_hdrs or cand_rel in reported:
                         continue
                     if not os.path.isfile(os.path.join(workdir, cand_rel)):
                         continue
@@ -2056,7 +2217,8 @@ def check_undeclared_cc_local_headers(pkg):
                         "message": (
                             f'`{rule}("{tname}")` in {b_rel} compiles `{f_rel}`, which has '
                             f'`#include "{inc}"` resolving to `{cand_rel}` on disk, but '
-                            f"`{cand_rel}` is not listed in `srcs`, `hdrs`, or `textual_hdrs`. "
+                            f"`{cand_rel}` is not listed in `srcs`, `hdrs`, or `textual_hdrs` "
+                            "(nor exported via `hdrs` of its `deps`). "
                             "GN compiles unsandboxed against the source tree, whereas Bazel "
                             "enforces sandboxed header inclusion checking (including on "
                             "non-default target CPUs such as riscv64 or arm64 when `#include` "
@@ -2064,7 +2226,7 @@ def check_undeclared_cc_local_headers(pkg):
                         ),
                         "remediation": (
                             f"Add `{cand_rel}` (or its `//{src_prefix}:...` label) to `srcs` "
-                            f'or `hdrs` (or the header list variable) of `{rule}("{tname}")` '
+                            f'or `hdrs` (or to `hdrs` of a library in `deps`) of `{rule}("{tname}")` '
                             f"in `{b_rel}`, and if `{b_pkg}/BUILD.gn` is dual-built, regenerate "
                             f"it with `fx bazel2gn -d {b_pkg}`."
                         ),
@@ -2215,11 +2377,26 @@ def collect_local_template_and_sentinel_targets():
     return expanded_tmpl_targets, sentinel_targets
 
 
-# Locate the planter binary on PATH or standard install locations for diffengine checks.
+# Locate the planter binary (preferring PLANTER_BIN or a live /proc/<pid>/exe daemon if running).
 def find_planter_bin():
     env_bin = os.environ.get("PLANTER_BIN", "").strip()
     if env_bin and os.path.isfile(env_bin) and os.access(env_bin, os.X_OK):
         return env_bin
+    try:
+        for entry in os.listdir("/proc"):
+            if not entry.isdigit():
+                continue
+            try:
+                with open(f"/proc/{entry}/comm", encoding="utf-8") as cf:
+                    if cf.read().strip() != "planter":
+                        continue
+            except OSError:
+                continue
+            exe = f"/proc/{entry}/exe"
+            if os.access(exe, os.X_OK):
+                return exe
+    except OSError:
+        pass
     which_bin = shutil.which("planter")
     if which_bin:
         return which_bin
@@ -3610,7 +3787,15 @@ for pkg in sorted(d for d in dirs if d):
                                         findings.append(ut_info)
                 findings.extend(
                     check_rule_and_config_alignment_info(
-                        bazel_rel, name, tmpl, bt_rule, bt_line, bt_kws, top_vars, gn_top
+                        bazel_rel,
+                        name,
+                        tmpl,
+                        bt_rule,
+                        bt_line,
+                        bt_kws,
+                        top_vars,
+                        gn_top,
+                        cur_top,
                     )
                 )
                 has_gn_test_rule = f"{name}_test" in new_targets or any(

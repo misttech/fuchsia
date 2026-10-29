@@ -638,6 +638,134 @@ def bazel_target_line(bazel_text, name):
     return bazel_text.count("\n", 0, m.start()) + 1 if m else 0
 
 
+# Record INFO template_parity coverage so planter's deduplicator (same
+# category/file/line/message key) suppresses review_diff's ERROR for it.
+def append_template_parity_info(
+    findings, bazel_text, bazel_rel, gn_rel, name, gn_line, old_tmpl, new_tmpl, old_name=None
+):
+    orig = old_name or name
+    bz_line = bazel_target_line(bazel_text, name)
+    if bz_line:
+        findings.append(
+            {
+                "source": "gn_target_type_parity",
+                "category": "template_parity",
+                "severity": "INFO",
+                "file": bazel_rel,
+                "line": bz_line,
+                "message": (
+                    f'Target "{name}" (Rule & Directives): bazel2gn generated '
+                    f'{new_tmpl}("{name}") below the sentinel ({gn_rel}:{gn_line}), but '
+                    f'the original GN target was {old_tmpl}("{orig}"); '
+                    "the migration must keep the GN template"
+                ),
+            }
+        )
+
+
+# Check whether a pre-migration GN target was a unittest/test component that maps to
+# fx_test_component -> fuchsia_test_component when packaged via fx_package(test_components).
+def is_test_root_component_in_base(gn_text, name, old_types):
+    if old_types == {"fuchsia_unittest_component"}:
+        return True
+    if old_types != {"fuchsia_component"} or not gn_text:
+        return False
+    if is_testonly_target(gn_text, name):
+        return True
+    code = blank_comments(gn_text)
+    return bool(
+        re.search(
+            r"\btest_components\s*\+?=\s*\[[^\]]*\"(?::|//[^\":]+:)"
+            + re.escape(name)
+            + r"\"",
+            code,
+        )
+    )
+
+
+# Emit INFO template_parity coverage when a renamed Bazel target (`new_name` not in `old_map`)
+# unwraps or converts a removed pre-migration GN test/component target (`old_name` not in `new_map`)
+# that diffengine pairs by component_name, manifest, package_name, or binary_name.
+def record_renamed_unwrap_template_parity(
+    findings, before, after, old_map, new_map, bazel_text, bazel_names, bazel_rel, gn_rel
+):
+    if not bazel_text or not before or not after:
+        return
+    removed_old = [
+        (old_name, old_types)
+        for old_name, (old_types, _) in sorted(old_map.items())
+        if old_name not in new_map
+    ]
+    if not removed_old:
+        return
+    for new_name, (new_types, new_line) in sorted(new_map.items()):
+        if new_name in old_map or new_name not in bazel_names:
+            continue
+        if new_types == {"fuchsia_test_component"}:
+            for old_name, old_types in removed_old:
+                if is_test_root_component_in_base(before, old_name, old_types):
+                    append_template_parity_info(
+                        findings,
+                        bazel_text,
+                        bazel_rel,
+                        gn_rel,
+                        new_name,
+                        new_line,
+                        next(iter(old_types)),
+                        "fuchsia_test_component",
+                        old_name=old_name,
+                    )
+        elif new_types == {"fuchsia_test_package"}:
+            for old_name, old_types in removed_old:
+                if old_types == {"fuchsia_unittest_package"}:
+                    append_template_parity_info(
+                        findings,
+                        bazel_text,
+                        bazel_rel,
+                        gn_rel,
+                        new_name,
+                        new_line,
+                        "fuchsia_unittest_package",
+                        "fuchsia_test_package",
+                        old_name=old_name,
+                    )
+        elif new_types == {"fuchsia_component"} and is_testonly_target(after, new_name):
+            for old_name, old_types in removed_old:
+                if old_types == {"fuchsia_test_component"}:
+                    old_body = gn_target_body(before, "fuchsia_test_component", old_name)
+                    if old_body is not None and not re.search(r"\btest_type\s*=", old_body):
+                        append_template_parity_info(
+                            findings,
+                            bazel_text,
+                            bazel_rel,
+                            gn_rel,
+                            new_name,
+                            new_line,
+                            "fuchsia_test_component",
+                            "fuchsia_component",
+                            old_name=old_name,
+                        )
+        elif new_types == {"executable"} and is_testonly_target(after, new_name):
+            allowed_exec_tmpls = (
+                ({"cc_test_executable"},)
+                if FX_CC_TEST_AVAILABLE
+                else ({"cc_test_executable"}, {"test"})
+            )
+            for old_name, old_types in removed_old:
+                if old_types in allowed_exec_tmpls:
+                    append_template_parity_info(
+                        findings,
+                        bazel_text,
+                        bazel_rel,
+                        gn_rel,
+                        new_name,
+                        new_line,
+                        next(iter(old_types)),
+                        "executable",
+                        old_name=old_name,
+                    )
+
+
 findings = []
 for pkg in sorted(candidate_dirs):
     gn_rel, bazel_rel = f"{pkg}/BUILD.gn", f"{pkg}/BUILD.bazel"
@@ -760,16 +888,22 @@ for pkg in sorted(candidate_dirs):
                             ),
                         }
                     )
-            # Accept a GN cc_test_executable converted from a Bazel fx_cc_binary(testonly = True):
-            # bazel2gn maps fx_cc_binary/cc_binary to executable() and has no form that emits
-            # cc_test_executable(), a thin executable() wrapper that only adds LTO link settings.
+            # Accept a GN cc_test_executable (or test when fx_cc_test.bzl is unavailable) converted
+            # from a Bazel fx_cc_binary(testonly = True): bazel2gn maps fx_cc_binary/cc_binary to
+            # executable() and has no form that emits cc_test_executable().
+            allowed_exec_tmpls = (
+                ({"cc_test_executable"},)
+                if FX_CC_TEST_AVAILABLE
+                else ({"cc_test_executable"}, {"test"})
+            )
             is_cc_test_executable_conversion = (
-                old_types == {"cc_test_executable"}
+                old_types in allowed_exec_tmpls
                 and new_types == {"executable"}
                 and name in bazel_names
                 and is_testonly_target(after, name)
             )
             if is_cc_test_executable_conversion:
+                was_tmpl = next(iter(old_types))
                 findings.append(
                     {
                         "source": "gn_target_type_parity",
@@ -778,32 +912,23 @@ for pkg in sorted(candidate_dirs):
                         "file": gn_rel,
                         "line": line,
                         "message": (
-                            f"`{label}` was GN `cc_test_executable` and is now a bazel2gn-generated\n"
+                            f"`{label}` was GN `{was_tmpl}` and is now a bazel2gn-generated\n"
                             "testonly `executable` from a Bazel fx_cc_binary(testonly = True); bazel2gn\n"
-                            "has no form for cc_test_executable, so this type change is expected."
+                            f"has no form for {was_tmpl}, so this type change is expected."
                         ),
                         "remediation": "None needed; do not dispute or work around this INFO.",
                     }
                 )
-                # Record the matching INFO template_parity coverage so planter's deduplicator
-                # (same category/file/line/message key) suppresses review_diff's ERROR for it.
-                bz_line = bazel_target_line(bazel_text, name)
-                if bz_line:
-                    findings.append(
-                        {
-                            "source": "gn_target_type_parity",
-                            "category": "template_parity",
-                            "severity": "INFO",
-                            "file": bazel_rel,
-                            "line": bz_line,
-                            "message": (
-                                f'Target "{name}" (Rule & Directives): bazel2gn generated '
-                                f'executable("{name}") below the sentinel ({gn_rel}:{line}), but '
-                                f'the original GN target was cc_test_executable("{name}"); '
-                                "the migration must keep the GN template"
-                            ),
-                        }
-                    )
+                append_template_parity_info(
+                    findings,
+                    bazel_text,
+                    bazel_rel,
+                    gn_rel,
+                    name,
+                    line,
+                    was_tmpl,
+                    "executable",
+                )
             # Without `test_type`, `fuchsia_test_component` is a `testonly` `fuchsia_component`
             # (//build/components/fuchsia_test_component.gni), which is what bazel2gn emits for
             # `fx_component(testonly = True)`. Helper components packaged next to a test (mocks,
@@ -819,6 +944,89 @@ for pkg in sorted(candidate_dirs):
                     and not re.search(r"\btest_type\s*=", old_body)
                     and re.search(r"\btestonly\s*=\s*true\b", new_body) is not None
                 )
+                if is_test_component_unwrap:
+                    append_template_parity_info(
+                        findings,
+                        bazel_text,
+                        bazel_rel,
+                        gn_rel,
+                        name,
+                        line,
+                        "fuchsia_test_component",
+                        "fuchsia_component",
+                    )
+            # Accept a GN `fuchsia_unittest_package` or `fuchsia_unittest_component` that
+            # becomes `fuchsia_test_package` or `fuchsia_test_component` below the sentinel
+            # when migrated to `fx_package(test_components = [...])`, `fx_test_component`, or
+            # multi-binary `fx_unittest_package` in BUILD.bazel (e.g. for a custom .cml
+            # manifest or test_type; fuchsia_unittest_package.gni and
+            # fuchsia_unittest_component.gni expand to those templates internally).
+            is_unittest_package_unwrap = (
+                old_types == {"fuchsia_unittest_package"}
+                and new_types == {"fuchsia_test_package"}
+                and name in bazel_names
+            )
+            if is_unittest_package_unwrap:
+                findings.append(
+                    {
+                        "source": "gn_target_type_parity",
+                        "category": "unittest_package_unwrapped",
+                        "severity": "INFO",
+                        "file": gn_rel,
+                        "line": line,
+                        "message": (
+                            f"`{label}` was GN `fuchsia_unittest_package` and is now a "
+                            "bazel2gn-generated `fuchsia_test_package` (which "
+                            "`fuchsia_unittest_package.gni` expands to internally when "
+                            "unrolled in Bazel for a custom manifest, test_type, or "
+                            "multiple test components)."
+                        ),
+                        "remediation": "None needed; do not dispute or work around this INFO.",
+                    }
+                )
+                append_template_parity_info(
+                    findings,
+                    bazel_text,
+                    bazel_rel,
+                    gn_rel,
+                    name,
+                    line,
+                    "fuchsia_unittest_package",
+                    "fuchsia_test_package",
+                )
+            is_unittest_component_unwrap = (
+                is_test_root_component_in_base(before, orig_name, old_types)
+                and new_types == {"fuchsia_test_component"}
+                and name in bazel_names
+            )
+            if is_unittest_component_unwrap:
+                was_comp_tmpl = next(iter(old_types))
+                findings.append(
+                    {
+                        "source": "gn_target_type_parity",
+                        "category": "unittest_component_unwrapped",
+                        "severity": "INFO",
+                        "file": gn_rel,
+                        "line": line,
+                        "message": (
+                            f"`{label}` was GN `{was_comp_tmpl}` and is now a "
+                            "bazel2gn-generated `fuchsia_test_component` (required when "
+                            "packaged via `fx_package(test_components = [...])` in Bazel)."
+                        ),
+                        "remediation": "None needed; do not dispute or work around this INFO.",
+                    }
+                )
+                append_template_parity_info(
+                    findings,
+                    bazel_text,
+                    bazel_rel,
+                    gn_rel,
+                    name,
+                    line,
+                    was_comp_tmpl,
+                    "fuchsia_test_component",
+                    old_name=orig_name,
+                )
             if new_types != old_types and not (
                 is_cc_test_executable_conversion
                 or is_test_suite_conversion
@@ -827,6 +1035,8 @@ for pkg in sorted(candidate_dirs):
                 or is_fuchsia_package_conversion
                 or is_feature_set_expansion
                 or is_test_component_unwrap
+                or is_unittest_package_unwrap
+                or is_unittest_component_unwrap
             ):
                 findings.append(type_change_finding(label, name, pkg, gn_rel, line, old_types, new_types))
         elif name in cc_libs:
@@ -861,6 +1071,10 @@ for pkg in sorted(candidate_dirs):
                     ),
                 }
             )
+
+    record_renamed_unwrap_template_parity(
+        findings, before, after, old, new, bazel_text, bazel_names, bazel_rel, gn_rel
+    )
 
     if bazel_text and (had_bazel_input or has_bazel_host_tool):
         gn_targets_pat = re.compile(r'@gn_targets//(?:[^\s"\':]+/)?' + re.escape(pkg) + r'(?::([^\s"\']+))?')

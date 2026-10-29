@@ -261,6 +261,12 @@ for d in bazel_dirs:
             lbl = f"//{d}:{tname}"
             if lbl not in host_test_targets:
                 host_test_targets.append(lbl)
+            if lbl not in exported_tests["host_tests"]:
+                exported_tests["host_tests"].append(lbl)
+        elif fn in ("fx_test", "fx_unittest_package"):
+            lbl = f"//{d}:{tname}"
+            if lbl not in exported_tests["target_tests"]:
+                exported_tests["target_tests"].append(lbl)
         elif fn in ("rustc_library", "rustc_binary", "rustc_proc_macro"):
             w_host = kws.get("with_host_unit_tests")
             w_ut = kws.get("with_unit_tests")
@@ -270,6 +276,8 @@ for d in bazel_dirs:
                 lbl = f"//{d}:{tname}_test"
                 if lbl not in host_test_targets:
                     host_test_targets.append(lbl)
+                if lbl not in exported_tests["host_tests"]:
+                    exported_tests["host_tests"].append(lbl)
 for lbl in exported_tests["host_tests"]:
     pkg_d = lbl[2:].split(":", 1)[0].strip("/") if lbl.startswith("//") else ""
     if pkg_d in bazel_dirs and lbl not in host_test_targets:
@@ -488,9 +496,8 @@ def dependent_labels():
 
 
 def bazel_tests_export_notes():
-    """INFO notes on Bazel tests listed by the changed directories' bazel_test_suite targets but
-    missing from <build dir>/tests.json. Whether a suite reaches tests.json also depends on the
-    configured test roots (product, --with-test), so a missing test is a hint, not a failure."""
+    """INFO notes on Bazel tests defined or exported by the changed directories but
+    missing from <build dir>/tests.json."""
     build_dir = (read(".fx-build-dir") or "").strip()
     try:
         with open(os.path.join(workdir, build_dir, "tests.json")) as f:
@@ -499,27 +506,32 @@ def bazel_tests_export_notes():
         return [f"Cannot read <build dir>/tests.json ({e}); the export of Bazel tests was not verified."]
 
     def norm(label):
-        return re.sub(r"^@@?//", "//", label or "")
+        return re.sub(r"^@@?//", "//", label or "").split("(", 1)[0]
 
     bazel_entries = set()
     for e in entries if isinstance(entries, list) else []:
         t = e.get("test", {}) if isinstance(e, dict) else {}
-        label = norm(t.get("source_label") or t.get("label"))
-        if label and "(" not in label:
-            bazel_entries.add(label)
+        for k in ("label", "source_label", "package_label"):
+            lbl = norm(t.get(k))
+            if lbl:
+                bazel_entries.add(lbl)
     missing = []
     for label in exported_tests["target_tests"] + exported_tests["host_tests"]:
-        pkg = label.split(":", 1)[0]
-        if label not in bazel_entries and not any(b.startswith(pkg + ":") for b in bazel_entries):
+        if label not in bazel_entries:
             missing.append(label)
     if not missing:
         return []
     return [
-        "Not in <build dir>/tests.json after `fx build`: " + " ".join(missing) + " (normal when "
-        "`args.gn` is configured without `--with-test //<dir>:tests`). Use "
-        "`Test: fx bazel test --config=host @//<dir>:<test>` (or "
-        "`fx bazel build --config=fuchsia_platform @//<dir>:<test>`) in "
-        "`CoderReport.test_footers` and commit `Test:` footers when not in `<build dir>/tests.json`."
+        "Not in <build dir>/tests.json after `fx build`: "
+        + " ".join(missing)
+        + " (normal when `args.gn` is configured without `--with-test //<dir>:tests` or only "
+        "includes leaf `:tests` groups and not the ancestor `bazel_test_suite`). Do NOT pass `"
+        + " ".join(missing)
+        + "` to `fx test` in `CoderReport.test_footers` or commit `Test:` footers "
+        "(`fx test --dry` will fail with `missing_fx_test_target` because `<build dir>/tests.json` "
+        "does not contain that label); use "
+        "`fx bazel build --config=fuchsia_platform @//<dir>:<test>` (or "
+        "`fx bazel test --config=host @//<dir>:<test>` for host tests) instead."
     ]
 
 
@@ -902,11 +914,11 @@ if change_base != "HEAD" and not worktree_dirty_vs_head and (not uploaded_commit
                     return False
                 if re.search(r'\bbazel_test_suite\(\s*"' + re.escape(t_name) + r'"\s*\)', gn_txt):
                     return False
-            if tj_targets and (
-                lbl in tj_targets
-                or any(t == lbl or (not sep and t.startswith(lbl + ":")) for t in tj_targets)
-            ):
-                return True
+            if tj_targets:
+                return bool(
+                    lbl in tj_targets
+                    or any(t == lbl or (not sep and t.startswith(lbl + ":")) for t in tj_targets)
+                )
             bz_test_re = (
                 r"\b(?:fx_unittest_package|fx_unittest_component|fx_test|fx_test_package|"
                 r"host_rustc_test|wrap_host_rust_test|host_go_test|host_py_test|host_test|"
@@ -1261,22 +1273,19 @@ if reused is not None or (skip_build and not dry_run):
 if reused is not None:
     # Refresh cached bazel_tests_note / dependents_note wording when reusing a build result.
     for rf in reused:
-        if isinstance(rf, dict) and rf.get("category") == "bazel_tests_note":
-            rf = dict(
-                rf,
-                message=re.sub(
-                    r"\. Either their `bazel_test_suite`.*",
-                    " (normal when `args.gn` is configured without `--with-test //<dir>:tests`). "
-                    "Both `Test: fx test //<dir>:<test>` and "
-                    "`Test: fx bazel test --config=host @//<dir>:<test>` (or "
-                    "`fx bazel build --config=fuchsia_platform @//<dir>:<test>`) are accepted in "
-                    "commit `Test:` footers and `CoderReport.test_footers`.",
-                    rf.get("message", ""),
-                ),
-            )
-        elif isinstance(rf, dict) and rf.get("category") == "dependents_note":
+        if isinstance(rf, dict) and rf.get("category") in ("bazel_tests_note", "bazel_tests_exported"):
+            continue
+        if isinstance(rf, dict) and rf.get("category") == "dependents_note":
             rf = dict(rf, message=rf.get("message", "").replace("CoderReport.tests_run", "CoderReport.test_footers"))
         findings.append(rf)
+    if exported_tests["host_tests"] or exported_tests["target_tests"]:
+        for n in bazel_tests_export_notes():
+            findings.append({
+                "source": "build_verification",
+                "category": "bazel_tests_exported",
+                "severity": "INFO",
+                "message": n,
+            })
     findings.append({
         "source": "build_verification",
         "category": "build_reused",

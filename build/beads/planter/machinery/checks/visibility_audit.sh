@@ -16,7 +16,8 @@ set -euo pipefail
 # 7. Multi-domain catch-all umbrella wildcards ('//src/lib:__subpackages__', '//sdk/lib:__subpackages__', '//src/testing:__subpackages__', '//src/tests:__subpackages__')
 # 8. Cross-area depth-2 wildcards ('//src/<area>:__subpackages__') on non-global targets outside //src/<area>
 # 9. Overbroad depth >= 3 ':__subpackages__' wildcards wider than the Lowest Common Ancestor (LCA) of actual callers on non-global targets
-# 10. False-positive rdeps from visibility allowlists (visibility.gni / visibility = [...]) or GN-only targets (:tests, :benchmarks)
+# 10. False-positive rdeps from visibility allowlists (visibility.gni / visibility = [...]) or GN-only targets (:tests, :benchmarks);
+#     GN target_tests/host_tests lists count as allowlists only inside bazel_test_suite() blocks
 # 11. Uncovered callers: a package whose BUILD.gn/BUILD.bazel depends on the target, or on a generated
 #     '<target>_<suffix>' sub-target (e.g. fidl_library bindings '<fidl>_rust', '<fidl>_cpp'), that no
 #     visibility entry covers. References to generated sub-targets count as rdeps of the owning target.
@@ -889,6 +890,46 @@ def discover_referencing_build_files(pkg_list):
 pkg_paths = sorted({os.path.dirname(p).strip("/") for p in candidate_files})
 matched_files = discover_referencing_build_files(pkg_paths)
 
+_NON_DEP_LIST_RE = re.compile(r"\b(?:visibility|packages)\s*\+?=\s*\[[^\]]*\]", re.DOTALL)
+_SUITE_LIST_RE = re.compile(r"\b(?:target_tests|host_tests)\s*\+?=\s*\[[^\]]*\]", re.DOTALL)
+_BAZEL_TEST_SUITE_OPEN_RE = re.compile(r'\bbazel_test_suite\s*\(\s*"[^"]*"\s*\)\s*\{')
+
+
+def strip_non_dep_lists(no_comments, is_gn):
+    """Removes list attributes that reference targets without creating a dependency edge.
+
+    `visibility = [...]` / `packages = [...]` entries are allowlists in both build systems. In GN,
+    `target_tests` / `host_tests` are only label lists without a GN edge inside a
+    `bazel_test_suite(...) { ... }` block (Bazel labels that the bridge builds as top-level
+    targets, which Bazel never visibility-checks). Other GN templates use attributes of the same
+    name as real dependency lists (a test-group template appends `target_tests` to `deps`), so
+    those references must stay and count as reverse dependencies, consistent with find_rdeps.
+    """
+    stripped = _NON_DEP_LIST_RE.sub("", no_comments)
+    if not is_gn:
+        return stripped
+    out = []
+    pos = 0
+    for m in _BAZEL_TEST_SUITE_OPEN_RE.finditer(stripped):
+        start = m.end()
+        if start < pos:
+            continue
+        depth = 1
+        i = start
+        while i < len(stripped) and depth > 0:
+            c = stripped[i]
+            if c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+            i += 1
+        out.append(stripped[pos:start])
+        out.append(_SUITE_LIST_RE.sub("", stripped[start:i]))
+        pos = i
+    out.append(stripped[pos:])
+    return "".join(out)
+
+
 file_cache = {}
 for fpath in sorted(matched_files):
     try:
@@ -913,12 +954,7 @@ for fpath in sorted(matched_files):
         if not raw:
             continue
         no_comments = re.sub(r"#[^\n]*", "", raw)
-        non_dep_list_re = (
-            r"\b(?:visibility|packages|target_tests|host_tests)\s*\+?=\s*\[[^\]]*\]"
-            if fpath.endswith((".gn", ".gni"))
-            else r"\b(?:visibility|packages)\s*\+?=\s*\[[^\]]*\]"
-        )
-        stripped = re.sub(non_dep_list_re, "", no_comments, flags=re.DOTALL)
+        stripped = strip_non_dep_lists(no_comments, fpath.endswith((".gn", ".gni")))
         file_cache[fpath] = (no_comments, stripped)
     except Exception:
         pass
@@ -1355,12 +1391,7 @@ def compute_package_rdeps(
                                 raw_c = "\n".join(parts_c)
                                 if raw_c:
                                     nc = re.sub(r"#[^\n]*", "", raw_c)
-                                    st = re.sub(
-                                        r"\b(?:visibility|packages|target_tests|host_tests)\s*\+?=\s*\[[^\]]*\]",
-                                        "",
-                                        nc,
-                                        flags=re.DOTALL,
-                                    )
+                                    st = strip_non_dep_lists(nc, True)
                                     file_cache[abs_c] = (nc, st)
                     except Exception:
                         pass
@@ -1767,11 +1798,20 @@ for rel_path in sorted(candidate_files):
             )
             tname = None
             actual = None
+            is_test_package = False
+            is_testonly = False
             for kw in node.keywords:
                 if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
                     tname = kw.value.value
                 elif kw.arg == "actual" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
                     actual = kw.value.value
+                elif kw.arg == "test_components":
+                    is_test_package = True
+                elif kw.arg == "testonly":
+                    if isinstance(kw.value, ast.Constant) and kw.value.value is True:
+                        is_testonly = True
+                    elif isinstance(kw.value, ast.Name) and kw.value.id in ("True", "true"):
+                        is_testonly = True
             if tname:
                 bazel_targets.append(tname)
                 if func in ("fx_package", "fuchsia_package", "fx_unittest_package"):
@@ -1780,6 +1820,10 @@ for rel_path in sorted(candidate_files):
                     test_rule_targets.add(tname)
                 if func in BAZEL_NON_GN_SYNCED_RULES:
                     non_gn_synced_targets.add(tname)
+                    test_rule_targets.add(tname)
+                if func == "fx_package" and is_test_package:
+                    test_rule_targets.add(tname)
+                if func == "fx_component_manifest" and is_testonly:
                     test_rule_targets.add(tname)
                 if func.startswith("idk_"):
                     idk_targets.add(tname)
@@ -1916,6 +1960,8 @@ for rel_path in sorted(candidate_files):
             )
             or func_name.startswith("wrap_host_")
             or func_name.endswith("_test")
+            or (func_name == "fx_package" and any(k.arg == "test_components" for k in (node.keywords if hasattr(node, "keywords") else [])))
+            or (func_name == "fx_component_manifest" and is_testonly)
         )
         is_test_support_pkg = (
             rel_path.startswith("src/testing/")

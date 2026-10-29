@@ -1622,8 +1622,25 @@ for pkg_dir in sorted(candidate_dirs):
     # packages, resource/fuchsia_package_resource_group/fx_component_manifest mappings, and
     # bazel2gn-converted go_binary_host_tool targets or # @bazel2gn:skip dependency entries).
     def record_review_diff_compat_info(b_abs, brel, grel, g_info):
+        b2gn_test_rules = {
+            "rustc_test",
+            "go_test",
+            "host_go_test",
+            "host_rustc_test",
+            "fx_unittest_package",
+            "fx_test_component",
+            "fx_unittest_component",
+        }
         has_unskipped_convertible = any(
             t["rule"] in CONVERTIBLE_BAZEL_RULES and t["skip_line"] is None
+            for t in bazel_targets
+        )
+        has_unskipped_b2gn_test = any(
+            (
+                t["rule"] in b2gn_test_rules
+                or (t["rule"] == "fx_package" and t.get("has_test_components"))
+            )
+            and t["skip_line"] is None
             for t in bazel_targets
         )
         if g_info and (g_info.get("has_sentinel") or not has_unskipped_convertible):
@@ -1681,7 +1698,10 @@ for pkg_dir in sorted(candidate_dirs):
         if (
             g_info
             and not g_info.get("has_sentinel")
-            and (not has_unskipped_convertible or has_bazel_bridge_without_sentinel)
+            and (
+                (not has_unskipped_convertible and not has_unskipped_b2gn_test)
+                or has_bazel_bridge_without_sentinel
+            )
         ):
             for s_msg in (
                 "BUILD.gn does not have a bazel2gn sentinel; verify whether not using bazel2gn is intentional.",
@@ -2050,6 +2070,9 @@ for pkg_dir in sorted(candidate_dirs):
             pkg_attr_cands = []
             if bz_pname:
                 pkg_attr_cands.append(f"added package_name={bz_pname} in Bazel")
+                pkg_attr_cands.append(
+                    f"package_name ([{bz_pname}-gn]) != package_name ([{bz_pname}])"
+                )
             else:
                 pkg_attr_cands.append("package_name in GN not carried over to Bazel")
             if has_gn_log_settings:
@@ -2319,6 +2342,57 @@ for pkg_dir in sorted(candidate_dirs):
             # correspond to GN fuchsia_*_package deps or Pass-2-paired GN package targets.
             if rule == "fx_package":
                 record_fx_package_compat_info(bname, bline, kws)
+            # Record INFO attribute_alignment for fx_unittest_package / fx_unittest_component
+            # when bazel2gn synthesizes package_name = "<name>-gn" and component_name = "<name>"
+            # on the generated GN fuchsia_unittest_package / fuchsia_unittest_component.
+            if rule in ("fx_unittest_package", "fx_unittest_component"):
+                ut_attr_cands = []
+                if "package_name" not in kws:
+                    ut_attr_cands.append("package_name in GN not carried over to Bazel")
+                if "component_name" not in kws:
+                    ut_attr_cands.append("component_name in GN not carried over to Bazel")
+                for r_len in range(1, len(ut_attr_cands) + 1):
+                    for perm in itertools.permutations(ut_attr_cands, r_len):
+                        findings.append({
+                            "source": "migration_sanity",
+                            "category": "attribute_alignment",
+                            "severity": "INFO",
+                            "file": brel,
+                            "line": bline,
+                            "message": (
+                                f'Target "{bname}" (Target Attributes): '
+                                f"{'; '.join(perm)}"
+                            ),
+                            "remediation": (
+                                f"bazel2gn synthesizes `package_name` and `component_name` "
+                                f"from `{rule}(name = \"{bname}\")` in BUILD.gn."
+                            ),
+                        })
+            # Record INFO attribute_alignment for fx_packaged_binary when bazel2gn emits
+            # GN renamed_binary(source, source_deps, dest) below the sentinel.
+            if rule == "fx_packaged_binary":
+                rb_attr_cands = [
+                    f"{g_attr} in GN not carried over to Bazel"
+                    for g_attr in ("source", "source_deps", "dest")
+                    if g_attr not in kws
+                ]
+                for r_len in range(1, len(rb_attr_cands) + 1):
+                    for perm in itertools.permutations(rb_attr_cands, r_len):
+                        findings.append({
+                            "source": "migration_sanity",
+                            "category": "attribute_alignment",
+                            "severity": "INFO",
+                            "file": brel,
+                            "line": bline,
+                            "message": (
+                                f'Target "{bname}" (Target Attributes): '
+                                f"{'; '.join(perm)}"
+                            ),
+                            "remediation": (
+                                "fx_packaged_binary(binary, binary_name, install_root) maps "
+                                "to GN renamed_binary(source, source_deps, dest)."
+                            ),
+                        })
             # Record INFO coverage when diffengine pairs an fx_component / fx_test_component
             # with a GN fuchsia_component / fuchsia_test_component that uses cm_label or a
             # different component_name.
@@ -5405,13 +5479,108 @@ for pkg_dir in sorted(candidate_dirs):
     def vis_of(kws):
         return str_list(kws.get("visibility")) if "visibility" in kws else None
 
+    # Check whether a test plumbing target has external callers outside pkg_dir
+    # (for example, an fx_test_component or rustc_test packaged by another
+    # directory's integration test package), so declaring non-public visibility
+    # for those external callers is allowed rather than flagged as internal plumbing.
+    def has_external_test_plumbing_rdeps(tname):
+        default_t = os.path.basename(pkg_dir)
+        needle = f":{tname}" if tname != default_t else f"//{pkg_dir}"
+        try:
+            out = subprocess.check_output(
+                [
+                    "git",
+                    "-C",
+                    workdir,
+                    "grep",
+                    "--untracked",
+                    "-l",
+                    "--fixed-strings",
+                    "-e",
+                    needle,
+                    "--",
+                    "*BUILD.gn",
+                    "*BUILD.bazel",
+                    "*.gni",
+                    "*.bzl",
+                ],
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+            cand_files = [
+                os.path.join(workdir, l.strip()) for l in out.splitlines() if l.strip()
+            ]
+        except Exception:
+            cand_files = []
+        pkg_parts = pkg_dir.split("/") if pkg_dir else []
+        for i in range(1, len(pkg_parts)):
+            anc_gn = os.path.join(workdir, "/".join(pkg_parts[:i]), "BUILD.gn")
+            if os.path.isfile(anc_gn) and anc_gn not in cand_files:
+                cand_files.append(anc_gn)
+        abs_re = re.compile(
+            r'"//' + re.escape(pkg_dir) + r'(?::([A-Za-z0-9_.-]+))?(?:\([^)]*\))?"'
+        )
+        tname_norm = tname.replace("-", "_")
+        for fp in cand_files:
+            rel = os.path.relpath(fp, workdir)
+            caller_pkg = os.path.dirname(rel).strip("/")
+            if caller_pkg == pkg_dir or os.path.basename(rel) == "visibility.gni":
+                continue
+            try:
+                raw = open(fp, encoding="utf-8", errors="ignore").read()
+            except Exception:
+                continue
+            stripped = re.sub(
+                r"\b(?:visibility|packages)\s*\+?=\s*\[[^\]]*\]",
+                "",
+                re.sub(r"#[^\n]*", "", raw),
+                flags=re.DOTALL,
+            )
+            for m in abs_re.finditer(stripped):
+                sub = m.group(1) or default_t
+                if sub == tname or sub.replace("-", "_") == tname_norm:
+                    return True
+            if rel.endswith((".gn", ".gni")) and caller_pkg and pkg_dir:
+                try:
+                    cand_rel = os.path.relpath(pkg_dir, caller_pkg)
+                    if (
+                        cand_rel
+                        and cand_rel != "."
+                        and not cand_rel.startswith("../../..")
+                    ):
+                        rel_re = re.compile(
+                            r'"(?:\./)?'
+                            + re.escape(cand_rel)
+                            + r'(?::([A-Za-z0-9_.-]+))?(?:\([^)]*\))?"'
+                        )
+                        for m in rel_re.finditer(stripped):
+                            sub = m.group(1) or default_t
+                            if sub == tname or sub.replace("-", "_") == tname_norm:
+                                return True
+                except ValueError:
+                    pass
+        return False
+
     for tname, (rule, kws, line) in calls.items():
-        plumbing = (rule in ("rustc_test", "fx_test_component", "fx_unittest_component")
-                    or (rule in ("fx_packaged_binary", "fx_component_manifest") and is_true(kws.get("testonly")))
-                    or (rule == "fx_package" and "test_components" in kws))
-        if plumbing and vis_of(kws) not in (None, [":__pkg__"], ["//visibility:private"]):
-            hygiene(line, f"Test target `{rule}(name = \"{tname}\")` is not restricted to its package.",
-                    "Omit `visibility` (defaulting to package-private) on internal test plumbing targets.")
+        plumbing = (
+            rule in ("rustc_test", "fx_test_component", "fx_unittest_component")
+            or (
+                rule in ("fx_packaged_binary", "fx_component_manifest")
+                and is_true(kws.get("testonly"))
+            )
+            or (rule == "fx_package" and "test_components" in kws)
+        )
+        vis_vals = vis_of(kws)
+        if plumbing and vis_vals not in (None, [":__pkg__"], ["//visibility:private"]):
+            if "//visibility:public" in vis_vals or not has_external_test_plumbing_rdeps(
+                tname
+            ):
+                hygiene(
+                    line,
+                    f'Test target `{rule}(name = "{tname}")` is not restricted to its package.',
+                    "Omit `visibility` (defaulting to package-private) on internal test "
+                    "plumbing targets.",
+                )
         if rule.startswith("wrap_host_"):
             bn = kws.get("binary_name")
             test = bn.value if isinstance(bn, ast.Constant) and isinstance(bn.value, str) else None
@@ -6262,33 +6431,41 @@ def check_gn_only_constructs_below_sentinel(dirs_to_check):
 check_gn_only_constructs_below_sentinel(candidate_dirs)
 
 
-# Inspect whether a changed BUILD.bazel already existed at change_base/HEAD~1 and identify
-# pre-existing default_visibility, unmodified pre-existing targets, and collateral-only packages
-# (where BUILD.gn is untouched and BUILD.bazel only edits test_suite, exports_files, or visibility).
+# Inspect a changed BUILD.bazel (either pre-existing at change_base/HEAD~1 or newly
+# created outside target_dirs) to identify pre-existing default_visibility, unmodified
+# pre-existing targets, and collateral registration-only packages (where BUILD.bazel
+# only defines test_suite, exports_files, cml_shard, filegroup, stamp_group, or
+# visibility updates and BUILD.gn has no BAZEL2GN SENTINEL).
 def inspect_preexisting_collateral_pkg(pkg_dir):
     bazel_rel = os.path.join(pkg_dir, "BUILD.bazel")
     gn_rel = os.path.join(pkg_dir, "BUILD.gn")
     bazel_abs = os.path.join(workdir, bazel_rel)
     if not os.path.isfile(bazel_abs):
         return None
+    try:
+        cur_src = open(bazel_abs, encoding="utf-8").read()
+        cur_tree = ast.parse(cur_src, filename=bazel_rel)
+    except Exception:
+        return None
     base_src = ""
-    for ref in dict.fromkeys([change_base, "HEAD~1"]):
+    for ref in dict.fromkeys([change_base, "HEAD", "HEAD~1"]):
+        if not ref:
+            continue
         try:
-            base_src = subprocess.check_output(
+            cand = subprocess.check_output(
                 ["git", "-C", workdir, "show", f"{ref}:{bazel_rel}"],
                 stderr=subprocess.DEVNULL,
                 text=True,
             )
-            if base_src:
+            if cand == cur_src and ref != "HEAD~1":
+                continue
+            if cand:
+                base_src = cand
                 break
         except Exception:
             continue
-    if not base_src:
-        return None
     try:
-        cur_src = open(bazel_abs, encoding="utf-8").read()
         base_tree = ast.parse(base_src, filename=bazel_rel)
-        cur_tree = ast.parse(cur_src, filename=bazel_rel)
     except Exception:
         return None
 
@@ -6341,6 +6518,8 @@ def inspect_preexisting_collateral_pkg(pkg_dir):
                     tname = kw.value.value
                     break
             if not tname:
+                if rname not in ("load", "visibility", "select", "glob"):
+                    changed_rules.add(rname)
                 continue
             if tname in base_targets and norm_call_dump(node) == base_targets[tname]:
                 unmodified_targets[tname] = node.lineno
@@ -6359,9 +6538,9 @@ def inspect_preexisting_collateral_pkg(pkg_dir):
         except OSError:
             pass
     # A package outside target_dirs whose BUILD.gn has no BAZEL2GN SENTINEL and whose
-    # BUILD.bazel only updates test_suite/exports_files/package/filegroup/stamp_group
-    # or target visibility is a collateral registration package even when BUILD.gn is
-    # also edited to wire tests into group("tests") or bazel_test_suite().
+    # BUILD.bazel only defines/updates test_suite/exports_files/cml_shard/package/filegroup
+    # or target visibility is a collateral registration package even when BUILD.bazel was
+    # newly created or BUILD.gn was edited to wire tests into group("tests") or bazel_test_suite().
     collateral_rules = {
         "test_suite",
         "exports_files",
@@ -6369,10 +6548,14 @@ def inspect_preexisting_collateral_pkg(pkg_dir):
         "package_group",
         "filegroup",
         "stamp_group",
+        "cml_shard",
     }
     is_collateral = (
         changed_rules <= collateral_rules
-        and (not gn_modified or (pkg_dir not in set(target_dirs) and not gn_has_sentinel))
+        and (
+            (bool(base_src) and not gn_modified)
+            or (pkg_dir not in set(target_dirs) and not gn_has_sentinel)
+        )
     )
     if not (cur_default_vis_line or unmodified_targets or is_collateral):
         return None

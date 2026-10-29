@@ -495,6 +495,22 @@ for pkg in sorted(candidate_dirs):
             # Pure forwarding groups expanded to their forwarded target(s) are preserved.
             if info and info["forwarding_group"] and forwarded and forwarded <= new_all:
                 continue
+            # When a GN fuchsia_unittest_package/fuchsia_test_package("<name>") is migrated to
+            # fx_package(name = "<name>-package", package_name = "<name>", test_components = ...) +
+            # fx_test(name = "<name>"), bazel2gn generates fuchsia_test_package("<name>-package")
+            # (and no GN target "<name>"), so group("tests") updates its dep to the generated package.
+            new_dep_pkg_targets = parsed(f"{dep_pkg}/BUILD.gn", "new")[1]
+            if (
+                info
+                and info["tmpl"] in ("fuchsia_unittest_package", "fuchsia_test_package")
+                and split(label)[1] not in new_dep_pkg_targets
+                and any(
+                    new_dep_pkg_targets.get(split(s)[1], {}).get("tmpl")
+                    in ("fuchsia_test_package", "fuchsia_unittest_package")
+                    for s in subs
+                )
+            ):
+                continue
             if subs and exists_now:
                 findings.append({
                     "source": "gn_dep_parity",
