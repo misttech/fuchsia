@@ -1091,6 +1091,13 @@ class MultiVmoTestInstance : public TestInstance {
     bool reliable_mappings = true;
     uint64_t vmo_size = uniform_rand(kMaxVmoPages, rng) * zx_system_get_page_size();
 
+    // Randomly discard reliable mappings as some tests, such as generating pager faults on
+    // non-resizable VMOs, failing page requests, or changing protections do not work for
+    // reliable mappings.
+    if (reliable_mappings && uniform_rand(4, rng) == 0) {
+      reliable_mappings = false;
+    }
+
     // Mix in contiguous VMOs as a significant fraction, since physical page loaning and borrowing
     // needs to get covered heavily.  Also, some other VMO operations work differently on
     // contiguous VMOs.
@@ -1140,8 +1147,8 @@ class MultiVmoTestInstance : public TestInstance {
         // pager a class member because we might spawn another root VMO which will take a new pager.
         const zx_handle_t pager_handle = pager.get();
         if (!make_thread([this, pager = std::move(pager), port = std::move(port),
-                          vmo = std::move(dup_vmo)]() mutable {
-              pager_thread(std::move(pager), std::move(port), std::move(vmo));
+                          vmo = std::move(dup_vmo), reliable_mappings]() mutable {
+              pager_thread(std::move(pager), std::move(port), std::move(vmo), reliable_mappings);
             })) {
           // if the pager thread couldn't spin up bail right now and don't make the client thread as
           // that client thread will either block or hard crash, either scenario will make that
@@ -1178,26 +1185,20 @@ class MultiVmoTestInstance : public TestInstance {
 
     auto ops = make_ops(rng);
 
-    // Randomly discard reliable mappings as some tests, such as generating pager faults on
-    // non-resizable VMOs, or changing the protections do not work for reliable mappings.
-    if (reliable_mappings && uniform_rand(4, rng) == 0) {
-      reliable_mappings = false;
-    }
-
     make_thread([this, vmo = std::move(vmo), ops = std::move(ops), reliable_mappings]() mutable {
       op_thread(std::move(vmo), std::move(ops), reliable_mappings);
     });
   }
 
-  // TODO: pager_thread currently just fulfills any page faults correctly. This should be expanded
-  // to detach, error ranges, pre-supply pages etc.
-  void pager_thread(zx::pager pager, zx::port port, zx::vmo vmo) {
+  void pager_thread(zx::pager pager, zx::port port, zx::vmo vmo, bool reliable_mappings) {
+    auto rng = RngGen();
     // To exit the pager thread we need to know once we have the only reference to the vmo. This
     // requires two things, our vmo handle be the only handle to that vmo, and the vmo have no
     // children. The first condition has no signal and so until we know we have the only handle we
     // will used timed waits and poll. Once we are the solo_owner, tracked in this variable, we
     // will be able to use the zero children signal.
     bool solo_owner = false;
+    bool detached = false;
     while (1) {
       zx_port_packet_t packet;
       zx_status_t result =
@@ -1212,6 +1213,34 @@ class MultiVmoTestInstance : public TestInstance {
           result = vmo.wait_async(port, 1, ZX_VMO_ZERO_CHILDREN, 0);
           ZX_ASSERT(result == ZX_OK);
           solo_owner = true;
+        } else if (!detached && uniform_rand(2, rng) == 0) {
+          // Occasionally perform unsolicited supply_pages or ZX_PAGER_OP_DIRTY while active.
+          uint64_t curr_size = 0;
+          if (vmo.get_size(&curr_size) == ZX_OK && curr_size > 0) {
+            curr_size = std::min(curr_size, kMaxVmoSize);
+            uint64_t num_pages = curr_size / kPageSize;
+            if (num_pages > 0) {
+              uint64_t off_pages = uniform_rand(num_pages, rng);
+              uint64_t len_pages = uniform_rand(num_pages - off_pages + 1, rng);
+              if (len_pages > 0) {
+                uint64_t off = off_pages * kPageSize;
+                uint64_t len = len_pages * kPageSize;
+                if (uniform_rand(2, rng) == 0) {
+                  zx::vmo aux;
+                  uint64_t aux_off = uniform_rand(4ul, rng) * kPageSize;
+                  if (zx::vmo::create(aux_off + len, 0, &aux) == ZX_OK) {
+                    uint64_t commit_pages = uniform_rand(len_pages + 1, rng);
+                    if (commit_pages > 0) {
+                      aux.op_range(ZX_VMO_OP_COMMIT, aux_off, commit_pages * kPageSize, nullptr, 0);
+                    }
+                    pager.supply_pages(vmo, off, len, aux, aux_off);
+                  }
+                } else {
+                  pager.op_range(ZX_PAGER_OP_DIRTY, vmo, off, len, 0);
+                }
+              }
+            }
+          }
         }
         continue;
       }
@@ -1281,28 +1310,58 @@ class MultiVmoTestInstance : public TestInstance {
       ZX_ASSERT(packet.type == ZX_PKT_TYPE_PAGE_REQUEST);
 
       if (packet.page_request.command == ZX_PAGER_VMO_COMPLETE) {
-        // VMO is finished, so we have nothing to do. Technically since we have a handle to the vmo
-        // this case will never happen.
-        break;
+        // The VMO was detached from the pager; continue waiting until we are the solo_owner with
+        // zero children so writeback_thread can finish cleanly before pager is destroyed.
+        detached = true;
+        continue;
       } else if (packet.page_request.command != ZX_PAGER_VMO_READ &&
                  packet.page_request.command != ZX_PAGER_VMO_DIRTY) {
         PrintfAlways("Unknown page_request command %d\n", packet.page_request.command);
         return;
       }
 
+      if (detached) {
+        continue;
+      }
+
       // No matter what we decide to do we *MUST* ensure we also fullfill the page fault in some way
       // otherwise we risk blocking the faulting thread (and also ourselves) forever. Above all we
       // must guarantee that the op_thread can progress to the point of closing the VMO such that
       // we end up with the only VMO handle.
+      if (!reliable_mappings && !solo_owner && uniform_rand(64, rng) == 0) {
+        pager.detach_vmo(vmo);
+        detached = true;
+        continue;
+      }
 
       zx::vmo aux_vmo;
+      uint64_t aux_offset = 0;
       if (packet.page_request.command == ZX_PAGER_VMO_READ) {
-        if (zx::vmo::create(packet.page_request.length, 0, &aux_vmo) != ZX_OK) {
+        aux_offset = uniform_rand(4ul, rng) * kPageSize;
+        if (zx::vmo::create(aux_offset + packet.page_request.length, 0, &aux_vmo) != ZX_OK) {
           PrintfAlways("Failed to create VMO of length %" PRIu64 " to fulfill page fault\n",
                        packet.page_request.length);
           return;
         }
+        // Randomly commit a sub-range of aux_vmo so supply_pages transfers a mix of committed
+        // pages and zero markers.
+        uint64_t req_pages = packet.page_request.length / kPageSize;
+        if (req_pages > 0 && uniform_rand(2, rng) == 0) {
+          uint64_t commit_off_pages = uniform_rand(req_pages, rng);
+          uint64_t commit_len_pages = uniform_rand(req_pages - commit_off_pages + 1, rng);
+          if (commit_len_pages > 0) {
+            aux_vmo.op_range(ZX_VMO_OP_COMMIT, aux_offset + commit_off_pages * kPageSize,
+                             commit_len_pages * kPageSize, nullptr, 0);
+          }
+        }
       }
+
+      const bool fail_request = !reliable_mappings && !solo_owner && (uniform_rand(16, rng) == 0);
+      static const zx_status_t kPagerFailStatuses[] = {ZX_ERR_IO, ZX_ERR_IO_DATA_INTEGRITY,
+                                                       ZX_ERR_BAD_STATE, ZX_ERR_NO_SPACE,
+                                                       ZX_ERR_BUFFER_TOO_SMALL};
+      const zx_status_t fail_status =
+          kPagerFailStatuses[uniform_rand(std::size(kPagerFailStatuses), rng)];
 
       do {
         // Get the latest VMO size, since using a cached value could get out of sync since we
@@ -1321,9 +1380,13 @@ class MultiVmoTestInstance : public TestInstance {
         ZX_ASSERT(packet.page_request.offset < vmo_size);
         uint64_t trimmed_length =
             std::min(packet.page_request.length, vmo_size - packet.page_request.offset);
-        if (packet.page_request.command == ZX_PAGER_VMO_READ) {
+        if (fail_request) {
+          result = pager.op_range(ZX_PAGER_OP_FAIL, vmo, packet.page_request.offset, trimmed_length,
+                                  fail_status);
+        } else if (packet.page_request.command == ZX_PAGER_VMO_READ) {
           ZX_ASSERT(aux_vmo.is_valid());
-          result = pager.supply_pages(vmo, packet.page_request.offset, trimmed_length, aux_vmo, 0);
+          result = pager.supply_pages(vmo, packet.page_request.offset, trimmed_length, aux_vmo,
+                                      aux_offset);
         } else {
           ZX_ASSERT(packet.page_request.command == ZX_PAGER_VMO_DIRTY);
           result =
