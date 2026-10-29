@@ -24,7 +24,6 @@
 #include <arch/x86/cpuid.h>
 #include <arch/x86/hwp.h>
 #include <arch/x86/mmu.h>
-#include <arch/x86/platform_access.h>
 #include <arch/x86/pv.h>
 #include <fbl/algorithm.h>
 #include <hwreg/x86msr.h>
@@ -186,10 +185,6 @@ void x86_cpu_feature_init() {
   arch::BootCpuidIo cpuid;
   hwreg::X86MsrIo msr;
 
-  // TODO(61093): Replace with newer lib/arch and hwreg counterparts.
-  cpu_id::CpuId cpuid_old;
-  MsrAccess msr_old;
-
   // Get microcode patch level
   switch (x86_vendor) {
     case X86_VENDOR_INTEL:
@@ -233,9 +228,10 @@ void x86_cpu_feature_init() {
   g_l1d_flush_on_vmentry = !BootOptions::Get()->x86_disable_spec_mitigations && g_has_l1tf &&
                            arch::BootCpuid<arch::CpuidExtendedFeatureFlagsD>().l1d_flush();
   g_ras_fill_on_ctxt_switch = !BootOptions::Get()->x86_disable_spec_mitigations;
+  // TODO(61093): Replace with newer lib/arch and hwreg counterparts.
   g_cpu_vulnerable_to_rsb_underflow = !BootOptions::Get()->x86_disable_spec_mitigations &&
                                       (x86_vendor == X86_VENDOR_INTEL) &&
-                                      x86_intel_cpu_has_rsb_fallback(&cpuid_old, &msr_old);
+                                      x86_intel_cpu_has_rsb_fallback();
   // TODO(https://fxbug.dev/42108888, https://fxbug.dev/42072538): Consider whether a process can
   // opt-out of an IBPB on switch, either on switch-in (ex: its compiled with a retpoline) or
   // switch-out (ex: it promises not to attack the next process).
@@ -976,13 +972,13 @@ static const x86_microarch_config_t unknown_vendor_config{
         },
 };
 
-const x86_microarch_config_t* get_microarch_config(const cpu_id::CpuId* cpuid) {
-  auto vendor = cpuid->ReadManufacturerInfo();
-  auto processor_id = cpuid->ReadProcessorId();
-
-  if (vendor.manufacturer() == cpu_id::ManufacturerInfo::INTEL && processor_id.family() == 0x6) {
+// TODO(https://fxbug.dev/540178114): Remove this FFI shim once feature.cc itself is ported to Rust
+// in a subsequent CL (src/feature.rs currently only holds partial inline helpers).
+extern "C" const void* cpp_x86_get_microarch_config(bool is_intel, bool is_amd, uint16_t family,
+                                                    uint16_t model) {
+  if (is_intel && family == 0x6) {
     /* Table largely from https://en.wikichip.org/wiki/intel/cpuid */
-    switch (processor_id.model()) {
+    switch (model) {
       /* Big cores */
       case 0x1a: /* Nehalem */
       case 0x1e: /* Nehalem */
@@ -1055,8 +1051,8 @@ const x86_microarch_config_t* get_microarch_config(const cpu_id::CpuId* cpuid) {
       default:
         return &intel_default_config;
     }
-  } else if (vendor.manufacturer() == cpu_id::ManufacturerInfo::AMD) {
-    switch (processor_id.family()) {
+  } else if (is_amd) {
+    switch (family) {
       case 0x15:
         return &bulldozer_config;
       case 0x16:
@@ -1070,6 +1066,14 @@ const x86_microarch_config_t* get_microarch_config(const cpu_id::CpuId* cpuid) {
   }
 
   return &unknown_vendor_config;
+}
+
+const x86_microarch_config_t* get_microarch_config(const cpu_id::CpuId* cpuid) {
+  const auto mfg = cpuid->ReadManufacturerInfo().manufacturer();
+  const auto processor_id = cpuid->ReadProcessorId();
+  return static_cast<const x86_microarch_config_t*>(cpp_x86_get_microarch_config(
+      mfg == cpu_id::ManufacturerInfo::INTEL, mfg == cpu_id::ManufacturerInfo::AMD,
+      processor_id.family(), processor_id.model()));
 }
 
 extern "C" {

@@ -103,6 +103,31 @@ unsafe extern "C" {
 
     #[link_name = "x86_get_model"]
     fn c_x86_get_model() -> *const X86ModelInfo;
+
+    safe fn cpp_x86_get_microarch_config(
+        is_intel: bool,
+        is_amd: bool,
+        family: u16,
+        model: u16,
+    ) -> *const core::ffi::c_void;
+}
+
+/// Returns the microarchitecture configuration entry for `cpuid`.
+#[inline]
+pub(super) fn get_microarch_config(
+    cpuid: &impl super::cpuid::CpuId,
+) -> &'static X86MicroarchConfig {
+    let mfg = cpuid.read_manufacturer_info().manufacturer();
+    let processor_id = cpuid.read_processor_id();
+    let is_intel = mfg == super::cpuid::Manufacturer::Intel;
+    let is_amd = mfg == super::cpuid::Manufacturer::Amd;
+    let ptr =
+        cpp_x86_get_microarch_config(is_intel, is_amd, processor_id.family(), processor_id.model())
+            .cast::<X86MicroarchConfig>();
+    // SAFETY: `cpp_x86_get_microarch_config` always returns a non-null, properly aligned pointer
+    // to a static `x86_microarch_config_t` table entry in `feature.cc` whose layout matches
+    // bindgen-generated `X86MicroarchConfig`.
+    unsafe { &*ptr }
 }
 
 macro_rules! x86_cpuid_bit {
@@ -166,61 +191,15 @@ pub struct X86CpuidBit {
 zr::static_assert!(core::mem::size_of::<X86CpuidBit>() == 8);
 zr::static_assert!(core::mem::align_of::<X86CpuidBit>() == 4);
 
-#[repr(u32)]
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub enum X86VendorList {
-    #[default]
-    Unknown = 0,
-    Intel = 1,
-    Amd = 2,
-}
+pub use x86_feature_bindings::{
+    x86_get_timer_freq_func_t as X86GetTimerFreqFunc, x86_idle_state_t, x86_idle_states_t,
+    x86_microarch_config_t as X86MicroarchConfig, x86_microarch_list as X86MicroarchList,
+    x86_model_info as X86ModelInfo, x86_reboot_reason_func_t as X86RebootReasonFunc,
+    x86_reboot_system_func_t as X86RebootSystemFunc, x86_vendor_list as X86VendorList,
+};
 
-zr::static_assert!(core::mem::size_of::<X86VendorList>() == 4);
-zr::static_assert!(core::mem::align_of::<X86VendorList>() == 4);
-
-#[repr(C)]
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct X86ModelInfo {
-    pub processor_type: u8,
-    pub family: u8,
-    pub model: u8,
-    pub stepping: u8,
-
-    pub display_family: u32,
-    pub display_model: u32,
-
-    pub patch_level: u32,
-}
-
-zr::static_assert!(core::mem::size_of::<X86ModelInfo>() == 16);
-zr::static_assert!(core::mem::align_of::<X86ModelInfo>() == 4);
-
-#[repr(u32)]
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub enum X86MicroarchList {
-    #[default]
-    Unknown = 0,
-    IntelNehalem = 1,
-    IntelWestmere = 2,
-    IntelSandyBridge = 3,
-    IntelIvyBridge = 4,
-    IntelBroadwell = 5,
-    IntelHaswell = 6,
-    IntelSkylake = 7,
-    IntelCannonlake = 8,
-    IntelIcelake = 9,
-    IntelTigerlake = 10,
-    IntelAlderlake = 11,
-    IntelSilvermont = 12,
-    IntelGoldmont = 13,
-    IntelGoldmontPlus = 14,
-    AmdBulldozer = 15,
-    AmdJaguar = 16,
-    AmdZen = 17,
-}
-
-zr::static_assert!(core::mem::size_of::<X86MicroarchList>() == 4);
-zr::static_assert!(core::mem::align_of::<X86MicroarchList>() == 4);
+zr::static_assert!(core::mem::size_of::<X86MicroarchConfig>() == 344);
+zr::static_assert!(core::mem::align_of::<X86MicroarchConfig>() == 8);
 
 #[repr(u32)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -233,28 +212,6 @@ pub enum X86HypervisorList {
 
 zr::static_assert!(core::mem::size_of::<X86HypervisorList>() == 4);
 zr::static_assert!(core::mem::align_of::<X86HypervisorList>() == 4);
-
-pub use x86_idle_states_bindings::{x86_idle_state_t, x86_idle_states_t};
-
-pub type X86GetTimerFreqFunc = Option<unsafe extern "C" fn() -> u64>;
-pub type X86RebootSystemFunc = Option<unsafe extern "C" fn()>;
-pub type X86RebootReasonFunc = Option<unsafe extern "C" fn(reason: u64)>;
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct X86MicroarchConfig {
-    pub x86_microarch: X86MicroarchList,
-    pub get_apic_freq: X86GetTimerFreqFunc,
-    pub get_tsc_freq: X86GetTimerFreqFunc,
-    pub reboot_system: X86RebootSystemFunc,
-    pub reboot_reason: X86RebootReasonFunc,
-    pub disable_c1e: bool,
-    pub idle_prefer_hlt: bool,
-    pub idle_states: x86_idle_states_t,
-}
-
-zr::static_assert!(core::mem::size_of::<X86MicroarchConfig>() == 344);
-zr::static_assert!(core::mem::align_of::<X86MicroarchConfig>() == 8);
 
 x86_cpuid_bit! {X86_FEATURE_SSE3, ModelFeatures, 2, 0}
 x86_cpuid_bit! {X86_FEATURE_MON, ModelFeatures, 2, 3}

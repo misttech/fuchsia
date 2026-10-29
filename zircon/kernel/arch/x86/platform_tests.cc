@@ -23,11 +23,9 @@
 #include <arch/x86/apic.h>
 #include <arch/x86/cpuid.h>
 #include <arch/x86/cpuid_test_data.h>
-#include <arch/x86/fake_msr_access.h>
 #include <arch/x86/feature.h>
 #include <arch/x86/hwp.h>
 #include <arch/x86/interrupts.h>
-#include <arch/x86/platform_access.h>
 #include <hwreg/x86msr.h>
 #include <kernel/cpu.h>
 #include <kernel/deadline.h>
@@ -35,8 +33,6 @@
 #include <ktl/array.h>
 #include <ktl/unique_ptr.h>
 #include <platform/pc/timer.h>
-
-#include "amd.h"
 
 #include <ktl/enforce.h>
 
@@ -188,124 +184,6 @@ static bool test_x64_cpu_uarch_config_selection() {
   // AMD Ryzen Threadripper 2970WX is Zen
   EXPECT_EQ(get_microarch_config(&cpu_id::kCpuIdThreadRipper2970wx)->x86_microarch,
             X86_MICROARCH_AMD_ZEN);
-
-  END_TEST;
-}
-
-static uint32_t intel_make_microcode_checksum(uint32_t* patch, size_t bytes) {
-  size_t dwords = bytes / sizeof(uint32_t);
-  uint32_t sum = 0;
-  for (size_t i = 0; i < dwords; i++) {
-    sum += patch[i];
-  }
-  return -sum;
-}
-
-static bool test_x64_intel_ucode_loader() {
-  BEGIN_TEST;
-
-  // x86_intel_check_microcode_patch checks if a microcode patch is suitable for a particular
-  // CPU. Test that its match logic works for various CPUs and conditions we commonly use.
-
-  {
-    uint32_t fake_patch[512] = {};
-    // Intel(R) Celeron(R) CPU J3455 (Goldmont), NUC6CAYH
-    cpu_id::TestDataSet data = {};
-    data.leaf0 = {.reg = {0x15, 0x756e6547, 0x6c65746e, 0x49656e69}};
-    data.leaf1 = {.reg = {0x506c9, 0x2200800, 0x4ff8ebbf, 0xbfebfbff}};
-    data.leaf4 = {.reg = {0x3c000121, 0x140003f, 0x3f, 0x1}};
-    data.leaf7 = {.reg = {0x0, 0x2294e283, 0x0, 0x2c000000}};
-    cpu_id::FakeCpuId cpu(data);
-    FakeMsrAccess fake_msrs = {};
-    fake_msrs.msrs_[0] = {X86_MSR_IA32_PLATFORM_ID, 0x1ull << 50};  // Apollo Lake
-
-    // Reject an all-zero patch.
-    EXPECT_FALSE(
-        x86_intel_check_microcode_patch(&cpu, &fake_msrs, {fake_patch, sizeof(fake_patch)}));
-
-    // Reject patch with non-matching processor signature.
-    fake_patch[0] = 0x1;
-    fake_patch[4] = intel_make_microcode_checksum(fake_patch, sizeof(fake_patch));
-    EXPECT_FALSE(
-        x86_intel_check_microcode_patch(&cpu, &fake_msrs, {fake_patch, sizeof(fake_patch)}));
-
-    // Expect matching patch to pass
-    fake_patch[0] = 0x1;
-    fake_patch[3] = data.leaf1.reg[0];  // Signature match
-    fake_patch[6] = 0x3;                // Processor flags match PLATFORM_ID
-    fake_patch[4] = 0;
-    fake_patch[4] = intel_make_microcode_checksum(fake_patch, sizeof(fake_patch));
-    EXPECT_TRUE(
-        x86_intel_check_microcode_patch(&cpu, &fake_msrs, {fake_patch, sizeof(fake_patch)}));
-    // Real header from 2019-01-15, rev 38
-    fake_patch[0] = 0x1;
-    fake_patch[1] = 0x38;
-    fake_patch[2] = 0x01152019;
-    fake_patch[3] = 0x506c9;
-    fake_patch[6] = 0x3;  // Processor flags match PLATFORM_ID
-    fake_patch[4] = 0;
-    fake_patch[4] = intel_make_microcode_checksum(fake_patch, sizeof(fake_patch));
-    EXPECT_TRUE(
-        x86_intel_check_microcode_patch(&cpu, &fake_msrs, {fake_patch, sizeof(fake_patch)}));
-  }
-
-  END_TEST;
-}
-
-class FakeWriteMsr : public MsrAccess {
- public:
-  void write_msr(uint32_t msr_index, uint64_t value) override {
-    DEBUG_ASSERT(written_ == false);
-    written_ = true;
-    msr_index_ = msr_index;
-  }
-
-  bool written_ = false;
-  uint32_t msr_index_;
-};
-
-static bool test_x64_intel_ucode_patch_loader() {
-  BEGIN_TEST;
-
-  cpu_id::TestDataSet data = {};
-  cpu_id::FakeCpuId cpu(data);
-  FakeWriteMsr msrs;
-  uint32_t fake_patch[512] = {};
-
-  // This test can only run on physical Intel x86-64 hosts; x86_intel_get_patch_level
-  // does not use an interface to access patch_level registers and those registers are
-  // only present/writable on h/w.
-  if (x86_vendor == X86_VENDOR_INTEL && !x86_feature_test(X86_FEATURE_HYPERVISOR)) {
-    // Expect that a patch == current patch is not loaded.
-    uint32_t current_patch_level = x86_intel_get_patch_level();
-    fake_patch[1] = current_patch_level;
-    x86_intel_load_microcode_patch(&cpu, &msrs, {fake_patch, sizeof(fake_patch)});
-    EXPECT_FALSE(msrs.written_);
-
-    // Expect that a newer patch is loaded.
-    fake_patch[1] = current_patch_level + 1;
-    x86_intel_load_microcode_patch(&cpu, &msrs, {fake_patch, sizeof(fake_patch)});
-    EXPECT_TRUE(msrs.written_);
-    EXPECT_EQ(msrs.msr_index_, X86_MSR_IA32_BIOS_UPDT_TRIG);
-  }
-
-  END_TEST;
-}
-
-static bool test_amd_platform_init() {
-  BEGIN_TEST;
-  FakeMsrAccess fake_msrs = {};
-
-  // Test that set_lfence_serializing sets the LFENCE bit when its not already set.
-  fake_msrs.msrs_[0] = {X86_MSR_AMD_F10_DE_CFG, 0};
-  x86_amd_set_lfence_serializing(&cpu_id::kCpuIdThreadRipper2970wx, &fake_msrs);
-  EXPECT_EQ(fake_msrs.msrs_[0].value, 0x2ull, "");
-
-  // Test that set_lfence_serializing doesn't change the LFENCE bit when its set.
-  fake_msrs.msrs_[0] = {X86_MSR_AMD_F10_DE_CFG, 0x2ull};
-  fake_msrs.no_writes_ = true;
-  x86_amd_set_lfence_serializing(&cpu_id::kCpuIdThreadRipper2970wx, &fake_msrs);
-  EXPECT_EQ(fake_msrs.msrs_[0].value, 0x2ull, "");
 
   END_TEST;
 }
@@ -468,9 +346,6 @@ UNITTEST("basic test of read/write MSR variants", test_x64_msrs)
 UNITTEST("test k cpu rdmsr commands", test_x64_msrs_k_commands)
 UNITTEST("test k hwp commands", test_x64_hwp_k_commands)
 UNITTEST("test uarch_config is correctly selected", test_x64_cpu_uarch_config_selection)
-UNITTEST("test Intel x86 microcode patch loader match and load logic", test_x64_intel_ucode_loader)
-UNITTEST("test Intel x86 microcode patch loader mechanism", test_x64_intel_ucode_patch_loader)
-UNITTEST("test amd_platform_init", test_amd_platform_init)
 UNITTEST("test spectre v2 mitigation building blocks", test_spectre_v2_mitigations)
 UNITTEST("test mds mitigation building blocks", test_mds_taa_mitigation)
 UNITTEST("test gdt is mapped", test_gdt_mapping)

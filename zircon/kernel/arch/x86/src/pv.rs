@@ -84,6 +84,8 @@ struct PvClock<T>(ptr::NonNull<T>);
 
 // SAFETY: PvClock represents a pointer to a mapped, hypervisor-accessible page.
 unsafe impl<T: Send> Send for PvClock<T> {}
+// SAFETY: PvClock represents a pointer to a mapped, hypervisor-accessible page that is safe
+// to share concurrently when T is Sync.
 unsafe impl<T: Sync> Sync for PvClock<T> {}
 
 impl<T> PvClock<T> {
@@ -239,6 +241,7 @@ pub fn pv_clock_init() -> Result<(), Status> {
     let (page, pa) = pmm::alloc_page(pmm::ALLOC_FLAG_ANY)?;
     let va = physmap::paddr_to_physmap(pa);
 
+    // SAFETY: The page was just allocated from PMM and is being wired for kernel PV clock use.
     unsafe { page.set_state(page_state::VmPageState(page_state::bindings::vm_page_state::WIRED)) };
 
     // SAFETY: Page has just been allocated and has no references.
@@ -258,6 +261,7 @@ pub fn pv_clock_init() -> Result<(), Status> {
     let (page, pa) = pmm::alloc_page(pmm::ALLOC_FLAG_ANY)?;
     let va = physmap::paddr_to_physmap(pa);
 
+    // SAFETY: The page was just allocated from PMM and is being wired for kernel PV clock use.
     unsafe { page.set_state(page_state::VmPageState(page_state::bindings::vm_page_state::WIRED)) };
 
     // SAFETY: Page has just been allocated and has no references.
@@ -379,7 +383,7 @@ pub extern "C" fn pv_clock_get_tsc_freq() -> u64 {
 pub extern "C" fn pv_ipi(mask_low: u64, mask_high: u64, start_id: u64, icr: u64) -> i32 {
     let vendor = x86_get_vendor();
     match vendor {
-        X86VendorList::Intel => {
+        X86VendorList::X86_VENDOR_INTEL => {
             let ret: i32;
             // SAFETY: Executes hypervisor hypercall vmcall for Intel CPUs.
             // Note: `rbx` is reserved by LLVM, so we use `xchg` to temporarily load `mask_low` into
@@ -399,7 +403,7 @@ pub extern "C" fn pv_ipi(mask_low: u64, mask_high: u64, start_id: u64, icr: u64)
             }
             ret
         }
-        X86VendorList::Amd => {
+        X86VendorList::X86_VENDOR_AMD => {
             let ret: i32;
             // SAFETY: Executes hypervisor hypercall vmmcall for AMD CPUs.
             // Note: `rbx` is reserved by LLVM, so we use `xchg` to temporarily load `mask_low` into
@@ -419,7 +423,10 @@ pub extern "C" fn pv_ipi(mask_low: u64, mask_high: u64, start_id: u64, icr: u64)
             }
             ret
         }
-        _ => panic!("PANIC_UNIMPLEMENTED: unsupported x86 vendor for pv_ipi"),
+        _ => {
+            core::hint::cold_path();
+            panic!("PANIC_UNIMPLEMENTED: unsupported x86 vendor for pv_ipi");
+        }
     }
 }
 

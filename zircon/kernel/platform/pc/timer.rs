@@ -708,7 +708,7 @@ fn pc_init_timer(_level: init::LkInitLevel) {
     const DESIRED_PIT_FREQUENCY: u32 = 1000;
 
     let mut constant_tsc = false;
-    if x86_get_vendor() == X86VendorList::Intel {
+    if x86_get_vendor() == X86VendorList::X86_VENDOR_INTEL {
         // This condition taken from Intel 3B 17.15 (Time-Stamp Counter).  This
         // is the negation of the non-Constant TSC section, since the Constant
         // TSC section is incomplete (the behavior is architectural going

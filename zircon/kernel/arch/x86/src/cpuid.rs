@@ -490,6 +490,22 @@ pub mod tests {
 
     const EMPTY_REGS: Registers = Registers { reg: [0, 0, 0, 0] };
 
+    impl TestDataSet {
+        /// An all-zero `TestDataSet` fixture.
+        pub const EMPTY: Self = Self {
+            features: &[],
+            missing_features: &[],
+            leaf0: EMPTY_REGS,
+            leaf1: EMPTY_REGS,
+            leaf6: EMPTY_REGS,
+            leaf7: EMPTY_REGS,
+            leaf8_0: EMPTY_REGS,
+            leaf8_1: EMPTY_REGS,
+            leaf8_7: EMPTY_REGS,
+            leaf8_21: EMPTY_REGS,
+        };
+    }
+
     /// Queried from an Intel Core i5-6260U (NUC6i5SYH)
     pub static TEST_DATA_CORE_I5_6260U: TestDataSet = TestDataSet {
         features: &[

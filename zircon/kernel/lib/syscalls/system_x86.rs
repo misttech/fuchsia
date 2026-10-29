@@ -77,19 +77,19 @@ fn limit_reason_supported() -> bool {
     // 1 through 3, Intel Core i3 8th generation, and Intel Xeon E processors. See Intel Volume 4
     // Table 2-39.
     let x86_microarch = x86_get_microarch_config().unwrap().x86_microarch;
-    (x86_microarch == X86MicroarchList::IntelSkylake)
-        || (x86_microarch == X86MicroarchList::IntelCannonlake)
-        || (x86_microarch == X86MicroarchList::IntelTigerlake)
+    (x86_microarch == X86MicroarchList::X86_MICROARCH_INTEL_SKYLAKE)
+        || (x86_microarch == X86MicroarchList::X86_MICROARCH_INTEL_CANNONLAKE)
+        || (x86_microarch == X86MicroarchList::X86_MICROARCH_INTEL_TIGERLAKE)
 }
 
 /// Returns whether the RAPL power limit MSRs are supported on this microarchitecture.
 fn power_limit_supported() -> bool {
     let x86_microarch = x86_get_microarch_config().unwrap().x86_microarch;
-    (x86_microarch == X86MicroarchList::IntelSandyBridge)
-        || (x86_microarch == X86MicroarchList::IntelSilvermont)
-        || (x86_microarch == X86MicroarchList::IntelBroadwell)
-        || (x86_microarch == X86MicroarchList::IntelHaswell)
-        || (x86_microarch == X86MicroarchList::IntelSkylake)
+    (x86_microarch == X86MicroarchList::X86_MICROARCH_INTEL_SANDY_BRIDGE)
+        || (x86_microarch == X86MicroarchList::X86_MICROARCH_INTEL_SILVERMONT)
+        || (x86_microarch == X86MicroarchList::X86_MICROARCH_INTEL_BROADWELL)
+        || (x86_microarch == X86MicroarchList::X86_MICROARCH_INTEL_HASWELL)
+        || (x86_microarch == X86MicroarchList::X86_MICROARCH_INTEL_SKYLAKE)
 }
 
 /// Reads `MSR_RAPL_POWER_UNIT` and computes the power, time, and energy unit multipliers.

@@ -188,7 +188,6 @@ config("kernel") {
 
 source_set("x86") {
   sources = [
-    "amd.cc",
     "arch.cc",
     "asm.S",
     "bootstrap16.cc",
@@ -201,7 +200,6 @@ source_set("x86") {
     "gdt.S",
     "handoff.cc",
     "idt.cc",
-    "intel.cc",
     "ioport.cc",
     "mmu.cc",
     "mmu_mem_types.cc",
@@ -368,10 +366,42 @@ kernel_bindgen_crate("x86-idle-states-bindings") {
   notice_year = 2026
 }
 
+kernel_bindgen_crate("x86-feature-bindings") {
+  visibility = [ ":*" ]
+  headers = [ "include/arch/x86/feature.h" ]
+  cpp = true
+  non_rust_deps = [
+    ":headers",
+    "//zircon/kernel/lib/ktl:headers",
+  ]
+  deps = [ ":x86-idle-states-bindings" ]
+  notice_year = 2026
+  raw_lines = [
+    "#![no_std]",
+    "pub use x86_idle_states_bindings::{x86_idle_state_t, x86_idle_states_t};",
+  ]
+  type_blocklist = [ "x86_idle_state.*" ]
+  type_allowlist = [
+    "x86_model_info",
+    "x86_microarch_config_t",
+    "x86_microarch_list",
+    "x86_vendor_list",
+  ]
+  rustified_enum = [
+    "x86_microarch_list",
+    "x86_vendor_list",
+  ]
+  layout_tests = true
+  explicit_padding = false
+  expect_lints = [ "non_camel_case_types" ]
+}
+
 kernel_rust_mod("arch-x86-rs") {
   output_name = "arch_x86"
   source_root = "src/mod.rs"
   sources = [
+    "src/amd.rs",
+    "src/amd_ffi.rs",
     "src/apic.rs",
     "src/arch.rs",
     "src/arch_ffi.rs",
@@ -385,6 +415,8 @@ kernel_rust_mod("arch-x86-rs") {
     "src/hwp_ffi.rs",
     "src/idle_states.rs",
     "src/idle_states_ffi.rs",
+    "src/intel.rs",
+    "src/intel_ffi.rs",
     "src/interrupts.rs",
     "src/ioapic.rs",
     "src/lapic.rs",
@@ -408,6 +440,7 @@ kernel_rust_mod("arch-x86-rs") {
   deps = [
     ":arch-x86-aspace-bindings",
     ":arch-x86-vm-bindings",
+    ":x86-feature-bindings",
     ":x86-idle-states-bindings",
     "//sdk/rust/zbi",
     "//sdk/rust/zx-status",
@@ -419,6 +452,7 @@ kernel_rust_mod("arch-x86-rs") {
     "//src/lib/regio",
     "//src/lib/zr",
     "//third_party/rust_crates:pin-init",
+    "//third_party/rust_crates:zerocopy",
     "//zircon/kernel/arch:arch-types-bindings",
     "//zircon/kernel/lib/acpi_lite/rust:acpi_lite",
     "//zircon/kernel/lib/arch:arch-rs",

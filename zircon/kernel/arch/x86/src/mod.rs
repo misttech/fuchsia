@@ -4,6 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+mod amd;
+mod amd_ffi;
 pub mod apic;
 #[cfg(console_enabled)]
 pub mod arch;
@@ -19,6 +21,8 @@ pub mod hwp;
 mod hwp_ffi;
 mod idle_states;
 mod idle_states_ffi;
+mod intel;
+mod intel_ffi;
 pub mod interrupts;
 pub mod ioapic;
 pub mod lapic;
