@@ -17,13 +17,6 @@ use zx_types::{
 };
 
 unsafe extern "C" {
-    /// Checks if the given JobDispatcher is the root job dispatcher.
-    ///
-    /// # Safety
-    ///
-    /// `job` must point to a valid `JobDispatcher`.
-    pub(crate) fn cpp_job_dispatcher_is_root(job: *const JobDispatcher) -> bool;
-
     /// Creates a new child JobDispatcher under the given parent job.
     ///
     /// # Safety
@@ -74,20 +67,6 @@ unsafe extern "C" {
         job: *mut JobDispatcher,
         policy: *const zx_policy_timer_slack_t,
     ) -> zx_status_t;
-
-    /// Returns a reference-counted pointer to the root job dispatcher.
-    ///
-    /// # Safety
-    ///
-    /// Safe to call from any thread context after root job initialization.
-    pub(crate) fn cpp_job_dispatcher_get_root_job() -> *mut JobDispatcher;
-
-    /// Returns a pointer to the immortal singleton root job handle.
-    ///
-    /// # Safety
-    ///
-    /// Safe to call from any thread context after root job initialization.
-    pub(crate) fn cpp_job_dispatcher_get_root_job_handle() -> *const core::ffi::c_void;
 
     /// Creates and returns a reference-counted pointer to a new root job dispatcher.
     pub(crate) fn cpp_job_dispatcher_create_root_job() -> *mut JobDispatcher;

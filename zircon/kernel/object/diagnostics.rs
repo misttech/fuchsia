@@ -38,6 +38,8 @@ use super::handle::HandleTableArena;
 #[cfg(console_enabled)]
 use super::job_dispatcher::{JobDispatcher, JobEnumerator};
 #[cfg(console_enabled)]
+use super::singleton::get_root_job_dispatcher;
+#[cfg(console_enabled)]
 use crate::console::{CMD_AVAIL_NORMAL, CmdArgs, static_command};
 #[cfg(console_enabled)]
 use crate::kernel::thread;
@@ -536,7 +538,7 @@ fn dump_process_list() {
         debug_assert!(status.is_ok());
         kprintln!("{:7u} {:s} [{:s}]", process.get_koid(), handle_counts_str, c_name(&pname));
     });
-    JobDispatcher::get_root_job().enumerate_children_recursive(&mut walker);
+    get_root_job_dispatcher().enumerate_children_recursive(&mut walker);
 }
 
 #[cfg(console_enabled)]
@@ -549,7 +551,7 @@ fn dump_job_list() {
         debug_assert!(status.is_ok());
         kprintln!("{:7u} '{:s}'", job.get_koid(), c_name(&name));
     });
-    JobDispatcher::get_root_job().enumerate_children_recursive(&mut walker);
+    get_root_job_dispatcher().enumerate_children_recursive(&mut walker);
 }
 
 #[cfg(console_enabled)]

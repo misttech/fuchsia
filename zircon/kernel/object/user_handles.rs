@@ -479,7 +479,7 @@ impl WriteHandles for UserInOutPtr<zx_handle_disposition_t> {
 #[unittest::suite(name = "user_handles_rust")]
 mod tests {
     use super::remove_user_handles;
-    use crate::object::{EventPairDispatcher, Handle, JobDispatcher, ProcessDispatcher};
+    use crate::object::{EventPairDispatcher, Handle, ProcessDispatcher, get_root_job_dispatcher};
     use crate::user_copy::UserInPtr;
     use crate::user_memory::UserMemory;
     use core::ptr::with_exposed_provenance;
@@ -491,7 +491,7 @@ mod tests {
     #[test]
     fn test_remove_single_user_handle() {
         let (proc_handle, _proc_rights, _vmar, _vmar_rights) =
-            ProcessDispatcher::create(JobDispatcher::get_root_job(), b"test-user-handles", 0)
+            ProcessDispatcher::create(get_root_job_dispatcher().clone(), b"test-user-handles", 0)
                 .expect("failed to create process");
         let process = proc_handle.dispatcher();
 
@@ -519,7 +519,7 @@ mod tests {
     #[test]
     fn test_remove_zero_user_handles() {
         let (proc_handle, _proc_rights, _vmar, _vmar_rights) =
-            ProcessDispatcher::create(JobDispatcher::get_root_job(), b"test-user-handles", 0)
+            ProcessDispatcher::create(get_root_job_dispatcher().clone(), b"test-user-handles", 0)
                 .expect("failed to create process");
         let process = proc_handle.dispatcher();
 
@@ -531,7 +531,7 @@ mod tests {
     #[test]
     fn test_remove_invalid_user_handles() {
         let (proc_handle, _proc_rights, _vmar, _vmar_rights) =
-            ProcessDispatcher::create(JobDispatcher::get_root_job(), b"test-user-handles", 0)
+            ProcessDispatcher::create(get_root_job_dispatcher().clone(), b"test-user-handles", 0)
                 .expect("failed to create process");
         let process = proc_handle.dispatcher();
 
@@ -553,7 +553,7 @@ mod tests {
     #[test]
     fn test_remove_batched_user_handles() {
         let (proc_handle, _proc_rights, _vmar, _vmar_rights) =
-            ProcessDispatcher::create(JobDispatcher::get_root_job(), b"test-user-handles", 0)
+            ProcessDispatcher::create(get_root_job_dispatcher().clone(), b"test-user-handles", 0)
                 .expect("failed to create process");
         let process = proc_handle.dispatcher();
 

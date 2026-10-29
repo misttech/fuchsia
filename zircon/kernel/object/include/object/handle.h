@@ -34,7 +34,6 @@ void* cpp_handle_arena_base();
 size_t cpp_handle_arena_diagnostic_count();
 void cpp_handle_arena_dump();
 
-zx_status_t rust_handle_init();
 Handle* rust_handle_make(Dispatcher* dispatcher, zx_rights_t rights);
 void rust_handle_destroy(Handle* handle);
 }
@@ -62,9 +61,6 @@ class Handle final {
 
   // Returns true if this handle has all of the desired rights bits set.
   bool HasRights(zx_rights_t desired) const { return (rights_ & desired) == desired; }
-
-  // To be called once during bring up.
-  static void Init();
 
   // Get the number of outstanding handles for a given dispatcher.
   static uint32_t Count(const Dispatcher&);

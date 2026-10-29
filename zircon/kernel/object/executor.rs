@@ -5,12 +5,11 @@
 // https://opensource.org/licenses/MIT
 
 use core::cell::UnsafeCell;
-use core::pin::Pin;
-use core::ptr::NonNull;
-use executor_bindings as bindings;
-use pin_init::pin_data;
+use core::convert::Infallible;
+use core::fmt;
+use pin_init::{PinInit, pin_data, pin_init};
 
-use super::handle::HandleOwner;
+use super::handle::{HandleOwner, HandleRef};
 use super::job_dispatcher::JobDispatcher;
 use super::memory_watchdog::MemoryWatchdog;
 use super::root_job_observer::RootJobObserver;
@@ -32,15 +31,16 @@ use super::root_job_observer::RootJobObserver;
 /// is managed by the `Executor`. Other subsystems, like port arenas and handle arenas, are not yet
 /// included. And e.g. tests are not yet written against the `Executor`.
 #[pin_data]
-#[repr(C)]
-pub struct Executor {
+pub(super) struct Executor {
     /// All jobs and processes of this `Executor` are rooted at this job.
-    root_job: UnsafeCell<Option<fbl::RefPtr<JobDispatcher>>>,
-    root_job_handle: UnsafeCell<Option<HandleOwner>>,
+    root_job: fbl::RefPtr<JobDispatcher>,
+
+    /// Immortal singleton handle for `root_job`.
+    root_job_handle: HandleOwner,
 
     /// Watch the root job, taking action (such as a system reboot) if it ends up
     /// with no children.
-    root_job_observer: UnsafeCell<Option<Pin<fbl::UniquePtr<RootJobObserver>>>>,
+    root_job_observer: UnsafeCell<Option<RootJobObserver>>,
 
     /// The memory watchdog for this `Executor`. When it observes low memory
     /// conditions, it notifies the root job of this executor.
@@ -48,114 +48,91 @@ pub struct Executor {
     memory_watchdog: MemoryWatchdog,
 }
 
-// SAFETY: `root_job` and `root_job_handle` are initialized once in `init` before any concurrent
-// access and are read-only afterwards; `root_job_observer` is initialized once in
-// `start_root_job_observer` and is not accessed concurrently; `memory_watchdog` is `Sync` and
-// `Send`.
+impl fmt::Debug for Executor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Executor")
+            .field("root_job_handle", &self.root_job_handle)
+            .field("memory_watchdog", &self.memory_watchdog)
+            .finish_non_exhaustive()
+    }
+}
+
+// SAFETY: `root_job` is `Send + Sync`; `root_job_handle` is immutable after construction and
+// shared reads of `Handle` are thread-safe; `root_job_observer` is initialized at most once in
+// `unsafe fn start_root_job_observer` during boot and is never accessed concurrently;
+// `memory_watchdog` is `Send + Sync`.
 unsafe impl Sync for Executor {}
 // SAFETY: `Executor` can be safely transferred across threads under the same invariants as `Sync`.
 unsafe impl Send for Executor {}
 
-// Compile-time layout assertions against the C++ Executor type via bindgen.
-zr::static_assert!(core::mem::size_of::<Executor>() == core::mem::size_of::<bindings::Executor>());
-zr::static_assert!(
-    core::mem::align_of::<Executor>() == core::mem::align_of::<bindings::Executor>()
-);
-zr::static_assert!(
-    core::mem::offset_of!(Executor, root_job)
-        == core::mem::offset_of!(bindings::Executor, root_job_)
-);
-zr::static_assert!(
-    core::mem::offset_of!(Executor, root_job_handle)
-        == core::mem::offset_of!(bindings::Executor, root_job_handle_)
-);
-zr::static_assert!(
-    core::mem::offset_of!(Executor, root_job_observer)
-        == core::mem::offset_of!(bindings::Executor, root_job_observer_)
-);
-zr::static_assert!(
-    core::mem::offset_of!(Executor, memory_watchdog)
-        == core::mem::offset_of!(bindings::Executor, memory_watchdog_)
-);
-
 impl Executor {
-    /// Initializes the executor by creating the root job and its handle.
-    pub fn init(&self) {
+    /// Creates an in-place initializer for a new `Executor`, creating the root job and its handle.
+    pub(super) fn new() -> impl PinInit<Self, Infallible> {
         // Create root job.
         let root_job = JobDispatcher::create_root_job();
 
         // Create handle.
         let root_job_handle =
-            HandleOwner::make_from_ref(root_job.clone(), JobDispatcher::default_rights());
-        assert!(root_job_handle.is_some());
+            HandleOwner::make_from_ref(root_job.clone(), JobDispatcher::default_rights())
+                .expect("root-job: failed to allocate handle");
 
-        // SAFETY: `init` is called once during boot before any other methods or threads access
-        // `self`.
-        unsafe {
-            *self.root_job_handle.get() = root_job_handle;
-            *self.root_job.get() = Some(root_job);
-        }
+        pin_init!(Self {
+            root_job,
+            root_job_handle,
+            root_job_observer: UnsafeCell::new(None),
+            memory_watchdog <- MemoryWatchdog::new(),
+        })
     }
 
     /// Returns a reference to the root job dispatcher.
-    pub fn get_root_job_dispatcher(&self) -> &fbl::RefPtr<JobDispatcher> {
-        // SAFETY: `root_job` is initialized once in `init` before any calls to this method and is
-        // not modified afterwards.
-        unsafe { (*self.root_job.get()).as_ref().unwrap() }
+    #[inline]
+    pub(super) fn get_root_job_dispatcher(&self) -> &fbl::RefPtr<JobDispatcher> {
+        &self.root_job
     }
 
-    /// Start watching the root job, taking a system-level action (such as restart) if
-    /// all its children are removed.
+    /// Returns a reference to the root job handle.
+    #[inline]
+    pub(super) fn get_root_job_handle(&self) -> HandleRef<'_> {
+        self.root_job_handle.as_ref()
+    }
+
+    /// Returns a reference to the memory watchdog for this executor.
+    #[inline]
+    pub(super) fn get_memory_watchdog(&self) -> &MemoryWatchdog {
+        &self.memory_watchdog
+    }
+
+    /// Starts watching the root job, taking a system-level action (such as restart) if all its
+    /// children are removed, and initializes the memory watchdog.
     ///
     /// This must be called after the root job has at least one child process or child job.
-    pub fn start_root_job_observer(&self) {
-        // SAFETY: `start_root_job_observer` is called once during boot after `init`, and is the
-        // only place that accesses `root_job_observer`. `root_job` and `root_job_handle` are not
-        // modified after `init`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure `self` is pinned in `'static` storage and that this method is
+    /// called at most once during boot before userspace threads start.
+    pub(super) unsafe fn start_root_job_observer(&'static self) {
+        // SAFETY: The caller guarantees `start_root_job_observer` is called at most once during
+        // boot without concurrent calls, giving exclusive access to `self.root_job_observer`.
         unsafe {
             assert!((*self.root_job_observer.get()).is_none());
-            debug_assert!((*self.root_job.get()).is_some());
+        }
 
-            let root_job = (*self.root_job.get()).as_ref().unwrap().clone();
-            let root_job_handle = (*self.root_job_handle.get()).as_ref().map(|h| h.as_ref());
-            let Ok(observer) = RootJobObserver::new(root_job, root_job_handle) else {
-                panic!("root-job: failed to allocate observer\n");
-            };
+        let observer =
+            RootJobObserver::new(self.root_job.clone(), Some(self.root_job_handle.as_ref()))
+                .expect("root-job: failed to allocate observer");
+
+        // SAFETY: Exclusive one-time boot access to `self.root_job_observer` is guaranteed by the
+        // caller's `# Safety` precondition.
+        unsafe {
             *self.root_job_observer.get() = Some(observer);
         }
 
         // Initialize the memory watchdog.
-        let self_ptr = NonNull::from(self);
-        // SAFETY: `self_ptr` points to `self`, which outlives `self.memory_watchdog`.
+        // SAFETY: The caller guarantees `self` (and therefore `self.memory_watchdog`) is pinned in
+        // `'static` storage and that `start_root_job_observer` runs at most once during boot.
         unsafe {
-            self.memory_watchdog.init(self_ptr);
+            self.memory_watchdog.init(self);
         }
     }
-}
-
-/// Initializes `executor`.
-///
-/// # Safety
-///
-/// `executor` must point to a valid `Executor`, and `rust_executor_init` must only be called once
-/// before any other methods on `executor`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_executor_init(executor: *mut Executor) {
-    // SAFETY: `executor` points to a valid `Executor`.
-    let executor = unsafe { &*executor };
-    executor.init();
-}
-
-/// Starts the root job observer and initializes the memory watchdog on `executor`.
-///
-/// # Safety
-///
-/// `executor` must point to a valid `Executor` that has been initialized via `rust_executor_init`
-/// and will remain valid for the lifetime of the memory watchdog, and this function must only be
-/// called once.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_executor_start_root_job_observer(executor: *mut Executor) {
-    // SAFETY: `executor` points to a valid `Executor`.
-    let executor = unsafe { &*executor };
-    executor.start_root_job_observer();
 }

@@ -11,12 +11,12 @@
 
 HandleTableArena gHandleTableArena;
 
-// Handles are constructed and destroyed by Rust (rust_handle_make, rust_handle_dup,
-// rust_handle_destroy), so every Handle the C++ accessors in handle.h touch was laid out by the
-// Rust `Handle` in //zircon/kernel/object/handle.rs, which pins its own layout with a matching set
-// of assertions.  The assertions below pin the C++ view of the very same bytes, so that the two
-// can never drift apart silently.  They live here rather than in the header because offsetof() on
-// Handle's private members needs friend access.
+// Handles are constructed and destroyed by Rust (rust_handle_make, rust_handle_destroy), so every
+// Handle the C++ accessors in handle.h touch was laid out by the Rust `Handle` in
+// //zircon/kernel/object/handle.rs, which pins its own layout with a matching set of assertions.
+// The assertions below pin the C++ view of the very same bytes, so that the two can never drift
+// apart silently.  They live here rather than in the header because offsetof() on Handle's private
+// members needs friend access.
 struct HandleLayoutCheck {
   static_assert(sizeof(Handle) == 40);
   static_assert(alignof(Handle) == 8);
@@ -39,8 +39,6 @@ struct HandleLayoutCheck {
   static_assert(sizeof(KernelHandle<Dispatcher>) == 8);
   static_assert(alignof(KernelHandle<Dispatcher>) == 8);
 };
-
-void Handle::Init() { rust_handle_init(); }
 
 HandleOwner Handle::Make(fbl::RefPtr<Dispatcher> dispatcher, zx_rights_t rights) {
   Handle* h = rust_handle_make(dispatcher.get(), rights);

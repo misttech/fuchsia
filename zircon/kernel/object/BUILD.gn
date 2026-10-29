@@ -5,7 +5,6 @@
 # https://opensource.org/licenses/MIT
 
 import("//build/cpp/library_headers.gni")
-import("//zircon/kernel/kernel_bindgen_crate.gni")
 import("//zircon/kernel/kernel_rust_mod.gni")
 
 source_set("object") {
@@ -28,7 +27,6 @@ source_set("object") {
     "event_pair_dispatcher_ffi.cc",
     "exception_dispatcher.cc",
     "exceptionate_ffi.cc",
-    "executor.cc",
     "fifo_dispatcher.cc",
     "fifo_dispatcher_ffi.cc",
     "futex_context_ffi.cc",
@@ -45,7 +43,6 @@ source_set("object") {
     "job_dispatcher_ffi.cc",
     "log_dispatcher.cc",
     "log_dispatcher_ffi.cc",
-    "memory_watchdog.cc",
     "msi_dispatcher_ffi.cc",
     "pager_dispatcher.cc",
     "pager_dispatcher_ffi.cc",
@@ -58,11 +55,9 @@ source_set("object") {
     "profile_dispatcher.cc",
     "resource_dispatcher.cc",
     "resource_dispatcher_ffi.cc",
-    "root_job_observer.cc",
     "root_job_observer_ffi.cc",
     "sampler_dispatcher.cc",
     "sampler_dispatcher_ffi.cc",
-    "singleton.cc",
     "socket_dispatcher.cc",
     "socket_dispatcher_ffi.cc",
     "stream_dispatcher.cc",
@@ -155,32 +150,6 @@ group("kernel-tests") {
   deps = [ ":tests" ]
 }
 
-kernel_bindgen_crate("executor-bindings") {
-  visibility = [ ":*" ]
-  headers = [ "include/object/executor.h" ]
-  non_rust_deps = [ ":headers" ]
-  cpp = true
-
-  edition = "2024"
-  notice_year = 2026
-
-  function_blocklist = [ ".*" ]
-  type_allowlist = [
-    "Executor",
-    "HandleOwner",
-    "MemoryWatchdog",
-  ]
-  opaque_types = [
-    "HandleOwner",
-    "MemoryWatchdog",
-    "fbl::RefPtr",
-    "std::unique_ptr",
-  ]
-  additional_bindgen_flags = [ "--no-recursive-allowlist" ]
-  raw_lines = [ "#![no_std]" ]
-  expect_lints = []
-}
-
 kernel_rust_mod("object-rs") {
   sources = [
     "bti.rs",
@@ -258,6 +227,7 @@ kernel_rust_mod("object-rs") {
     "root_job_observer_ffi.rs",
     "sampler_dispatcher.rs",
     "sampler_dispatcher_ffi.rs",
+    "singleton.rs",
     "socket_dispatcher.rs",
     "socket_dispatcher_ffi.rs",
     "stream_dispatcher.rs",
@@ -282,7 +252,6 @@ kernel_rust_mod("object-rs") {
   ]
 
   deps = [
-    ":executor-bindings",
     "//sdk/rust/iob",
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",

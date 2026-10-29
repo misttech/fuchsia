@@ -11,6 +11,7 @@ use super::process_dispatcher::ProcessDispatcher;
 use crate::counters::define_kcounter;
 use core::mem::MaybeUninit;
 use core::ptr::NonNull;
+use core::sync::atomic::{AtomicBool, Ordering};
 use fbl::{DoublyLinkedListNode, HasRefCount, Recyclable, RefPtr};
 use relaxed_atomic::{RelaxedAtomicU32, RelaxedAtomicU64};
 use zx_status::Status;
@@ -250,8 +251,12 @@ impl Handle {
     }
 
     /// Initializes the global handle table arena.
-    fn init_global_arena() -> Result<(), Status> {
-        HandleTableArena::init()
+    ///
+    /// To be called once during bring up before any handles are allocated.
+    pub(super) fn init() {
+        static INITIALIZED: AtomicBool = AtomicBool::new(false);
+        assert!(!INITIALIZED.swap(true, Ordering::Relaxed), "Handle::init called more than once");
+        HandleTableArena::init().expect("failed to initialize handle arena");
     }
 
     /// Maps a 32-bit handle base value back to a pointer to a `Handle`.
@@ -817,9 +822,11 @@ where
     }
 }
 
-/// A borrowed reference to a Handle stored in a process's handle table.
+/// A borrowed reference to a [`Handle`].
 ///
-/// Holding this reference guarantees that the handle table lock is held for lifetime `'a`.
+/// The referenced `Handle` is guaranteed to remain valid for lifetime `'a`, either because the
+/// owning process's handle table lock is held for `'a` or because it borrows an owning
+/// [`HandleOwner`] (such as the `'static` root job handle).
 #[repr(transparent)]
 #[derive(Copy, Clone, Debug)]
 pub struct HandleRef<'a> {
@@ -837,8 +844,9 @@ impl<'a> HandleRef<'a> {
     ///
     /// # Safety
     ///
-    /// The caller must ensure that `ptr` is a valid handle pointer and the handle table lock
-    /// is held for the lifetime `'a`.
+    /// The caller must ensure that `ptr` points to a valid `Handle` that remains alive and is not
+    /// mutably aliased for the lifetime `'a` (for example, by holding the owning handle table lock
+    /// or borrowing a live `HandleOwner`).
     #[inline]
     pub unsafe fn from_raw(ptr: NonNull<Handle>) -> Self {
         // SAFETY: The caller guarantees `ptr` points to a valid `Handle` for `'a`.
@@ -939,15 +947,6 @@ unsafe extern "C" {
 }
 
 // C-compatible FFI exported symbols.
-
-/// Initializes the global handle table arena.
-///
-/// # Safety
-/// Must be called during kernel initialization before handles are allocated.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_handle_init() -> zx_types::zx_status_t {
-    Status::result_into_raw(Handle::init_global_arena())
-}
 
 /// Allocates and creates a new `Handle` pointing to `dispatcher` with the specified `rights`.
 ///

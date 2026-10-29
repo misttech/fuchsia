@@ -7,7 +7,8 @@
 use crate::kernel::percpu::PerCpu;
 use crate::kernel::scheduler::Scheduler;
 use crate::object::{
-    EventDispatcher, HandleValue, JobDispatcher, ProcessDispatcher, validate_system_resource,
+    EventDispatcher, HandleValue, JobDispatcher, ProcessDispatcher, get_memory_watchdog,
+    get_root_job_dispatcher, validate_system_resource,
 };
 use crate::platform_rs::HaltToken;
 use crate::platform_rs::halt_helper::platform_graceful_halt_helper;
@@ -46,7 +47,7 @@ pub fn sys_system_get_event(
     })?;
 
     // Validate that the job is in fact the first usermode job (aka root job).
-    if !job.is_root() {
+    if &job != get_root_job_dispatcher() {
         return Err(Status::ACCESS_DENIED);
     }
 
@@ -56,7 +57,8 @@ pub fn sys_system_get_event(
         | ZX_SYSTEM_EVENT_MEMORY_PRESSURE_CRITICAL
         | ZX_SYSTEM_EVENT_MEMORY_PRESSURE_WARNING
         | ZX_SYSTEM_EVENT_MEMORY_PRESSURE_NORMAL => {
-            let event = EventDispatcher::get_mem_pressure_event(kind)?;
+            let event =
+                get_memory_watchdog().get_mem_pressure_event(kind).ok_or(Status::INVALID_ARGS)?;
             // Do not grant default event rights, as we don't want userspace to, for
             // example, be able to signal this event.
             *out = ProcessDispatcher::with_current(|up| {

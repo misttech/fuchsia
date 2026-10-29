@@ -20,7 +20,7 @@ use crate::instrumentation::InstrumentationData;
 use crate::object::{
     ChannelDispatcher, HandleOwner, InitialMutability, JobDispatcher, KernelHandle, LogDispatcher,
     MessagePacket, ProcessDispatcher, ThreadDispatcher, VmAddressRegionDispatcher,
-    VmObjectDispatcher, get_root_job_handle, start_root_job_observer,
+    VmObjectDispatcher, get_root_job_dispatcher, get_root_job_handle, start_root_job_observer,
 };
 use crate::platform_rs::timer::{current_mono_time, timer_current_mono_ticks};
 use crate::vm::pmm::{ALLOC_FLAG_ANY, ALLOC_FLAG_CAN_WAIT};
@@ -445,13 +445,18 @@ fn make_thread(
 
 fn try_userboot_init(handoff_end: HandoffEnd) -> Result<(), Status> {
     // Create process.
-    let status = ProcessDispatcher::create(JobDispatcher::get_root_job(), b"userboot", 0);
+    let status = ProcessDispatcher::create(get_root_job_dispatcher().clone(), b"userboot", 0);
     assert!(status.is_ok());
     let (process_handle, process_rights, vmar_handle, vmar_rights) = status.unwrap();
 
     // Create a root job observer, restarting the system if the root job becomes
     // childless. From now, the life of the system is bound to this first process.
-    start_root_job_observer();
+    //
+    // SAFETY: `try_userboot_init` runs once during boot after `object_init` and before userspace
+    // threads start or any concurrent `MemoryWatchdog` accesses occur.
+    unsafe {
+        start_root_job_observer();
+    }
     let process = process_handle.dispatcher().clone();
     let process_for_kill = process.clone();
     let mut kill_userboot = defer(move || {

@@ -7,7 +7,6 @@
 use super::event_dispatcher_ffi::{
     cpp_event_dispatcher_create, cpp_memory_stall_event_dispatcher_create,
 };
-use super::memory_watchdog::get_memory_watchdog;
 use super::{DispatcherOps, KernelHandle};
 use crate::counters::define_kcounter;
 use crate::platform_rs::timer::DurationMono;
@@ -77,11 +76,6 @@ impl EventDispatcher {
         // SAFETY: `cpp_event_dispatcher_create` initializes `handle` on success.
         let handle = unsafe { KernelHandle::create(|out| cpp_event_dispatcher_create(out)) }?;
         Ok((handle, ZX_DEFAULT_EVENT_RIGHTS))
-    }
-
-    /// Returns the kernel-owned memory pressure event dispatcher for the given kind.
-    pub fn get_mem_pressure_event(kind: u32) -> Result<fbl::RefPtr<EventDispatcher>, Status> {
-        get_memory_watchdog().get_mem_pressure_event(kind).ok_or(Status::INVALID_ARGS)
     }
 
     /// Creates a memory stall watch event dispatcher.

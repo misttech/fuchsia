@@ -1059,7 +1059,8 @@ pub unsafe extern "C" fn rust_handle_table_for_each_handle(
 mod tests {
     use super::{Handle, HandleTable, map_value_to_handle};
     use crate::object::{
-        EventDispatcher, EventPairDispatcher, JobDispatcher, KernelHandle, ProcessDispatcher,
+        EventDispatcher, EventPairDispatcher, KernelHandle, ProcessDispatcher,
+        get_root_job_dispatcher,
     };
     use fbl::RefPtr;
     use unittest::{expect_eq, expect_ok, expect_true};
@@ -1159,7 +1160,7 @@ mod tests {
     #[test]
     fn test_handle_table_remove_handles() {
         let (proc_handle, _proc_rights, _vmar, _vmar_rights) =
-            ProcessDispatcher::create(JobDispatcher::get_root_job(), b"test-proc", 0)
+            ProcessDispatcher::create(get_root_job_dispatcher().clone(), b"test-proc", 0)
                 .expect("failed to create process");
         let process = proc_handle.dispatcher();
         let table = process.handle_table();

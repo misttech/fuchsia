@@ -5,15 +5,12 @@
 // https://opensource.org/licenses/MIT
 
 use core::ffi::{CStr, c_void};
-use core::marker::PhantomPinned;
-use core::mem::MaybeUninit;
-use core::pin::Pin;
+use core::ptr::NonNull;
 use core::sync::atomic::{AtomicBool, Ordering};
-use fbl::{RefPtr, UniquePtr};
+use fbl::RefPtr;
 use kalloc::Box;
 use ksync::declare_singleton_mutex;
 use object_constants_rs as object_constants;
-use zr::ToMutPtr;
 use zx_status::Status;
 use zx_types::{ZX_KOID_INVALID, ZX_MAX_NAME_LEN, zx_koid_t, zx_signals_t};
 
@@ -33,6 +30,9 @@ static CRITICAL_PROCESS_NAME: ksync::KCell<[u8; ZX_MAX_NAME_LEN], CriticalProces
     ksync::KCell::new([0; ZX_MAX_NAME_LEN]);
 static CRITICAL_PROCESS_KOID: ksync::KCell<zx_koid_t, CriticalProcessNameLock> =
     ksync::KCell::new(ZX_KOID_INVALID);
+/// Latched to `true` (with `Release`/`Acquire` ordering) when a process critical to the root job
+/// begins exiting or being killed so concurrent teardown paths (such as `BusTransactionInitiator`
+/// leaked-page checks) observe that system-wide critical-process teardown has started.
 static CRITICAL_PROCESS_DYING: AtomicBool = AtomicBool::new(false);
 
 /// Inline storage for C++ `RootJobSignalObserver`.
@@ -50,99 +50,87 @@ zr::static_assert_size_and_align!(
 
 impl RootJobSignalObserverStorage {
     #[inline]
-    fn as_mut_ptr(&mut self) -> *mut c_void {
-        self.0.to_mut_ptr().cast()
+    fn get(&self) -> *mut c_void {
+        self.0.get().cast()
     }
 }
 
+#[cfg(ktest)]
 type Callback = Box<dyn FnMut() + Send>;
 
-/// Observes termination of the root job and coordinates system shutdown or notifications.
-#[derive(fbl::Recyclable)]
-#[repr(C, align(8))]
-pub struct RootJobObserver {
+struct RootJobObserverInner {
     root_job: RefPtr<JobDispatcher>,
     signal_observer: RootJobSignalObserverStorage,
     #[cfg(ktest)]
     callback: Option<Callback>,
-    #[cfg(not(ktest))]
-    _reserved: [u8; core::mem::size_of::<Option<Callback>>()],
-    _pin: PhantomPinned,
 }
 
-// SAFETY: RootJobObserver can be moved across threads safely.
+/// Observes termination of the root job and coordinates system shutdown or notifications.
+pub struct RootJobObserver {
+    inner: NonNull<RootJobObserverInner>,
+}
+
+// SAFETY: `RootJobObserver` uniquely owns its heap-allocated `RootJobObserverInner` and
+// synchronizes teardown under `root_job`'s lock in `Drop` before deallocating `inner`.
 unsafe impl Send for RootJobObserver {}
 
-zr::static_assert_size_and_align!(
-    RootJobObserver,
-    object_constants::kRootJobObserverStorageSize,
-    object_constants::kRootJobObserverStorageAlign,
-);
-
 impl RootJobObserver {
-    /// Initializes a `RootJobObserver` in the provided `storage` that monitors `root_job`.
-    ///
-    /// When the root job asserts `ZX_JOB_NO_CHILDREN`, the observer takes action to halt
-    /// or reboot the system.
-    ///
-    /// # Safety
-    ///
-    /// - `storage` must be non-null, properly aligned to `kRootJobObserverStorageAlign`,
-    ///   and point to valid, uninitialized memory of at least `kRootJobObserverStorageSize` bytes.
-    /// - The memory pointed to by `storage` must not be moved while initialized.
-    /// - The instance in `storage` must be dropped in-place via `core::ptr::drop_in_place` before
-    ///   freeing or reusing the memory.
-    unsafe fn init_in_storage(
-        storage: *mut MaybeUninit<Self>,
+    fn create(
         root_job: RefPtr<JobDispatcher>,
         root_job_handle: Option<HandleRef<'_>>,
-    ) {
-        // SAFETY: Caller guarantees `storage` is non-null, aligned, and valid for writes.
-        let observer = unsafe {
-            (*storage).write(Self {
-                root_job,
-                signal_observer: RootJobSignalObserverStorage::default(),
-                #[cfg(ktest)]
-                callback: None,
-                #[cfg(not(ktest))]
-                _reserved: Default::default(),
-                _pin: PhantomPinned,
-            })
-        };
-        let observer_ptr: *mut Self = observer;
-        let signal_observer_ptr = observer.signal_observer.as_mut_ptr();
-        // SAFETY: Passing null context creates a SignalObserver that delivers null to
-        // `rust_root_job_observer_on_match`.
+        #[cfg(ktest)] callback: Option<Callback>,
+    ) -> Result<Self, Status> {
+        #[cfg(ktest)]
+        let has_callback = callback.is_some();
+        let inner = Box::try_new(RootJobObserverInner {
+            root_job: root_job.clone(),
+            signal_observer: RootJobSignalObserverStorage::default(),
+            #[cfg(ktest)]
+            callback,
+        })
+        .map_err(|_| Status::NO_MEMORY)?;
+        let raw: *mut RootJobObserverInner = Box::into_raw(inner);
+        #[cfg(ktest)]
+        let ctx = if has_callback { raw.cast::<c_void>() } else { core::ptr::null_mut() };
+        #[cfg(not(ktest))]
+        let ctx = core::ptr::null_mut();
+
+        // SAFETY: `raw` points to a valid heap-allocated `RootJobObserverInner` at a stable
+        // address; raw field projection to `signal_observer` (`OpaqueBytes`) does not create a
+        // whole-struct reference.
+        let signal_observer_ptr = unsafe { (*raw).signal_observer.get() };
+        // SAFETY: `signal_observer_ptr` points to valid writable storage of size and alignment
+        // matching `RootJobSignalObserver` at a stable heap address until `Drop` unregisters it,
+        // and `ctx` is either null or points to `raw` (valid until `Drop` unregisters it).
         unsafe {
-            cpp_root_job_signal_observer_init(signal_observer_ptr, core::ptr::null_mut());
+            cpp_root_job_signal_observer_init(signal_observer_ptr, ctx);
         }
         let handle_ptr = root_job_handle.map_or(core::ptr::null(), |h| h.as_ptr().cast());
         // Observer registration on the root job object will always succeed.
-        // SAFETY: `signal_observer` is a valid `SignalObserver` and `handle_ptr` is a valid handle
-        // pointer or null.
-        let _ = unsafe {
-            (*observer_ptr).root_job.add_observer(
-                signal_observer_ptr,
-                handle_ptr,
-                ZX_JOB_NO_CHILDREN,
-            )
-        };
+        // Calling `add_observer` on the cloned `root_job` avoids holding any Rust reference to
+        // `*raw` across `add_observer`, which may synchronously invoke
+        // `rust_root_job_observer_on_match` when `root_job` currently has no children.
+        //
+        // SAFETY: `signal_observer_ptr` is an initialized `RootJobSignalObserver` at a stable heap
+        // address, and `handle_ptr` is either null or a valid `Handle` pointer.
+        let _ =
+            unsafe { root_job.add_observer(signal_observer_ptr, handle_ptr, ZX_JOB_NO_CHILDREN) };
+        // SAFETY: `raw` was obtained from `Box::into_raw` above and is non-null.
+        Ok(Self { inner: unsafe { NonNull::new_unchecked(raw) } })
     }
 
     /// Create a `RootJobObserver` that halts the system when the root job terminates
     /// (i.e. asserts `ZX_JOB_NO_CHILDREN`).
-    pub fn new(
+    pub(super) fn new(
         root_job: RefPtr<JobDispatcher>,
         root_job_handle: Option<HandleRef<'_>>,
-    ) -> Result<Pin<UniquePtr<Self>>, Status> {
-        let mut observer = Box::<Self>::try_new_uninit().map_err(|_| Status::NO_MEMORY)?;
-        // SAFETY: `observer` is a valid, properly aligned, uninitialized heap allocation that
-        // is pinned below and will not move before being dropped in-place by `UniquePtr::drop`.
-        unsafe {
-            Self::init_in_storage(&mut *observer, root_job, root_job_handle);
-            let raw = Box::into_raw(observer.assume_init());
-            Ok(Pin::new_unchecked(UniquePtr::from_raw(raw)))
-        }
+    ) -> Result<Self, Status> {
+        Self::create(
+            root_job,
+            root_job_handle,
+            #[cfg(ktest)]
+            None,
+        )
     }
 
     /// Creates a new `RootJobObserver` that calls `callback` when the root job asserts
@@ -151,43 +139,52 @@ impl RootJobObserver {
     /// The callback is called while holding the watched `JobDispatcher`'s lock, so the callback
     /// must avoid calling anything that may attempt to acquire that lock again, introduce a lock
     /// cycle, etc.
-    ///
-    /// Exposed for testing.
     #[cfg(ktest)]
-    pub fn new_with_callback<F: FnMut() + Send + 'static>(
+    fn new_with_callback<F: FnMut() + Send + 'static>(
         root_job: RefPtr<JobDispatcher>,
         root_job_handle: Option<HandleRef<'_>>,
         callback: F,
-    ) -> Result<Pin<UniquePtr<Self>>, Status> {
+    ) -> Result<Self, Status> {
         let boxed = Box::try_new(callback).map_err(|_| Status::NO_MEMORY)?;
         let raw_callback: *mut (dyn FnMut() + Send) = Box::<F>::into_raw(boxed);
-        // SAFETY: raw_callback was allocated via Box::try_new.
+        // SAFETY: `raw_callback` was allocated via `Box::try_new` with the default allocator.
         let callback_box: Callback = unsafe { Box::from_raw(raw_callback) };
+        Self::create(root_job, root_job_handle, Some(callback_box))
+    }
 
-        let mut observer = UniquePtr::try_new(Self {
-            root_job,
-            signal_observer: RootJobSignalObserverStorage::default(),
-            callback: Some(callback_box),
-            _pin: PhantomPinned,
-        })
-        .map_err(|_| Status::NO_MEMORY)?;
-        let observer_ptr: *mut Self = UniquePtr::as_mut_ptr(&mut observer);
-        let ctx = observer_ptr as *mut c_void;
-        // SAFETY: observer_ptr is valid and points to the heap-allocated RootJobObserver.
-        let signal_observer_ptr = unsafe { (*observer_ptr).signal_observer.as_mut_ptr() };
-        // SAFETY: `observer` is boxed and has a stable heap address; `ctx` points to live
-        // `RootJobObserver`.
-        unsafe {
-            cpp_root_job_signal_observer_init(signal_observer_ptr, ctx);
+    /// Handles `ZX_JOB_NO_CHILDREN` signal notifications from C++ `RootJobSignalObserver::OnMatch`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure this is called at most once per observer registration while holding
+    /// the watched `JobDispatcher`'s lock (after erasing the observer from `observers_`), and that
+    /// non-null `rust_ctx` points to the live `RootJobObserverInner` passed during initialization
+    /// with no concurrent or reentrant calls to `on_match` on `rust_ctx`.
+    pub(super) unsafe fn on_match(rust_ctx: *mut c_void) {
+        // Remember, the root job's dispatcher lock is held for the duration of
+        // this method. Take care to avoid calling anything that might attempt to
+        // acquire that lock.
+        #[cfg(ktest)]
+        if !rust_ctx.is_null() {
+            // SAFETY: `rust_ctx` points to a live `RootJobObserverInner` whose `callback` field is
+            // never mutated after allocation until `Drop` completes `remove_observer` under
+            // `root_job`'s lock. Projecting to `callback` only reads that disjoint field, and the
+            // shared borrow ends before invoking `callback_ptr`.
+            let callback_ptr = unsafe {
+                (*rust_ctx.cast::<RootJobObserverInner>()).callback.as_ref().map(Box::as_ptr)
+            };
+            if let Some(callback_ptr) = callback_ptr {
+                // SAFETY: `callback_ptr` points to the heap-allocated closure owned by this
+                // observer. `OnMatch` runs at most once under `root_job`'s lock, and `Drop` cannot
+                // deallocate the closure until `remove_observer` acquires and releases `root_job`'s
+                // lock.
+                unsafe { (*callback_ptr)() };
+                return;
+            }
         }
-        let handle_ptr = root_job_handle.map_or(core::ptr::null(), |h| h.as_ptr().cast());
-        // SAFETY: `signal_observer` is a valid `SignalObserver` and `handle_ptr` is a valid handle
-        // pointer or null.
-        let _ = unsafe {
-            observer.root_job.add_observer(signal_observer_ptr, handle_ptr, ZX_JOB_NO_CHILDREN)
-        };
-        // SAFETY: `observer` is heap-allocated and will not be moved out of the pinned UniquePtr.
-        Ok(unsafe { Pin::new_unchecked(observer) })
+        #[cfg(not(ktest))]
+        let _ = rust_ctx;
+        Self::halt();
     }
 
     /// Halts or reboots the platform in response to root job termination.
@@ -313,86 +310,21 @@ impl SavedCriticalProcessState {
 
 impl Drop for RootJobObserver {
     fn drop(&mut self) {
+        let raw = self.inner.as_ptr();
         let mut out_signals: zx_signals_t = 0;
-        // SAFETY: self.signal_observer was registered with self.root_job.
+        // SAFETY: `raw` points to a valid `RootJobObserverInner`. Raw field projections to
+        // `signal_observer` and `root_job` avoid forming any whole-struct reference to `*raw`
+        // while `on_match` may still be running under `root_job`'s lock on another CPU.
+        // `remove_observer` acquires `root_job`'s lock, guaranteeing that any concurrent `OnMatch`
+        // or `OnCancel` callback has completed before `signal_observer` is destroyed and `raw` is
+        // reclaimed via `Box::from_raw`.
         unsafe {
-            self.root_job.remove_observer(self.signal_observer.as_mut_ptr(), &mut out_signals);
-            cpp_root_job_signal_observer_destroy(self.signal_observer.as_mut_ptr());
+            let signal_observer_ptr = (*raw).signal_observer.get();
+            (*raw).root_job.remove_observer(signal_observer_ptr, &mut out_signals);
+            cpp_root_job_signal_observer_destroy(signal_observer_ptr);
+            drop(Box::from_raw(raw));
         }
     }
-}
-
-// Trampolines exported to C++:
-
-/// Called by C++ `SignalObserver::OnMatch` under `JobDispatcher` lock.
-///
-/// # Safety
-///
-/// `rust_ctx` must point to a live `RootJobObserver` if non-null.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_root_job_observer_on_match(
-    rust_ctx: *mut c_void,
-    _signals: zx_signals_t,
-) {
-    // Remember, the root job's dispatcher lock is held for the duration of
-    // this method.  Take care to avoid calling anything that might attempt to
-    // acquire that lock.
-    #[cfg(ktest)]
-    if !rust_ctx.is_null() {
-        // SAFETY: rust_ctx is guaranteed to point to a live RootJobObserver and this on_match
-        // callback is the only thing accessing the callback field.
-        let callback = unsafe { &mut (*(rust_ctx as *mut RootJobObserver)).callback };
-        if let Some(callback) = callback.as_mut() {
-            callback();
-            return;
-        }
-    }
-    #[cfg(not(ktest))]
-    let _ = rust_ctx;
-    RootJobObserver::halt();
-}
-
-/// Called by C++ `SignalObserver::OnCancel` under `JobDispatcher` lock.
-///
-/// # Safety
-///
-/// `rust_ctx` is the context pointer passed during observer creation.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_root_job_observer_on_cancel(
-    _rust_ctx: *mut c_void,
-    _signals: zx_signals_t,
-) {
-}
-
-/// Destroys a `RootJobObserver` initialized in `storage`.
-///
-/// # Safety
-///
-/// `storage` must point to an initialized `RootJobObserver`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_root_job_observer_destroy(storage: *mut RootJobObserver) {
-    // SAFETY: storage points to a live RootJobObserver.
-    unsafe {
-        core::ptr::drop_in_place(storage);
-    }
-}
-
-/// Notifies Rust that a critical process is dying.
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_root_job_observer_set_critical_process_dying() {
-    RootJobObserver::set_critical_process_dying();
-}
-
-/// Checks whether any critical process is dying.
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_root_job_observer_get_critical_process_dying() -> bool {
-    RootJobObserver::get_critical_process_dying()
-}
-
-/// Records the dead process causing root job kill.
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_root_job_observer_critical_process_kill(dead_process: &ProcessDispatcher) {
-    RootJobObserver::critical_process_kill(dead_process);
 }
 
 /// In-tree kernel unit tests for `RootJobObserver`.
@@ -450,6 +382,19 @@ mod tests {
         fn get(self) -> *const T {
             self.0
         }
+    }
+
+    /// Exercise basic creation/destruction of RootJobObserver::new without a callback.
+    #[test]
+    fn test_new_create_destroy() {
+        let root_job = JobDispatcher::create_root_job();
+        let _child_process = create_process(root_job.clone());
+
+        let observer = RootJobObserver::new(root_job.clone(), None);
+        expect_true!(observer.is_ok());
+        drop(observer);
+
+        expect_true!(root_job.kill(1));
     }
 
     /// Exercise basic creation/destruction of the RootJobObserver.
@@ -510,8 +455,8 @@ mod tests {
         let child_thread = create_thread(child_process.dispatcher().clone());
 
         let event_ptr = SendPtr(event.as_raw());
-        let proc_ptr = SendPtr((&**child_process.dispatcher()) as *const ProcessDispatcher);
-        let thread_ptr = SendPtr((&**child_thread.dispatcher()) as *const ThreadDispatcher);
+        let proc_ptr = SendPtr(RefPtr::as_ptr(child_process.dispatcher()));
+        let thread_ptr = SendPtr(RefPtr::as_ptr(child_thread.dispatcher()));
 
         // Create a root job observer. The callback ensures that the child process and thread are
         // both dead when it fires.
@@ -547,8 +492,8 @@ mod tests {
         let child_thread = create_thread(child_process.dispatcher().clone());
 
         let event_ptr = SendPtr(event.as_raw());
-        let proc_ptr = SendPtr((&**child_process.dispatcher()) as *const ProcessDispatcher);
-        let thread_ptr = SendPtr((&**child_thread.dispatcher()) as *const ThreadDispatcher);
+        let proc_ptr = SendPtr(RefPtr::as_ptr(child_process.dispatcher()));
+        let thread_ptr = SendPtr(RefPtr::as_ptr(child_thread.dispatcher()));
 
         // Create a root job observer. The callback ensures that the child process and thread are
         // both dead when it fires.
@@ -652,19 +597,5 @@ mod tests {
         expect_true!(koid == 0);
         expect_true!(name[0] == 0);
         saved.restore();
-    }
-
-    /// Exercise init_in_storage and destruction.
-    #[test]
-    fn test_init_in_storage() {
-        let root_job = JobDispatcher::create_root_job();
-        let _child_process = create_process(root_job.clone());
-        let mut storage = core::mem::MaybeUninit::<RootJobObserver>::uninit();
-        // SAFETY: storage is properly allocated on the stack with matching size and alignment.
-        unsafe { RootJobObserver::init_in_storage(&mut storage, root_job, None) };
-        // SAFETY: storage was initialized successfully.
-        unsafe {
-            core::ptr::drop_in_place(storage.as_mut_ptr());
-        }
     }
 }

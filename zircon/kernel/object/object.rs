@@ -98,6 +98,7 @@ mod root_job_observer_ffi;
 mod sampler_dispatcher;
 #[allow(improper_ctypes)]
 mod sampler_dispatcher_ffi;
+mod singleton;
 mod socket_dispatcher;
 #[allow(improper_ctypes)]
 mod socket_dispatcher_ffi;
@@ -144,7 +145,6 @@ pub use event_pair_dispatcher::EventPairDispatcher;
 pub use exception::{dispatch_user_exception, dump_common_exception_context};
 pub use exception_dispatcher::ExceptionDispatcher;
 pub use exceptionate::Exceptionate;
-pub use executor::Executor;
 pub use fifo_dispatcher::FifoDispatcher;
 pub use futex_context::{FutexContext, FutexId, OwnerAction, ProcessType};
 pub use guest::Guest;
@@ -181,8 +181,10 @@ pub use resource::{
 };
 pub use resource_dispatcher::{ResourceDispatcher, is_valid_kind};
 pub use root_job_observer::RootJobObserver;
-pub use root_job_observer_ffi::start_root_job_observer;
 pub use sampler_dispatcher::SamplerDispatcher;
+pub use singleton::{
+    get_memory_watchdog, get_root_job_dispatcher, get_root_job_handle, start_root_job_observer,
+};
 pub use socket_dispatcher::{Disposition, ReadType, SocketDispatcher};
 pub use stream_dispatcher::{StreamDispatcher, StreamOptions};
 pub use suspend_token_dispatcher::SuspendTokenDispatcher;

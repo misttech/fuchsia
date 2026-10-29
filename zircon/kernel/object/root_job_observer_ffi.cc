@@ -5,12 +5,19 @@
 // https://opensource.org/licenses/MIT
 
 #include <lib/object-constants.h>
+#include <zircon/types.h>
 
 #include <new>
 
 #include <kernel/ffi.h>
-#include <object/root_job_observer_ffi.h>
 #include <object/signal_observer.h>
+
+extern "C" {
+void rust_root_job_observer_on_match(void* rust_ctx, zx_signals_t signals);
+void rust_root_job_observer_on_cancel(void* rust_ctx, zx_signals_t signals);
+}
+
+namespace {
 
 class RootJobSignalObserver final : public SignalObserver {
  public:
@@ -29,7 +36,12 @@ class RootJobSignalObserver final : public SignalObserver {
 static_assert(sizeof(RootJobSignalObserver) == kRootJobSignalObserverSize);
 static_assert(alignof(RootJobSignalObserver) == kRootJobSignalObserverAlign);
 
+}  // namespace
+
 extern "C" {
+
+void cpp_root_job_signal_observer_init(void* storage, void* rust_ctx);
+void cpp_root_job_signal_observer_destroy(void* observer);
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_root_job_signal_observer_init(void* storage, void* rust_ctx) {
@@ -37,7 +49,7 @@ FFI_ALWAYS_INLINE void cpp_root_job_signal_observer_init(void* storage, void* ru
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_root_job_signal_observer_destroy(SignalObserver* observer) {
+FFI_ALWAYS_INLINE void cpp_root_job_signal_observer_destroy(void* observer) {
   static_cast<RootJobSignalObserver*>(observer)->~RootJobSignalObserver();
 }
 

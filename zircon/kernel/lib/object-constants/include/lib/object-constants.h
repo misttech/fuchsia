@@ -172,10 +172,6 @@ constexpr size_t kWaitSignalObserverAlign = 8;
 constexpr size_t kRootJobSignalObserverSize = 48;
 constexpr size_t kRootJobSignalObserverAlign = 8;
 
-// Size and alignment for RootJobObserver (Rust state).
-constexpr size_t kRootJobObserverStorageSize = 80;
-constexpr size_t kRootJobObserverStorageAlign = 8;
-
 // Size, alignment, and offset for WaitSignalObserverState.
 constexpr size_t kWaitSignalObserverStorageSize = 32;
 constexpr size_t kWaitSignalObserverStorageAlign = 8;
@@ -190,10 +186,6 @@ constexpr size_t kResourceDispatcherStateOffset = 48;
 constexpr size_t kVmAddressRegionDispatcherStateSize = 56 + kLockClassIdSize;
 constexpr size_t kVmAddressRegionDispatcherStateAlign = 8;
 constexpr size_t kVmAddressRegionDispatcherStateOffset = 48;
-
-// Size and alignment for MemoryWatchdogState.
-constexpr size_t kMemoryWatchdogStateSize = 304;
-constexpr size_t kMemoryWatchdogStateAlign = 8;
 
 // Size, alignment, and offset for VmObjectDispatcherState.
 constexpr size_t kVmObjectDispatcherStateSize = 64 + kLockClassIdSize;

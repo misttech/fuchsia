@@ -6,14 +6,15 @@
 
 use boot_options::BootOptions;
 use core::cell::UnsafeCell;
+use core::convert::Infallible;
 use core::ffi::c_void;
-use core::mem::MaybeUninit;
+use core::fmt;
+use core::marker::PhantomPinned;
 use core::pin::Pin;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicBool, Ordering};
 use kprint::{kprint, kprintln};
-use object_constants_rs as object_constants;
-use pin_init::{InPlaceWrite, PinInit, Wrapper, pin_data, pin_init};
+use pin_init::{PinInit, Wrapper, pin_data, pin_init};
 use zx_status::Status;
 
 use super::event_dispatcher::EventDispatcher;
@@ -199,30 +200,23 @@ fn handle_on_oom_reboot() {
 ///
 /// # Safety
 ///
-/// `arg` must be a valid pointer to an initialized `MemoryWatchdogState`.
+/// `arg` must be a valid pointer to an initialized `MemoryWatchdog`.
 unsafe extern "C" fn eviction_trigger_callback(
     _timer: *mut kernel::timer::Timer,
     _now: i64,
     arg: *mut c_void,
 ) {
-    // SAFETY: `arg` points to a live `MemoryWatchdogState` registered when setting the timer.
-    let watchdog = unsafe { &*arg.cast::<MemoryWatchdogState>() };
+    // SAFETY: `arg` points to a live `MemoryWatchdog` registered when setting the timer.
+    let watchdog = unsafe { &*arg.cast::<MemoryWatchdog>() };
     watchdog.eviction_trigger();
 }
-
-zr::static_assert_size_and_align!(
-    MemoryWatchdogState,
-    object_constants::kMemoryWatchdogStateSize,
-    object_constants::kMemoryWatchdogStateAlign,
-);
 
 /// Monitors system-wide memory pressure levels, signals userspace events, and triggers eviction
 /// or out-of-memory actions.
 ///
 /// Object is thread safe.
 #[pin_data]
-#[repr(C)]
-pub struct MemoryWatchdogState {
+pub struct MemoryWatchdog {
     /// Kernel-owned events used to signal userspace at different levels of memory pressure.
     mem_pressure_events: UnsafeCell<[Option<fbl::RefPtr<EventDispatcher>>; NUM_LEVELS]>,
 
@@ -281,38 +275,36 @@ pub struct MemoryWatchdogState {
     /// Record of the thread running `worker_thread` created during `init`.
     worker_thread: UnsafeCell<Option<kernel::thread::ThreadPtr>>,
 
-    executor: UnsafeCell<Option<NonNull<Executor>>>,
+    executor: UnsafeCell<Option<&'static Executor>>,
+
+    /// Published with `Ordering::Release` once `init` finishes populating `UnsafeCell` fields.
+    initialized: AtomicBool,
+
+    #[pin]
+    _pin: PhantomPinned,
 }
 
-/// Type alias for [`MemoryWatchdogState`].
-pub type MemoryWatchdog = MemoryWatchdogState;
-
-unsafe extern "C" {
-    #[allow(improper_ctypes)]
-    fn cpp_get_memory_watchdog() -> *const MemoryWatchdogState;
+impl fmt::Debug for MemoryWatchdog {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MemoryWatchdog")
+            .field("current_level", &self.mem_event_idx.load())
+            .finish_non_exhaustive()
+    }
 }
 
-/// Returns a reference to the global [`MemoryWatchdog`].
-#[inline]
-pub fn get_memory_watchdog() -> &'static MemoryWatchdog {
-    // SAFETY: `cpp_get_memory_watchdog` returns a pointer to the static `gExecutor`'s
-    // `MemoryWatchdog`, which is layout-compatible with `MemoryWatchdogState` (verified by
-    // `static_assert` in `memory_watchdog.cc`) and valid for `'static`.
-    unsafe { &*cpp_get_memory_watchdog() }
-}
-
-// SAFETY: `MemoryWatchdogState` fields are either initialized once in `init` before any concurrent
-// access, accessed exclusively by the worker thread, or synchronized via atomics (`mem_event_idx`,
-// `continuous_eviction_active`), `AutounsignalEvent`, and `Timer::cancel` ordering before target
-// updates.
-unsafe impl Sync for MemoryWatchdogState {}
-// SAFETY: `MemoryWatchdogState` can be safely transferred across threads under the same invariants
+// SAFETY: `MemoryWatchdog` fields initialized in `init` are published via `initialized`
+// (`Ordering::Release` / `Ordering::Acquire`) before any safe reader method or `worker_thread`
+// observes them; runtime mutable fields are accessed exclusively by `worker_thread` or
+// synchronized via atomics (`mem_event_idx`, `continuous_eviction_active`), `AutounsignalEvent`,
+// and `Timer::cancel` ordering before target updates.
+unsafe impl Sync for MemoryWatchdog {}
+// SAFETY: `MemoryWatchdog` can be safely transferred across threads under the same invariants
 // as `Sync`.
-unsafe impl Send for MemoryWatchdogState {}
+unsafe impl Send for MemoryWatchdog {}
 
-impl MemoryWatchdogState {
-    /// Creates an in-place initializer for a new `MemoryWatchdogState`.
-    pub fn new() -> impl PinInit<Self, core::convert::Infallible> {
+impl MemoryWatchdog {
+    /// Creates an in-place initializer for a new `MemoryWatchdog`.
+    pub(super) fn new() -> impl PinInit<Self, Infallible> {
         pin_init!(Self {
             mem_pressure_events: UnsafeCell::new([None, None, None, None, None]),
             mem_state_signal <- AutounsignalEvent::init(false),
@@ -326,11 +318,14 @@ impl MemoryWatchdogState {
             max_eviction_level: UnsafeCell::new(PressureLevel::Critical),
             free_mem_target: UnsafeCell::new(0),
             min_free_target: UnsafeCell::new(0),
-            eviction_trigger <- UnsafeCell::pin_init(Timer::init(kernel::timer::ZX_CLOCK_MONOTONIC)),
+            eviction_trigger <-
+                UnsafeCell::pin_init(Timer::init(kernel::timer::ZX_CLOCK_MONOTONIC)),
             continuous_eviction_active: AtomicBool::new(false),
             eviction_strategy: UnsafeCell::new(EvictionStrategy::OneShot),
             worker_thread: UnsafeCell::new(None),
             executor: UnsafeCell::new(None),
+            initialized: AtomicBool::new(false),
+            _pin: PhantomPinned,
         })
     }
 
@@ -396,8 +391,8 @@ impl MemoryWatchdogState {
         new_level
     }
 
-    // Called by the `worker_thread` to determine if a kernel event needs to be signaled
-    // corresponding to pressure change to level `idx`.
+    /// Called by the `worker_thread` to determine if a kernel event needs to be signaled
+    /// corresponding to pressure change to level `idx`.
     #[inline]
     fn is_signal_due(&self, idx: PressureLevel, time_now: InstantMono) -> bool {
         // We signal a memory state change immediately if any of these conditions are met:
@@ -412,8 +407,8 @@ impl MemoryWatchdogState {
         }
     }
 
-    // Called by the `worker_thread` to determine if kernel eviction (asynchronous) needs to be
-    // triggered in response to pressure change to level `idx`.
+    /// Called by the `worker_thread` to determine if kernel eviction (asynchronous) needs to be
+    /// triggered in response to pressure change to level `idx`.
     #[inline]
     fn is_eviction_required(&self, idx: PressureLevel) -> bool {
         // Trigger asynchronous eviction if:
@@ -427,7 +422,7 @@ impl MemoryWatchdogState {
         // eviction will be a no-op anyway, since there will no longer be any pager-backed
         // memory to evict.
         //
-        //SAFETY: Called exclusively on `worker_thread`;
+        // SAFETY: Called exclusively on `worker_thread`;
         // `max_eviction_level` is constant after `init`.
         unsafe {
             idx < *self.prev_mem_event_idx.get()
@@ -460,12 +455,12 @@ impl MemoryWatchdogState {
         }
     }
 
-    // Helper called by the memory pressure thread when OOM state is entered.
+    /// Helper called by the memory pressure thread when OOM state is entered.
     fn on_oom(&self) {
         match BootOptions::get().oom_behavior {
             boot_options::OomBehavior::JobKill => {
                 // SAFETY: `executor` is initialized in `init` before the worker thread starts.
-                let executor = unsafe { (*self.executor.get()).unwrap().as_ref() };
+                let executor = unsafe { (*self.executor.get()).unwrap() };
                 if !executor.get_root_job_dispatcher().kill_job_with_kill_on_oom() {
                     kprintln!("memory-pressure: no alive job has a kill bit");
                 }
@@ -684,8 +679,7 @@ impl MemoryWatchdogState {
                         // to update the targets. Cancel will return true if the
                         // timer was canceled before it was scheduled on a cpu, i.e. an eviction was
                         // outstanding.
-                        let eviction_was_outstanding =
-                            Pin::new_unchecked(&mut *self.eviction_trigger.get()).cancel();
+                        let eviction_was_outstanding = (&*self.eviction_trigger.get()).cancel();
 
                         if BootOptions::get().oom_evict_with_min_target {
                             let free_mem = pmm::node().count_free_pages() * PAGE_SIZE;
@@ -719,10 +713,15 @@ impl MemoryWatchdogState {
                         {
                             self.eviction_trigger();
                         } else {
+                            // SAFETY: `self` (and `self.eviction_trigger`) is pinned in `'static`
+                            // storage and never dropped; `eviction_trigger_callback` is a valid C
+                            // callback expecting `self` as its `'static` context pointer; and
+                            // `set_oneshot` / `cancel` are serialized exclusively on
+                            // `worker_thread`.
                             Pin::new_unchecked(&*self.eviction_trigger.get()).set_oneshot(
                                 (time_now + *self.eviction_delay_ms.get()).into_nanos(),
                                 eviction_trigger_callback,
-                                self as *const Self as *mut c_void,
+                                core::ptr::from_ref(self).cast_mut().cast(),
                             );
                         }
                     } else if *self.eviction_strategy.get() == EvictionStrategy::Continuous
@@ -733,7 +732,7 @@ impl MemoryWatchdogState {
 
                         // Cancel any outstanding eviction trigger, so that eviction is not
                         // accidentally enabled *after* we disable it here.
-                        Pin::new_unchecked(&mut *self.eviction_trigger.get()).cancel();
+                        (&*self.eviction_trigger.get()).cancel();
                         self.continuous_eviction_active.store(false, Ordering::SeqCst);
                     }
 
@@ -790,14 +789,18 @@ impl MemoryWatchdogState {
         }
     }
 
-    /// `init` must be called before any other methods.
+    /// Initializes the memory watchdog, creating its pressure events and starting its worker
+    /// thread.
     ///
     /// # Safety
     ///
-    /// The caller must guarantee that `executor` is safe to dereference.
-    pub unsafe fn init(&self, executor: NonNull<Executor>) {
-        // SAFETY: `init` is called once during boot before any other methods or threads access
-        // `self`.
+    /// The caller must ensure `self` is pinned in `'static` storage and that `init` is called at
+    /// most once during boot.
+    pub(super) unsafe fn init(&'static self, executor: &'static Executor) {
+        assert!(!self.initialized.load(Ordering::Relaxed));
+
+        // SAFETY: `init` is called at most once before `self.initialized` is set to `true`, so no
+        // reader method or `worker_thread` accesses these `UnsafeCell` fields concurrently.
         unsafe {
             debug_assert!((*self.executor.get()).is_none());
 
@@ -920,28 +923,37 @@ impl MemoryWatchdogState {
                 }
 
                 extern "C" fn memory_worker_thread(arg: *mut c_void) -> i32 {
-                    // SAFETY: `arg` is a valid pointer to `MemoryWatchdogState` passed to
+                    // SAFETY: `arg` is a valid pointer to `MemoryWatchdog` passed to
                     // `create_with_priority`.
-                    let watchdog = unsafe { &*arg.cast::<MemoryWatchdogState>() };
+                    let watchdog = unsafe { &*arg.cast::<MemoryWatchdog>() };
                     watchdog.worker_thread()
                 }
 
-                *self.worker_thread.get() = kernel::thread::create_with_priority(
-                    c"memory-pressure-thread".as_ptr(),
-                    memory_worker_thread,
-                    self as *const Self as *mut c_void,
-                    kernel::scheduler_state::HIGHEST_PRIORITY,
-                )
-                .ok();
-                debug_assert!((*self.worker_thread.get()).is_some());
-                (*self.worker_thread.get()).unwrap().resume();
+                *self.worker_thread.get() = Some(
+                    kernel::thread::create_with_priority(
+                        c"memory-pressure-thread".as_ptr(),
+                        memory_worker_thread,
+                        core::ptr::from_ref(self).cast_mut().cast(),
+                        kernel::scheduler_state::HIGHEST_PRIORITY,
+                    )
+                    .expect("memory-pressure: failed to create worker thread"),
+                );
+            }
+
+            self.initialized.store(true, Ordering::Release);
+            if let Some(worker_thread) = *self.worker_thread.get() {
+                worker_thread.resume();
             }
         }
     }
 
     /// Returns the memory pressure event dispatcher corresponding to `kind`.
     pub fn get_mem_pressure_event(&self, kind: u32) -> Option<fbl::RefPtr<EventDispatcher>> {
-        // SAFETY: `mem_pressure_events` is initialized in `init` and not modified thereafter.
+        if !self.initialized.load(Ordering::Acquire) {
+            return None;
+        }
+        // SAFETY: `self.initialized` (`Acquire`) synchronizes-with `init`'s `Release` store, and
+        // `mem_pressure_events` is never modified thereafter.
         let events = unsafe { &*self.mem_pressure_events.get() };
         match kind {
             zx_types::ZX_SYSTEM_EVENT_OUT_OF_MEMORY => {
@@ -965,8 +977,12 @@ impl MemoryWatchdogState {
 
     /// Returns the number of bytes of memory that must be allocated to reach `level`.
     pub fn debug_num_bytes_till_pressure_level(&self, level: PressureLevel) -> u64 {
-        // SAFETY: `executor`, `mem_watermarks`, and `watermark_debounce` are not modified after
-        // `init`.
+        if !self.initialized.load(Ordering::Acquire) {
+            debug_assert!(false, "MemoryWatchdog not initialized");
+            return 0;
+        }
+        // SAFETY: `self.initialized` (`Acquire`) synchronizes-with `init`'s `Release` store, and
+        // `executor`, `mem_watermarks`, and `watermark_debounce` are not modified thereafter.
         unsafe {
             // Check we have been initialized.
             debug_assert!((*self.executor.get()).is_some());
@@ -990,7 +1006,11 @@ impl MemoryWatchdogState {
 
     /// Dumps the current memory watchdog state to the kernel log.
     pub fn dump(&self) {
-        // SAFETY: `mem_watermarks` and `watermark_debounce` are not modified after `init`.
+        if !self.initialized.load(Ordering::Acquire) {
+            return;
+        }
+        // SAFETY: `self.initialized` (`Acquire`) synchronizes-with `init`'s `Release` store, and
+        // `mem_watermarks` and `watermark_debounce` are not modified thereafter.
         unsafe {
             let mut buf1 = [0u8; pretty::MAX_FORMAT_SIZE_LEN];
             let mut buf2 = [0u8; pretty::MAX_FORMAT_SIZE_LEN];
@@ -1035,33 +1055,11 @@ impl MemoryWatchdogState {
     /// Debug method to retrieve any current worker thread. Only to be used for testing / debugging
     /// purposes. It is up to the caller to know if this objects is alive or not.
     pub fn debug_get_worker_thread(&self) -> Option<kernel::thread::ThreadPtr> {
-        // SAFETY: `worker_thread` is written once in `init` before any debug callers run.
+        if !self.initialized.load(Ordering::Acquire) {
+            return None;
+        }
+        // SAFETY: `self.initialized` (`Acquire`) synchronizes-with `init`'s `Release` store, and
+        // `worker_thread` is not modified thereafter.
         unsafe { *self.worker_thread.get() }
-    }
-}
-
-/// Initializes a `MemoryWatchdogState` in-place.
-///
-/// # Safety
-///
-/// `storage` must point to valid, properly aligned, uninitialized memory for `MemoryWatchdogState`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_memory_watchdog_construct(
-    storage: *mut MaybeUninit<MemoryWatchdogState>,
-) {
-    // SAFETY: `storage` is aligned and sized for `MemoryWatchdogState`.
-    let _ = unsafe { storage.as_mut_unchecked().write_pin_init(MemoryWatchdogState::new()) };
-}
-
-/// Drops a `MemoryWatchdogState` in-place.
-///
-/// # Safety
-///
-/// `storage` must point to a valid, initialized `MemoryWatchdogState`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_memory_watchdog_destroy(storage: *mut MemoryWatchdogState) {
-    // SAFETY: `storage` points to an initialized `MemoryWatchdogState`.
-    unsafe {
-        core::ptr::drop_in_place(storage);
     }
 }

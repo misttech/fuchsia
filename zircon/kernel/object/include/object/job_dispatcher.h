@@ -301,12 +301,10 @@ class JobDispatcher final
   TaskRuntimeStats exited_process_runtime_stats_ TA_GUARDED(get_lock());
 };
 
-// Returns the job that is the ancestor of all other tasks.
-const fbl::RefPtr<JobDispatcher>& GetRootJobDispatcher();
-const Handle& GetRootJobHandle();
-
 extern "C" {
-bool cpp_job_dispatcher_is_root(const JobDispatcher* job);
+// TODO(adanis): Remove once remaining C++ callers of GetRootJobDispatcher() are ported to Rust.
+JobDispatcher* rust_get_root_job_dispatcher();
+
 zx_status_t cpp_job_dispatcher_create(uint32_t flags, JobDispatcher* parent,
                                       ffi::Uninitialized<KernelHandle<JobDispatcher>>* handle,
                                       ffi::Uninitialized<zx_rights_t>* rights);
@@ -318,8 +316,6 @@ zx_status_t cpp_job_dispatcher_set_basic_policy_v2(JobDispatcher* job, uint32_t 
                                                    size_t count);
 zx_status_t cpp_job_dispatcher_set_timer_slack_policy(JobDispatcher* job,
                                                       const zx_policy_timer_slack_t* policy);
-JobDispatcher* cpp_job_dispatcher_get_root_job();
-const Handle* cpp_job_dispatcher_get_root_job_handle();
 JobDispatcher* cpp_job_dispatcher_create_root_job();
 bool cpp_job_dispatcher_kill(JobDispatcher* job, int64_t return_code);
 void cpp_job_dispatcher_set_kill_on_oom(JobDispatcher* job, bool value);
@@ -343,6 +339,13 @@ typedef bool (*cpp_job_enumerator_on_process_fn)(void* ctx, ProcessDispatcher* p
 bool cpp_job_dispatcher_enumerate_children_recursive(JobDispatcher* job, void* ctx,
                                                      cpp_job_enumerator_on_job_fn on_job,
                                                      cpp_job_enumerator_on_process_fn on_process);
+}
+
+// Returns the job that is the ancestor of all other tasks.
+//
+// TODO(adanis): Remove once remaining C++ callers are ported to Rust.
+inline fbl::RefPtr<JobDispatcher> GetRootJobDispatcher() {
+  return fbl::RefPtr<JobDispatcher>(rust_get_root_job_dispatcher());
 }
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_JOB_DISPATCHER_H_

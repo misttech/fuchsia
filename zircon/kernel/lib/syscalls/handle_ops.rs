@@ -125,7 +125,7 @@ pub fn sys_handle_replace(
 mod tests {
     use super::{handle_dup_replace_process, sys_handle_close};
     use crate::object::{
-        EventPairDispatcher, Handle, HandleValue, JobDispatcher, ProcessDispatcher,
+        EventPairDispatcher, Handle, HandleValue, ProcessDispatcher, get_root_job_dispatcher,
     };
     use unittest::{expect_eq, expect_err, expect_ok};
     use zx_status::Status;
@@ -141,7 +141,7 @@ mod tests {
     #[test]
     fn test_handle_duplicate_and_replace_logic() {
         let (proc_handle, _proc_rights, _vmar, _vmar_rights) =
-            ProcessDispatcher::create(JobDispatcher::get_root_job(), b"test-handle-ops", 0)
+            ProcessDispatcher::create(get_root_job_dispatcher().clone(), b"test-handle-ops", 0)
                 .expect("failed to create process");
         let process = proc_handle.dispatcher();
 

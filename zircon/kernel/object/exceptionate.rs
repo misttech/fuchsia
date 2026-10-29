@@ -218,7 +218,9 @@ mod tests {
     use crate::object::job_dispatcher::JobDispatcher;
     use crate::object::process_dispatcher::ProcessDispatcher;
     use crate::object::thread_dispatcher::ThreadDispatcher;
-    use crate::object::{ChannelDispatcher, ExceptionDispatcher, KernelHandle};
+    use crate::object::{
+        ChannelDispatcher, ExceptionDispatcher, KernelHandle, get_root_job_dispatcher,
+    };
     use pin_init::stack_pin_init;
     use unittest::{assert_ok, expect_eq, expect_false, expect_ok, expect_true, unwrap_ok};
     use zerocopy::FromZeros;
@@ -231,7 +233,7 @@ mod tests {
 
     fn create_test_thread() -> KernelHandle<ThreadDispatcher> {
         let (job, _job_rights) =
-            JobDispatcher::create(0, JobDispatcher::get_root_job()).expect("job created");
+            JobDispatcher::create(0, get_root_job_dispatcher().clone()).expect("job created");
         let (process, _process_rights, _vmar, _vmar_rights) =
             ProcessDispatcher::create(job.dispatcher().clone(), b"exc-ut-p", 0)
                 .expect("process created");

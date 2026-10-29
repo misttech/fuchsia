@@ -12,11 +12,6 @@
 extern "C" {
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE bool cpp_job_dispatcher_is_root(const JobDispatcher* job) {
-  return job == GetRootJobDispatcher().get();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE zx_status_t cpp_job_dispatcher_create(
     uint32_t flags, JobDispatcher* parent, ffi::Uninitialized<KernelHandle<JobDispatcher>>* handle,
     ffi::Uninitialized<zx_rights_t>* rights) {
@@ -47,17 +42,6 @@ FFI_ALWAYS_INLINE zx_status_t cpp_job_dispatcher_set_basic_policy_v2(
 FFI_ALWAYS_INLINE zx_status_t cpp_job_dispatcher_set_timer_slack_policy(
     JobDispatcher* job, const zx_policy_timer_slack_t* policy) {
   return job->SetTimerSlackPolicy(*policy);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE JobDispatcher* cpp_job_dispatcher_get_root_job() {
-  auto root = GetRootJobDispatcher();
-  return fbl::ExportToRawPtr(&root);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE const Handle* cpp_job_dispatcher_get_root_job_handle() {
-  return &GetRootJobHandle();
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.

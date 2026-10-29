@@ -6,7 +6,6 @@
 
 use core::ffi::c_void;
 use core::mem::MaybeUninit;
-use core::ptr::NonNull;
 use zx_status::Status;
 use zx_types::{
     ZX_DEFAULT_JOB_RIGHTS, ZX_OBJECT_SIGNAL_6, zx_policy_basic_v1_t, zx_policy_basic_v2_t,
@@ -15,14 +14,12 @@ use zx_types::{
 
 use super::channel_dispatcher::ChannelDispatcher;
 use super::exceptionate::Exceptionate;
-use super::handle::{HandleRef, KernelHandle};
+use super::handle::KernelHandle;
 use super::job_dispatcher_ffi::{
     cpp_job_dispatcher_create, cpp_job_dispatcher_create_debug_exceptionate,
     cpp_job_dispatcher_create_root_job, cpp_job_dispatcher_enumerate_children,
     cpp_job_dispatcher_enumerate_children_recursive, cpp_job_dispatcher_exceptionate,
-    cpp_job_dispatcher_get_info, cpp_job_dispatcher_get_root_job,
-    cpp_job_dispatcher_get_root_job_handle, cpp_job_dispatcher_get_runtime_stats,
-    cpp_job_dispatcher_is_root, cpp_job_dispatcher_kill,
+    cpp_job_dispatcher_get_info, cpp_job_dispatcher_get_runtime_stats, cpp_job_dispatcher_kill,
     cpp_job_dispatcher_kill_job_with_kill_on_oom, cpp_job_dispatcher_lookup_job_by_id,
     cpp_job_dispatcher_lookup_process_by_id, cpp_job_dispatcher_parent,
     cpp_job_dispatcher_set_basic_policy_v1, cpp_job_dispatcher_set_basic_policy_v2,
@@ -136,21 +133,10 @@ impl JobDispatcher {
         Status::ok(status)
     }
 
-    /// Returns whether this `JobDispatcher` is the root job.
-    pub fn is_root(&self) -> bool {
-        // SAFETY: `self` is a valid `JobDispatcher` reference.
-        unsafe { cpp_job_dispatcher_is_root(self as *const _) }
-    }
-
-    /// Returns a reference to the root job dispatcher.
-    pub fn get_root_job() -> fbl::RefPtr<JobDispatcher> {
-        // SAFETY: `cpp_job_dispatcher_get_root_job` returns a raw pointer carrying an acquired refcount.
-        unsafe { fbl::RefPtr::from_raw(cpp_job_dispatcher_get_root_job()) }
-    }
-
     /// Creates and returns a new root job dispatcher.
     pub fn create_root_job() -> fbl::RefPtr<JobDispatcher> {
-        // SAFETY: `cpp_job_dispatcher_create_root_job` returns a raw pointer carrying an acquired refcount.
+        // SAFETY: `cpp_job_dispatcher_create_root_job` returns a raw pointer carrying an acquired
+        // refcount.
         unsafe { fbl::RefPtr::from_raw(cpp_job_dispatcher_create_root_job()) }
     }
 
@@ -188,7 +174,8 @@ impl JobDispatcher {
         unsafe { cpp_job_dispatcher_get_runtime_stats(self as *const _) }
     }
 
-    /// Enumerates child jobs or child processes into user buffer and returns (actual_count, available_count).
+    /// Enumerates child jobs or child processes into user buffer and returns
+    /// `(actual_count, available_count)`.
     pub fn enumerate_children(
         &self,
         user_koids: crate::user_copy::UserOutPtr<zx_types::zx_koid_t>,
@@ -325,16 +312,5 @@ impl JobDispatcher {
                 on_process_shim::<E>,
             )
         }
-    }
-}
-
-/// Returns a reference to the immortal singleton root job handle.
-pub fn get_root_job_handle() -> HandleRef<'static> {
-    // SAFETY: `cpp_job_dispatcher_get_root_job_handle` returns a pointer to the immortal singleton
-    // root job handle.
-    unsafe {
-        HandleRef::from_raw(NonNull::new_unchecked(
-            cpp_job_dispatcher_get_root_job_handle().cast_mut().cast(),
-        ))
     }
 }

@@ -1539,6 +1539,7 @@ mod tests {
     use super::super::exception_dispatcher::ExceptionDispatcher;
     use super::super::job_dispatcher::JobDispatcher;
     use super::super::process_dispatcher::ProcessDispatcher;
+    use super::super::singleton::get_root_job_dispatcher;
     use super::{Blocked, Lifecycle, ThreadDispatcher, cpp_thread_dispatcher_reset_core_thread};
     use crate::arch_rs::{ArchExceptionContext, InterruptDisableGuard};
     use crate::kernel::scheduler_state::{DEFAULT_PRIORITY, SchedulerStateBaseProfile};
@@ -1549,7 +1550,7 @@ mod tests {
     #[test]
     fn test_create_destroy_thread_no_init() {
         let (job, _job_rights) =
-            unwrap_ok!(JobDispatcher::create(0, JobDispatcher::get_root_job()), "job created");
+            unwrap_ok!(JobDispatcher::create(0, get_root_job_dispatcher().clone()), "job created");
 
         let (process, _process_rights, _vmar, _vmar_rights) = unwrap_ok!(
             ProcessDispatcher::create(job.dispatcher().clone(), b"k-ut-p0", 0),
@@ -1582,7 +1583,7 @@ mod tests {
     #[test]
     fn test_create_init_destroy_thread() {
         let (job, _job_rights) =
-            unwrap_ok!(JobDispatcher::create(0, JobDispatcher::get_root_job()), "job created");
+            unwrap_ok!(JobDispatcher::create(0, get_root_job_dispatcher().clone()), "job created");
 
         let (process, _process_rights, _vmar, _vmar_rights) = unwrap_ok!(
             ProcessDispatcher::create(job.dispatcher().clone(), b"k-ut-p1", 0),
