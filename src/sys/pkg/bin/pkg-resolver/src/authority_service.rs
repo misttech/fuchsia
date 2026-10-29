@@ -4,6 +4,7 @@
 
 use crate::repository_manager::RepositoryManager;
 use crate::rewrite_manager::RewriteManager;
+use anyhow::anyhow;
 use fidl_fuchsia_pkg as fpkg;
 use fidl_fuchsia_pkg_ext as fpkg_ext;
 use futures::stream::TryStreamExt as _;
@@ -25,7 +26,7 @@ pub async fn serve(
                         }
                         Err(e) => {
                             let fidl_err = (&e).into();
-                            log::warn!(url:% = &package_url.url; "failed lookup: {e:#}");
+                            log::warn!(url:% = &package_url.url; "failed lookup: {:#}", anyhow!(e));
                             let () = responder.send(Err(fidl_err))?;
                         }
                     }
