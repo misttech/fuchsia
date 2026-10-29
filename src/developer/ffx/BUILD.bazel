@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 load("//build/tools/json_merge:json_merge.bzl", "json_merge")
 
 package(
@@ -28,6 +29,7 @@ json_merge(
 
 test_suite(
     name = "tests",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
     tests = [
         "//src/developer/fastboot:lib_test",
         "//src/developer/ffx/lib/arg_parsing:lib_test",
@@ -37,6 +39,7 @@ test_suite(
         "//src/developer/ffx/lib/doctor_utils:lib_test",
         "//src/developer/ffx/lib/errors:lib_test",
         "//src/developer/ffx/lib/fastboot/interface:lib_test",
+        "//src/developer/ffx/lib/futures:lib_test",
         "//src/developer/ffx/lib/isolate:lib_test",
         "//src/developer/ffx/lib/logging:lib_test",
         "//src/developer/ffx/lib/manual_targets:lib_test",
