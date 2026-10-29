@@ -2,10 +2,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/bazel_test_suite.gni")
 import("//build/components.gni")
 import("//build/rust/rustc_test.gni")
 import("//src/tests/fidl/conformance_suite/gidl-conformance-suite.gni")
 import("//tools/fidl/gidl/gidl.gni")
+
+# LINT.IfChange
 
 conformance_test_source = "$target_gen_dir/src/conformance_test.rs"
 
@@ -41,12 +44,21 @@ rustc_test("fidl_rust_conformance_tests_bin") {
 }
 
 fuchsia_unittest_package("fidl_rust_conformance_tests") {
+  package_name = "fidl_rust_conformance_tests-gn"
   deps = [ ":fidl_rust_conformance_tests_bin" ]
+}
+
+# LINT.ThenChange(//src/lib/fidl/rust/BUILD.bazel)
+
+bazel_test_suite("bazel_tests") {
+  target_tests = [ "//src/lib/fidl/rust:fidl_rust_conformance_tests" ]
+  host_tests = [ "//src/lib/fidl/rust:fidl_rust_conformance_tests_host" ]
 }
 
 group("tests") {
   testonly = true
   deps = [
+    ":bazel_tests",
     ":fidl_rust_conformance_tests",
     ":fidl_rust_conformance_tests_bin($host_toolchain)",
     "external_tests",
