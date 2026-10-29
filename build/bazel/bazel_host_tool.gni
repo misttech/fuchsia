@@ -4,17 +4,24 @@
 
 import("//build/bazel/bazel_build_action.gni")
 
-# Get the host_tools_dir var, but don't expose it (or any other variables
-# or templates in host.gni) to any other files that import this one.
+# Get the host_tools_dir and host_tools_base_path_override vars, but don't
+# expose them (or any other variables or templates in host.gni) to any other
+# files that import this one.
 _temp = {
   import("//build/host.gni")
 }
 _host_tools_dir = _temp.host_tools_dir
+_host_tools_base_path_override = _temp.host_tools_base_path_override
 
 # bazel_host_tool() is a wrapper around bazel_build_action that provides
 # the tool_paths metadata that BUILDCONFIG.gn provides for GN executable
 # targets.
 #
+# In sub-builds (see //build/subbuild.gni), where
+# `host_tools_base_path_override` is set, it doesn't build anything. Instead it
+# copies the binary from the parent build directory, like install_host_tools()
+# does. The parent build must already depend on the tool, otherwise the
+# sub-build fails with a missing input.
 #
 # Params
 #  bazel_target: (label) the label of the bazel target to build
@@ -60,6 +67,82 @@ template("bazel_host_tool") {
   }
 
   if (current_toolchain == toolchain_variant.base) {
+    _output_path = "${root_out_dir}/${_output_name}"
+
+    _install_host_tool =
+        defined(invoker.install_host_tool) && invoker.install_host_tool &&
+        # Only install in the "real" host toolchain.
+        current_toolchain == host_toolchain
+
+    _companion_files = []
+    if (defined(invoker.companion_files)) {
+      _companion_files = invoker.companion_files
+    }
+    _runtime_files = []
+    foreach(_companion_file, _companion_files) {
+      _runtime_files +=
+          [ rebase_path("${root_out_dir}/${_companion_file}", root_build_dir) ]
+    }
+
+    _metadata = {
+      tool_paths = [
+        {
+          cpu = current_cpu
+          label = get_label_info(":${target_name}", "label_with_toolchain")
+          name = _output_name
+          os = current_os
+          path = rebase_path(_output_path, root_build_dir)
+          if (_runtime_files != []) {
+            runtime_files = _runtime_files
+          }
+        },
+      ]
+    }
+  }
+
+  if (current_toolchain == toolchain_variant.base &&
+      _host_tools_base_path_override != "") {
+    # build/subbuild.py runs `gn gen` and Ninja directly, without
+    # build/regenerator.py, so sub-builds have no Bazel workspace or Ninja
+    # delayed-action worker and can't run bazel_action() targets. Like
+    # install_host_tools(), reuse the parent build's binary instead. This
+    # relies on the parent build having built the tool before starting the
+    # sub-build (see the `deps` of the subbuild() action).
+    _parent_build_files = []
+    foreach(_file, [ _output_name ] + _companion_files) {
+      _parent_build_file_rebased =
+          "${_host_tools_base_path_override}/" +
+          rebase_path("${root_out_dir}/${_file}", root_build_dir)
+      _parent_build_files += [ "//" + rebase_path(_parent_build_file_rebased,
+                                                  "//",
+                                                  root_build_dir) ]
+    }
+
+    _install_deps = []
+    if (_install_host_tool) {
+      _install_target = "${target_name}.install"
+      _install_deps += [ ":${_install_target}" ]
+      copy(_install_target) {
+        forward_variables_from(invoker, [ "testonly" ])
+        visibility = [ ":*" ]
+        sources = _parent_build_files
+        outputs = [ "${_host_tools_dir}/{{source_file_part}}" ]
+      }
+    }
+
+    copy(target_name) {
+      forward_variables_from(invoker,
+                             [
+                               "testonly",
+                               "visibility",
+                             ])
+      sources = _parent_build_files
+      outputs = [ "${root_out_dir}/{{source_file_part}}" ]
+      deps = _install_deps
+      metadata = _metadata
+    }
+    not_needed(invoker, "*")
+  } else if (current_toolchain == toolchain_variant.base) {
     # If in the base toolchain, copy the Bazel outputs as normal. Variant
     # toolchains need to be handled separately (see the else case below)
 
@@ -93,10 +176,6 @@ template("bazel_host_tool") {
       # which `root_out_dir` would not support.
       ninja_base_dir = root_build_dir
 
-      # In base host toolchains, root *out* dir is always
-      # `//out/default/host_<arch>`.
-      _output_path = "${root_out_dir}/${_output_name}"
-
       copy_outputs = [
         {
           bazel = invoker.bazel_output_path
@@ -110,25 +189,18 @@ template("bazel_host_tool") {
         },
       ]
 
-      _runtime_files = []
-      if (defined(invoker.companion_files)) {
-        foreach(_companion_file, invoker.companion_files) {
-          _companion_ninja =
-              rebase_path("${root_out_dir}/${_companion_file}", root_build_dir)
-          copy_outputs += [
-            {
-              bazel = "{{BAZEL_TARGET_OUT_DIR}}/${_companion_file}"
-              ninja = _companion_ninja
-            },
-          ]
-          _runtime_files += [ _companion_ninja ]
-        }
+      foreach(_companion_file, _companion_files) {
+        copy_outputs += [
+          {
+            bazel = "{{BAZEL_TARGET_OUT_DIR}}/${_companion_file}"
+            ninja = rebase_path("${root_out_dir}/${_companion_file}",
+                                root_build_dir)
+          },
+        ]
       }
 
-      # Add an additional copy in the host tools outdir if requested,
-      if (defined(invoker.install_host_tool) && invoker.install_host_tool &&
-          # but only in the "real" host toolchain.
-          current_toolchain == host_toolchain) {
+      # Add an additional copy in the host tools outdir if requested.
+      if (_install_host_tool) {
         copy_outputs += [
           {
             bazel = invoker.bazel_output_path
@@ -141,33 +213,18 @@ template("bazel_host_tool") {
           },
         ]
 
-        if (defined(invoker.companion_files)) {
-          foreach(_companion_file, invoker.companion_files) {
-            copy_outputs += [
-              {
-                bazel = "{{BAZEL_TARGET_OUT_DIR}}/${_companion_file}"
-                ninja = rebase_path("${_host_tools_dir}/${_companion_file}",
-                                    root_build_dir)
-              },
-            ]
-          }
+        foreach(_companion_file, _companion_files) {
+          copy_outputs += [
+            {
+              bazel = "{{BAZEL_TARGET_OUT_DIR}}/${_companion_file}"
+              ninja = rebase_path("${_host_tools_dir}/${_companion_file}",
+                                  root_build_dir)
+            },
+          ]
         }
       }
 
-      metadata = {
-        tool_paths = [
-          {
-            cpu = current_cpu
-            label = get_label_info(":${target_name}", "label_with_toolchain")
-            name = _output_name
-            os = current_os
-            path = rebase_path(_output_path, root_build_dir)
-            if (_runtime_files != []) {
-              runtime_files = _runtime_files
-            }
-          },
-        ]
-      }
+      metadata = _metadata
     }
   } else {
     # If in a variant toolchain, the expectation is to find the host binary
@@ -202,6 +259,5 @@ template("bazel_host_tool") {
       deps = [ base_target ]
     }
     not_needed(invoker, "*")
-    not_needed([ "_output_path" ])
   }
 }
