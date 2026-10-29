@@ -49,11 +49,21 @@ macro_rules! declare_singleton_spinlock {
 }
 
 /// Declares a singleton monitored spinlock (integrated with the kernel lockup detector).
+///
+/// The optional trailing `cpu_align` or `cpu_align_exclusive` argument controls the placement of
+/// the singleton's static storage, like the C++ `__CPU_ALIGN` and `__CPU_ALIGN_EXCLUSIVE`
+/// attributes. For example:
+///
+/// ```ignore
+/// ksync::declare_singleton_monitored_spinlock!(MyGlobalLock, cpu_align_exclusive);
+/// ```
 #[macro_export]
 #[cfg(feature = "kernel")]
 macro_rules! declare_singleton_monitored_spinlock {
-    ($(#[$meta:meta])* $vis:vis $name:ident) => {
-        $crate::declare_singleton_lock!($(#[$meta])* $vis $name, $crate::RawMonitoredSpinlock);
+    ($(#[$meta:meta])* $vis:vis $name:ident $(, $($opts:tt)*)?) => {
+        $crate::declare_singleton_lock!(
+            $(#[$meta])* $vis $name, $crate::RawMonitoredSpinlock $(, $($opts)*)?
+        );
     };
 }
 

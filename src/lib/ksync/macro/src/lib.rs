@@ -2757,12 +2757,36 @@ fn extract_lock_type(ty: &Type) -> Result<Option<proc_macro2::TokenStream>, syn:
     }
 }
 
+/// Placement of a singleton lock's static storage, mirroring the C++ kernel's `<align.h>`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SingletonPlacement {
+    /// Like C++ `__CPU_ALIGN`: aligned to (and padded out to) a cache line.
+    CpuAlign,
+    /// Like C++ `__CPU_ALIGN_EXCLUSIVE`: `CpuAlign`, and placed in `.data.cpu_align_exclusive`.
+    CpuAlignExclusive,
+}
+
+impl SingletonPlacement {
+    /// Returns the placement named by `ident`, if any.
+    fn from_ident(ident: &Ident) -> Option<Self> {
+        if ident == "cpu_align" {
+            Some(Self::CpuAlign)
+        } else if ident == "cpu_align_exclusive" {
+            Some(Self::CpuAlignExclusive)
+        } else {
+            None
+        }
+    }
+}
+
 struct SingletonLockInput {
     attrs: Vec<syn::Attribute>,
     vis: syn::Visibility,
     _struct_token: Option<syn::Token![struct]>,
     name: Ident,
     lock_type: Option<Type>,
+    /// Optional placement of the singleton's static storage.
+    placement: Option<SingletonPlacement>,
 }
 
 impl syn::parse::Parse for SingletonLockInput {
@@ -2775,19 +2799,58 @@ impl syn::parse::Parse for SingletonLockInput {
             None
         };
         let name = input.parse::<Ident>()?;
-        let lock_type = if input.peek(syn::Token![,]) {
+        let mut lock_type = None;
+        let mut placement = None;
+        while input.peek(syn::Token![,]) {
             let _: syn::Token![,] = input.parse()?;
-            Some(input.parse::<Type>()?)
-        } else {
-            None
-        };
-        Ok(SingletonLockInput { attrs, vis, _struct_token, name, lock_type })
+            if input.is_empty() {
+                break;
+            }
+            // A placement keyword is a bare identifier followed by a comma or the end of the
+            // input. Anything else must be the lock type.
+            let fork = input.fork();
+            let keyword = fork
+                .parse::<Ident>()
+                .ok()
+                .filter(|_| fork.is_empty() || fork.peek(syn::Token![,]))
+                .and_then(|ident| SingletonPlacement::from_ident(&ident).map(|p| (ident, p)));
+            if let Some((ident, p)) = keyword {
+                let _: Ident = input.parse()?;
+                if placement.is_some() {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "only one of `cpu_align` or `cpu_align_exclusive` may be given",
+                    ));
+                }
+                placement = Some(p);
+                continue;
+            }
+            if lock_type.is_some() || placement.is_some() {
+                return Err(input.error(
+                    "expected `cpu_align` or `cpu_align_exclusive` (the lock type must come \
+                     right after the name)",
+                ));
+            }
+            lock_type = Some(input.parse::<Type>()?);
+        }
+        Ok(SingletonLockInput { attrs, vis, _struct_token, name, lock_type, placement })
     }
 }
 
+/// Declares a singleton lock class and its statically initialized lock.
+///
+/// Syntax: `declare_singleton_lock!([#[attrs]] [vis] Name [, RawLockType] [, placement] [,])`.
+///
+/// `RawLockType` defaults to `::ksync::RawMutex`. The optional `placement` controls the
+/// singleton's static storage, mirroring the C++ kernel's `<align.h>`:
+///
+/// - `cpu_align`: like C++ `__CPU_ALIGN`, aligns the static to a cache line (64 bytes, the kernel's
+///   `MAX_CACHE_LINE` on every supported architecture) and pads its size to a multiple of it.
+/// - `cpu_align_exclusive`: like C++ `__CPU_ALIGN_EXCLUSIVE`, `cpu_align` plus placing the static
+///   in `.data.cpu_align_exclusive`, so that the lock has exclusive use of its cache line(s).
 #[proc_macro]
 pub fn declare_singleton_lock(input: TokenStream) -> TokenStream {
-    let SingletonLockInput { attrs, vis, name, lock_type, .. } =
+    let SingletonLockInput { attrs, vis, name, lock_type, placement, .. } =
         parse_macro_input!(input as SingletonLockInput);
 
     let raw_lock = lock_type.unwrap_or_else(|| syn::parse_quote!(::ksync::RawMutex));
@@ -2844,6 +2907,28 @@ pub fn declare_singleton_lock(input: TokenStream) -> TokenStream {
         }
     };
 
+    let singleton_init = quote! {
+        ::ksync::KMutex::new(<#raw_lock>::const_init(<#name as ::ksync::LockClass>::ID))
+    };
+    let section_attr = (placement == Some(SingletonPlacement::CpuAlignExclusive))
+        .then(|| quote! { #[unsafe(link_section = ".data.cpu_align_exclusive")] });
+    let singleton_storage = if placement.is_some() {
+        // Wrap the lock so that the static is aligned to (and padded out to a multiple of) a cache
+        // line, like C++ `__CPU_ALIGN`.
+        quote! {
+            #[repr(C, align(64))]
+            struct __KsyncCpuAligned(::ksync::KMutex<#name, #raw_lock>);
+            #section_attr
+            static SINGLETON: __KsyncCpuAligned = __KsyncCpuAligned(#singleton_init);
+            &SINGLETON.0
+        }
+    } else {
+        quote! {
+            static SINGLETON: ::ksync::KMutex<#name, #raw_lock> = #singleton_init;
+            &SINGLETON
+        }
+    };
+
     quote! {
         #(#attrs)*
         #[derive(Debug, Copy, Clone)]
@@ -2877,9 +2962,7 @@ pub fn declare_singleton_lock(input: TokenStream) -> TokenStream {
             /// Returns a reference to the global singleton mutex.
             #[inline]
             pub fn get() -> &'static ::ksync::KMutex<#name, #raw_lock> {
-                static SINGLETON: ::ksync::KMutex<#name, #raw_lock> =
-                    ::ksync::KMutex::new(<#raw_lock>::const_init(<#name as ::ksync::LockClass>::ID));
-                &SINGLETON
+                #singleton_storage
             }
 
             #lock_methods
