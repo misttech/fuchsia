@@ -84,6 +84,7 @@ single_version_override(
 # @rules_rust needs to be patched to:
 # - add the riscv64gc-unknown-fuchsia triple.
 # - pass toolchain-wide `-Zallow-features=` through to rustc.
+# - fail instead of warning when a C++ library is listed in Rust `deps`.
 bazel_dep(name = "rules_rust", version = "0.74.0")
 single_version_override(
     module_name = "rules_rust",
@@ -91,6 +92,7 @@ single_version_override(
     patches = [
         "//build/bazel:vendor_patches/rules_rust-0.74.0/0001-rules_rust-add-riscv64gc-unknown-fuchsia-triple.patch",
         "//build/bazel:vendor_patches/rules_rust-0.74.0/0002-rules_rust-pass-through-toolchain-allow-features.patch",
+        "//build/bazel:vendor_patches/rules_rust-0.74.0/0003-rules_rust-fail-on-cc-library-in-deps.patch",
     ],
     version = "0.74.0",
 )

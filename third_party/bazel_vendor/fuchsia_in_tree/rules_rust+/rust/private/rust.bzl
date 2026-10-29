@@ -75,6 +75,12 @@ def _assert_correct_dep_mapping(ctx):
     Args:
         ctx (ctx): The current rule's context object
     """
+
+    # Fuchsia: Collect C++ libraries in 'deps' and fail instead of printing a
+    # deprecation warning, so new occurrences cannot land. Targets under
+    # //third_party/ and in external repositories are exempt because they are
+    # not owned by Fuchsia.
+    cc_deps_in_deps = []
     for dep in ctx.attr.deps:
         # Identify if this is a Rust-related target using any known Rust provider.
         is_rust_target = (
@@ -99,16 +105,20 @@ def _assert_correct_dep_mapping(ctx):
         # If it's not a known Rust target but provides CcInfo, it's a native library
         # that should ideally be in 'link_deps'.
         if CcInfo in dep:
-            # buildifier: disable=print
-            print(
-                ("\nWARNING: Target {dep} in 'deps' of {target} is a C++ library. " +
-                 "Only Rust targets are allowed in 'deps'. " +
-                 "Please use 'link_deps' for manual FFI linkage. " +
-                 "Support for C++ libraries in 'deps' is deprecated and will be removed in a future release.").format(
-                    dep = dep.label,
-                    target = ctx.label,
-                ),
-            )
+            cc_deps_in_deps.append(str(dep.label))
+
+    is_exempt = ctx.label.repo_name != "" or ctx.label.package.startswith("third_party/")
+    if cc_deps_in_deps and not is_exempt:
+        fail(
+            ("{target} lists C++ libraries in 'deps': {deps}. " +
+             "Only Rust targets are allowed in 'deps'. " +
+             "Move them to 'link_deps' for FFI linkage, or remove them if they " +
+             "are only needed by the Rust standard library (the rustc_*() macros " +
+             "already link //build/bazel/rules/rust:fdio_for_rust_stdlib).").format(
+                target = ctx.label,
+                deps = ", ".join(cc_deps_in_deps),
+            ),
+        )
 
     for dep in ctx.attr.proc_macro_deps:
         if CrateInfo in dep:
