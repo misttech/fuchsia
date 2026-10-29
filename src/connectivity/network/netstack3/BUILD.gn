@@ -56,6 +56,7 @@ common_deps = [
   "//src/connectivity/network/lib/pcap",
   "//src/lib/async-utils",
   "//src/lib/debug/rust",
+  "//src/lib/diagnostics/inspect/runtime/rust",
   "//src/lib/diagnostics/inspect/rust",
   "//src/lib/diagnostics/log/rust",
   "//src/lib/fidl/rust/fidl",
@@ -100,10 +101,6 @@ common_deps = [
   "//third_party/rust_crates:smallvec",
   "//third_party/rust_crates:thiserror",
   "//third_party/rust_crates:zerocopy",
-
-  # TODO(https://fxbug.dev/42175119): re-enable check includes when the inspect/client.shard.cml
-  # stops exposing diagnostics from framework.
-  "//src/lib/diagnostics/inspect/runtime/rust:unchecked_includes",
 ]
 
 common_test_deps = [
