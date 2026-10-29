@@ -82,8 +82,14 @@ one-way dependency, please use a one-way dependency.
 {% dynamic if user.is_googler %}
 
 Circular dependencies are only allowed between
-[fuchsia.git](https://fuchsia.googlesource.com/fuchsia) and
-[vendor/google](https://turquoise-internal.googlesource.com/vendor/google).
+[fuchsia.git](https://fuchsia.googlesource.com/fuchsia) and the following
+repositories:
+
+* [vendor/google](https://turquoise-internal.googlesource.com/vendor/google)
+* [cobalt-registry](https://fuchsia.googlesource.com/cobalt-registry)
+  (checked out at `//third_party/cobalt_config`)
+* [cobalt](https://fuchsia.googlesource.com/cobalt)
+  (checked out at `//third_party/cobalt`)
 
 {% dynamic endif %}
 
@@ -104,12 +110,16 @@ roll the CLs in a single commit.
 ### Using `fx atomic-commit`
 
 The `fx atomic-commit` command automates the process of creating circular
-dependencies. It ensures the top commits in your `fuchsia.git` and
-`vendor/google` checkouts are amended to depend on each other.
+dependencies. It ensures the top commits in your `fuchsia.git` checkout and in
+the other repository (`vendor/google` by default) are amended to depend on each
+other.
 
 To use the tool:
 
-1.  Run `fx atomic-commit`.
+1.  Run `fx atomic-commit`. To pair your `fuchsia.git` commit with a repository
+    other than `vendor/google`, pass its path relative to the Fuchsia checkout
+    with `--repo`, for example
+    `fx atomic-commit --repo third_party/cobalt_config`.
 2.  The script displays the commits and ask you to confirm before proceeding.
 3.  After you confirm, the script amends both commits with the appropriate
     `Depends-on` footers and pushes them to create or update the CLs.

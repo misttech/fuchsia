@@ -5,10 +5,16 @@
 
 #### CATEGORY=Other
 ### Create a pair of changes that will be submitted atomically. It will modify
-### the commit in fuchsia.git and vendor/google, and make them depend on each
-### other.
+### the top commit in fuchsia.git and in another repository (vendor/google by
+### default), and make them depend on each other.
 
-## usage: fx atomic-commit [--no-upload]
+## usage: fx atomic-commit [--no-upload] [--repo <path>]
+##
+##   --no-upload    Amend the commits but don't push them.
+##   --repo <path>  Path of the other repository, relative to the Fuchsia
+##                  checkout. Defaults to vendor/google. The repository must
+##                  support circular dependencies with fuchsia.git, e.g.
+##                  third_party/cobalt_config.
 
 set -o errexit
 
@@ -33,18 +39,45 @@ Change-Id:"""
     )
 }
 
+# Prints the Gerrit host short name (e.g. "fuchsia" or "turquoise-internal")
+# of the repository's origin remote.
+function gerrit_host() {
+    local repo_dir=$1
+    git -C "${repo_dir}" config --get remote.origin.url |
+        sed -E 's#^[a-z]+://([^/.]+).*#\1#'
+}
+
+# Prints the `Depends-on` value for the top commit of `dep_dir`, as seen from a
+# CL in `repo_dir`. The Gerrit host prefix is only needed if the two
+# repositories are on different hosts.
+function dependency_id() {
+    local repo_dir=$1
+    local dep_dir=$2
+    local change_id=$(
+        cd "${dep_dir}"
+        git log -1 | grep "Change-Id" | sed "s/Change-Id://g" | xargs
+    )
+    local dep_host=$(gerrit_host "${dep_dir}")
+    if [[ "$(gerrit_host "${repo_dir}")" == "${dep_host}" ]]; then
+        echo "${change_id}"
+    else
+        echo "${dep_host}:${change_id}"
+    fi
+}
+
 function print_usage_guidance() {
+    local other_repo=$1
     echo
     echo "To create atomic-commit, make sure your changes are on the top of"
-    echo "commit stacks in both fuchsia and vendor/google."
+    echo "commit stacks in both fuchsia and ${other_repo}."
     echo
     echo "--- Current top commit in fuchsia.git ---"
     echo
     echo $(cd $FUCHSIA_DIR && git log -1 --pretty=medium)
     echo
-    echo "--- Current top commit in vendor/google ---"
+    echo "--- Current top commit in ${other_repo} ---"
     echo
-    echo $(cd ${FUCHSIA_DIR}/vendor/google && git log -1 --pretty=medium)
+    echo $(cd ${FUCHSIA_DIR}/${other_repo} && git log -1 --pretty=medium)
     echo
     read -p "Does this look correct to you?[y|n]" value
 
@@ -68,10 +101,19 @@ function print_tip() {
 
 main() {
     local upload="true"
+    local other_repo="vendor/google"
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --no-upload)
                 upload="false"
+                ;;
+            --repo)
+                if [[ $# -lt 2 ]]; then
+                    echo "--repo requires a path"
+                    exit 1
+                fi
+                other_repo="${2%/}"
+                shift
                 ;;
             *)
                 echo "Unknown option: $1"
@@ -81,19 +123,19 @@ main() {
         shift
     done
 
-    print_usage_guidance
+    local other_dir="${FUCHSIA_DIR}/${other_repo}"
+    if ! git -C "${other_dir}" rev-parse --git-dir >/dev/null 2>&1; then
+        echo "${other_repo} is not a git repository in ${FUCHSIA_DIR}"
+        exit 1
+    fi
 
-    local change_id_fuchsia=$(
-        cd "${FUCHSIA_DIR}"
-        git log -1 | grep "Change-Id" | sed "s/Change-Id://g" | xargs
-    )
-    local change_id_vendor_google=$(
-        cd "${FUCHSIA_DIR}/vendor/google"
-        git log -1 | grep "Change-Id" | sed "s/Change-Id://g" | xargs
-    )
+    print_usage_guidance "${other_repo}"
 
-    update_footer "${FUCHSIA_DIR}/vendor/google" "fuchsia:${change_id_fuchsia}" "${upload}"
-    update_footer "${FUCHSIA_DIR}" "turquoise-internal:${change_id_vendor_google}" "${upload}"
+    local dep_on_fuchsia=$(dependency_id "${other_dir}" "${FUCHSIA_DIR}")
+    local dep_on_other=$(dependency_id "${FUCHSIA_DIR}" "${other_dir}")
+
+    update_footer "${other_dir}" "${dep_on_fuchsia}" "${upload}"
+    update_footer "${FUCHSIA_DIR}" "${dep_on_other}" "${upload}"
 
     print_tip "${upload}"
 }
