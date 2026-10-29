@@ -17,6 +17,7 @@
         {
             name: "default",
             service: "fuchsia.hardware.pci.BoardConfiguration",
+            availability: "optional",
             generate_bind_rule: false,
         },
         {

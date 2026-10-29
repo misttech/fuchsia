@@ -20,7 +20,10 @@
         { service: "fuchsia.hardware.pci.DebugService" },
     ],
     use: [
-        { service: "fuchsia.hardware.pci.BoardConfiguration" },
+        {
+            service: "fuchsia.hardware.pci.BoardConfiguration",
+            availability: "optional",
+        },
         {
             service: "fuchsia.hardware.pci.root.ConfigService",
             availability: "optional",

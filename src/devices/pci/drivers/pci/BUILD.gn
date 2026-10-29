@@ -72,7 +72,9 @@ source_set("user_pci") {
 
 fuchsia_driver_dml("pci-dml") {
   dml = "meta/pci.dml"
-  driver_name = "pci"
+  driver_name = "bus-pci"
+  golden_cml = "meta/pci.cml"
+  golden_bind = "meta/pci.bind"
 }
 
 driver_bind_rules("pci_bind") {
@@ -110,7 +112,7 @@ fuchsia_driver_component("bus-pci") {
   component_name = "bus-pci"
   deps = [ ":bus-pci-driver" ]
   info = "meta/bus-pci-info.json"
-  manifest = "meta/pci.cml"
+  dml_label = ":pci-dml"
 }
 
 fuchsia_driver_package("bus-pci-package") {
