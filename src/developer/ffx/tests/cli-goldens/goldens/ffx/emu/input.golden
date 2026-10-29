@@ -1,0 +1,35 @@
+{
+  "name": "input",
+  "description": "Send input events to a running emulator.",
+  "examples": [
+    "Send raw QMP input events:\n  $ ffx emu input raw '[{{\"type\":\"rel\",\"data\":{{\"axis\":\"x\",\"value\":7}}}}]'"
+  ],
+  "flags": [
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--help",
+      "short": null,
+      "description": "display usage information",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "name"
+        }
+      },
+      "optionality": "optional",
+      "long": "--name",
+      "short": null,
+      "description": "name of the emulator instance to send input to, as listed by `ffx emu list`. Defaults to the only running instance.",
+      "hidden": false
+    }
+  ],
+  "notes": [
+    "Events are injected into the emulator's virtual input devices through the\nQEMU Machine Protocol (QMP), so they go through the guest's input drivers.\nUse `print-input-report` on the target to see the resulting reports.\nOnly the qemu engine is supported.\n\nEach step, such as one key press or one key release, becomes one input report\nin the guest. The exception is `raw` key events given by scancode number:\nQEMU sends each of them as its own report."
+  ],
+  "commands": [],
+  "positionals": [],
+  "error_codes": []
+}

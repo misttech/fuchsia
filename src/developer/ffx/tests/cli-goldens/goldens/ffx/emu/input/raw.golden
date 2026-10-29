@@ -1,0 +1,30 @@
+{
+  "name": "raw",
+  "description": "Send raw QMP input events, unchanged, in one QMP command.",
+  "examples": [
+    "  $ ffx emu input raw '[{{\"type\":\"rel\",\"data\":{{\"axis\":\"x\",\"value\":7}}}}]'"
+  ],
+  "flags": [
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--help",
+      "short": null,
+      "description": "display usage information",
+      "hidden": false
+    }
+  ],
+  "notes": [
+    "The argument is a JSON array of QMP InputEvent objects. It is sent as the\n`events` of one `input-send-event` command. See\nhttps://www.qemu.org/docs/master/interop/qemu-qmp-ref.html#command-QMP-ui.input-send-event\n\nThe guest receives the events as one input report, except key events given by\nscancode number: QEMU sends each of them as its own report."
+  ],
+  "commands": [],
+  "positionals": [
+    {
+      "name": "json",
+      "description": "a JSON array of QMP InputEvent objects.",
+      "optionality": "required",
+      "hidden": false
+    }
+  ],
+  "error_codes": []
+}

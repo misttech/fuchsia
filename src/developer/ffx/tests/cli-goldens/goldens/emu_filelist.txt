@@ -1,5 +1,7 @@
 ffx/emu.golden
 ffx/emu/console.golden
+ffx/emu/input.golden
+ffx/emu/input/raw.golden
 ffx/emu/list.golden
 ffx/emu/screenshot.golden
 ffx/emu/show.golden

@@ -20,6 +20,7 @@ if (is_host) {
     config_data = [ "data/config.json" ]
     plugin_deps = [
       "commands/console:ffx_emulator_console",
+      "commands/input:ffx_emulator_input",
       "commands/list:ffx_emulator_list",
       "commands/screenshot:ffx_emulator_screenshot",
       "commands/show:ffx_emulator_show",
