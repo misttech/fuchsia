@@ -1514,6 +1514,8 @@ if (zircon_toolchain == false) {
 
   if (toolchain_variant.is_pic_default) {
     default_common_binary_configs += [ "//build/config:shared_library_config" ]
+  } else if (is_fuchsia) {
+    default_common_binary_configs += [ "//build/config:executable_config" ]
   }
 } else {
   # Zircon-specific toolchain use a different list of default configs.

@@ -19,6 +19,15 @@ module(
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
 bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "rules_cc", version = "0.2.19")
+single_version_override(
+    module_name = "rules_cc",
+    patch_strip = 5,
+    patches = [
+        "//build/bazel:vendor_patches/rules_cc-0.2.19/0001-rules_cc-support-pie-executables-in-dbg-and-fastbuild.patch",
+    ],
+    version = "0.2.19",
+)
+
 bazel_dep(name = "rules_go", version = "0.61.1", repo_name = "io_bazel_rules_go")
 single_version_override(
     module_name = "rules_go",

@@ -44,3 +44,13 @@ executable("beads_cc_example_bin") {
   ]
   configs += [ ":beads_example_flags" ]
 }
+
+shared_library("beads_cc_example_shlib") {
+  sources = [ "src/main.cc" ]
+  deps = [
+    ":beads_asm_example_lib",
+    ":beads_c_example_lib",
+    ":beads_cc_example_lib",
+  ]
+  configs += [ ":beads_example_flags" ]
+}

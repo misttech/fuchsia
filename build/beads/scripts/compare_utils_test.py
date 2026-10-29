@@ -664,7 +664,11 @@ class TestBuildCommandQueryUtils(unittest.TestCase):
             ],
         )
         self.assertEqual(
-            res[ConfiguredBazelLabel("//foo:bar", "fuchsia_platform")],
+            res[
+                ConfiguredBazelLabel(
+                    "//foo:bar", "fuchsia_platform", use_pic=True
+                )
+            ],
             "clang++ -fPIC -c foo.cc -o bazel-out/foo.pic.o",
         )
 
@@ -1132,6 +1136,71 @@ class TestBuildCommandQueryUtils(unittest.TestCase):
         self.assertIn(
             "my_bin", link_cmd[ConfiguredBazelLabel("//cc:my_bin", "host")]
         )
+
+    def test_query_bazel_commands_cpp_pic_selection(self) -> None:
+        mock_launcher = build_utils.MockBazelLauncher()
+        mock_launcher.push_expected_outputs(
+            [
+                json.dumps(
+                    {
+                        "targets": [
+                            {"id": "1", "label": "//cc:my_lib"},
+                        ],
+                        "actions": [
+                            {
+                                "targetId": "1",
+                                "arguments": [
+                                    "clang++",
+                                    "-fPIE",
+                                    "-c",
+                                    "lib.cc",
+                                    "-o",
+                                    "lib.o",
+                                ],
+                                "mnemonic": "CppCompile",
+                            },
+                            {
+                                "targetId": "1",
+                                "arguments": [
+                                    "clang++",
+                                    "-fPIC",
+                                    "-c",
+                                    "lib.cc",
+                                    "-o",
+                                    "lib.pic.o",
+                                ],
+                                "mnemonic": "CppCompile",
+                            },
+                        ],
+                    }
+                )
+            ]
+        )
+        non_pic_query = CompareCommandsQuery(
+            gn="//cc:my_lib(//build/toolchain/fuchsia:x64)",
+            bazel=ConfiguredBazelLabel(
+                "//cc:my_lib", "fuchsia_platform", use_pic=False
+            ),
+            action_type="cpp_compile",
+        )
+        pic_query = CompareCommandsQuery(
+            gn="//cc:my_lib(//build/toolchain/fuchsia:x64-shared)",
+            bazel=ConfiguredBazelLabel(
+                "//cc:my_lib", "fuchsia_platform", use_pic=True
+            ),
+            action_type="cpp_compile",
+        )
+        cmds = compare_utils.query_bazel_commands(
+            mock_launcher,
+            "execroot",
+            [non_pic_query, pic_query],
+        )
+        assert non_pic_query.bazel
+        assert pic_query.bazel
+        self.assertIn("-fPIE", cmds[non_pic_query.bazel])
+        self.assertIn("lib.o", cmds[non_pic_query.bazel])
+        self.assertIn("-fPIC", cmds[pic_query.bazel])
+        self.assertIn("lib.pic.o", cmds[pic_query.bazel])
 
     def test_target_query_dataclass(self) -> None:
         t_gn = CompareCommandsQuery(gn="//foo:bar")

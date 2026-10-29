@@ -101,6 +101,54 @@ def compute_clang_features(
         enabled = is_linux or is_fuchsia,
     )
 
+    # @rules_cc sets the "pic" build variable for compile actions that produce
+    # PIC objects (*.pic.o) and leaves it unset for non-PIC objects (*.o).
+    # Emit -fPIC when "pic" is available and -fPIE when "pic" is not available.
+    # For link actions, emit -fPIC for dynamic libraries and -fPIE (plus -pie
+    # on Linux) for executables.
+    # See //build/bazel/BAZEL_PIE_VS_PIC.md for details.
+    pic_feature = feature(
+        name = "pic",
+        enabled = is_linux or is_fuchsia,
+        flag_sets = [
+            flag_set(
+                actions = action_names.all_compile_actions,
+                flag_groups = [
+                    flag_group(
+                        flags = ["-fPIC"],
+                        expand_if_available = "pic",
+                    ),
+                    flag_group(
+                        flags = ["-fPIE"],
+                        expand_if_not_available = "pic",
+                    ),
+                ],
+            ),
+            flag_set(
+                actions = [
+                    ACTION_NAMES.cpp_link_dynamic_library,
+                    ACTION_NAMES.cpp_link_nodeps_dynamic_library,
+                ],
+                flag_groups = [
+                    flag_group(flags = ["-fPIC"]),
+                ],
+            ),
+            flag_set(
+                actions = [ACTION_NAMES.cpp_link_executable],
+                flag_groups = [
+                    flag_group(
+                        # On Fuchsia, the Clang driver passes `-pie` to `ld.lld`
+                        # unconditionally by default for executables (and GN's
+                        # //build/config/fuchsia:executable_config omits it).
+                        # On Linux, `-pie` is passed explicitly to match GN's
+                        # //build/config/linux:default-pie.
+                        flags = ["-fPIE"] + (["-pie"] if is_linux else []),
+                    ),
+                ],
+            ),
+        ],
+    )
+
     # Redefine the dependency_files feature in order to use -MMD instead of -MD
     # which ensures that system headers files are not listed in the dependency file.
     # Doing this allows remote builds to work with our prebuilt toolchain. Otherwise
@@ -483,6 +531,7 @@ def compute_clang_features(
         default_compile_flags_feature,
         target_system_name_feature,
         supports_pic_feature,
+        pic_feature,
         coverage_feature,
         coverage_rust_feature,
         profile_feature,

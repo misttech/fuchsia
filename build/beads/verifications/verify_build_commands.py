@@ -77,6 +77,12 @@ def resolve_gn_label_for_toolchains(
         target_host_tc = host_variant_tc or host_tc
         if target_host_tc and target_host_tc != tc:
             return f"{base_label}({target_host_tc})"
+    elif tc.startswith("//build/toolchain/fuchsia:"):
+        target_fuchsia_tc = fuchsia_tc or default_tc
+        if target_fuchsia_tc:
+            if tc.endswith("-shared"):
+                return f"{base_label}({target_fuchsia_tc}-shared)"
+            return f"{base_label}({target_fuchsia_tc})"
     return gn_label
 
 

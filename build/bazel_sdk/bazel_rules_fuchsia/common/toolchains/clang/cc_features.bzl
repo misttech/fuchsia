@@ -158,9 +158,6 @@ _flag_configs = struct(
         cflags = ["-fcolor-diagnostics"],
         ldflags = ["-Wl,--color-diagnostics"],
     ),
-    pic = _make_flag_config(
-        cflags = ["-fPIC"],
-    ),
     language_c11 = _make_flag_config(
         conlyflags = ["-std=c11"],
         combine_cflags_with_ldflags = False,
@@ -362,7 +359,6 @@ def get_default_compile_flags_feature(
     in_tree_remaining_cflags = [
         default_system_flags,
         _flag_configs.color_diagnostics,
-        _flag_configs.pic,
         _flag_configs.no_frame_pointers,
         _flag_configs.default_warnings,
         _flag_configs.ffp_contract_off,
@@ -425,7 +421,6 @@ def get_default_compile_flags_feature(
         _flag_configs.no_exceptions,
         _flag_configs.no_rtti,
         _flag_configs.icf,
-        _flag_configs.pic,
         _flag_configs.relpath_debug_info,
     ]
 

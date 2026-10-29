@@ -222,6 +222,22 @@ variants: "{variant=\\"asan-fuzzer\\" target_type=[\\"fuzzed_executable\\"]}"
             "//build/beads/verifications/cc:beads_cc_example_bin(//build/toolchain:host_x64_custom)",
         )
 
+        # Fuchsia shared toolchain redirection:
+        self.assertEqual(
+            verify_build_commands.resolve_gn_label_for_toolchains(
+                "//build/beads/verifications/cc:beads_cc_example_shlib(//build/toolchain/fuchsia:x64-shared)",
+                variant_tc,
+            ),
+            "//build/beads/verifications/cc:beads_cc_example_shlib(//build/toolchain/fuchsia:arm64-asan-ubsan-shared)",
+        )
+        self.assertEqual(
+            verify_build_commands.resolve_gn_label_for_toolchains(
+                "//build/beads/verifications/cc:beads_cc_example_shlib(//build/toolchain/fuchsia:x64-shared)",
+                non_variant_tc,
+            ),
+            "//build/beads/verifications/cc:beads_cc_example_shlib(//build/toolchain/fuchsia:x64-shared)",
+        )
+
     def test_resolve_queries_for_build_dir(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             build_dir = pathlib.Path(tmpdir)

@@ -31,13 +31,13 @@ build_flags(
 )
 # LINT.ThenChange(//build/config/fuchsia/BUILD.gn:large_rust_stack)
 
+# NOTE: In Bazel, -fPIC vs -fPIE is controlled by the C++ toolchain's `pic`
+# feature rather than response files so that a single fx_cc_library() target
+# can compile both *.pic.o (-fPIC) and *.o (-fPIE).
+# See //build/bazel/BAZEL_PIE_VS_PIC.md for full details.
 # LINT.IfChange(shared_library_config)
 build_flags(
     name = "shared_library_config",
-    cflags = ["-fPIC"],
-    ldflags = ["-fPIC"],
-    # NOTE: commented out because build_flags() does not support asmflags.
-    # asmflags = ["-fPIC"],
     visibility = ["//visibility:public"],
 )
 
@@ -54,6 +54,8 @@ extra_linker_flags(
 )
 # LINT.ThenChange(//build/config/fuchsia/BUILD.gn:fdio_config)
 
+# NOTE: See comment on shared_library_config above and
+# //build/bazel/BAZEL_PIE_VS_PIC.md.
 # LINT.IfChange(executable_config)
 build_flags(
     name = "executable_config",

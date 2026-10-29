@@ -192,6 +192,14 @@ config("fdio_config") {
 
 # LINT.IfChange(executable_config)
 config("executable_config") {
+  # This is the default for the Fuchsia toolchain when targeting Fuchsia
+  # but making it explicit makes our GN/Bazel equivalence scripts
+  # simpler.
+  cflags = [ "-fPIE" ]
+
+  # Ensure assembly code can use `#ifdef __PIE__`
+  asmflags = cflags
+  ldflags = cflags
 }
 
 # LINT.ThenChange(BUILD.bazel:executable_config)

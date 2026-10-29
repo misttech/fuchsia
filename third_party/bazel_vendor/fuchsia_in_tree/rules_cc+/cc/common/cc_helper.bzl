@@ -791,11 +791,12 @@ def _should_use_pic(ctx, cc_toolchain, feature_configuration):
     Returns:
         (bool)
     """
+    # Fuchsia: Do not force PIC for binaries in non-opt (dbg, fastbuild)
+    # compilation modes, so executables and their static dependencies are
+    # compiled with -fPIE across all compilation modes to match the GN build.
     return ctx.fragments.cpp.force_pic() or (
-        cc_toolchain.needs_pic_for_dynamic_libraries(feature_configuration = feature_configuration) and (
-            ctx.var["COMPILATION_MODE"] != "opt" or
-            cc_common.is_enabled(feature_configuration = feature_configuration, feature_name = "prefer_pic_for_opt_binaries")
-        )
+        cc_toolchain.needs_pic_for_dynamic_libraries(feature_configuration = feature_configuration) and
+        cc_common.is_enabled(feature_configuration = feature_configuration, feature_name = "prefer_pic_for_opt_binaries")
     )
 
 SYSROOT_FLAG = "--sysroot="

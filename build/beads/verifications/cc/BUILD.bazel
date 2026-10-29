@@ -48,3 +48,16 @@ fx_cc_binary(
         ":beads_cc_example_lib",
     ],
 )
+
+fx_cc_binary(
+    name = "beads_cc_example_shlib",
+    srcs = ["src/main.cc"],
+    build_flags = [":beads_example_flags"],
+    linkshared = True,
+    visibility = ["//build/beads/verifications:__pkg__"],
+    deps = [
+        ":beads_asm_example_lib",
+        ":beads_c_example_lib",
+        ":beads_cc_example_lib",
+    ],
+)

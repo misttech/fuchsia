@@ -61,6 +61,7 @@ if (current_toolchain == default_toolchain) {
       "//build/beads/verifications/cc:beads_cc_example_bin(${_host_verification_toolchain})",
       "//build/beads/verifications/cc:beads_cc_example_lib(${_fuchsia_verification_toolchain})",
       "//build/beads/verifications/cc:beads_cc_example_lib(${_host_verification_toolchain})",
+      "//build/beads/verifications/cc:beads_cc_example_shlib(${_fuchsia_verification_toolchain})",
       "//build/beads/verifications/rust:beads_rust_example_bin(${_fuchsia_verification_toolchain})",
       "//build/beads/verifications/rust:beads_rust_example_bin(${_host_verification_toolchain})",
       "//build/beads/verifications/rust:beads_rust_example_bin_with_linker_args(${_host_verification_toolchain})",

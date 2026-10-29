@@ -88,6 +88,20 @@
         "allow_differences": true
     },
     {
+        "gn": "//build/beads/verifications/cc:beads_cc_example_lib(//build/toolchain/fuchsia:x64-shared)",
+        "bazel": "//build/beads/verifications/cc:beads_cc_example_lib",
+        "bazel_config": "fuchsia_platform",
+        "type": "cpp_compile",
+        "allow_differences": true
+    },
+    {
+        "gn": "//build/beads/verifications/cc:beads_cc_example_shlib(//build/toolchain/fuchsia:x64-shared)",
+        "bazel": "//build/beads/verifications/cc:beads_cc_example_shlib",
+        "bazel_config": "fuchsia_platform",
+        "type": "cpp_link",
+        "allow_differences": true
+    },
+    {
         "gn": "//build/beads/verifications/rust:beads_rust_example_bin.actual",
         "bazel": "//build/beads/verifications/rust:beads_rust_example_bin",
         "bazel_config": "fuchsia_sdk",

@@ -418,9 +418,12 @@ def use_pic_for_binaries(cpp_config, feature_configuration):
     """
     Returns whether binaries must be compiled with position independent code.
     """
+    # Fuchsia: Do not force PIC for binaries in non-opt (dbg, fastbuild)
+    # compilation modes, so executables and their static dependencies are
+    # compiled with -fPIE across all compilation modes to match the GN build.
     return cpp_config.force_pic() or (
         feature_configuration.is_enabled("supports_pic") and
-        (cpp_config.compilation_mode() != "opt" or feature_configuration.is_enabled("prefer_pic_for_opt_binaries"))
+        feature_configuration.is_enabled("prefer_pic_for_opt_binaries")
     )
 
 def use_pic_for_dynamic_libs(cpp_config, feature_configuration):

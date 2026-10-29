@@ -64,24 +64,30 @@ generated_file("bazel_default_configs_json") {
 
   # LINT.ThenChange(//build/bazel/rules/cc/fx_cc_binary.bzl:fdio_config)
 
+  _common_configs = filter_exclude(default_common_binary_configs,
+                                   [
+                                     "//build/config:executable_config",
+                                     "//build/config:shared_library_config",
+                                   ])
+
   # Keep these definitions in sync with the set_defaults() calls in
   # //build/config/BUILDCONFIG.gn
   contents = {
     # LINT.IfChange(DefaultConfigsJsonSchema)
 
     # List of configs that apply to all C++ targets
-    cxx_common = default_common_binary_configs
+    cxx_common = _common_configs
 
     # List of extra configs that apply to C++ executables.
     cxx_executable_extra =
-        default_executable_configs - default_common_binary_configs
+        filter_exclude(default_executable_configs, _common_configs)
 
     # List of extra configs that apply to C++ shared libraries.
     cxx_shared_library_extra =
-        default_shared_library_configs - default_common_binary_configs
+        filter_exclude(default_shared_library_configs, _common_configs)
 
     # List of configs that apply to all Rust targets.
-    rust_common = default_common_binary_configs
+    rust_common = _common_configs
 
     # List of extra configs that apply to Rust executables.
     rust_executable_extra = []

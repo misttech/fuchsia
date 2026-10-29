@@ -125,13 +125,11 @@ compiler_build_flags(
 #   BUILD.gn:symbol_no_undefined,
 #   //build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/cc_features.bzl:symbol_no_undefined,
 # )
+# NOTE: In Bazel, -fPIC vs -fPIE is controlled by the C++ toolchain's `pic`
+# feature rather than response files. See //build/bazel/BAZEL_PIE_VS_PIC.md.
 # LINT.IfChange(shared_library_config)
 build_flags(
     name = "shared_library_config",
-    cflags = select({
-        "@platforms//os:linux": ["-fPIC"],
-        "//conditions:default": [],
-    }),
     subflags = select({
         "@platforms//os:fuchsia": ["//build/config/fuchsia:shared_library_config"],
         "//conditions:default": [],
@@ -140,6 +138,7 @@ build_flags(
 )
 # LINT.ThenChange(BUILD.gn:shared_library_config)
 
+# NOTE: See //build/bazel/BAZEL_PIE_VS_PIC.md.
 # LINT.IfChange(executable_config)
 build_flags(
     name = "executable_config",

@@ -155,6 +155,7 @@ class ConfiguredBazelLabel:
 
     label: str
     config: str
+    use_pic: bool = False
 
     def __post_init__(self) -> None:
         _validate_bazel_config(self.config)
@@ -197,6 +198,17 @@ class CompareCommandsQuery:
                 "CompareCommandsQuery requires at least one of 'gn' or 'bazel' to be set."
             )
         _validate_action_type(self.action_type)
+        if (
+            self.bazel
+            and self.gn
+            and "-shared)" in self.gn
+            and not self.bazel.use_pic
+        ):
+            object.__setattr__(
+                self,
+                "bazel",
+                dataclasses.replace(self.bazel, use_pic=True),
+            )
 
     @property
     def bazel_label(self) -> str:
@@ -637,7 +649,7 @@ def query_bazel_commands(
             actions = target_actions_map.get(norm_label, [])
             matched_cmd = None
             fallback_cmd = None
-            expect_pic = "-shared)" in query.gn
+            expect_pic = query.bazel.use_pic
 
             for action in actions:
                 full_args = list(action.env_vars) + action.args
