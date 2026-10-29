@@ -117,6 +117,12 @@ alias(
     actual = "@prebuilt_clang//:coverage_variant",
     visibility = ["@fuchsia_platform_sysroot//:__pkg__"],
 )
+
+alias(
+    name = "coverage-rust_variant",
+    actual = "@prebuilt_clang//:coverage-rust_variant",
+    visibility = ["@fuchsia_platform_sysroot//:__pkg__"],
+)
 # LINT.ThenChange(
 #   //build/bazel/scripts/workspace_utils.py:sysroot_variants,
 #   //build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/sanitizer.bzl:variant_config_settings,

@@ -19,6 +19,7 @@ load("@rules_cc//cc:defs.bzl", "cc_binary")
 _INSTRUMENTATION_FEATURES = [
     "asan",
     "coverage",
+    "coverage-rust",
     "hwasan",
     "lsan",
     "msan",

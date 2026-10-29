@@ -32,6 +32,7 @@ if (current_toolchain == default_toolchain) {
       # user.basic_$cpu-<variant>-shared.
       enable_variants = [
         "coverage",
+        "coverage-rust",
         "ubsan",
       ]
 

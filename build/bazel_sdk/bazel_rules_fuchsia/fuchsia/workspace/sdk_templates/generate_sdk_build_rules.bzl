@@ -986,6 +986,7 @@ _FUCHSIA_CLANG_VARIANT_MAP = {
     "ubsan": "@fuchsia_clang//:ubsan_variant",
     "ubsan-sancov": "@fuchsia_clang//:ubsan-sancov_variant",
     "coverage": "@fuchsia_clang//:coverage_variant",
+    "coverage-rust": "@fuchsia_clang//:coverage-rust_variant",
 }
 # LINT.ThenChange(//build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/sanitizer.bzl:variant_config_settings)
 

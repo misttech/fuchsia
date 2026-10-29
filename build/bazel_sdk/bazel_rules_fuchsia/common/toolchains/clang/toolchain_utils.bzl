@@ -272,6 +272,28 @@ def compute_clang_features(
     #   //build/config/profile/BUILD.gn:coverage,
     # )
 
+    # LINT.IfChange(coverage_rust)
+    coverage_rust_feature = feature(
+        name = "coverage-rust",
+        enabled = "coverage-rust" in enabled_features,
+        flag_sets = [
+            flag_set(
+                actions = action_names.all_link_actions,
+                flag_groups = [
+                    flag_group(
+                        flags = [
+                            "-Wl,-dynamic-linker=coverage-rust/ld.so.1",
+                        ],
+                    ),
+                ],
+                with_features = [
+                    with_feature_set(not_features = ["asan", "hwasan", "ubsan", "coverage"]),
+                ],
+            ),
+        ] if is_fuchsia else [],
+    )
+    # LINT.ThenChange(//build/config/profile/BUILD.gn:rust_coverage)
+
     generate_linkmap_feature = feature(
         name = "generate_linkmap",
         enabled = True,
@@ -342,6 +364,7 @@ def compute_clang_features(
         target_system_name_feature,
         supports_pic_feature,
         coverage_feature,
+        coverage_rust_feature,
         dbg_feature,
         dependency_file_feature,
         generate_linkmap_feature,

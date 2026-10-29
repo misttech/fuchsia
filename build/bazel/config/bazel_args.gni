@@ -147,6 +147,9 @@ if (_has_coverage_clang) {
   _enabled_features += [ "coverage" ]
 }
 if (_has_coverage_rust) {
+  if (!_has_coverage_clang) {
+    _enabled_features += [ "coverage-rust" ]
+  }
   if (is_host) {
     _common_args += [ "--config=host_rust_coverage" ]
   } else {
