@@ -760,6 +760,59 @@ class BazelTestsUtilsTest(unittest.TestCase):
         )
         self.assertNotIn("realm", tests_json[1]["test"])
 
+    def test_generate_device_tests_json_create_no_exception_channel(
+        self,
+    ) -> None:
+        self._setUpDeviceTests(["//fake/device_tests"])
+
+        mock_runner = MockCommandRunner()
+        mock_runner.push_result(
+            stdout="\n".join(
+                [
+                    json.dumps(
+                        {
+                            "label": "@@//src/my_test:no_exc_test",
+                            "package_manifest_execroot_path": "bazel-out/no_exc_test/package_manifest.json",
+                            "os": "fuchsia",
+                            "cpu": "x64",
+                            "create_no_exception_channel": True,
+                            "test_components": [
+                                {
+                                    "component_name": "no_exc_test",
+                                    "package_url": "fuchsia-pkg://fuchsia.com/no-exc-test#meta/no_exc_test.cm",
+                                },
+                            ],
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "label": "@@//src/my_test:normal_test",
+                            "package_manifest_execroot_path": "bazel-out/normal_test/package_manifest.json",
+                            "os": "fuchsia",
+                            "cpu": "x64",
+                            "create_no_exception_channel": False,
+                            "test_components": [
+                                {
+                                    "component_name": "normal_test",
+                                    "package_url": "fuchsia-pkg://fuchsia.com/normal-test#meta/normal_test.cm",
+                                },
+                            ],
+                        }
+                    ),
+                ]
+            )
+        )
+
+        tests_json = bazel_tests_utils.generate_tests_json(
+            self.bazel_paths, command_runner=mock_runner
+        ).tests
+
+        self.assertEqual(len(tests_json), 2)
+        self.assertIs(
+            tests_json[0]["test"].get("create_no_exception_channel"), True
+        )
+        self.assertNotIn("create_no_exception_channel", tests_json[1]["test"])
+
     def test_generate_device_tests_json_build_file_inputs(self) -> None:
         self._setUpDeviceTests(["//fake/device_tests:suite"])
         suite_build = self.fuchsia_dir / "fake" / "device_tests" / "BUILD.bazel"

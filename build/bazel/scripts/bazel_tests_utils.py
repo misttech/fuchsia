@@ -497,6 +497,8 @@ def _generate_device_tests_json(
             }
             if test_component.get("realm"):
                 test_entry["realm"] = test_component["realm"]
+            if cquery_test.get("create_no_exception_channel"):
+                test_entry["create_no_exception_channel"] = True
             test_dict: TestSpec = {
                 "expects_ssh": True,
                 "test": test_entry,

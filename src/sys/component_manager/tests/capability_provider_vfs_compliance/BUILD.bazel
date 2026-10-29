@@ -2,7 +2,18 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
 load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -12,6 +23,7 @@ rustc_test(
     crate_name = "capability_provider_vfs_compliance_test",
     crate_root = "src/integration_test.rs",
     edition = "2024",
+    tags = ["manual"],
     deps = [
         "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
         "//sdk/rust/zx-status",
@@ -20,4 +32,43 @@ rustc_test(
         "//third_party/rust_crates/vendor:assert_matches",
         "//third_party/rust_crates/vendor:futures",
     ],
+)
+
+fx_packaged_binary(
+    name = "integration_test_bin_packaged_bin",
+    testonly = True,
+    binary = ":integration_test_bin",
+    binary_name = "capability_provider_vfs_compliance_test",
+)
+
+fx_component_manifest(
+    name = "integration-test-manifest",
+    testonly = True,
+    component_name = "integration-test",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/integration_test.cml",
+)
+
+fx_test_component(
+    name = "integration-test",
+    compiled_manifest = ":integration-test-manifest",
+    component_name = "integration-test",
+    test_type = "vfs_compliance",
+    deps = [":integration_test_bin_packaged_bin"],
+)
+
+fx_package(
+    name = "package",
+    package_name = "capability-provider-vfs-compliance-integration-test",
+    components = ["//src/storage/memfs:memfs_component"],
+    test_components = [":integration-test"],
+)
+
+fx_test(
+    name = "capability-provider-vfs-compliance-integration-test",
+    package = ":package",
 )

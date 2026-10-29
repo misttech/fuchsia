@@ -3,17 +3,63 @@
 # found in the LICENSE file.
 
 load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
 
 package(default_applicable_licenses = ["//:license"])
 
-# @bazel2gn:raw_attribute:output_name = "job-with-available-exception-channel-test"
 fx_cc_binary(
     name = "bin",
+    testonly = True,
     srcs = [
         "main.cc",
     ],
+    tags = ["manual"],
     deps = [
         "//src/lib/test-suite:test_suite_lib",
         "//zircon/system/ulib/zx",
     ],
+)
+
+fx_packaged_binary(
+    name = "bin_packaged_bin",
+    testonly = True,
+    binary = ":bin",
+    binary_name = "job-with-available-exception-channel-test",
+)
+
+fx_component_manifest(
+    name = "component-manifest",
+    testonly = True,
+    component_name = "job-with-available-exception-channel-test",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/job-with-available-exception-channel-test.cml",
+)
+
+fx_test_component(
+    name = "component",
+    compiled_manifest = ":component-manifest",
+    component_name = "job-with-available-exception-channel-test",
+    deps = [":bin_packaged_bin"],
+)
+
+fx_package(
+    name = "package",
+    package_name = "job-with-available-exception-channel-test",
+    test_components = [":component"],
+)
+
+fx_test(
+    name = "job-with-available-exception-channel-test",
+    create_no_exception_channel = True,
+    package = ":package",
 )

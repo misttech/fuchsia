@@ -46,6 +46,7 @@ _FUCHSIA_TEST_INFO_FIELDS = {
                     "in which the test should run, or an empty list to use the build's " +
                     "default environments.",
     "build_only": "True if the test should only be built, not run.",
+    "create_no_exception_channel": "True if the test runner should not create an exception channel on the test's job.",
     "max_log_severity": "The maximum log severity allowed before the test fails.",
     # The fields below are specific to packaged component tests and will
     # become optional when `fx_test()` is extended to other target test
@@ -205,6 +206,7 @@ def _fx_test_impl(ctx):
             cpu = current_platform.cpu,
             environments = _collect_environments(ctx),
             build_only = ctx.attr.build_only,
+            create_no_exception_channel = ctx.attr.create_no_exception_channel,
             max_log_severity = ctx.attr.max_log_severity,
             package_name = package_info.package_name,
             package_manifest = package_manifest,
@@ -275,6 +277,10 @@ fx_test = rule(
         ),
         "build_only": attr.bool(
             doc = "True if the test should only be built, not run. Environments must not be specified if this is true.",
+            default = False,
+        ),
+        "create_no_exception_channel": attr.bool(
+            doc = "True if the test runner should not create an exception channel on the test's job. Defaults to False.",
             default = False,
         ),
         "max_log_severity": attr.string(

@@ -2,8 +2,20 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
 load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
 load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -11,11 +23,38 @@ rustc_test(
     name = "dictionaries_route_to_all_test_bin",
     srcs = ["src/lib.rs"],
     edition = "2024",
+    tags = ["manual"],
     deps = [
         "//examples/components/routing/fidl:echo_rust",
         "//src/lib/fuchsia",
         "//src/lib/fuchsia-component",
     ],
+)
+
+fx_packaged_binary(
+    name = "dictionaries_route_to_all_test_bin_packaged_bin",
+    testonly = True,
+    binary = ":dictionaries_route_to_all_test_bin",
+    binary_name = "dictionaries_route_to_all_test_bin",
+)
+
+fx_component_manifest(
+    name = "dictionaries_route_to_all_test-manifest",
+    testonly = True,
+    component_name = "dictionaries_route_to_all_test",
+    includes = [
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/dictionaries_route_to_all_test.cml",
+)
+
+fx_component(
+    name = "dictionaries_route_to_all_test",
+    testonly = True,
+    compiled_manifest = ":dictionaries_route_to_all_test-manifest",
+    component_name = "dictionaries_route_to_all_test",
+    deps = [":dictionaries_route_to_all_test_bin_packaged_bin"],
 )
 
 rustc_binary(
@@ -25,10 +64,65 @@ rustc_binary(
     crate_name = "route_to_all_proxy",
     crate_root = "src/proxy.rs",
     edition = "2024",
+    tags = ["manual"],
     deps = [
         "//examples/components/routing/fidl:echo_rust",
         "//src/lib/fuchsia",
         "//src/lib/fuchsia-component",
         "//third_party/rust_crates/vendor:futures",
     ],
+)
+
+fx_packaged_binary(
+    name = "route_to_all_proxy_bin_packaged_bin",
+    testonly = True,
+    binary = ":route_to_all_proxy_bin",
+    binary_name = "route_to_all_proxy",
+)
+
+fx_component_manifest(
+    name = "dictionaries_route_to_all_proxy-manifest",
+    testonly = True,
+    component_name = "dictionaries_route_to_all_proxy",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/dictionaries_route_to_all_proxy.cml",
+)
+
+fx_component(
+    name = "dictionaries_route_to_all_proxy",
+    testonly = True,
+    compiled_manifest = ":dictionaries_route_to_all_proxy-manifest",
+    component_name = "dictionaries_route_to_all_proxy",
+    deps = [":route_to_all_proxy_bin_packaged_bin"],
+)
+
+fx_component_manifest(
+    name = "dictionaries_route_to_all_test_root-manifest",
+    testonly = True,
+    component_name = "dictionaries_route_to_all_test_root",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/dictionaries_route_to_all_test_root.cml",
+)
+
+fx_test_component(
+    name = "dictionaries_route_to_all_test_root_component",
+    compiled_manifest = ":dictionaries_route_to_all_test_root-manifest",
+    component_name = "dictionaries_route_to_all_test_root",
+    deps = ["//src/sys/component_manager/testing/echo_server:echo_server_testing_packaged_bin"],
+)
+
+fx_package(
+    name = "package",
+    package_name = "dictionaries_route_to_all_test_root",
+    components = [
+        ":dictionaries_route_to_all_proxy",
+        ":dictionaries_route_to_all_test",
+        "//src/sys/component_manager/testing/echo_server",
+    ],
+    test_components = [":dictionaries_route_to_all_test_root_component"],
+)
+
+fx_test(
+    name = "dictionaries_route_to_all_test_root",
+    package = ":package",
 )

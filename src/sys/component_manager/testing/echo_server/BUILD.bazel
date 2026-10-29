@@ -33,6 +33,7 @@ fx_packaged_binary(
     testonly = True,
     binary = ":echo_server_testing",
     binary_name = "echo_server_testing",
+    visibility = ["//:__subpackages__"],
 )
 
 fx_component_manifest(
