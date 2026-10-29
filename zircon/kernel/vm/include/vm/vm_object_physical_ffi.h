@@ -16,6 +16,7 @@ __BEGIN_CDECLS
 
 VmObjectPhysical* cpp_vm_object_physical_create(paddr_t base, size_t size, zx_status_t* out_status);
 VmObject* cpp_vm_object_physical_as_vm_object(VmObjectPhysical* vmo);
+VmObjectPhysical* cpp_vm_object_as_vm_object_physical(VmObject* vmo);
 arch_mmu_flags_t cpp_vm_object_physical_get_mapping_cache_policy_locked(
     const VmObjectPhysical* vmo);
 uint32_t cpp_vm_object_physical_num_mappings_locked(const VmObjectPhysical* vmo);

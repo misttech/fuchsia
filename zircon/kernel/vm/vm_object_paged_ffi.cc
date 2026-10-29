@@ -8,7 +8,10 @@
 
 #include <zircon/types.h>
 
+#include <new>
+
 #include <kernel/ffi.h>
+#include <ktl/memory.h>
 
 #include "vm/vm_object_paged.h"
 
@@ -121,6 +124,24 @@ FFI_ALWAYS_INLINE bool cpp_vm_object_paged_user_stream_size_locked(
     return true;
   }
   return false;
+}
+
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_paged_get_lookup_cursor_locked(
+    ffi::Uninitialized<VmCowPagesLookupCursorResult>* out, VmObjectPaged* vmo, uint64_t offset,
+    uint64_t max_len) TA_NO_THREAD_SAFETY_ANALYSIS {
+  // Not out->Initialize(), which would move the result from a temporary on the stack.
+  auto* cursor = new (out->GetAddressUnchecked())
+      VmCowPagesLookupCursorResult{vmo->GetLookupCursorLocked(offset, max_len)};
+  zx_status_t status = cursor->result.status_value();
+  if (unlikely(status != ZX_OK)) {
+    ktl::destroy_at(cursor);
+  }
+  return status;
+}
+
+FFI_ALWAYS_INLINE void cpp_vm_object_paged_mark_modified_locked(VmObjectPaged* vmo)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  vmo->mark_modified_locked();
 }
 
 }  // extern "C"

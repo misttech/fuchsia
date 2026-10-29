@@ -6,6 +6,8 @@
 
 #include "vm/vm_cow_pages_ffi.h"
 
+#include <assert.h>
+#include <zircon/compiler.h>
 #include <zircon/types.h>
 
 #include <kernel/ffi.h>
@@ -113,6 +115,76 @@ FFI_ALWAYS_INLINE void cpp_vm_cow_pages_deferred_ops_construct(
 
 FFI_ALWAYS_INLINE void cpp_vm_cow_pages_deferred_ops_destroy(VmCowPages::DeferredOps* ops) {
   ktl::destroy_at(ops);
+}
+
+FFI_ALWAYS_INLINE void cpp_vm_cow_pages_lookup_cursor_destroy(
+    VmCowPagesLookupCursorResult* cursor) {
+  ktl::destroy_at(cursor);
+}
+
+FFI_ALWAYS_INLINE VmCowPages::LookupCursor* cpp_vm_cow_pages_lookup_cursor_result_value(
+    VmCowPagesLookupCursorResult* cursor) {
+  DEBUG_ASSERT(cursor->result.is_ok());
+  if (!cursor->result.is_ok()) {
+    __builtin_unreachable();
+  }
+  return &*cursor->result;
+}
+
+FFI_ALWAYS_INLINE bool cpp_vm_cow_pages_lookup_cursor_lock_is_held(
+    const VmCowPagesLookupCursorResult* cursor) {
+  DEBUG_ASSERT(cursor->result.is_ok());
+  if (!cursor->result.is_ok()) {
+    __builtin_unreachable();
+  }
+  return cursor->result->lock_ref().lock().IsHeld();
+}
+
+FFI_ALWAYS_INLINE void cpp_vm_cow_pages_lookup_cursor_disable_mark_accessed(
+    VmCowPages::LookupCursor* cursor) {
+  cursor->DisableMarkAccessed();
+}
+
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_cow_pages_lookup_cursor_require_owned_page(
+    VmCowPages::LookupCursor* cursor, bool will_write, uint64_t max_request_pages,
+    VmCowPages::DeferredOps* deferred, MultiPageRequest* page_request, vm_page_t** out_page,
+    bool* out_writable) TA_NO_THREAD_SAFETY_ANALYSIS {
+  auto result = cursor->RequireOwnedPage(will_write, max_request_pages, *deferred, page_request);
+  if (unlikely(result.is_error())) {
+    return result.error_value();
+  }
+  *out_page = result->page;
+  *out_writable = result->writable;
+  return ZX_OK;
+}
+
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_cow_pages_lookup_cursor_require_page(
+    VmCowPages::LookupCursor* cursor, bool will_write, uint64_t max_request_pages,
+    VmCowPages::DeferredOps* deferred, MultiPageRequest* page_request, vm_page_t** out_page,
+    bool* out_writable) TA_NO_THREAD_SAFETY_ANALYSIS {
+  auto result = cursor->RequirePage(will_write, max_request_pages, *deferred, page_request);
+  if (unlikely(result.is_error())) {
+    return result.error_value();
+  }
+  *out_page = result->page;
+  *out_writable = result->writable;
+  return ZX_OK;
+}
+
+FFI_ALWAYS_INLINE vm_page_t* cpp_vm_cow_pages_lookup_cursor_maybe_page(
+    VmCowPages::LookupCursor* cursor, bool will_write) TA_NO_THREAD_SAFETY_ANALYSIS {
+  return cursor->MaybePage(will_write);
+}
+
+FFI_ALWAYS_INLINE uint64_t cpp_vm_cow_pages_lookup_cursor_skip_missing_pages(
+    VmCowPages::LookupCursor* cursor) TA_NO_THREAD_SAFETY_ANALYSIS {
+  return cursor->SkipMissingPages();
+}
+
+FFI_ALWAYS_INLINE uint64_t cpp_vm_cow_pages_lookup_cursor_if_exist_pages(
+    VmCowPages::LookupCursor* cursor, bool will_write, uint64_t max_pages,
+    paddr_t* paddrs) TA_NO_THREAD_SAFETY_ANALYSIS {
+  return cursor->IfExistPages(will_write, max_pages, paddrs);
 }
 
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_cow_pages_add_new_pages_locked(

@@ -11,6 +11,7 @@ use super::page_source::MultiPageRequest;
 use super::stream_size_manager::StreamSizeManager;
 use super::vm_mapping::VmMapping;
 use super::vm_object_paged::VmObjectPaged;
+use super::vm_object_physical::VmObjectPhysical;
 use super::vm_page_list::VmPageSpliceList;
 use crate::kernel::types::PAddr;
 use crate::user_copy::{UserInPtr, UserOutPtr};
@@ -27,6 +28,7 @@ use ksync::{KMutex, KMutexGuard, LockToken, RawCriticalMutex};
 use page;
 use pin_init::PinInit;
 use vm_object_bindings as bindings;
+use vm_object_physical_bindings as phys_bindings;
 use zr::Opaque;
 use zx_status::Status;
 use zx_types::{ZX_KOID_INVALID, zx_koid_t, zx_pager_vmo_stats_t, zx_status_t};
@@ -151,6 +153,23 @@ impl VmObject {
     pub fn is_stream_compatible(&self) -> bool {
         // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
         unsafe { bindings::cpp_vm_object_is_stream_compatible(self.as_raw()) }
+    }
+
+    /// Returns true if the VMO's pages require dirty bit tracking.
+    #[inline]
+    pub fn is_dirty_tracked(&self) -> bool {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        unsafe { bindings::cpp_vm_object_is_dirty_tracked(self.as_raw()) }
+    }
+
+    /// Checks if all pages in the provided range are pinned.
+    /// This is only intended to be used for debugging checks.
+    ///
+    /// Must not be called with the VMO lock held.
+    #[inline]
+    pub fn debug_is_range_pinned(&self, offset: u64, len: u64) -> bool {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        unsafe { bindings::cpp_vm_object_debug_is_range_pinned(self.as_raw(), offset, len) }
     }
 
     #[inline]
@@ -468,6 +487,19 @@ impl VmObject {
         } else {
             // SAFETY: `raw` points to a valid `VmObjectPaged` whose lifetime matches `self`.
             unsafe { Some(&*raw.cast::<VmObjectPaged>()) }
+        }
+    }
+
+    /// Downcasts a `&VmObject` into a `&VmObjectPhysical` if it is a physical VMO.
+    #[inline]
+    pub fn as_physical(&self) -> Option<&VmObjectPhysical> {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        let raw = unsafe { phys_bindings::cpp_vm_object_as_vm_object_physical(self.as_raw()) };
+        if raw.is_null() {
+            None
+        } else {
+            // SAFETY: `raw` points to a valid `VmObjectPhysical` whose lifetime matches `self`.
+            unsafe { Some(&*raw.cast::<VmObjectPhysical>()) }
         }
     }
 

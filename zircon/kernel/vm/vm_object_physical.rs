@@ -16,7 +16,7 @@ use zx_status::Status;
 use zx_types::{ZX_CACHE_POLICY_MASK, ZX_ERR_NEXT, ZX_ERR_STOP, zx_status_t};
 
 use super::arch_vm_aspace::ArchMmuFlags;
-use super::vm_object::VmObject;
+use super::vm_object::{VmObject, VmObjectLockClass};
 use vm_constants_rs as constants;
 use vm_object_bindings as vmo_bindings;
 use vm_object_physical_bindings as phys_bindings;
@@ -36,6 +36,7 @@ pub struct VmObjectPhysicalState {
     #[mutex]
     lock: KMutex<RawCriticalMutex>,
 
+    // size and base are immutable after initialization.
     size: u64,
     base: PAddr,
     is_slice: bool,
@@ -60,6 +61,33 @@ impl VmObjectPhysicalState {
             parent_user_id,
             parent: None,
         })
+    }
+
+    /// # Safety
+    ///
+    /// The caller must ensure `ptr` is non-null, properly aligned, and valid for reads of an
+    /// initialized `VmObjectPhysicalState` for the duration of the call.
+    #[inline]
+    unsafe fn lookup_contiguous_locked(
+        ptr: *const Self,
+        offset: u64,
+        len: u64,
+    ) -> Result<PAddr, Status> {
+        if len == 0 || !kernel_page::is_aligned(offset as usize) {
+            core::hint::cold_path();
+            return Err(Status::INVALID_ARGS);
+        }
+        // SAFETY: `ptr` points to an initialized `VmObjectPhysicalState`, and `size` is immutable
+        // after initialization.
+        let size = unsafe { (*ptr).size };
+        if !in_range(offset, len, size) {
+            core::hint::cold_path();
+            return Err(Status::OUT_OF_RANGE);
+        }
+        // SAFETY: `ptr` points to an initialized `VmObjectPhysicalState`, and `base` is immutable
+        // after initialization.
+        let base = unsafe { (*ptr).base };
+        Ok(PAddr(base.0 + (offset as usize)))
     }
 }
 
@@ -161,6 +189,13 @@ impl VmObjectPhysical {
         self.raw.get()
     }
 
+    #[inline]
+    fn state_ptr(&self) -> *const VmObjectPhysicalState {
+        // SAFETY: `self.as_raw()` points to a live `VmObjectPhysical`, whose
+        // `VmObjectPhysicalState` lives at `kVmObjectPhysicalStateOffset`.
+        unsafe { self.as_raw().byte_add(constants::kVmObjectPhysicalStateOffset).cast() }
+    }
+
     /// # Safety
     ///
     /// `raw` is null or points to a live `VmObjectPhysical` and carries one reference, which
@@ -216,6 +251,21 @@ impl VmObjectPhysical {
         unsafe {
             phys_bindings::cpp_vm_object_physical_get_mapping_cache_policy_locked(self.as_raw())
         }
+    }
+
+    /// Attempts to lookup the given range in the VMO. If it exists and is physically contiguous,
+    /// returns the physical address of the start of the range. The offset must be page aligned.
+    /// Ranges of length zero are considered invalid and will return `Status::INVALID_ARGS`.
+    #[inline]
+    pub fn lookup_contiguous_locked(
+        &self,
+        _token: &LockToken<'_, VmObjectLockClass>,
+        offset: u64,
+        len: u64,
+    ) -> Result<PAddr, Status> {
+        // SAFETY: `self.state_ptr()` is non-null, properly aligned, and valid for reads of this
+        // VMO's initialized `VmObjectPhysicalState` for the duration of the call.
+        unsafe { VmObjectPhysicalState::lookup_contiguous_locked(self.state_ptr(), offset, len) }
     }
 
     #[inline]
@@ -366,22 +416,20 @@ pub unsafe extern "C" fn rust_vm_object_physical_state_set_parent_locked(
 
 /// # Safety
 ///
-/// The caller must ensure `ptr` points to an initialized `VmObjectPhysicalState`.
+/// The caller must ensure `ptr` is non-null, properly aligned, and valid for reads of an
+/// initialized `VmObjectPhysicalState` for the duration of the call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_vm_object_physical_state_lookup_contiguous_locked(
     ptr: *const VmObjectPhysicalState,
     offset: u64,
     len: u64,
 ) -> LookupContiguousResult {
-    // SAFETY: The caller guarantees `ptr` points to an initialized `VmObjectPhysicalState`.
-    let state = unsafe { &*ptr };
-    if len == 0 || !kernel_page::is_aligned(offset as usize) {
-        return LookupContiguousResult { status: Err(Status::INVALID_ARGS), paddr: PAddr(0) };
+    // SAFETY: The caller guarantees `ptr` is non-null, properly aligned, and valid for reads of an
+    // initialized `VmObjectPhysicalState` for the duration of the call.
+    match unsafe { VmObjectPhysicalState::lookup_contiguous_locked(ptr, offset, len) } {
+        Ok(paddr) => LookupContiguousResult { status: Ok(()), paddr },
+        Err(err) => LookupContiguousResult { status: Err(err), paddr: PAddr(0) },
     }
-    if !in_range(offset, len, state.size) {
-        return LookupContiguousResult { status: Err(Status::OUT_OF_RANGE), paddr: PAddr(0) };
-    }
-    LookupContiguousResult { status: Ok(()), paddr: PAddr(state.base.0 + (offset as usize)) }
 }
 
 /// # Safety

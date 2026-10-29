@@ -26,6 +26,10 @@ FFI_ALWAYS_INLINE VmObject* cpp_vm_object_physical_as_vm_object(VmObjectPhysical
   return static_cast<VmObject*>(vmo);
 }
 
+FFI_ALWAYS_INLINE VmObjectPhysical* cpp_vm_object_as_vm_object_physical(VmObject* vmo) {
+  return DownCastVmObject<VmObjectPhysical>(vmo);
+}
+
 FFI_ALWAYS_INLINE arch_mmu_flags_t cpp_vm_object_physical_get_mapping_cache_policy_locked(
     const VmObjectPhysical* vmo) TA_NO_THREAD_SAFETY_ANALYSIS {
   return vmo->GetMappingCachePolicyLocked();

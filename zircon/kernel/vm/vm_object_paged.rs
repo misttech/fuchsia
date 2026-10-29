@@ -7,7 +7,7 @@
 use super::page::VmPagePtr;
 use super::page_source::PageSource;
 use super::stream_size_manager::StreamSizeManager;
-use super::vm_cow_pages::{PriorityChanger, VmCowPages};
+use super::vm_cow_pages::{DeferredOps, LookupCursor, PriorityChanger, VmCowPages};
 use super::vm_object::{VmObject, VmObjectLockClass, VmObjectReadWriteOptions};
 use crate::user_copy::{UserInIovec, UserOutIovec};
 use core::marker::PhantomPinned;
@@ -17,6 +17,7 @@ use core::ptr::NonNull;
 use fbl::{IsOpaqueRefCounted, RefPtr};
 use ksync::LockToken;
 use pin_init::PinInit;
+use vm_cow_pages_bindings::VmCowPagesLookupCursorResult;
 use vm_object_paged_bindings as bindings;
 use zr::Opaque;
 use zx_status::Status;
@@ -178,6 +179,63 @@ impl VmObjectPaged {
     /// See the comments on `PriorityChanger` for how to use this object.
     pub fn make_priority_changer(&self, delta: i64) -> impl PinInit<PriorityChanger<'_>> {
         PriorityChanger::new(self.cow_pages(), delta)
+    }
+
+    /// Constructs and returns a `DeferredOps` that can be passed into other methods on this VMO
+    /// that require one. Must be constructed, and dropped, without the VMO lock held.
+    #[inline]
+    pub fn make_deferred_ops(&self) -> impl PinInit<DeferredOps<'_>> {
+        DeferredOps::new(self.cow_pages())
+    }
+
+    /// Marks the VMO as modified if the VMO tracks modified state (only supported for pager-backed
+    /// VMOs).
+    #[inline]
+    pub fn mark_modified_locked(&self, _token: &mut LockToken<'_, VmObjectLockClass>) {
+        // SAFETY: `self.as_raw()` is a valid `VmObjectPaged` pointer and the VMO lock is held.
+        unsafe { bindings::cpp_vm_object_paged_mark_modified_locked(self.as_raw()) }
+    }
+
+    /// Gets a reference to a [`LookupCursor`] for the specified range in the VMO. The returned
+    /// cursor and all the items returned by the cursor are only valid as long as the lock is
+    /// contiguously held.
+    ///
+    /// The requested range must be fully inside the VMO, and if a cursor is returned the caller
+    /// can assume that all offsets up to `max_len` can be queried. Pages returned by the cursor
+    /// itself might be from this VMO or a parent, depending on actual cursor methods used.
+    ///
+    /// See [`LookupCursor`].
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure `token` is for the lock of this VMO, `offset` and `max_len` are
+    /// page-aligned, and `max_len` is non-zero.
+    #[inline]
+    pub unsafe fn get_lookup_cursor_locked<'a>(
+        &'a self,
+        token: &'a mut LockToken<'_, VmObjectLockClass>,
+        offset: u64,
+        max_len: u64,
+    ) -> impl PinInit<LookupCursor<'a>, Status> {
+        let vmo = self.as_raw();
+        let init = move |cursor: *mut VmCowPagesLookupCursorResult| {
+            // SAFETY: `vmo` is a live `VmObjectPaged` whose lock is held, `offset` and `max_len`
+            // are page-aligned, `max_len` is non-zero, and `cursor` is valid for writing a
+            // `VmCowPagesLookupCursorResult`.
+            let status = unsafe {
+                bindings::cpp_vm_object_paged_get_lookup_cursor_locked(
+                    cursor.cast(),
+                    vmo,
+                    offset,
+                    max_len,
+                )
+            };
+            Status::ok(status)
+        };
+        // SAFETY: `init` initializes the result with a cursor when it returns `Ok`, and leaves it
+        // uninitialized when it returns `Err`. `token` is for the lock of the `VmCowPages` of this
+        // VMO, and that `VmCowPages` outlives `'a`.
+        unsafe { LookupCursor::new(token, init) }
     }
 
     /// Debug helper to fetch backing page pointer.

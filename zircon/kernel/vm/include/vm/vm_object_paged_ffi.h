@@ -10,6 +10,9 @@
 #include <zircon/compiler.h>
 #include <zircon/types.h>
 
+#include <kernel/ffi.h>
+
+#include "vm/vm_cow_pages_ffi.h"
 #include "vm/vm_object_paged.h"
 
 __BEGIN_CDECLS
@@ -41,6 +44,10 @@ void cpp_vm_object_paged_unmap_and_call(VmObjectPaged* vmo, uint64_t offset, uin
                                         void (*call_fn)(void* ctx), void* call_ctx);
 void cpp_vm_object_paged_set_user_stream_size(VmObjectPaged* vmo, StreamSizeManager* ssm);
 bool cpp_vm_object_paged_user_stream_size_locked(VmObjectPaged* vmo, uint64_t* out_stream_size);
+zx_status_t cpp_vm_object_paged_get_lookup_cursor_locked(
+    ffi::Uninitialized<VmCowPagesLookupCursorResult>* out, VmObjectPaged* vmo, uint64_t offset,
+    uint64_t max_len);
+void cpp_vm_object_paged_mark_modified_locked(VmObjectPaged* vmo);
 
 __END_CDECLS
 

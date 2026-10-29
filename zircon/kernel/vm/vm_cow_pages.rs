@@ -25,12 +25,12 @@ use core::ptr::{self, NonNull};
 use fbl::{Canary, HasRefCount, HasRefCountUpgradeable, Recyclable, RefCounted, RefPtr};
 use kalloc::AllocError;
 use ksync::{KMutex, KMutexGuard, LockClass, LockToken, RawCriticalMutex};
-use pin_init::{PinInit, pin_data};
+use pin_init::{PinInit, pin_data, pin_init_from_closure};
 use vm_constants_rs as constants;
 use vm_cow_pages_bindings as bindings;
 use zr::{Opaque, pin_init_ffi, unsafe_pinned_drop_ffi};
 use zx_status::Status;
-use zx_types::zx_status_t;
+use zx_types::{zx_paddr_t, zx_status_t};
 
 /// A copy-on-write page hierarchy range.
 ///
@@ -455,7 +455,7 @@ pub type VmCowPagesLock = KMutex<VmCowPagesLockClass, RawCriticalMutex>;
 pub struct DeferredOps<'a> {
     #[pin]
     opaque: Opaque<bindings::VmCowPages_DeferredOps>,
-    phantom: PhantomData<&'a VmCowPages>,
+    phantom: PhantomData<(&'a VmCowPages, *const ())>,
 }
 
 unsafe_pinned_drop_ffi!(DeferredOps<'_>, bindings::cpp_vm_cow_pages_deferred_ops_destroy);
@@ -466,6 +466,307 @@ impl<'a> DeferredOps<'a> {
     /// pointer remains valid over the lifetime of the object.
     pub fn new(cow: &'a VmCowPages) -> impl PinInit<Self> {
         pin_init_ffi!(bindings::cpp_vm_cow_pages_deferred_ops_construct, cow.as_raw())
+    }
+
+    #[inline]
+    fn as_raw(self: Pin<&mut Self>) -> *mut bindings::VmCowPages_DeferredOps {
+        self.project().opaque.get()
+    }
+}
+
+::zr::static_assert_size_and_align!(
+    PAddr,
+    core::mem::size_of::<zx_paddr_t>(),
+    core::mem::align_of::<zx_paddr_t>()
+);
+
+/// Implements a cursor that allows for retrieving successive pages over a range in a VMO. The
+/// range that is iterated is determined at construction from
+/// [`get_lookup_cursor_locked`](super::vm_object_paged::VmObjectPaged::get_lookup_cursor_locked)
+/// and cannot be modified, although it can be effectively shrunk by ceasing queries early.
+///
+/// The cursor is designed under the assumption that the caller is tracking, implicitly or
+/// explicitly, how many queries have been done, and the methods do not return errors if more slots
+/// are queried than was originally requested in the range. They will, however, assert and panic.
+///
+/// There are three controls provided by this object.
+///
+///   Zero forks: By default new zero pages will be considered zero forks and added to the zero page
+///   scanner list, this can be disabled with `disable_zero_fork`.
+///
+///   Access time: By default pages that are returned will be considered accessed. This can be
+///   changed with [`disable_mark_accessed`](Self::disable_mark_accessed).
+///
+///   Allocation lists: By default pages will be acquired from the pmm as needed. An allocation list
+///   can be given using `give_alloc_list`.
+///
+/// The VMO lock *must* be held contiguously from the call to `get_lookup_cursor_locked` over the
+/// entire usage of this object. Callers can assume that for any [`VmPagePtr`] that is returned
+/// that the lock of the owner of that page is held up until the next operation performed on the
+/// cursor.
+#[pin_data(PinnedDrop)]
+#[repr(C)]
+pub struct LookupCursor<'a> {
+    #[pin]
+    opaque: Opaque<bindings::VmCowPagesLookupCursorResult>,
+    token: LockToken<'a, VmCowPagesLockClass>,
+    phantom: PhantomData<(&'a VmCowPages, &'a mut LockToken<'a, VmCowPagesLockClass>)>,
+}
+
+zr::static_assert!(core::mem::offset_of!(LookupCursor<'static>, opaque) == 0);
+
+// SAFETY: `LookupCursor` is `#[repr(C)]` with `opaque` at offset 0, and `opaque` is initialized
+// whenever a `LookupCursor` exists, so passing its address to
+// `cpp_vm_cow_pages_lookup_cursor_destroy` destroys the cursor in place.
+unsafe_pinned_drop_ffi!(LookupCursor<'_>, bindings::cpp_vm_cow_pages_lookup_cursor_destroy);
+
+/// Convenience struct holding the return result of the `require_*` methods.
+#[derive(Debug, Copy, Clone)]
+pub struct RequireResult {
+    pub page: VmPagePtr,
+    pub writable: bool,
+}
+
+impl<'a> LookupCursor<'a> {
+    /// # Safety
+    ///
+    /// The caller must ensure `init` initializes the `VmCowPagesLookupCursorResult` it is passed
+    /// with a cursor when it returns `Ok`, and leaves it uninitialized when it returns `Err`. The
+    /// caller must also ensure `_token` is for the lock of the `VmCowPages` that the cursor
+    /// targets, and that `VmCowPages` outlives `'a`.
+    #[inline]
+    pub(super) unsafe fn new(
+        _token: &'a mut LockToken<'_, VmCowPagesLockClass>,
+        init: impl FnOnce(*mut bindings::VmCowPagesLookupCursorResult) -> Result<(), Status>,
+    ) -> impl PinInit<Self, Status> {
+        let init = move |slot: *mut Self| {
+            // SAFETY: `slot` is non-null, aligned, and points to an allocation for `Self`.
+            let opaque = unsafe { (&raw mut (*slot).opaque).cast() };
+            if let Err(err) = init(opaque) {
+                core::hint::cold_path();
+                return Err(err);
+            }
+            // SAFETY: `slot` is valid for writes. The lock is held for `'a`, because `_token`, the
+            // caller's token for it, is borrowed exclusively for `'a`.
+            unsafe { (&raw mut (*slot).token).write(LockToken::new()) };
+            Ok(())
+        };
+        // SAFETY: `init` initializes `slot` when it returns `Ok`, and leaves it uninitialized when
+        // it returns `Err`.
+        unsafe { pin_init_from_closure(init) }
+    }
+
+    #[inline]
+    fn as_raw(self: Pin<&mut Self>) -> *mut bindings::VmCowPages_LookupCursor {
+        let result = self.project().opaque.get();
+        // SAFETY: `result` is a live `zx::result` that holds a cursor.
+        unsafe { bindings::cpp_vm_cow_pages_lookup_cursor_result_value(result) }
+    }
+
+    /// Attempts to lookup the next offset in the VMO and return an allocated and owned page in
+    /// this VMO. As such this will never return a reference to the zero page. `will_write`
+    /// indicates if this page needs to be writable or not, which for an owned and allocated page
+    /// just involves a potential dirty request / transition.
+    ///
+    /// If a page is returned in `Ok`, the internal cursor is incremented by one page and future
+    /// operations act on the next offset. If an error occurs, the internal cursor is not
+    /// incremented.
+    ///
+    /// `page_request` is populated when returning `Status::SHOULD_WAIT`. For optimal page request
+    /// generation `max_request_pages` controls how many pages you intend to lookup, and must not
+    /// exceed the remaining window of the cursor.
+    ///
+    /// Unless newly allocated, the returned page has its access time updated unless disabled via
+    /// [`disable_mark_accessed`](Self::disable_mark_accessed).
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure `deferred` was made for the VMO this cursor was made for,
+    /// `max_request_pages` is non-zero and at most the number of pages left in the range of the
+    /// cursor, and `page_request` does not hold an active request.
+    #[inline]
+    pub unsafe fn require_owned_page(
+        self: Pin<&mut Self>,
+        will_write: bool,
+        max_request_pages: u64,
+        deferred: Pin<&mut DeferredOps<'_>>,
+        page_request: Pin<&mut MultiPageRequest>,
+    ) -> Result<RequireResult, Status> {
+        let mut page = ptr::null_mut();
+        let mut writable = false;
+        // SAFETY: `self.as_raw()`, `deferred`, and `page_request` point to live pinned objects,
+        // `deferred` was made for the VMO of the cursor, `max_request_pages` is non-zero and at
+        // most the number of pages left in the range of the cursor, `page_request` does not hold
+        // an active request, `page` and `writable` are valid for writes, and the VMO lock is held.
+        let status = unsafe {
+            bindings::cpp_vm_cow_pages_lookup_cursor_require_owned_page(
+                self.as_raw(),
+                will_write,
+                max_request_pages,
+                deferred.as_raw(),
+                page_request.as_raw(),
+                &mut page,
+                &mut writable,
+            )
+        };
+        if let Err(err) = Status::ok(status) {
+            core::hint::cold_path();
+            return Err(err);
+        }
+        // SAFETY: `page` is non-null and points to a valid `vm_page_t`.
+        let page = unsafe { VmPagePtr::from_ffi_unchecked(page) };
+        Ok(RequireResult { page, writable })
+    }
+
+    /// Attempts to lookup the next offset in the VMO and return a page that is readable or
+    /// writable based on the `will_write` flag.
+    ///
+    /// Cursor advancement, `page_request`, and access-time behavior match
+    /// [`require_owned_page`](Self::require_owned_page).
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure `deferred` was made for the VMO this cursor was made for,
+    /// `max_request_pages` is non-zero and at most the number of pages left in the range of the
+    /// cursor, and `page_request` does not hold an active request.
+    #[inline]
+    pub unsafe fn require_page(
+        self: Pin<&mut Self>,
+        will_write: bool,
+        max_request_pages: u64,
+        deferred: Pin<&mut DeferredOps<'_>>,
+        page_request: Pin<&mut MultiPageRequest>,
+    ) -> Result<RequireResult, Status> {
+        let mut page = ptr::null_mut();
+        let mut writable = false;
+        // SAFETY: `self.as_raw()`, `deferred`, and `page_request` point to live pinned objects,
+        // `deferred` was made for the VMO of the cursor, `max_request_pages` is non-zero and at
+        // most the number of pages left in the range of the cursor, `page_request` does not hold
+        // an active request, `page` and `writable` are valid for writes, and the VMO lock is held.
+        let status = unsafe {
+            bindings::cpp_vm_cow_pages_lookup_cursor_require_page(
+                self.as_raw(),
+                will_write,
+                max_request_pages,
+                deferred.as_raw(),
+                page_request.as_raw(),
+                &mut page,
+                &mut writable,
+            )
+        };
+        if let Err(err) = Status::ok(status) {
+            core::hint::cold_path();
+            return Err(err);
+        }
+        // SAFETY: `page` is non-null and points to a valid `vm_page_t`.
+        let page = unsafe { VmPagePtr::from_ffi_unchecked(page) };
+        Ok(RequireResult { page, writable })
+    }
+
+    /// The `if_exist_pages` method is intended to be cheaper than the `require_*` methods and to
+    /// allow for performing actions if pages already exist, without performing allocations. As a
+    /// result this may fail to return pages in scenarios that `require_*` methods would, and in
+    /// general is allowed to always fail for any reason.
+    /// This method cannot generate page requests and will not perform allocations or otherwise
+    /// mutate the VMO contents and will not update the access time of the pages.
+    ///
+    /// Walks up to `paddrs.len()` pages from the current offset, filling in `paddrs` as long as
+    /// there are actual pages and, if `will_write` is true, that they can be written to. The
+    /// return value is the slice of contiguous pages found and filled into `paddrs`, and the
+    /// cursor is incremented by that many pages.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure `paddrs.len()` is at most the number of pages left in the range of
+    /// the cursor.
+    #[inline]
+    pub unsafe fn if_exist_pages<'p>(
+        self: Pin<&mut Self>,
+        will_write: bool,
+        paddrs: &'p mut [MaybeUninit<PAddr>],
+    ) -> &'p mut [PAddr] {
+        if paddrs.is_empty() {
+            return &mut [];
+        }
+        // SAFETY: `self.as_raw()` is a live `LookupCursor`, the VMO lock is held, `paddrs` is
+        // non-empty and at most the number of pages left in the range of the cursor, and `paddrs`
+        // is valid for writing `paddrs.len()` entries.
+        let found = unsafe {
+            bindings::cpp_vm_cow_pages_lookup_cursor_if_exist_pages(
+                self.as_raw(),
+                will_write,
+                paddrs.len() as u64,
+                paddrs.as_mut_ptr().cast::<zx_paddr_t>(),
+            )
+        } as usize;
+        debug_assert!(found <= paddrs.len());
+        // SAFETY: `IfExistPages` initialized the first `found` entries of `paddrs`, `PAddr` has the
+        // same layout as `MaybeUninit<PAddr>`, `paddrs` is a valid slice so its pointer is non-null
+        // and aligned even when `found == 0`, and the result exclusively borrows `paddrs` for `'p`.
+        unsafe { core::slice::from_raw_parts_mut(paddrs.as_mut_ptr().cast::<PAddr>(), found) }
+    }
+
+    /// Checks the current slot for a page and returns it. This does not return zero pages and, due
+    /// to the lack of taking a page request, will not perform copy-on-write allocations or dirty
+    /// transitions. In these cases it will return `None` even though there is content.
+    /// The internal cursor is always incremented regardless of the return value.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure the range of the cursor has a page left.
+    #[inline]
+    pub unsafe fn maybe_page(self: Pin<&mut Self>, will_write: bool) -> Option<VmPagePtr> {
+        // SAFETY: `self.as_raw()` is a live `LookupCursor`, its range has a page left, and the VMO
+        // lock is held.
+        let page = unsafe {
+            bindings::cpp_vm_cow_pages_lookup_cursor_maybe_page(self.as_raw(), will_write)
+        };
+        // SAFETY: `page` is either null or points to a valid `vm_page_t`.
+        unsafe { VmPagePtr::from_ffi(page) }
+    }
+
+    /// Has similar properties of `maybe_page`, except it returns how many times in a row
+    /// `maybe_page` would have returned `None`. Regardless of the return value of this method, it
+    /// is not guaranteed that the next call to `maybe_page` will not be `None`. The cursor is
+    /// incremented by the number of pages returned.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure the range of the cursor has a page left.
+    #[inline]
+    pub unsafe fn skip_missing_pages(self: Pin<&mut Self>) -> u64 {
+        // SAFETY: `self.as_raw()` is a live `LookupCursor`, its range has a page left, and the VMO
+        // lock is held.
+        unsafe { bindings::cpp_vm_cow_pages_lookup_cursor_skip_missing_pages(self.as_raw()) }
+    }
+
+    /// Indicates that any existing pages that are returned should not be considered accessed and
+    /// have their accessed times updated.
+    #[inline]
+    pub fn disable_mark_accessed(self: Pin<&mut Self>) {
+        // SAFETY: `self.as_raw()` is a live `LookupCursor`.
+        unsafe { bindings::cpp_vm_cow_pages_lookup_cursor_disable_mark_accessed(self.as_raw()) }
+    }
+
+    /// Exposed for lock assertions.
+    #[inline]
+    pub fn lock_is_held(&self) -> bool {
+        // SAFETY: `self.opaque` is a live `zx::result` that holds a cursor.
+        unsafe {
+            bindings::cpp_vm_cow_pages_lookup_cursor_lock_is_held(self.opaque.get().cast_const())
+        }
+    }
+
+    /// # Safety
+    ///
+    /// The caller must ensure nothing done with the returned token changes the page lists, parent
+    /// links, parent limits, or sizes of the VMO hierarchy of the cursor, or acquires ancestor
+    /// locks in that hierarchy while the cursor is live.
+    #[inline]
+    pub(super) unsafe fn token_mut(
+        self: Pin<&mut Self>,
+    ) -> &mut LockToken<'a, VmCowPagesLockClass> {
+        self.project().token
     }
 }
 
@@ -501,7 +802,7 @@ impl<'a> DeferredOps<'a> {
 pub struct PriorityChanger<'a> {
     #[pin]
     opaque: Opaque<bindings::PriorityChanger>,
-    phantom: PhantomData<&'a VmCowPages>,
+    phantom: PhantomData<(&'a VmCowPages, *const ())>,
 }
 
 unsafe_pinned_drop_ffi!(PriorityChanger<'_>, bindings::cpp_priority_changer_destroy);
@@ -1238,9 +1539,7 @@ impl VmCowPages {
         let list: &mut VmPageDoublyLinkedList = unsafe { list.get_unchecked_mut() };
         let list: *mut VmPageDoublyLinkedList = list;
         let list: *mut bindings::VmPageDoublyLinkedList = list.cast();
-        // SAFETY: We do not move `deferred`.
-        let deferred: &mut DeferredOps<'_> = unsafe { deferred.get_unchecked_mut() };
-        let deferred: *mut bindings::VmCowPages_DeferredOps = deferred.opaque.get();
+        let deferred: *mut bindings::VmCowPages_DeferredOps = deferred.as_raw();
         // SAFETY: `self.as_raw()` is a live VmCowPages.
         let status = unsafe {
             bindings::cpp_vm_cow_pages_add_new_pages_locked(
@@ -1284,9 +1583,7 @@ impl VmCowPages {
         deferred: Pin<&mut DeferredOps<'_>>,
         page_request: Pin<&mut MultiPageRequest>,
     ) -> (Result<(), Status>, u64) {
-        // SAFETY: We do not move `deferred`.
-        let deferred: &mut DeferredOps<'_> = unsafe { deferred.get_unchecked_mut() };
-        let deferred: *mut bindings::VmCowPages_DeferredOps = deferred.opaque.get();
+        let deferred: *mut bindings::VmCowPages_DeferredOps = deferred.as_raw();
         let page_request = page_request.as_raw();
         let mut zeroed_bytes = 0;
         // SAFETY: `self.as_raw()` is a live VmCowPages, `deferred` and `page_request` point to the
@@ -1317,9 +1614,7 @@ impl VmCowPages {
         deferred: Pin<&mut DeferredOps<'_>>,
         page_request: Option<Pin<&mut MultiPageRequest>>,
     ) -> Result<(), Status> {
-        // SAFETY: We do not move `deferred`.
-        let deferred: &mut DeferredOps<'_> = unsafe { deferred.get_unchecked_mut() };
-        let deferred: *mut bindings::VmCowPages_DeferredOps = deferred.opaque.get();
+        let deferred: *mut bindings::VmCowPages_DeferredOps = deferred.as_raw();
         let page_request_ptr = match page_request {
             Some(page_request) => page_request.as_raw(),
             None => ptr::null_mut(),
@@ -1443,10 +1738,18 @@ pub unsafe extern "C" fn rust_vm_cow_pages_pmm_alloc_flags(cow: &VmCowPages) -> 
 
 #[cfg(ktest)]
 #[unittest::suite]
-/// Tests for the Rust port of VmCowRange.
+/// Tests for the Rust port of VmCowRange and the Rust `LookupCursor` wrapper.
 mod vm_cow_pages_rs {
     use super::VmCowRange;
-    use unittest::{expect_eq, expect_false, expect_true};
+    use crate::kernel::types::PAddr;
+    use crate::vm::page_source::MultiPageRequest;
+    use crate::vm::pmm;
+    use crate::vm::scanner::AutoVmScannerDisable;
+    use crate::vm::vm_object_paged::VmObjectPaged;
+    use core::mem::MaybeUninit;
+    use pin_init::{stack_pin_init, stack_try_pin_init};
+    use unittest::{assert_ok, expect_eq, expect_err, expect_false, expect_true, unwrap_ok};
+    use zx_status::Status;
 
     /// Tests various methods of VmCowRange.
     #[test]
@@ -1535,5 +1838,124 @@ mod vm_cow_pages_rs {
 
         let overflow_r = VmCowRange::new(u64::MAX - 4095, 8192);
         expect_false!(overflow_r.is_bounded_by(u64::MAX));
+    }
+
+    /// Tests `LookupCursor`.
+    #[test]
+    fn lookup_cursor_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+        let page_size = ::page::SIZE as u64;
+        let vmo_size = 3 * page_size;
+        let vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, vmo_size));
+        assert_ok!(vmo.commit_range(0, page_size));
+
+        {
+            stack_pin_init!(let deferred = vmo.make_deferred_ops());
+            stack_pin_init!(let page_req = MultiPageRequest::new());
+            ksync::lock!(let mut guard = vmo.lock());
+
+            {
+                stack_try_pin_init!(
+                    // SAFETY: `guard` holds `vmo`'s lock, `vmo_size` and `page_size` are
+                    // page-aligned, and `page_size` is non-zero.
+                    let bad = unsafe {
+                        vmo.get_lookup_cursor_locked(
+                            guard.as_mut().token_mut(),
+                            vmo_size,
+                            page_size,
+                        )
+                    }
+                );
+                expect_err!(bad, Status::OUT_OF_RANGE);
+            }
+
+            {
+                stack_try_pin_init!(
+                    // SAFETY: `guard` holds `vmo`'s lock, `0` and `vmo_size` are page-aligned, and
+                    // `vmo_size` is non-zero.
+                    let cursor = unsafe {
+                        vmo.get_lookup_cursor_locked(guard.as_mut().token_mut(), 0, vmo_size)
+                    }
+                );
+                let mut cursor = unwrap_ok!(cursor);
+                expect_true!(cursor.lock_is_held());
+                cursor.as_mut().disable_mark_accessed();
+
+                // SAFETY: `paddrs` is empty, so 0 pages are requested within the 3-page window.
+                expect_eq!(unsafe { cursor.as_mut().if_exist_pages(true, &mut []) }.len(), 0);
+
+                let mut paddrs = [MaybeUninit::<PAddr>::uninit(); 3];
+                // SAFETY: `paddrs.len() == 3` fits in the 3 remaining pages of `cursor`.
+                let found = unsafe { cursor.as_mut().if_exist_pages(true, &mut paddrs) };
+                expect_eq!(found.len(), 1);
+
+                // SAFETY: 2 pages remain in `cursor`'s 3-page window after `found.len() == 1`.
+                let skipped = unsafe { cursor.as_mut().skip_missing_pages() };
+                expect_eq!(skipped, 2);
+            }
+
+            {
+                stack_try_pin_init!(
+                    // SAFETY: `guard` holds `vmo`'s lock, `0` and `page_size` are page-aligned,
+                    // and `page_size` is non-zero.
+                    let cursor = unsafe {
+                        vmo.get_lookup_cursor_locked(guard.as_mut().token_mut(), 0, page_size)
+                    }
+                );
+                let mut cursor = unwrap_ok!(cursor);
+                cursor.as_mut().disable_mark_accessed();
+                // SAFETY: 1 page remains in `cursor`, and page 0 was committed above.
+                expect_true!(unsafe { cursor.as_mut().maybe_page(false) }.is_some());
+            }
+
+            {
+                stack_try_pin_init!(
+                    // SAFETY: `guard` holds `vmo`'s lock, `page_size` and `2 * page_size` are
+                    // page-aligned, and `2 * page_size` is non-zero.
+                    let cursor = unsafe {
+                        vmo.get_lookup_cursor_locked(
+                            guard.as_mut().token_mut(),
+                            page_size,
+                            2 * page_size,
+                        )
+                    }
+                );
+                let mut cursor = unwrap_ok!(cursor);
+                // SAFETY: 2 pages remain in `cursor`.
+                expect_true!(unsafe { cursor.as_mut().maybe_page(false) }.is_none());
+
+                // SAFETY: `deferred` belongs to `vmo`, `1` is non-zero and fits in the 1 remaining
+                // page of `cursor`, and `page_req` has no active request.
+                let owned = unwrap_ok!(unsafe {
+                    cursor.as_mut().require_owned_page(
+                        true,
+                        1,
+                        deferred.as_mut(),
+                        page_req.as_mut(),
+                    )
+                });
+                expect_true!(owned.writable);
+            }
+            {
+                stack_try_pin_init!(
+                    // SAFETY: `guard` holds `vmo`'s lock, `page_size` is page-aligned, and
+                    // `page_size` is non-zero.
+                    let cursor = unsafe {
+                        vmo.get_lookup_cursor_locked(
+                            guard.as_mut().token_mut(),
+                            page_size,
+                            page_size,
+                        )
+                    }
+                );
+                let mut cursor = unwrap_ok!(cursor);
+                // SAFETY: `deferred` belongs to `vmo`, `1` is non-zero and fits in the 1 remaining
+                // page of `cursor`, and `page_req` has no active request.
+                let readable = unwrap_ok!(unsafe {
+                    cursor.as_mut().require_page(false, 1, deferred.as_mut(), page_req.as_mut())
+                });
+                expect_false!(readable.writable);
+            }
+        }
     }
 }

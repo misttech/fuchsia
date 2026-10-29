@@ -1079,6 +1079,8 @@ kernel_bindgen_crate("vm-object-bindings") {
     "cpp_vm_object_get_ref_counted",
     "cpp_vm_object_is_contiguous",
     "cpp_vm_object_is_stream_compatible",
+    "cpp_vm_object_is_dirty_tracked",
+    "cpp_vm_object_debug_is_range_pinned",
     "cpp_vm_object_lock",
     "cpp_vm_object_is_paged",
     "cpp_vm_object_is_resizable",
@@ -1245,6 +1247,8 @@ kernel_bindgen_crate("vm-object-paged-bindings") {
     "cpp_vm_object_paged_create_from_wired_pages",
     "cpp_vm_object_paged_debug_get_cow_pages",
     "cpp_vm_object_paged_debug_get_page",
+    "cpp_vm_object_paged_get_lookup_cursor_locked",
+    "cpp_vm_object_paged_mark_modified_locked",
     "cpp_vm_object_paged_reset_pager_vmo_stats",
   ]
   type_allowlist = [
@@ -1305,6 +1309,7 @@ kernel_bindgen_crate("vm-object-physical-bindings") {
   edition = "2024"
   notice_year = 2026
   function_allowlist = [
+    "cpp_vm_object_as_vm_object_physical",
     "cpp_vm_object_physical_as_vm_object",
     "cpp_vm_object_physical_child_list_lock_acquire",
     "cpp_vm_object_physical_child_list_lock_release",
@@ -1442,6 +1447,15 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "cpp_vm_cow_pages_get_lock",
     "cpp_vm_cow_pages_deferred_ops_construct",
     "cpp_vm_cow_pages_deferred_ops_destroy",
+    "cpp_vm_cow_pages_lookup_cursor_destroy",
+    "cpp_vm_cow_pages_lookup_cursor_result_value",
+    "cpp_vm_cow_pages_lookup_cursor_lock_is_held",
+    "cpp_vm_cow_pages_lookup_cursor_disable_mark_accessed",
+    "cpp_vm_cow_pages_lookup_cursor_require_owned_page",
+    "cpp_vm_cow_pages_lookup_cursor_require_page",
+    "cpp_vm_cow_pages_lookup_cursor_maybe_page",
+    "cpp_vm_cow_pages_lookup_cursor_skip_missing_pages",
+    "cpp_vm_cow_pages_lookup_cursor_if_exist_pages",
     "cpp_vm_cow_pages_add_new_pages_locked",
     "cpp_vm_cow_pages_zero_pages_locked",
     "cpp_vm_cow_pages_supply_pages_locked",
@@ -1468,6 +1482,8 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "VmCowPages",
     "VmCowPages_CanOverwriteSlot",
     "VmCowPages_DeferredOps",
+    "VmCowPages_LookupCursor",
+    "VmCowPagesLookupCursorResult",
     "VmCowPagesOptions",
     "VmCowRange",
     "VmCowReclaimFailure",
@@ -1486,6 +1502,7 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "VmCompressor_.*",
     "VmPageDoublyLinkedList",
     "VmPageSpliceList",
+    "paddr_t",
     "vm_page_t",
     "zx_status_t",
     "VmCowPages_AddPageTransaction",
@@ -1494,6 +1511,7 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "VmCowPages_DeferredOps_DeferredRangeOp",
     "VmCowPages_LockedPtr",
     "VmCowPages_LockedRefPtr",
+    "VmCowPages_LookupCursor_RequireResult",
     "VmCowPages_LookupReadableFunction",
     "VmCowPages_PageLookup",
     "VmCowPages_ParentAndRange",
@@ -1505,6 +1523,8 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "PriorityChanger",
     "VmCowPages",
     "VmCowPages_DeferredOps",
+    "VmCowPages_LookupCursor",
+    "VmCowPagesLookupCursorResult",
   ]
   rustified_enum = [
     "PageSourceType",
@@ -1548,6 +1568,7 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "pub use pmm_bindings::{PmmOptDelayReuse, VmPageDoublyLinkedList};",
     "pub use vm_object_bindings::SupplyOptions;",
     "use vm_page_list_bindings::VmPageSpliceList;",
+    "use zx_types::zx_paddr_t as paddr_t;",
     "use zx_types::zx_status_t;",
   ]
 }

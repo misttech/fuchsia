@@ -48,6 +48,15 @@ FFI_ALWAYS_INLINE bool cpp_vm_object_is_stream_compatible(const VmObject* vmo) {
   return vmo->is_stream_compatible();
 }
 
+FFI_ALWAYS_INLINE bool cpp_vm_object_is_dirty_tracked(const VmObject* vmo) {
+  return vmo->is_dirty_tracked();
+}
+
+FFI_ALWAYS_INLINE bool cpp_vm_object_debug_is_range_pinned(VmObject* vmo, uint64_t offset,
+                                                           uint64_t len) {
+  return vmo->DebugIsRangePinned(offset, len);
+}
+
 FFI_ALWAYS_INLINE void* cpp_vm_object_lock(const VmObject* vmo) { return vmo->lock(); }
 
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_resize(VmObject* vmo, uint64_t size) {
