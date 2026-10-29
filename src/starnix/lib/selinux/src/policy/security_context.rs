@@ -77,7 +77,7 @@ impl MlsLevel {
 
         // Lookup the sensitivity, and associated categories/ranges, if any.
         let sensitivity = policy
-            .sensitivities()
+            .sensitivities
             .get_by_name(sensitivity.as_bytes())
             .ok_or_else(|| SecurityContextError::UnknownSensitivity { name: sensitivity.into() })?
             .id();
@@ -107,14 +107,14 @@ impl MlsLevel {
         name: &str,
     ) -> Result<CategoryId, SecurityContextError> {
         Ok(policy
-            .categories()
+            .categories
             .get_by_name(name.as_bytes())
             .ok_or_else(|| SecurityContextError::UnknownCategory { name: name.into() })?
             .id())
     }
 
     fn to_string(&self, policy: &Policy) -> Vec<u8> {
-        let sensitivity = policy.sensitivities().get_by_id(self.sensitivity()).unwrap().name();
+        let sensitivity = policy.sensitivities.get_by_id(self.sensitivity()).unwrap().name();
         let categories = self
             .categories
             .spans()
@@ -343,17 +343,17 @@ impl Policy {
 
         // Resolve the user, role, type and security levels to identifiers.
         let user = self
-            .users()
+            .users
             .get_by_name(user.as_bytes())
             .ok_or_else(|| SecurityContextError::UnknownUser { name: user.into() })?
             .id();
         let role = self
-            .roles()
+            .roles
             .get_by_name(role.as_bytes())
             .ok_or_else(|| SecurityContextError::UnknownRole { name: role.into() })?
             .id();
         let type_ = self
-            .types()
+            .types
             .get_by_name(type_.as_bytes())
             .ok_or_else(|| SecurityContextError::UnknownType { name: type_.into() })?
             .id();
@@ -370,7 +370,7 @@ impl Policy {
         &self,
         context: &SecurityContext,
     ) -> Result<(), SecurityContextError> {
-        let user = self.users().get_by_id(context.user()).unwrap();
+        let user = self.users.get_by_id(context.user()).unwrap();
 
         // Check that the security context's levels are internally consistent: i.e., that the
         // high level, if any, dominates the low level. This applies to every context, including
@@ -393,16 +393,16 @@ impl Policy {
         // Validate that the selected role is valid for this user.
         if !user.roles().contains(context.role()) {
             return Err(SecurityContextError::InvalidRoleForUser {
-                role: self.roles().get_by_id(context.role()).unwrap().name().into(),
+                role: self.roles.get_by_id(context.role()).unwrap().name().into(),
                 user: user.name().into(),
             });
         }
 
         // Validate that the selected type is valid for this role.
-        let role = self.roles().get_by_id(context.role()).unwrap();
+        let role = self.roles.get_by_id(context.role()).unwrap();
         if !role.types().contains(context.type_()) {
             return Err(SecurityContextError::InvalidTypeForRole {
-                type_: self.types().get_by_id(context.type_()).unwrap().name().into(),
+                type_: self.types.get_by_id(context.type_()).unwrap().name().into(),
                 role: role.name().into(),
             });
         }
@@ -440,10 +440,10 @@ impl Policy {
             levels.push(b'-');
             levels.extend(high_level.to_string(self));
         }
-        let type_ = self.types().get_by_id(context.type_()).unwrap();
+        let type_ = self.types.get_by_id(context.type_()).unwrap();
         let parts: [&[u8]; 4] = [
-            self.users().get_by_id(context.user()).unwrap().name(),
-            self.roles().get_by_id(context.role()).unwrap().name(),
+            self.users.get_by_id(context.user()).unwrap().name(),
+            self.roles.get_by_id(context.role()).unwrap().name(),
             type_.name(),
             levels.as_slice(),
         ];
@@ -459,11 +459,11 @@ type CategorySpan = IdSpan<CategoryId>;
 impl CategorySpan {
     /// Returns `Vec<u8>` describing the category, or category range.
     fn to_string(&self, policy: &Policy) -> Vec<u8> {
-        let low = policy.categories().get_by_id(self.low()).unwrap().name();
+        let low = policy.categories.get_by_id(self.low()).unwrap().name();
         if self.low() == self.high() {
             return low.into();
         }
-        let high = policy.categories().get_by_id(self.high()).unwrap().name();
+        let high = policy.categories.get_by_id(self.high()).unwrap().name();
         // A span of just two categories is described as a pair of individual categories, rather
         // than as a range.
         let separator: &[u8] =
@@ -517,23 +517,23 @@ mod tests {
     }
 
     fn user_name(policy: &Policy, id: UserId) -> &str {
-        std::str::from_utf8(policy.users().get_by_id(id).unwrap().name()).unwrap()
+        std::str::from_utf8(policy.users.get_by_id(id).unwrap().name()).unwrap()
     }
 
     fn role_name(policy: &Policy, id: RoleId) -> &str {
-        std::str::from_utf8(policy.roles().get_by_id(id).unwrap().name()).unwrap()
+        std::str::from_utf8(policy.roles.get_by_id(id).unwrap().name()).unwrap()
     }
 
     fn type_name(policy: &Policy, id: TypeId) -> &str {
-        std::str::from_utf8(policy.types().get_by_id(id).unwrap().name()).unwrap()
+        std::str::from_utf8(policy.types.get_by_id(id).unwrap().name()).unwrap()
     }
 
     fn sensitivity_name(policy: &Policy, id: SensitivityId) -> &str {
-        std::str::from_utf8(policy.sensitivities().get_by_id(id).unwrap().name()).unwrap()
+        std::str::from_utf8(policy.sensitivities.get_by_id(id).unwrap().name()).unwrap()
     }
 
     fn category_name(policy: &Policy, id: CategoryId) -> &str {
-        std::str::from_utf8(policy.categories().get_by_id(id).unwrap().name()).unwrap()
+        std::str::from_utf8(policy.categories.get_by_id(id).unwrap().name()).unwrap()
     }
 
     fn category_span(policy: &Policy, category: &CategorySpan) -> CategoryItem {
@@ -1006,7 +1006,7 @@ mod tests {
         // A binary 2-level MLS range with equal low and high levels is also normalized on parse.
         let level = single_level.low_level();
         let mut bytes = Vec::new();
-        let mut writer = PolicyWriter::new(policy.version(), &mut bytes);
+        let mut writer = PolicyWriter::new(policy.version, &mut bytes);
         2u32.serialize(&mut writer).unwrap();
         level.sensitivity().serialize(&mut writer).unwrap();
         level.sensitivity().serialize(&mut writer).unwrap();

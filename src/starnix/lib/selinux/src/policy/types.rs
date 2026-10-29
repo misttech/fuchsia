@@ -34,7 +34,7 @@ pub type TypeSet = IdSet<TypeId>;
 impl Validate for TypeId {
     fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
         policy
-            .types()
+            .types
             .get_by_id(*self)
             .map(|_| ())
             .ok_or_else(|| ValidateError::UnknownId { kind: "type", id: self.as_u32() })

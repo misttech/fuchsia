@@ -95,7 +95,7 @@ impl Validate for CommonSymbol {
 impl Validate for CommonSymbolId {
     fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
         policy
-            .common_symbols()
+            .common_symbols
             .get_by_id(*self)
             .map(|_| ())
             .ok_or_else(|| ValidateError::UnknownId { kind: "common_symbol", id: self.as_u32() })

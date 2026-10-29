@@ -88,7 +88,7 @@ impl Serialize for User {
 impl Validate for UserId {
     fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
         policy
-            .users()
+            .users
             .get_by_id(*self)
             .map(|_| ())
             .ok_or_else(|| ValidateError::UnknownId { kind: "user", id: self.as_u32() })

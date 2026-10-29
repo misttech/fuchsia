@@ -77,7 +77,7 @@ impl Serialize for ConditionalBoolean {
 
 impl Validate for ConditionalBooleanId {
     fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
-        policy.conditional_booleans().get_by_id(*self).map(|_| ()).ok_or_else(|| {
+        policy.conditional_booleans.get_by_id(*self).map(|_| ()).ok_or_else(|| {
             ValidateError::UnknownId { kind: "conditional boolean", id: self.as_u32() }
         })
     }

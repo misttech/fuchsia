@@ -102,7 +102,7 @@ fn known_policies() {
             })
             .expect("validate policy");
 
-        assert_eq!(expectations.expected_policy_version, policy.version().get());
+        assert_eq!(expectations.expected_policy_version, policy.version.get());
         assert_eq!(expectations.expected_handle_unknown, policy.handle_unknown());
 
         // Returned policy bytes must be identical to input policy bytes.

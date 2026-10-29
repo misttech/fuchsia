@@ -196,7 +196,7 @@ impl Validate for Class {
         let mut common_permissions_count = 0;
         if !self.common_name.is_empty() {
             let common_symbol =
-                policy.common_symbols().get_by_name(&self.common_name).ok_or_else(|| {
+                policy.common_symbols.get_by_name(&self.common_name).ok_or_else(|| {
                     ValidateError::UndefinedCommonSymbol { name: self.common_name.as_ref().into() }
                 })?;
             common_permissions_count = common_symbol.permissions().len();
@@ -217,7 +217,7 @@ impl Validate for Class {
 impl Validate for ClassId {
     fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
         policy
-            .classes()
+            .classes
             .get_by_id(*self)
             .map(|_| ())
             .ok_or_else(|| ValidateError::UnknownId { kind: "class", id: self.as_u32() })

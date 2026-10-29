@@ -84,7 +84,7 @@ impl Serialize for Role {
 impl Validate for RoleId {
     fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
         policy
-            .roles()
+            .roles
             .get_by_id(*self)
             .map(|_| ())
             .ok_or_else(|| ValidateError::UnknownId { kind: "role", id: self.as_u32() })
@@ -217,7 +217,7 @@ mod tests {
         let policy = Policy::parse(policy_bytes).expect("parse role_transition policy");
         policy.validate().expect("validate role_transition policy");
 
-        assert_eq!(policy.role_transitions().len(), 2);
-        assert_eq!(policy.role_allowlist().len(), 1);
+        assert_eq!(policy.role_transitions.len(), 2);
+        assert_eq!(policy.role_allowlist.len(), 1);
     }
 }

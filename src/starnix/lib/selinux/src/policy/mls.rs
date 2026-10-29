@@ -88,7 +88,7 @@ impl Serialize for Sensitivity {
 impl Validate for SensitivityId {
     fn validate(&self, policy: &super::Policy) -> Result<(), ValidateError> {
         policy
-            .sensitivities()
+            .sensitivities
             .get_by_id(*self)
             .map(|_| ())
             .ok_or_else(|| ValidateError::UnknownId { kind: "sensitivity", id: self.as_u32() })
@@ -144,7 +144,7 @@ impl Serialize for Category {
 impl Validate for CategoryId {
     fn validate(&self, policy: &super::Policy) -> Result<(), ValidateError> {
         policy
-            .categories()
+            .categories
             .get_by_id(*self)
             .map(|_| ())
             .ok_or_else(|| ValidateError::UnknownId { kind: "category", id: self.as_u32() })

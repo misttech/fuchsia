@@ -146,7 +146,7 @@ impl Policy {
         }
 
         // Validate that the well-known "object_r" role is defined at role ID 1.
-        if self.roles().get_by_id(OBJECT_R_ROLE_ID).map(|role| role.name())
+        if self.roles.get_by_id(OBJECT_R_ROLE_ID).map(|role| role.name())
             != Some(OBJECT_R_ROLE_NAME)
         {
             return Err(ValidateError::MissingObjectRRole);
@@ -172,30 +172,9 @@ impl Policy {
         Serialize::serialize(self, &mut policy_writer)
     }
 
-    /// Returns the policy version.
-    #[cfg(test)]
-    fn version(&self) -> PolicyVersion {
-        self.version
-    }
-
     /// Returns the [`HandleUnknown`] configuration.
     pub fn handle_unknown(&self) -> HandleUnknown {
         self.config.handle_unknown()
-    }
-
-    /// Returns the policy capabilities set.
-    fn policy_capabilities(&self) -> &PolicyCapSet {
-        &self.policy_capabilities
-    }
-
-    /// Returns the permissive types set.
-    fn permissive_map(&self) -> &PermissiveTypeSet {
-        &self.permissive_map
-    }
-
-    /// Returns the common symbols table.
-    fn common_symbols(&self) -> &IdAndNameIndexed<SymbolArray<CommonSymbol>> {
-        &self.common_symbols
     }
 
     /// Returns the object classes table.
@@ -238,44 +217,9 @@ impl Policy {
         &self.access_vector_rules
     }
 
-    /// Returns the role transitions rules array.
-    fn role_transitions(&self) -> &[RoleTransition] {
-        self.role_transitions.as_ref()
-    }
-
-    /// Returns the role allow rules array.
-    fn role_allowlist(&self) -> &[RoleAllow] {
-        self.role_allowlist.as_ref()
-    }
-
-    /// Returns the filename transitions table.
-    fn filename_transitions(&self) -> &FilenameTransitions {
-        &self.filename_transitions
-    }
-
-    /// Returns the initial SIDs table.
-    fn initial_sids(&self) -> &InitialSids {
-        &self.initial_sids
-    }
-
     /// Returns the object contexts table.
     pub fn object_contexts(&self) -> &ObjectContexts {
         &self.object_contexts
-    }
-
-    /// Returns generic filesystem labeling statements (`genfscon`).
-    fn generic_fs_contexts(&self) -> &[GenfsCon] {
-        &self.generic_fs_contexts
-    }
-
-    /// Returns the MLS range transitions array.
-    fn range_transitions(&self) -> &[RangeTransition] {
-        &self.range_transitions
-    }
-
-    /// Returns the type attribute maps table.
-    fn type_attribute_maps(&self) -> &TypeAttributeMaps {
-        &self.type_attribute_maps
     }
 }
 
@@ -380,7 +324,7 @@ mod parse_tests {
                 .unwrap_or_else(|e| panic!("Failed to parse {name}: {e:?}"));
             policy.validate().unwrap_or_else(|e| panic!("Failed to validate {name}: {e:?}"));
 
-            if policy.version() >= PolicyVersion::V33 {
+            if policy.version >= PolicyVersion::V33 {
                 let mut serialized = Vec::new();
                 policy
                     .serialize(&mut serialized)
@@ -397,17 +341,17 @@ mod parse_tests {
         let policy = Policy::parse(policy_bytes).expect("parse minimal policy");
         policy.validate().expect("validate minimal policy");
 
-        assert!(!policy.initial_sids().is_empty());
-        assert!(policy.initial_sids().len() >= crate::InitialSid::all_variants().len() - 1);
+        assert!(!policy.initial_sids.is_empty());
+        assert!(policy.initial_sids.len() >= crate::InitialSid::all_variants().len() - 1);
 
-        let kernel_context = policy.initial_sids().get_by_id(crate::InitialSid::Kernel).unwrap();
-        assert!(policy.users().get_by_id(kernel_context.user()).is_some());
-        assert!(policy.roles().get_by_id(kernel_context.role()).is_some());
+        let kernel_context = policy.initial_sids.get_by_id(crate::InitialSid::Kernel).unwrap();
+        assert!(policy.users.get_by_id(kernel_context.user()).is_some());
+        assert!(policy.roles.get_by_id(kernel_context.role()).is_some());
 
         let unlabeled_context =
-            policy.initial_sids().get_by_id(crate::InitialSid::Unlabeled).unwrap();
-        assert!(policy.users().get_by_id(unlabeled_context.user()).is_some());
-        assert!(policy.roles().get_by_id(unlabeled_context.role()).is_some());
+            policy.initial_sids.get_by_id(crate::InitialSid::Unlabeled).unwrap();
+        assert!(policy.users.get_by_id(unlabeled_context.user()).is_some());
+        assert!(policy.roles.get_by_id(unlabeled_context.role()).is_some());
     }
 
     #[test]
