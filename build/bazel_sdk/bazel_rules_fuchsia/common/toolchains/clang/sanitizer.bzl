@@ -416,14 +416,30 @@ def define_clang_sanitizer_config_settings():
         visibility = ["//visibility:private"],
     )
 
+    feature_flag(
+        name = "profile_feature_flag",
+        feature_name = "profile",
+        visibility = ["//visibility:private"],
+    )
+
+    feature_flag(
+        name = "profile-rust_feature_flag",
+        feature_name = "profile-rust",
+        visibility = ["//visibility:private"],
+    )
+
     _ALL_VARIANTS = {
+        # Note: :sancov_feature_flag is intentionally omitted from novariant so
+        # standalone `--features=sancov` (which has no separate runtime/sysroot
+        # directory) still matches novariant.
         "novariant": {
             ":asan_feature_flag": "False",
             ":hwasan_feature_flag": "False",
             ":ubsan_feature_flag": "False",
             ":coverage_feature_flag": "False",
             ":coverage-rust_feature_flag": "False",
-            ":sancov_feature_flag": "False",
+            ":profile_feature_flag": "False",
+            ":profile-rust_feature_flag": "False",
         },
         "asan_variant": {
             ":asan_feature_flag": "True",
@@ -431,6 +447,8 @@ def define_clang_sanitizer_config_settings():
             ":ubsan_feature_flag": "False",
             ":coverage_feature_flag": "False",
             ":coverage-rust_feature_flag": "False",
+            ":profile_feature_flag": "False",
+            ":profile-rust_feature_flag": "False",
             ":sancov_feature_flag": "False",
         },
         "asan-ubsan_variant": {
@@ -439,6 +457,8 @@ def define_clang_sanitizer_config_settings():
             ":ubsan_feature_flag": "True",
             ":coverage_feature_flag": "False",
             ":coverage-rust_feature_flag": "False",
+            ":profile_feature_flag": "False",
+            ":profile-rust_feature_flag": "False",
             ":sancov_feature_flag": "False",
         },
         "asan-sancov_variant": {
@@ -447,6 +467,8 @@ def define_clang_sanitizer_config_settings():
             ":ubsan_feature_flag": "False",
             ":coverage_feature_flag": "False",
             ":coverage-rust_feature_flag": "False",
+            ":profile_feature_flag": "False",
+            ":profile-rust_feature_flag": "False",
             ":sancov_feature_flag": "True",
         },
         "hwasan_variant": {
@@ -455,6 +477,8 @@ def define_clang_sanitizer_config_settings():
             ":ubsan_feature_flag": "False",
             ":coverage_feature_flag": "False",
             ":coverage-rust_feature_flag": "False",
+            ":profile_feature_flag": "False",
+            ":profile-rust_feature_flag": "False",
             ":sancov_feature_flag": "False",
         },
         "hwasan-ubsan_variant": {
@@ -463,6 +487,8 @@ def define_clang_sanitizer_config_settings():
             ":ubsan_feature_flag": "True",
             ":coverage_feature_flag": "False",
             ":coverage-rust_feature_flag": "False",
+            ":profile_feature_flag": "False",
+            ":profile-rust_feature_flag": "False",
             ":sancov_feature_flag": "False",
         },
         "ubsan_variant": {
@@ -471,6 +497,8 @@ def define_clang_sanitizer_config_settings():
             ":ubsan_feature_flag": "True",
             ":coverage_feature_flag": "False",
             ":coverage-rust_feature_flag": "False",
+            ":profile_feature_flag": "False",
+            ":profile-rust_feature_flag": "False",
             ":sancov_feature_flag": "False",
         },
         "ubsan-sancov_variant": {
@@ -479,6 +507,8 @@ def define_clang_sanitizer_config_settings():
             ":ubsan_feature_flag": "True",
             ":coverage_feature_flag": "False",
             ":coverage-rust_feature_flag": "False",
+            ":profile_feature_flag": "False",
+            ":profile-rust_feature_flag": "False",
             ":sancov_feature_flag": "True",
         },
         "coverage_variant": {
@@ -487,6 +517,8 @@ def define_clang_sanitizer_config_settings():
             ":ubsan_feature_flag": "False",
             ":coverage_feature_flag": "True",
             ":coverage-rust_feature_flag": "False",
+            ":profile_feature_flag": "False",
+            ":profile-rust_feature_flag": "False",
             ":sancov_feature_flag": "False",
         },
         "coverage-rust_variant": {
@@ -495,6 +527,28 @@ def define_clang_sanitizer_config_settings():
             ":ubsan_feature_flag": "False",
             ":coverage_feature_flag": "False",
             ":coverage-rust_feature_flag": "True",
+            ":profile_feature_flag": "False",
+            ":profile-rust_feature_flag": "False",
+            ":sancov_feature_flag": "False",
+        },
+        "profile_variant": {
+            ":asan_feature_flag": "False",
+            ":hwasan_feature_flag": "False",
+            ":ubsan_feature_flag": "False",
+            ":coverage_feature_flag": "False",
+            ":coverage-rust_feature_flag": "False",
+            ":profile_feature_flag": "True",
+            ":profile-rust_feature_flag": "False",
+            ":sancov_feature_flag": "False",
+        },
+        "profile-rust_variant": {
+            ":asan_feature_flag": "False",
+            ":hwasan_feature_flag": "False",
+            ":ubsan_feature_flag": "False",
+            ":coverage_feature_flag": "False",
+            ":coverage-rust_feature_flag": "False",
+            ":profile_feature_flag": "False",
+            ":profile-rust_feature_flag": "True",
             ":sancov_feature_flag": "False",
         },
     }

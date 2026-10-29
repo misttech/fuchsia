@@ -169,6 +169,8 @@ _optional_sysroot_variants = [
   "ubsan-sancov",
   "coverage",
   "coverage-rust",
+  "profile",
+  "profile-rust",
 ]
 
 if (target_cpu == "arm64") {

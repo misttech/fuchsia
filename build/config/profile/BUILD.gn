@@ -288,8 +288,12 @@ variant("coverage-rust") {
   }
 }
 
-# LINT.ThenChange(//build/bazel/templates/template.bazelrc:rust_coverage)
+# LINT.ThenChange(
+#   //build/bazel/templates/template.bazelrc:rust_coverage,
+#   //build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/toolchain_utils.bzl:coverage_rust,
+# )
 
+# LINT.IfChange(profile)
 # Enable PGO instrumentation to collect profiles.
 variant("profile") {
   configs = [ ":variant-libprefix" ]
@@ -318,6 +322,9 @@ variant("profile") {
   }
 }
 
+# LINT.ThenChange(//build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/toolchain_utils.bzl:profile)
+
+# LINT.IfChange(rust_profile)
 # Enable PGO instrumentation to collect profiles for Rust.
 variant("profile-rust") {
   configs = [ ":variant-libprefix" ]
@@ -328,6 +335,11 @@ variant("profile-rust") {
   # TODO(https://fxbug.dev/42053322): Value profiling isn't supported by the runtime.
   rustflags += [ "-Cllvm-args=-disable-vp" ]
 }
+
+# LINT.ThenChange(
+#   //build/bazel/templates/template.bazelrc:rust_profile,
+#   //build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/toolchain_utils.bzl:profile_rust,
+# )
 
 # Enable PGO-optimized build that uses a profile.
 variant("profile-use") {

@@ -23,6 +23,8 @@ _INSTRUMENTATION_FEATURES = [
     "hwasan",
     "lsan",
     "msan",
+    "profile",
+    "profile-rust",
     "sancov",
     "tsan",
     "ubsan",

@@ -261,7 +261,7 @@ def compute_clang_features(
                         ),
                     ],
                     with_features = [
-                        with_feature_set(not_features = ["asan", "hwasan", "ubsan"]),
+                        with_feature_set(not_features = ["asan", "hwasan", "ubsan", "sancov"]),
                     ],
                 ),
             ] if is_fuchsia else []
@@ -278,21 +278,141 @@ def compute_clang_features(
         enabled = "coverage-rust" in enabled_features,
         flag_sets = [
             flag_set(
-                actions = action_names.all_link_actions,
+                actions = action_names.all_compile_actions + action_names.all_link_actions,
                 flag_groups = [
                     flag_group(
                         flags = [
-                            "-Wl,-dynamic-linker=coverage-rust/ld.so.1",
+                            "-O1",
                         ],
                     ),
                 ],
                 with_features = [
-                    with_feature_set(not_features = ["asan", "hwasan", "ubsan", "coverage"]),
+                    with_feature_set(not_features = ["asan", "hwasan", "ubsan", "sancov", "coverage"]),
                 ],
             ),
-        ] if is_fuchsia else [],
+        ] + (
+            [
+                flag_set(
+                    actions = action_names.all_link_actions,
+                    flag_groups = [
+                        flag_group(
+                            flags = [
+                                "-Wl,-dynamic-linker=coverage-rust/ld.so.1",
+                            ],
+                        ),
+                    ],
+                    with_features = [
+                        with_feature_set(not_features = ["asan", "hwasan", "ubsan", "sancov", "coverage"]),
+                    ],
+                ),
+            ] if is_fuchsia else []
+        ),
     )
-    # LINT.ThenChange(//build/config/profile/BUILD.gn:rust_coverage)
+    # LINT.ThenChange(
+    #   //build/config/BUILD.gn:optimize_coverage,
+    #   //build/config/profile/BUILD.gn:rust_coverage,
+    # )
+
+    # LINT.IfChange(profile)
+    profile_feature = feature(
+        name = "profile",
+        enabled = "profile" in enabled_features,
+        flag_sets = [
+            flag_set(
+                actions = action_names.all_compile_actions + action_names.all_link_actions,
+                flag_groups = [
+                    flag_group(
+                        flags = [
+                            "-fprofile-generate",
+                            "-O1",
+                        ],
+                    ),
+                ],
+            ),
+        ] + (
+            [
+                flag_set(
+                    actions = action_names.all_compile_actions,
+                    flag_groups = [
+                        flag_group(
+                            flags = [
+                                "-mllvm",
+                                "-disable-vp",
+                            ],
+                        ),
+                    ],
+                ),
+                flag_set(
+                    actions = action_names.all_link_actions,
+                    flag_groups = [
+                        flag_group(
+                            flags = [
+                                "-lzircon",
+                            ],
+                        ),
+                    ],
+                ),
+                flag_set(
+                    actions = action_names.all_link_actions,
+                    flag_groups = [
+                        flag_group(
+                            flags = [
+                                "-Wl,-dynamic-linker=profile/ld.so.1",
+                            ],
+                        ),
+                    ],
+                    with_features = [
+                        with_feature_set(not_features = ["asan", "hwasan", "ubsan", "sancov"]),
+                    ],
+                ),
+            ] if is_fuchsia else []
+        ),
+    )
+    # LINT.ThenChange(
+    #   //build/config/BUILD.gn:optimize_profile,
+    #   //build/config/profile/BUILD.gn:profile,
+    # )
+
+    # LINT.IfChange(profile_rust)
+    profile_rust_feature = feature(
+        name = "profile-rust",
+        enabled = "profile-rust" in enabled_features,
+        flag_sets = [
+            flag_set(
+                actions = action_names.all_compile_actions + action_names.all_link_actions,
+                flag_groups = [
+                    flag_group(
+                        flags = [
+                            "-O1",
+                        ],
+                    ),
+                ],
+                with_features = [
+                    with_feature_set(not_features = ["asan", "hwasan", "ubsan", "sancov", "profile"]),
+                ],
+            ),
+        ] + (
+            [
+                flag_set(
+                    actions = action_names.all_link_actions,
+                    flag_groups = [
+                        flag_group(
+                            flags = [
+                                "-Wl,-dynamic-linker=profile-rust/ld.so.1",
+                            ],
+                        ),
+                    ],
+                    with_features = [
+                        with_feature_set(not_features = ["asan", "hwasan", "ubsan", "sancov", "profile"]),
+                    ],
+                ),
+            ] if is_fuchsia else []
+        ),
+    )
+    # LINT.ThenChange(
+    #   //build/config/BUILD.gn:optimize_profile,
+    #   //build/config/profile/BUILD.gn:rust_profile,
+    # )
 
     generate_linkmap_feature = feature(
         name = "generate_linkmap",
@@ -365,6 +485,8 @@ def compute_clang_features(
         supports_pic_feature,
         coverage_feature,
         coverage_rust_feature,
+        profile_feature,
+        profile_rust_feature,
         dbg_feature,
         dependency_file_feature,
         generate_linkmap_feature,

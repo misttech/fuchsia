@@ -611,14 +611,19 @@ config("optimize_sanitizer") {
 #   //build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/sanitizer.bzl:clang_sanitizer)
 
 # LINT.IfChange(optimize_profile)
+# Matches -O1 in toolchain_utils.bzl:profile_feature and -Copt-level=1 in
+# template.bazelrc.
 config("optimize_profile") {
   cflags = [ "-O1" ]
   ldflags = cflags
   rustflags = [ "-Copt-level=1" ]
 }
 
-# LINT.ThenChange(BUILD.bazel:optimize_profile)
-
+# LINT.ThenChange(
+#   BUILD.bazel:optimize_profile,
+#   //build/bazel/templates/template.bazelrc:rust_profile,
+#   //build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/toolchain_utils.bzl:profile,
+# )
 # LINT.IfChange(optimize_coverage)
 # Matches -O1 in toolchain_utils.bzl:coverage_feature and -Copt-level=1 in
 # template.bazelrc.

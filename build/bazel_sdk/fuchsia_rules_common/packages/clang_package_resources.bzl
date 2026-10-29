@@ -64,6 +64,16 @@ _LIBCXX_SRCS_MAP = {
             "{clang_repo}:lib/aarch64-unknown-fuchsia/libc++abi.so.1",
             "{clang_repo}:lib/aarch64-unknown-fuchsia/libunwind.so.1",
         ],
+        "{clang_repo}:arm64_profile_variant": [
+            "{clang_repo}:lib/aarch64-unknown-fuchsia/libc++.so.2",
+            "{clang_repo}:lib/aarch64-unknown-fuchsia/libc++abi.so.1",
+            "{clang_repo}:lib/aarch64-unknown-fuchsia/libunwind.so.1",
+        ],
+        "{clang_repo}:arm64_profile-rust_variant": [
+            "{clang_repo}:lib/aarch64-unknown-fuchsia/libc++.so.2",
+            "{clang_repo}:lib/aarch64-unknown-fuchsia/libc++abi.so.1",
+            "{clang_repo}:lib/aarch64-unknown-fuchsia/libunwind.so.1",
+        ],
         "{clang_repo}:arm64_asan_variant": [
             "{clang_repo}:lib/aarch64-unknown-fuchsia/asan/libc++.so.2",
             "{clang_repo}:lib/aarch64-unknown-fuchsia/asan/libc++abi.so.1",
@@ -128,6 +138,16 @@ _LIBCXX_SRCS_MAP = {
             "{clang_repo}:lib/riscv64-unknown-fuchsia/libunwind.so.1",
         ],
         "{clang_repo}:riscv64_coverage-rust_variant": [
+            "{clang_repo}:lib/riscv64-unknown-fuchsia/libc++.so.2",
+            "{clang_repo}:lib/riscv64-unknown-fuchsia/libc++abi.so.1",
+            "{clang_repo}:lib/riscv64-unknown-fuchsia/libunwind.so.1",
+        ],
+        "{clang_repo}:riscv64_profile_variant": [
+            "{clang_repo}:lib/riscv64-unknown-fuchsia/libc++.so.2",
+            "{clang_repo}:lib/riscv64-unknown-fuchsia/libc++abi.so.1",
+            "{clang_repo}:lib/riscv64-unknown-fuchsia/libunwind.so.1",
+        ],
+        "{clang_repo}:riscv64_profile-rust_variant": [
             "{clang_repo}:lib/riscv64-unknown-fuchsia/libc++.so.2",
             "{clang_repo}:lib/riscv64-unknown-fuchsia/libc++abi.so.1",
             "{clang_repo}:lib/riscv64-unknown-fuchsia/libunwind.so.1",
@@ -200,6 +220,16 @@ _LIBCXX_SRCS_MAP = {
             "{clang_repo}:lib/x86_64-unknown-fuchsia/libc++abi.so.1",
             "{clang_repo}:lib/x86_64-unknown-fuchsia/libunwind.so.1",
         ],
+        "{clang_repo}:x64_profile_variant": [
+            "{clang_repo}:lib/x86_64-unknown-fuchsia/libc++.so.2",
+            "{clang_repo}:lib/x86_64-unknown-fuchsia/libc++abi.so.1",
+            "{clang_repo}:lib/x86_64-unknown-fuchsia/libunwind.so.1",
+        ],
+        "{clang_repo}:x64_profile-rust_variant": [
+            "{clang_repo}:lib/x86_64-unknown-fuchsia/libc++.so.2",
+            "{clang_repo}:lib/x86_64-unknown-fuchsia/libc++abi.so.1",
+            "{clang_repo}:lib/x86_64-unknown-fuchsia/libunwind.so.1",
+        ],
         "{clang_repo}:x64_asan_variant": [
             "{clang_repo}:lib/x86_64-unknown-fuchsia/asan/libc++.so.2",
             "{clang_repo}:lib/x86_64-unknown-fuchsia/asan/libc++abi.so.1",
@@ -242,6 +272,8 @@ _LIBCXX_DEST_SELECT_MAP = {
     "{clang_repo}:ubsan-sancov_variant": "lib/ubsan-sancov",
     "{clang_repo}:coverage_variant": "lib/coverage",
     "{clang_repo}:coverage-rust_variant": "lib/coverage-rust",
+    "{clang_repo}:profile_variant": "lib/profile",
+    "{clang_repo}:profile-rust_variant": "lib/profile-rust",
     "//conditions:default": "lib",
 }
 
@@ -256,6 +288,8 @@ _LIBCXX_STRIP_PREFIX_MAP = {
         "{clang_repo}:arm64_ubsan-sancov_variant": "lib/aarch64-unknown-fuchsia",
         "{clang_repo}:arm64_coverage_variant": "lib/aarch64-unknown-fuchsia",
         "{clang_repo}:arm64_coverage-rust_variant": "lib/aarch64-unknown-fuchsia",
+        "{clang_repo}:arm64_profile_variant": "lib/aarch64-unknown-fuchsia",
+        "{clang_repo}:arm64_profile-rust_variant": "lib/aarch64-unknown-fuchsia",
         "{clang_repo}:arm64_asan_variant": "lib/aarch64-unknown-fuchsia/asan",
         "{clang_repo}:arm64_asan-sancov_variant": "lib/aarch64-unknown-fuchsia/asan",
         "{clang_repo}:arm64_asan-ubsan_variant": "lib/aarch64-unknown-fuchsia/asan",
@@ -269,6 +303,8 @@ _LIBCXX_STRIP_PREFIX_MAP = {
         "{clang_repo}:riscv64_ubsan-sancov_variant": "lib/riscv64-unknown-fuchsia",
         "{clang_repo}:riscv64_coverage_variant": "lib/riscv64-unknown-fuchsia",
         "{clang_repo}:riscv64_coverage-rust_variant": "lib/riscv64-unknown-fuchsia",
+        "{clang_repo}:riscv64_profile_variant": "lib/riscv64-unknown-fuchsia",
+        "{clang_repo}:riscv64_profile-rust_variant": "lib/riscv64-unknown-fuchsia",
         "{clang_repo}:riscv64_asan_variant": "lib/riscv64-unknown-fuchsia/asan",
         "{clang_repo}:riscv64_asan-sancov_variant": "lib/riscv64-unknown-fuchsia/asan",
         "{clang_repo}:riscv64_asan-ubsan_variant": "lib/riscv64-unknown-fuchsia/asan",
@@ -282,6 +318,8 @@ _LIBCXX_STRIP_PREFIX_MAP = {
         "{clang_repo}:x64_ubsan-sancov_variant": "lib/x86_64-unknown-fuchsia",
         "{clang_repo}:x64_coverage_variant": "lib/x86_64-unknown-fuchsia",
         "{clang_repo}:x64_coverage-rust_variant": "lib/x86_64-unknown-fuchsia",
+        "{clang_repo}:x64_profile_variant": "lib/x86_64-unknown-fuchsia",
+        "{clang_repo}:x64_profile-rust_variant": "lib/x86_64-unknown-fuchsia",
         "{clang_repo}:x64_asan_variant": "lib/x86_64-unknown-fuchsia/asan",
         "{clang_repo}:x64_asan-sancov_variant": "lib/x86_64-unknown-fuchsia/asan",
         "{clang_repo}:x64_asan-ubsan_variant": "lib/x86_64-unknown-fuchsia/asan",
@@ -371,6 +409,8 @@ _SANITIZERS_DEST_SELECT_MAP = {
     "{clang_repo}:ubsan-sancov_variant": "lib/ubsan-sancov",
     "{clang_repo}:coverage_variant": "lib/coverage",
     "{clang_repo}:coverage-rust_variant": "lib/coverage-rust",
+    "{clang_repo}:profile_variant": "lib/profile",
+    "{clang_repo}:profile-rust_variant": "lib/profile-rust",
     "//conditions:default": "lib",
 }
 

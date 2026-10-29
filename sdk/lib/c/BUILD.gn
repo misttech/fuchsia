@@ -284,6 +284,8 @@ if (current_toolchain == default_toolchain) {
         "ubsan-sancov",
         "coverage",
         "coverage-rust",
+        "profile",
+        "profile-rust",
       ]
 
       # TODO(https://fxbug.dev/327442322): Support hwasan for x64 and riscv64.

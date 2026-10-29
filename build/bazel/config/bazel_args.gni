@@ -110,6 +110,11 @@ _has_sancov = _tags + [ "sancov" ] - [ "sancov" ] != _tags
 _has_coverage_clang =
     _tags + [ "coverage_clang" ] - [ "coverage_clang" ] != _tags
 _has_coverage_rust = _tags + [ "coverage_rust" ] - [ "coverage_rust" ] != _tags
+_configs = toolchain_variant.configs
+_has_profile = _configs + [ "//build/config/profile" ] -
+               [ "//build/config/profile" ] != _configs
+_has_profile_rust = _configs + [ "//build/config/profile:profile-rust" ] -
+                    [ "//build/config/profile:profile-rust" ] != _configs
 
 # The hwasan variants also set the 'asan' and 'lsan' tags, but using
 # both features result in Clang errors, which doesn't support both
@@ -154,6 +159,19 @@ if (_has_coverage_rust) {
     _common_args += [ "--config=host_rust_coverage" ]
   } else {
     _common_args += [ "--config=fuchsia_rust_coverage" ]
+  }
+}
+if (_has_profile) {
+  _enabled_features += [ "profile" ]
+}
+if (_has_profile_rust) {
+  if (!_has_profile) {
+    _enabled_features += [ "profile-rust" ]
+  }
+  if (is_host) {
+    _common_args += [ "--config=host_rust_profile" ]
+  } else {
+    _common_args += [ "--config=fuchsia_rust_profile" ]
   }
 }
 
