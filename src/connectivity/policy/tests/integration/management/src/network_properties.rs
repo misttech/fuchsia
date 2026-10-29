@@ -1610,3 +1610,127 @@ async fn test_reachability_monitor_default_network_validation(name: &str) {
     )
     .await;
 }
+
+#[netstack_test]
+async fn test_fuchsia_network_tracking_without_socket_proxy(name: &str) {
+    let _if_name = with_netcfg_owned_device(
+        name,
+        ManagerConfig::Empty,
+        NetcfgOwnedDeviceArgs { socket_proxy_type: SocketProxyType::None, ..Default::default() },
+        |if_id, _network, _interface_state, realm, _sandbox| {
+            async move {
+                let networks = realm
+                    .connect_to_protocol_from_child::<fnp_properties::NetworksMarker>(
+                        realms::constants::netcfg::COMPONENT_NAME,
+                    )
+                    .expect("failed to connect to Networks");
+
+                let token_resolver = realm
+                    .connect_to_protocol_from_child::<fnp_properties::NetworkTokenResolverMarker>(
+                        realms::constants::netcfg::COMPONENT_NAME,
+                    )
+                    .expect("failed to connect to NetworkTokenResolver");
+
+                let root_routes = realm
+                    .connect_to_protocol::<fnet_root::RoutesV4Marker>()
+                    .expect("connect to fuchsia.net.root.RoutesV4");
+                let (route_set, server_end) =
+                    fidl::endpoints::create_proxy::<fnet_routes_admin::RouteSetV4Marker>();
+                root_routes.global_route_set(server_end).expect("create global RouteSetV4");
+
+                // Add a default route to make the Fuchsia-provisioned interface a default
+                // network candidate even when socket-proxy is disabled.
+                assert!(add_default_route::<Ipv4>(realm, if_id, &route_set).await);
+
+                let default_fuchsia_token = networks
+                    .watch_default()
+                    .await
+                    .expect("failed to watch default network")
+                    .take_network()
+                    .expect("no default network token");
+
+                let resolved_fuchsia_token = token_resolver
+                    .resolve_token(default_fuchsia_token.duplicate().expect("dup failed"))
+                    .await
+                    .expect("fidl error")
+                    .expect("failed to resolve token");
+
+                let (watcher, server_end) = create_proxy();
+                networks
+                    .watch_properties(fnp_properties::NetworksWatchPropertiesRequest {
+                        network: Some(default_fuchsia_token.duplicate().expect("dup failed")),
+                        properties: Some(
+                            PropertyInterest::SOCKET_MARKS | PropertyInterest::DNS_CONFIGURATION,
+                        ),
+                        watcher: Some(server_end),
+                        ..Default::default()
+                    })
+                    .await
+                    .expect("fidl error")
+                    .expect("protocol error");
+                let update = watcher.watch().await.expect("fidl error").expect("protocol error");
+
+                assert_eq!(
+                    update,
+                    PropertyUpdate {
+                        dns_configuration: Some(fnp_properties::DnsConfiguration {
+                            servers: Some(vec![]),
+                            ..Default::default()
+                        }),
+                        socket_marks: None,
+                        ..Default::default()
+                    }
+                );
+
+                // Remove the Fuchsia default route to unset the Fuchsia default network.
+                let default_route = fnet_routes_ext::Route {
+                    destination: Ipv4::ALL_ADDRS_SUBNET,
+                    action: fnet_routes_ext::RouteAction::Forward(fnet_routes_ext::RouteTarget::<
+                        Ipv4,
+                    > {
+                        outbound_interface: if_id,
+                        next_hop: None,
+                    }),
+                    properties: fnet_routes_ext::RouteProperties {
+                        specified_properties: fnet_routes_ext::SpecifiedRouteProperties {
+                            metric: fnet_routes::SpecifiedMetric::InheritedFromInterface(
+                                fnet_routes::Empty,
+                            ),
+                        },
+                    },
+                };
+                assert!(
+                    fnet_routes_ext::admin::remove_route::<Ipv4>(
+                        &route_set,
+                        &default_route.try_into().expect("convert into fidl route"),
+                    )
+                    .await
+                    .expect("failed to remove default route")
+                    .expect("remove route error")
+                );
+
+                // WatchDefault should resolve with NoDefaultNetwork.
+                assert_matches!(
+                    networks.watch_default().await,
+                    Ok(fnp_properties::NetworksWatchDefaultResponse::NoDefaultNetwork(_))
+                );
+
+                // PropertyWatcher should report NetworkGone.
+                assert_matches!(
+                    watcher.watch().await,
+                    Ok(Err(fnp_properties::PropertyWatcherError::NetworkGone))
+                );
+
+                // Both default and resolved tokens should signal PEER_CLOSED.
+                for token in [&default_fuchsia_token, &resolved_fuchsia_token] {
+                    fasync::OnSignals::new(&token.value, zx::Signals::EVENTPAIR_PEER_CLOSED)
+                        .await
+                        .map(|_signal: zx::Signals| ())
+                        .unwrap();
+                }
+            }
+            .boxed_local()
+        },
+    )
+    .await;
+}
