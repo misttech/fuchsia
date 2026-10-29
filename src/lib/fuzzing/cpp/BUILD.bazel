@@ -1,0 +1,22 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "fuzzer_test",
+    testonly = True,
+    srcs = ["fuzzer_test.cc"],
+    implementation_deps = [
+        "//sdk/lib/syslog/cpp",
+        "//src/lib/files",
+        "@com_google_googletest//:gtest",
+    ],
+    visibility = [
+        "//:__subpackages__",
+    ],
+    alwayslink = True,
+)
