@@ -241,7 +241,7 @@ pub struct Socket {
 
     /// Security module state associated with this socket. Note that the socket's security label is
     /// applied to the associated `fs_node`.
-    pub security: security::SocketState,
+    pub security_state: security::SocketState,
 }
 
 #[derive(Default)]
@@ -466,7 +466,7 @@ impl Socket {
             protocol,
             state: Default::default(),
             fs_node: OnceLock::new(),
-            security: security::SocketState::default(),
+            security_state: security::SocketState::default(),
         })
     }
 

@@ -182,8 +182,8 @@ pub(in crate::security) fn socket_socketpair(
 ) -> Result<(), Errno> {
     let left_sid = fs_node_effective_sid_and_class(left.node()).sid;
     let right_sid = fs_node_effective_sid_and_class(right.node()).sid;
-    *left.socket().security.state.peer_sid.lock() = Some(right_sid);
-    *right.socket().security.state.peer_sid.lock() = Some(left_sid);
+    *left.socket().security_state.state.peer_sid.lock() = Some(right_sid);
+    *right.socket().security_state.state.peer_sid.lock() = Some(left_sid);
     Ok(())
 }
 
@@ -462,7 +462,8 @@ pub(in crate::security) fn socket_getpeersec_stream(
     _current_task: &CurrentTask,
     socket: NonPrivateSocket<'_>,
 ) -> Result<Vec<u8>, Errno> {
-    let peer_sid = socket.security.state.peer_sid.lock().unwrap_or(InitialSid::Unlabeled.into());
+    let peer_sid =
+        socket.security_state.state.peer_sid.lock().unwrap_or(InitialSid::Unlabeled.into());
     // The SELinux Test Suite assumes that `SO_PEERSEC` will return a NUL terminated label.
     Ok(security_server.sid_to_security_context_with_nul(peer_sid).unwrap())
 }
@@ -541,8 +542,8 @@ pub(in crate::security) fn unix_stream_connect(
     // TODO: https://fxbug.dev/414583985 - the `server_socket` does not yet have an associated
     // `FsNode`, nor security label, so the `listening_socket` label must be used for now.
     let listening_sid = fs_node_effective_sid_and_class(listening_node).sid;
-    *client_socket.security.state.peer_sid.lock() = Some(listening_sid);
-    *server_socket.security.state.peer_sid.lock() = Some(client_sid);
+    *client_socket.security_state.state.peer_sid.lock() = Some(listening_sid);
+    *server_socket.security_state.state.peer_sid.lock() = Some(client_sid);
 
     Ok(())
 }
