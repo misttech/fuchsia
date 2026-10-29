@@ -62,6 +62,11 @@ rustc_staticlib("staticlib") {
     "//sdk/fidl/fuchsia.logger:fuchsia.logger_rust",
     "//third_party/rust_crates:serde",
   ]
+
+  configs += [
+    "//build/config:optimize_size",
+    "//build/config/lto:thinlto-if-compatible",
+  ]
 }
 
 source_set("log_decoder_api") {
