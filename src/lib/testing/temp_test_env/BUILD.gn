@@ -73,5 +73,9 @@ if (is_host) {
            ] + [ "//third_party/rust_crates:serial_test" ]
     output_name = "temp_test_env_lib_test"
     disable_clippy = true
+    visibility = [
+      ":*",
+      "//src/lib:*",
+    ]
   }
 }

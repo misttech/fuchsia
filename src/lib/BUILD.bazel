@@ -21,6 +21,7 @@ test_suite(
         "//src/lib/listnode:listnode_host_tests",
         "//src/lib/stdbind:stdbind-cpp-unittests",
         "//src/lib/stdbind:stdbind-rs_test",
+        "//src/lib/testing/temp_test_env:lib_test",
         "//src/lib/transfer_manifest:transfer_manifest_test",
     ],
 )

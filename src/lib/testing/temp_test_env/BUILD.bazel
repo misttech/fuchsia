@@ -37,5 +37,6 @@ host_rustc_test(
     crate = ":lib",
     crate_name = "temp_test_env_lib_test",
     disable_clippy = True,
+    visibility = ["//src/lib:__pkg__"],
     deps = ["//third_party/rust_crates/vendor:serial_test"],
 )
