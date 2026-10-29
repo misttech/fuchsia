@@ -11,20 +11,11 @@
 #include <lib/trace/event.h>
 #include <vk_dispatch_table_helper.h>
 
-#include <vulkan/vulkan_core.h>
-
-// May need to fall back to `buffer_collection_token` instead of `buffer_collection_token2`
-// in `Flatland.RegisterBufferCollectionArgs()`.
-#include <zircon/availability.h>
-
-#if !FUCHSIA_API_LEVEL_AT_LEAST(25)
-#include <fidl/fuchsia.sysmem/cpp/fidl.h>
-#endif
-
 #include <cinttypes>
 #include <string>
 
 #include <vulkan/vk_layer.h>
+#include <vulkan/vulkan_core.h>
 
 #include "src/lib/fsl/handles/object_info.h"
 #include "src/lib/vulkan/swapchain/vulkan_utils.h"
@@ -222,12 +213,7 @@ bool ImagePipeSurfaceAsync::CreateImage(VkDevice device, VkLayerDispatchTable* p
     if (flatland_allocator_.is_valid()) {
       fuchsia_ui_composition::RegisterBufferCollectionArgs args{};
       args.export_token(std::move(export_token));
-#if FUCHSIA_API_LEVEL_AT_LEAST(25)
       args.buffer_collection_token2(std::move(scenic_token));
-#else
-      args.buffer_collection_token(fidl::ClientEnd<fuchsia_sysmem::BufferCollectionToken>(
-          std::move(scenic_token).TakeChannel()));
-#endif
       args.usage(fuchsia_ui_composition::RegisterBufferCollectionUsage::kDefault);
       flatland_allocator_->RegisterBufferCollection(std::move(args))
           .ThenExactlyOnce(

@@ -5,6 +5,7 @@
 #include <fuchsia/ui/composition/cpp/fidl.h>
 #include <lib/async-testing/test_loop.h>
 #include <lib/async/dispatcher.h>
+#include <lib/ui/scenic/cpp/buffer_collection_import_export_tokens.h>
 #include <lib/ui/scenic/cpp/testing/fake_flatland.h>
 
 #include <string>
@@ -28,6 +29,13 @@ class FakeFlatlandTest : public ::testing::Test {
   async::TestLoop& loop() { return loop_; }
 
   FakeFlatland& fake_flatland() { return fake_flatland_; }
+
+  fuchsia::ui::composition::AllocatorPtr ConnectAllocator() {
+    EXPECT_TRUE(!fake_flatland_.is_allocator_connected());
+
+    auto allocator_handle = fake_flatland_.ConnectAllocator(flatland_subloop_->dispatcher());
+    return allocator_handle.Bind();
+  }
 
   fuchsia::ui::composition::FlatlandPtr ConnectFlatland() {
     EXPECT_TRUE(!fake_flatland_.is_flatland_connected());
@@ -128,6 +136,33 @@ TEST_F(FakeFlatlandTest, Present) {
   EXPECT_EQ(present_requested_time, 0);
   loop().RunUntilIdle();
   EXPECT_EQ(present_requested_time, kPresentRequestedTime);
+}
+
+TEST_F(FakeFlatlandTest, RegisterBufferCollectionWithToken2) {
+  fuchsia::ui::composition::AllocatorPtr allocator = ConnectAllocator();
+
+  auto ref_pair = allocation::BufferCollectionImportExportTokens::New();
+  const zx_koid_t export_token_koid = GetKoids(ref_pair.export_token).first;
+
+  fuchsia::sysmem2::BufferCollectionTokenHandle sysmem_token;
+  auto sysmem_token_request = sysmem_token.NewRequest();
+  const zx_koid_t sysmem_token_koid = GetKoids(sysmem_token).first;
+
+  fuchsia::ui::composition::RegisterBufferCollectionArgs args;
+  args.set_export_token(std::move(ref_pair.export_token));
+  args.set_buffer_collection_token2(std::move(sysmem_token));
+  args.set_usage(fuchsia::ui::composition::RegisterBufferCollectionUsage::DEFAULT);
+
+  allocator->RegisterBufferCollection(std::move(args), [](auto) {});
+  EXPECT_TRUE(fake_flatland().graph_bindings().buffer_collections.empty());
+  loop().RunUntilIdle();
+
+  ASSERT_EQ(fake_flatland().graph_bindings().buffer_collections.size(), 1u);
+  auto it = fake_flatland().graph_bindings().buffer_collections.find(export_token_koid);
+  ASSERT_NE(it, fake_flatland().graph_bindings().buffer_collections.end());
+  EXPECT_EQ(GetKoids(it->second.export_token).first, export_token_koid);
+  EXPECT_EQ(GetKoids(it->second.sysmem_token).first, sysmem_token_koid);
+  EXPECT_EQ(it->second.usage, fuchsia::ui::composition::RegisterBufferCollectionUsage::DEFAULT);
 }
 
 }  // namespace scenic

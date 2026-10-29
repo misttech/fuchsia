@@ -87,7 +87,7 @@ void FakeFlatland::RegisterBufferCollection(
 
   fuchsia::sysmem2::BufferCollectionTokenHandle sysmem_token;
 #if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
-  // Callers must set exactly one of buffer_collection_token2 or buffer_collection_token.
+  // Callers must set exactly one of `buffer_collection_token2` or `buffer_collection_token`.
   ZX_ASSERT(args.has_buffer_collection_token2() != args.has_buffer_collection_token());
   if (args.has_buffer_collection_token2()) {
     sysmem_token = std::move(*args.mutable_buffer_collection_token2());

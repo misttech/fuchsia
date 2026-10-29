@@ -69,7 +69,6 @@ loadable_module("swapchain") {
   deps = [
     ":layer_common",
     ":surface_header",
-    "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_cpp",
     "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp",
     "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_cpp",
     "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_cpp",
