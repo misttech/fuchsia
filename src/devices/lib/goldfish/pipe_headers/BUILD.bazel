@@ -1,0 +1,19 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library_headers.bzl", "fx_cc_library_headers")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library_headers(
+    name = "pipe_headers",
+    hdrs = ["include/base.h"],
+    visibility = [
+        "//src/devices/lib/goldfish/pipe_io:__pkg__",
+        "//src/devices/testing/goldfish/fake_pipe:__pkg__",
+        "//src/graphics/display/drivers/goldfish-display:__pkg__",
+        "//src/graphics/drivers/misc/goldfish:__pkg__",
+        "//src/graphics/drivers/misc/goldfish_control:__pkg__",
+    ],
+)

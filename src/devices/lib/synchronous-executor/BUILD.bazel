@@ -1,0 +1,26 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules:zx_library.bzl", "cc_source_library_zx")
+
+package(default_applicable_licenses = ["//:license"])
+
+# @bazel2gn:raw_attribute:configs += [ "//build/config/fuchsia:static_cpp_standard_library" ]
+cc_source_library_zx(
+    name = "synchronous-executor",
+    srcs = ["executor.cc"],
+    hdrs = ["include/lib/synchronous-executor/executor.h"],
+    implementation_deps = [
+        "//zircon/system/ulib/fbl",
+        "//zircon/system/ulib/zx",
+    ],
+    includes = ["include"],
+    visibility = [
+        "//src/devices/lib:__pkg__",
+        "//src/devices/lib/synchronous-executor/test:__pkg__",
+        "//src/devices/usb/drivers/usb-hub:__pkg__",
+        "//src/devices/usb/drivers/xhci:__pkg__",
+    ],
+    deps = ["//sdk/lib/fit-promise"],
+)

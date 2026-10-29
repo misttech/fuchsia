@@ -1,0 +1,48 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "fidl-metadata",
+    srcs = [
+        "adc.cc",
+        "i2c.cc",
+        "registers.cc",
+        "spi.cc",
+        "tee.cc",
+    ],
+    hdrs = [
+        "adc.h",
+        "i2c.h",
+        "registers.h",
+        "spi.h",
+        "tee.h",
+    ],
+    # TODO(https://fxbug.dev/42176699): This target uses mutable tables which are deprecated,
+    # rather than builders.
+    copts = [
+        "-DFIDL_WIRE_ALLOW_DEPRECATED_MUTABLE_TABLES",
+    ],  # @bazel2gn:raw_overwrite:[ "//build/cpp:fidl-wire-deprecated-mutable-tables" ]
+    implementation_deps = [
+        "//sdk/fidl/fuchsia.hardware.adcimpl:fuchsia.hardware.adcimpl_cpp",
+        "//sdk/fidl/fuchsia.hardware.i2c.businfo:fuchsia.hardware.i2c.businfo_cpp",
+        "//sdk/fidl/fuchsia.hardware.spi.businfo:fuchsia.hardware.spi.businfo_cpp",
+        "//sdk/fidl/fuchsia.hardware.tee:fuchsia.hardware.tee_cpp",
+        "//zircon/system/ulib/zx",
+    ],
+    visibility = [
+        "//src/devices/adc/drivers/adc:__pkg__",
+        "//src/devices/board/drivers:__subpackages__",
+        "//src/devices/bus/drivers/platform/test:__pkg__",
+        "//src/devices/lib/fidl-metadata/test:__pkg__",
+        "//src/devices/registers/drivers/registers:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.hardware.registers:fuchsia.hardware.registers_cpp",
+    ],
+    alwayslink = True,
+)

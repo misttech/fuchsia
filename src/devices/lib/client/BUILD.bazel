@@ -1,0 +1,25 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "device_topology",
+    srcs = ["device_topology.cc"],
+    hdrs = ["device_topology.h"],
+    visibility = [
+        "//src/bringup/bin/netsvc:__pkg__",
+        "//src/connectivity/ethernet/drivers/usb-cdc-ecm:__pkg__",
+        "//src/devices/tests/v2/devfs-export-service:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.device.fs:fuchsia.device.fs_cpp",
+        "//sdk/lib/component/incoming/cpp",
+        "//sdk/lib/device-watcher/cpp",
+        "//sdk/lib/syslog/cpp",
+    ],
+    alwayslink = True,
+)
