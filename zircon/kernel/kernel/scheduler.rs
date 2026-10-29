@@ -6463,7 +6463,6 @@ impl Scheduler {
             (*current_state).last_started_running = now;
             let total = now - self.start_of_current_time_slice_ns();
             (*current_state).runtime_ns += actual;
-            cpp_thread_update_runtime_stats(current_thread, (*current_state).state as i32);
             (actual, total)
         };
 
@@ -6599,6 +6598,19 @@ impl Scheduler {
         // SAFETY: `current_thread`'s lock and `queue_lock_` are held.
         let mut next_thread_result =
             unsafe { self.evaluate_next_thread(now, current_thread, current_is_migrating) };
+
+        // Update the outgoing thread's runtime stats only when switching away from
+        // it (before dropping `queue_lock_` for work stealing or lock juggling).
+        // When `current_thread` continues running (either continuing its current
+        // slice or starting a new slice without leaving the CPU), it never enters
+        // the run queue and its runtime stats remain in `THREAD_RUNNING`.
+        if !curr_is_idle && next_thread_result.thread != current_thread {
+            // SAFETY: `current_thread` is valid and both `current_thread`'s lock and
+            // `queue_lock_` are held.
+            unsafe {
+                cpp_thread_update_runtime_stats(current_thread, (*current_state).state as i32);
+            }
+        }
 
         if next_thread_result.status == EvaluateStatus::StealWork {
             // Release the queue lock while attempting to steal work, leaving IRQs
@@ -8765,9 +8777,11 @@ impl Scheduler {
             let target = unsafe {
                 let target = self.next_thread_timeslice(next_thread, now);
                 self.set_target_preemption_time_ns(target);
-                // Update the thread's runtime stats to record the amount of time that it spent in
-                // the run queue.
-                cpp_thread_update_runtime_stats(next_thread, (*next_state_ptr).state as i32);
+                // Update the incoming thread's runtime stats to record the amount of time
+                // that it spent in the run queue when switching to a different thread.
+                if current_thread != next_thread {
+                    cpp_thread_update_runtime_stats(next_thread, (*next_state_ptr).state as i32);
+                }
                 (*next_state_ptr).last_started_running = now;
                 self.set_start_of_current_time_slice_ns(now);
                 self.set_scheduled_weight_total(self.weight_total());

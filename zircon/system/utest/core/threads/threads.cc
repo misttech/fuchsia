@@ -38,6 +38,7 @@
 
 #include <atomic>
 #include <limits>
+#include <thread>
 
 #include <mini-process/mini-process.h>
 #include <zxtest/zxtest.h>
@@ -403,6 +404,84 @@ TEST(Threads, GetInfoRuntime) {
 
 TEST(Threads, GetInfoRuntimeV1) {
   TestThreadsGetInfoRuntime<ZX_INFO_TASK_RUNTIME_V1, zx_info_task_runtime_v1_t>("GetInfoRuntimeV1");
+}
+
+// Regression test for https://fxbug.dev/578241257: verify that a non-switching
+// reschedule (where the current thread continues running its remaining time
+// slice) leaves ThreadRuntimeStats in THREAD_RUNNING so active CPU execution is
+// credited to cpu_time rather than queue_time.
+TEST(Threads, GetInfoRuntimeAfterRescheduleContinue) {
+  zx_futex_t futex_word = 0;
+  std::atomic<bool> waiter_entering_futex{false};
+  const zx_handle_t self_handle = zx::thread::self()->get();
+  zx_koid_t self_koid = ZX_KOID_INVALID;
+  ASSERT_NO_FATAL_FAILURE(get_koid(self_handle, &self_koid));
+
+  std::thread waiter([&] {
+    waiter_entering_futex.store(true, std::memory_order_release);
+    EXPECT_OK(zx_futex_wait(&futex_word, 0, self_handle, ZX_TIME_INFINITE));
+  });
+  auto cleanup = fit::defer([&] {
+    std::atomic_ref<zx_futex_t>(futex_word).store(1, std::memory_order_relaxed);
+    zx_futex_wake(&futex_word, 1);
+    if (waiter.joinable()) {
+      waiter.join();
+    }
+  });
+
+  // Wait for `waiter` to enter the thread body before polling its kernel
+  // blocked state so we do not observe a libc-internal startup futex wait.
+  while (!waiter_entering_futex.load(std::memory_order_acquire)) {
+    ASSERT_OK(zx::nanosleep(zx::deadline_after(zx::usec(100))));
+  }
+  const zx_handle_t waiter_handle = native_thread_get_zx_handle(waiter.native_handle());
+  wait_thread_blocked(waiter_handle, ZX_THREAD_STATE_BLOCKED_FUTEX);
+
+  zx_koid_t owner_koid = ZX_KOID_INVALID;
+  ASSERT_OK(zx_futex_get_owner(&futex_word, &owner_koid));
+  ASSERT_EQ(owner_koid, self_koid);
+
+  // Sleep briefly so this thread starts a fresh time slice upon wakeup,
+  // ensuring `!timeslice_expired` when the local reschedule occurs below.
+  ASSERT_OK(zx::nanosleep(zx::deadline_after(zx::usec(100))));
+
+  // Waking 0 waiters with `zx_futex_wake` releases futex ownership without
+  // unblocking `waiter`. Releasing ownership removes `waiter`'s inherited
+  // profile weight from this thread, triggering a local reschedule on this CPU
+  // where `current_thread == next_thread` and `!timeslice_expired`.
+  ASSERT_OK(zx_futex_wake(&futex_word, 0));
+
+  zx_info_task_runtime_t before{};
+  ASSERT_OK(zx::thread::self()->get_info(ZX_INFO_TASK_RUNTIME, &before, sizeof(before), nullptr,
+                                         nullptr));
+
+  // Busy-spin for an interval well within the default 10ms fair time slice so
+  // time-slice expiration does not mask a broken continue path, while also
+  // observing multiple distinct tick values so active CPU ticks are guaranteed
+  // even under heavy VM host contention.
+  constexpr zx::duration kSpinDuration = zx::msec(2);
+  constexpr int kMinDistinctTickObservations = 16;
+  const zx::time deadline = zx::deadline_after(kSpinDuration);
+  zx_instant_mono_ticks_t last_ticks = zx_ticks_get();
+  int distinct_tick_observations = 0;
+  while (zx::clock::get_monotonic() < deadline ||
+         distinct_tick_observations < kMinDistinctTickObservations) {
+    const zx_instant_mono_ticks_t now_ticks = zx_ticks_get();
+    if (now_ticks > last_ticks) {
+      ++distinct_tick_observations;
+      last_ticks = now_ticks;
+    }
+  }
+
+  zx_info_task_runtime_t after{};
+  ASSERT_OK(
+      zx::thread::self()->get_info(ZX_INFO_TASK_RUNTIME, &after, sizeof(after), nullptr, nullptr));
+
+  EXPECT_GT(after.cpu_time, before.cpu_time);
+  EXPECT_GE(after.queue_time, before.queue_time);
+
+  ASSERT_OK(zx_futex_get_owner(&futex_word, &owner_koid));
+  EXPECT_EQ(owner_koid, ZX_KOID_INVALID);
 }
 
 TEST(Threads, GetAffinity) {
