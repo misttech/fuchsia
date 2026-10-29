@@ -33,38 +33,6 @@ config("fuchsia_controller_abi_config") {
   include_dirs = [ "." ]
 }
 
-python_c_extension("fidl_codec") {
-  sources = [
-    "fidl_codec/decode.cc",
-    "fidl_codec/decode.h",
-    "fidl_codec/encode.cc",
-    "fidl_codec/encode.h",
-    "fidl_codec/fidl_codec.cc",
-    "fidl_codec/ir.cc",
-    "fidl_codec/ir.h",
-    "fidl_codec/mod.cc",
-    "fidl_codec/mod.h",
-    "fidl_codec/object_converter.cc",
-    "fidl_codec/object_converter.h",
-    "fidl_codec/python_dict_visitor.cc",
-    "fidl_codec/python_dict_visitor.h",
-    "fidl_codec/utils.h",
-  ]
-
-  stubs_root = "fidl_codec"
-  stubs = [ "__init__.pyi" ]
-
-  deps = [
-    ":fuchsia_controller_abi",
-    "//sdk/lib/fidl_base",
-    "//src/lib/fidl_codec",
-    "//third_party/rapidjson",
-    "//zircon/system/public",
-  ]
-
-  public_configs = [ ":python_config" ]
-}
-
 python_c_extension("fuchsia_controller_internal") {
   sources = [
     "fuchsia_controller_internal/error.cc",

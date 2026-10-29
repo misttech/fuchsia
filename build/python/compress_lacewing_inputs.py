@@ -10,18 +10,11 @@ dir/
 ├── <py_runtime>
 ├── <py_stdlibs>
 ├── <lacewing_test_pyz>
-├── <shared library tree>
-└── fidling
-    └── gen
-        └── ir_root
-            ├── <fidl_lib_name>
-            │   └── <fidl_lib_name>.fidl.json
-            └── ...
+└── <shared library tree>
 ```
 """
 
 import argparse
-import json
 import os
 import pathlib
 import shutil
@@ -42,12 +35,6 @@ parser.add_argument(
     "--test-pyz",
     type=pathlib.Path,
     help="Path to the Laceweing test PYZ archive",
-    required=True,
-)
-parser.add_argument(
-    "--fidl-ir-list",
-    type=pathlib.Path,
-    help="Path to the file containing all FIDL IRs required by the test",
     required=True,
 )
 parser.add_argument(
@@ -130,20 +117,6 @@ def main() -> int:
             copy_function=copy_and_record,
             ignore=shutil.ignore_patterns(PYCACHE_DIR),
         )
-
-        # FIDL IR.
-        with args.fidl_ir_list.open() as f:
-            fidl_ir_json = json.load(f)
-            for entry in fidl_ir_json:
-                lib_name = entry["library_name"]
-                ir_source = entry["source"]
-                ir_name = os.path.basename(ir_source)
-
-                out_dir = Path(td) / "fidling" / "gen" / "ir_root" / lib_name
-                out_dir.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(ir_source, out_dir / ir_name)
-
-                ins.append(ir_source)
 
         # Compress into archive.
         # TODO(https://fxbug.dev/346668324): Consider other formats to optimize

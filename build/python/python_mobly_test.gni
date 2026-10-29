@@ -606,38 +606,22 @@ template("python_mobly_test") {
   #
   if (_enable_hermetic_exe) {
     _labels = {
-      fidl_ir_list = "${_test_name}_fidl_ir_list"
       compress_artifacts = "${_test_name}_compress_artifacts"
     }
 
     _files = {
-      fidl_ir_list = "${target_gen_dir}/${_test_name}_fidl_ir_infos.json"
       compress_artifacts =
           "${target_gen_dir}/${_test_name}_lacewing_artifacts.zip"
     }
 
     _hermetic_test_binary_label = "${_test_name}_hermetic_python_binary"
 
-    generated_file(_labels.fidl_ir_list) {
-      testonly = _testonly
-
-      visibility = [ ":*" ]
-
-      public_deps = [ ":${_test_binary_target}" ]
-
-      outputs = [ _files.fidl_ir_list ]
-      output_conversion = "json"
-      data_keys = [ "fidl_ir_info" ]
-    }
-
     python_action(_labels.compress_artifacts) {
       forward_variables_from(invoker, [ "visibility" ])
       testonly = _testonly
       binary_label = "//build/python:compress_lacewing_inputs"
       inputs = [
-        _files.fidl_ir_list,
         python_exe_src,
-        "${root_out_dir}/libfidl_codec.so",
         "${root_out_dir}/libfuchsia_controller_internal.so",
         get_label_info(":${_test_binary_target}", "target_out_dir") +
             "/${_test_binary_name}",
@@ -654,13 +638,7 @@ template("python_mobly_test") {
         rebase_path(get_label_info(":${_test_binary_target}",
                                    "target_out_dir") + "/${_test_binary_name}",
                     root_build_dir),
-        "--fidl-ir-list",
-        rebase_path(_files.fidl_ir_list, root_build_dir),
         "--c-extension-library-tree",
-        rebase_path(get_label_info(
-                        "//src/developer/fuchsia-controller/cpp:libfidl_codec",
-                        "root_out_dir"),
-                    root_build_dir) + "/libfidl_codec.so",
         rebase_path(
                 get_label_info(
                     "//src/developer/fuchsia-controller/cpp:libfuchsia_controller_internal",
@@ -672,9 +650,7 @@ template("python_mobly_test") {
         rebase_path(depfile, root_build_dir),
       ]
       deps = [
-        ":${_labels.fidl_ir_list}",
         ":${_test_binary_target}",
-        "//src/developer/fuchsia-controller/cpp:libfidl_codec",
         "//src/developer/fuchsia-controller/cpp:libfuchsia_controller_internal",
       ]
     }

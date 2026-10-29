@@ -428,8 +428,7 @@ class Channel(BaseHandle):
         """Writes data to the channel.
 
         Args:
-            encoded_fidl_message: An encoded FIDL message of the format returned
-                                  by encode::encode_fidl_message from fidl_codec. This message is a
+            encoded_fidl_message: An encoded FIDL message. This message is a
                                   tuple where the first element is a list of bytes. The second
                                   element is a list of tuples in the structure of a
                                   `zx_handle_disposition_t`, e.g. operation, handle, type, rights,
