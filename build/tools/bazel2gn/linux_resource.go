@@ -55,7 +55,7 @@ var (
 
 func isLinuxResourceBinaryRule(rule string) bool {
 	switch rule {
-	case "cc_binary", "fx_cc_binary", "rustc_binary", "rust_binary":
+	case "cc_binary", "fx_cc_binary", "fx_cc_test", "rustc_binary", "rust_binary":
 		return true
 	default:
 		return false
@@ -87,7 +87,7 @@ func hasRawOutputNameAttr(rawAttrs []string) bool {
 //     consumers in the file, so Linux-only `configs` / `sources` are not
 //     evaluated in Fuchsia or host toolchains.
 func resolveLinuxResourceTargets(f *syntax.File) error {
-	gnBinOutputs, err := indexGNBinaryOutputNames(f)
+	gnBins, err := indexGNBinaries(f)
 	if err != nil {
 		return err
 	}
@@ -126,8 +126,8 @@ func resolveLinuxResourceTargets(f *syntax.File) error {
 				if binTarget, ok := localTargetFromLinuxResourceExpr(kv, kv.Y); ok {
 					linuxResBins[binTarget] = true
 					if !stmtSkipped {
-						if gnOut, exists := gnBinOutputs[binTarget]; exists && gnOut != binTarget {
-							extraArgs = append(extraArgs, attrExpr(internalBinOutputNameAttr, stringLiteral(gnOut)))
+						if binInfo, exists := gnBins[binTarget]; exists && binInfo.outputName != binTarget {
+							extraArgs = append(extraArgs, attrExpr(internalBinOutputNameAttr, stringLiteral(binInfo.outputName)))
 						}
 					}
 				}
@@ -135,8 +135,8 @@ func resolveLinuxResourceTargets(f *syntax.File) error {
 				if binTarget, ok := localTargetFromArch32Expr(kv, kv.Y); ok {
 					linuxResBins[binTarget] = true
 					if !stmtSkipped {
-						if gnOut, exists := gnBinOutputs[binTarget]; exists && gnOut != binTarget {
-							extraArgs = append(extraArgs, attrExpr(internalArch32BinOutputNameAttr, stringLiteral(gnOut)))
+						if binInfo, exists := gnBins[binTarget]; exists && binInfo.outputName != binTarget {
+							extraArgs = append(extraArgs, attrExpr(internalArch32BinOutputNameAttr, stringLiteral(binInfo.outputName)))
 						}
 					}
 				}

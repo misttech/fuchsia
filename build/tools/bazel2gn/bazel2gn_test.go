@@ -1789,6 +1789,72 @@ executable("bar") {
 	]
 }`,
 		},
+		{
+			name: "fx_cc_test conversion with implicit and explicit testonly",
+			bazel: `fx_cc_test(
+	name = "foo_test",
+	srcs = ["foo_test.cc"],
+	build_flags = [":config"],
+	copts = ["-Wno-conversion"],
+	disable_build_flags = ["//build/config/linux:implicit-host-libs"],
+	disable_instrumentation = True,
+	disable_syslog_backend = True,
+	linkopts = ["-static"],
+	public_configs = [":pub_config"],
+	deps = ["//third_party/googletest:gtest_main"],
+)
+
+fx_cc_test(
+	name = "bar_lto_test",
+	testonly = True,
+	srcs = ["bar_test.cc"],
+	disable_lto = False,
+)
+
+fx_unittest_package(
+	name = "foo-test-pkg",
+	unit_tests = [":foo_test"],
+)
+`,
+			wantGN: `test("foo_test") {
+	sources = [
+		"foo_test.cc",
+	]
+	configs += [
+		":config",
+	]
+	configs += [
+		"//build/config:Wno-conversion",
+	]
+	configs -= [
+		"//build/config/linux:implicit-host-libs",
+	]
+	exclude_toolchain_tags = [ "instrumented" ]
+	disable_syslog_backend = true
+	ldflags = [
+		"-static",
+	]
+	public_configs = [
+		":pub_config",
+	]
+	deps = [
+		"//third_party/googletest:gtest_main",
+	]
+}
+test("bar_lto_test") {
+	sources = [
+		"bar_test.cc",
+	]
+	disable_lto = false
+}
+fuchsia_unittest_package("foo-test-pkg") {
+	package_name = "foo-test-pkg-gn"
+	component_name = "foo-test-pkg"
+	deps = [
+		":foo_test",
+	]
+}`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := toSyntaxFile(t, tc.bazel)
@@ -3199,6 +3265,22 @@ exports_files(["foo.txt"])`,
 cc_binary(
 	name = "bin",
 	srcs = ["main.cc"],
+)`,
+		},
+		{
+			name: "fx_cc_test with testonly = False",
+			bazel: `fx_cc_test(
+	name = "foo_test",
+	testonly = False,
+	srcs = ["foo_test.cc"],
+)`,
+		},
+		{
+			name: "fx_cc_test with non-boolean testonly",
+			bazel: `fx_cc_test(
+	name = "foo_test",
+	testonly = "true",
+	srcs = ["foo_test.cc"],
 )`,
 		},
 	} {

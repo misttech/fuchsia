@@ -403,6 +403,14 @@ func callExprToGN(expr *syntax.CallExpr, stmtComments *syntax.Comments) ([]strin
 				hasWithUnitTests = true
 			}
 		}
+		// Validate `testonly` on `fx_cc_test` before `attrsToOmit` drops it so
+		// `testonly = False` (or any non-`True` expression) fails conversion
+		// rather than silently generating a `testonly = true` GN `test()`.
+		if bazelRule == "fx_cc_test" && ident.Name == "testonly" {
+			if rhsIdent, ok := unwrapParenExpr(binaryExpr.Y).(*syntax.Ident); !ok || rhsIdent.Name != "True" {
+				return nil, errors.New("fx_cc_test targets are always testonly; testonly must be True if specified")
+			}
+		}
 		if attrsToOmit[ident.Name] {
 			continue
 		}

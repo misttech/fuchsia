@@ -8,11 +8,13 @@ load("@fuchsia_rules_common//build_flags:extra_linker_flags.bzl", "extra_linker_
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
 load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/cc:fx_cc_test.bzl", "fx_cc_test")
 load("//build/bazel/rules/host_tests:host_test.bzl", "host_test")
 load(
     ":host_tests.bzl",
     "build_flags_cc_binary_host_test",
     "build_flags_cc_library",
+    "verify_build_flags_labels_test",
 )
 
 package(default_applicable_licenses = ["//:license"])
@@ -168,6 +170,109 @@ fx_cc_binary(
 host_test(
     name = "fx_cc_binary_test",
     binary = ":fx_cc_binary_test_bin",
+)
+
+# Checks for fx_cc_test(): implicit `testonly = True` (verified by depending on
+# a testonly library without setting `testonly` on `fx_cc_test`), `build_flags`
+# / `disable_build_flags` forwarding, and `disable_lto = False` + explicit
+# `testonly = True`.
+fx_cc_library(
+    name = "fx_cc_testonly_lib",
+    testonly = True,
+)
+
+fx_cc_test(
+    name = "fx_cc_test_bin",
+    srcs = ["fx_cc_binary_test.cc"],
+    build_flags = [":flags1"] + select({
+        "//conditions:default": [":flags2"],
+    }),
+    disable_build_flags = [":flags2"],
+    deps = [
+        ":fx_cc_library_for_test",
+        ":fx_cc_testonly_lib",
+    ],
+)
+
+host_test(
+    name = "fx_cc_test_test",
+    binary = ":fx_cc_test_bin",
+)
+
+fx_cc_test(
+    name = "fx_cc_test_lto_enabled_bin",
+    testonly = True,
+    srcs = ["fx_cc_binary_test.cc"],
+    build_flags = select({
+        "//conditions:default": [":flags1"],
+    }),
+    disable_lto = False,
+    deps = [":fx_cc_library_for_test"],
+)
+
+host_test(
+    name = "fx_cc_test_lto_enabled_test",
+    binary = ":fx_cc_test_lto_enabled_bin",
+)
+
+fx_cc_test(
+    name = "fx_cc_test_default_flags_bin",
+    srcs = ["check_library_with_ldflags_main.cc"],
+    deps = [":check_library_with_ldflags_lib"],
+)
+
+host_test(
+    name = "fx_cc_test_default_flags_test",
+    binary = ":fx_cc_test_default_flags_bin",
+)
+
+fx_cc_test(
+    name = "fx_cc_test_lto_enabled_default_flags_bin",
+    srcs = ["check_library_with_ldflags_main.cc"],
+    disable_lto = False,
+    deps = [":check_library_with_ldflags_lib"],
+)
+
+host_test(
+    name = "fx_cc_test_lto_enabled_default_flags_test",
+    binary = ":fx_cc_test_lto_enabled_default_flags_bin",
+)
+
+verify_build_flags_labels_test(
+    name = "verify_fx_cc_test_build_flags",
+    expected_ordered_labels = [
+        "//build/config/fuchsia:fdio_config",
+        ":flags1",
+        "//build/config/lto:no-fat-lto-objects-linking",
+    ],
+    target_under_test = ":fx_cc_test_bin",
+    unexpected_labels = [":flags2"],
+)
+
+verify_build_flags_labels_test(
+    name = "verify_fx_cc_test_default_flags",
+    expected_ordered_labels = [
+        "//build/config/fuchsia:fdio_config",
+        "//build/config/lto:no-fat-lto-objects-linking",
+    ],
+    target_under_test = ":fx_cc_test_default_flags_bin",
+)
+
+verify_build_flags_labels_test(
+    name = "verify_fx_cc_test_lto_enabled_build_flags",
+    expected_ordered_labels = [
+        "//build/config/fuchsia:fdio_config",
+        ":flags1",
+    ],
+    target_under_test = ":fx_cc_test_lto_enabled_bin",
+    unexpected_labels = ["//build/config/lto:no-fat-lto-objects-linking"],
+)
+
+verify_build_flags_labels_test(
+    name = "verify_fx_cc_test_lto_enabled_default_flags",
+    expected_ordered_labels = ["//build/config/fuchsia:fdio_config"],
+    target_under_test = ":fx_cc_test_lto_enabled_default_flags_bin",
+    unexpected_labels = ["//build/config/lto:no-fat-lto-objects-linking"],
 )
 
 # Verify compiler_build_flags() with configurable (select()) attributes in C++.

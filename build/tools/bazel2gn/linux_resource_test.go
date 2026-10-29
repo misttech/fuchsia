@@ -364,6 +364,44 @@ linux_resource("linux_res") {
 	dest = "data/linux_bin"
 }`,
 		},
+		{
+			name: "fx_cc_test with custom output_name and linux_resource",
+			bazel: `# @bazel2gn:raw_attribute:output_name = "custom_syscall_test"
+fx_cc_test(
+	name = "syscall_test_bin",
+	testonly = True,
+	srcs = ["syscall_test.cc"],
+	disable_build_flags = ["//build/config/linux:implicit-host-libs"],
+	deps = ["//third_party/googletest:gtest_main"],
+)
+
+linux_resource(
+	name = "syscall_test_res",
+	testonly = True,
+	src = ":syscall_test_bin",
+	dest = "data/tests/custom_syscall_test",
+)`,
+			wantGN: `if (is_linux && !is_host) {
+	test("syscall_test_bin") {
+		sources = [
+			"syscall_test.cc",
+		]
+		configs -= [
+			"//build/config/linux:implicit-host-libs",
+		]
+		deps = [
+			"//third_party/googletest:gtest_main",
+		]
+		output_name = "custom_syscall_test"
+	}
+}
+linux_resource("syscall_test_res") {
+	testonly = true
+	src = ":syscall_test_bin"
+	bin_output_name = "custom_syscall_test"
+	dest = "data/tests/custom_syscall_test"
+}`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := toSyntaxFile(t, tc.bazel)

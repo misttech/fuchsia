@@ -523,6 +523,173 @@ fx_component(
 	config_values_package_path = "meta/manifest.cvf"
 }`,
 		},
+		{
+			name: "fx_packaged_binary wrapping fx_cc_test unwraps when install_root is test/",
+			bazel: `fx_cc_test(
+	name = "foo_test",
+	srcs = ["foo_test.cc"],
+)
+
+# @bazel2gn:raw_attribute:output_name = "custom_bar_test"
+fx_cc_test(
+	name = "bar_test_bin",
+	srcs = ["bar_test.cc"],
+)
+
+fx_packaged_binary(
+	name = "foo_test_in_test_dir",
+	testonly = True,
+	binary = ":foo_test",
+	binary_name = "foo_test",
+	install_root = "test/",
+)
+
+fx_packaged_binary(
+	name = "bar_test_in_test_dir",
+	testonly = True,
+	binary = ":bar_test_bin",
+	binary_name = "custom_bar_test",
+	install_root = "test/",
+)
+
+fx_component_manifest(
+	name = "test_manifest",
+	testonly = True,
+	manifest = "meta/foo_test.cml",
+)
+
+fx_test_component(
+	name = "foo_test_component",
+	compiled_manifest = ":test_manifest",
+	deps = [
+		":foo_test_in_test_dir",
+		":bar_test_in_test_dir",
+	],
+)
+
+fx_package(
+	name = "foo_test_pkg",
+	test_components = [":foo_test_component"],
+)`,
+			wantGN: `test("foo_test") {
+	sources = [
+		"foo_test.cc",
+	]
+}
+test("bar_test_bin") {
+	sources = [
+		"bar_test.cc",
+	]
+	output_name = "custom_bar_test"
+}
+fuchsia_component_manifest("test_manifest") {
+	testonly = true
+	manifest = "meta/foo_test.cml"
+}
+fuchsia_test_component("foo_test_component") {
+	cm_label = ":test_manifest"
+	deps = [
+		":foo_test",
+		":bar_test_bin",
+	]
+}
+fuchsia_test_package("foo_test_pkg") {
+	package_name = "foo_test_pkg-gn"
+	test_components = [
+		":foo_test_component",
+	]
+}`,
+		},
+		{
+			name: "fx_packaged_binary wrapping fx_cc_test emits renamed_binary when install_root is bin/ or custom",
+			bazel: `fx_cc_test(
+	name = "foo_test",
+	srcs = ["foo_test.cc"],
+)
+
+fx_cc_test(
+	name = "bar_test",
+	srcs = ["bar_test.cc"],
+)
+
+fx_packaged_binary(
+	name = "foo_test_in_bin_dir",
+	testonly = True,
+	binary = ":foo_test",
+	binary_name = "foo_test",
+)
+
+fx_packaged_binary(
+	name = "bar_test_renamed",
+	testonly = True,
+	binary = ":bar_test",
+	binary_name = "renamed_bar_test",
+	install_root = "test/",
+)
+
+fx_component_manifest(
+	name = "test_manifest",
+	testonly = True,
+	manifest = "meta/foo_test.cml",
+)
+
+fx_test_component(
+	name = "foo_test_component",
+	compiled_manifest = ":test_manifest",
+	deps = [
+		":foo_test_in_bin_dir",
+		":bar_test_renamed",
+	],
+)
+
+fx_package(
+	name = "foo_test_pkg",
+	test_components = [":foo_test_component"],
+)`,
+			wantGN: `test("foo_test") {
+	sources = [
+		"foo_test.cc",
+	]
+}
+test("bar_test") {
+	sources = [
+		"bar_test.cc",
+	]
+}
+renamed_binary("foo_test_in_bin_dir") {
+	testonly = true
+	source = "$root_out_dir/foo_test"
+	source_deps = [
+		":foo_test",
+	]
+	dest = "bin/foo_test"
+}
+renamed_binary("bar_test_renamed") {
+	testonly = true
+	source = "$root_out_dir/bar_test"
+	source_deps = [
+		":bar_test",
+	]
+	dest = "test/renamed_bar_test"
+}
+fuchsia_component_manifest("test_manifest") {
+	testonly = true
+	manifest = "meta/foo_test.cml"
+}
+fuchsia_test_component("foo_test_component") {
+	cm_label = ":test_manifest"
+	deps = [
+		":foo_test_in_bin_dir",
+		":bar_test_renamed",
+	]
+}
+fuchsia_test_package("foo_test_pkg") {
+	package_name = "foo_test_pkg-gn"
+	test_components = [
+		":foo_test_component",
+	]
+}`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := toSyntaxFile(t, tc.bazel)
@@ -678,6 +845,38 @@ fx_component(
 fx_component(
 	name = "component",
 	compiled_manifest = ":manifest",
+)`,
+		},
+		{
+			name: "skipped fx_packaged_binary wrapping fx_cc_test with default bin/ install_root",
+			bazel: `fx_cc_test(
+	name = "foo_test",
+	srcs = ["foo_test.cc"],
+)
+
+# @bazel2gn:skip
+fx_packaged_binary(
+	name = "pkg_test_bin",
+	testonly = True,
+	binary = ":foo_test",
+	binary_name = "foo_test",
+)
+
+fx_component_manifest(
+	name = "manifest",
+	testonly = True,
+	manifest = "meta/foo_test.cml",
+)
+
+fx_test_component(
+	name = "test_component",
+	compiled_manifest = ":manifest",
+	deps = [":pkg_test_bin"],
+)
+
+fx_package(
+	name = "test_pkg",
+	test_components = [":test_component"],
 )`,
 		},
 	} {

@@ -9,6 +9,7 @@ load("@fuchsia_rules_common//build_flags:compiler_build_flags.bzl", "compiler_bu
 load("@fuchsia_rules_common//build_flags:extra_linker_flags.bzl", "extra_linker_flags")
 load("@fuchsia_rules_common//packages:resources.bzl", "resource")
 load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/cc:fx_cc_test.bzl", "fx_cc_test")
 load(
     "//build/bazel/rules/components:cml_shard.bzl",
     "cml_shard",
@@ -427,6 +428,8 @@ filegroup(
     name = "quick_build_only_tests",
     testonly = True,
     srcs = [
+        ":example_cc_test",
+        ":example_cc_test_unittest_package",
         ":example_check_includes_disabled_package",
         ":example_cml_shard_invalid_name_failure_test",
         ":example_cml_shard_mismatched_shard_failure_test",
@@ -460,6 +463,8 @@ filegroup(
         ":example_unsupported_restricted_feature_failure_test",
         ":example_zxtest_unittest_package",
         ":gn_visibility_pattern_matches_test",
+        ":verify_example_cc_test_unittest_package_unstripped_binaries",
+        ":verify_example_cc_test_unstripped_binaries",
         ":verify_example_compiled_manifest_paths",
         ":verify_example_disabled_extra_linker_flags_unstripped_binaries",
         ":verify_example_extra_linker_flags_shared_lib_unstripped_binaries",
@@ -1192,4 +1197,100 @@ verify_fx_test_unstripped_binaries(
         "libexample_shared_with_exec_only_extra_linker_flags.so",
     ],
     test = ":example_disabled_extra_linker_flags_unittest_package",
+)
+
+# Tests `fx_cc_test()` (implicit `testonly = True`, `no-fat-lto-objects-linking` by default)
+# with both `fx_unittest_package()` and `fx_packaged_binary(install_root = "test/")`
+# inside an `fx_test_component()`.
+fx_cc_test(
+    name = "example_cc_test_bin",
+    srcs = ["example_test.cc"],
+    tags = ["manual"],
+    deps = ["@com_google_googletest//:gtest"],
+)
+
+fx_unittest_package(
+    name = "example_cc_test_unittest_package",
+    package_name = "fx-cc-test-unittest-package-example",
+    unit_tests = [":example_cc_test_bin"],
+)
+
+verify_fx_test_unstripped_binaries(
+    name = "verify_example_cc_test_unittest_package_unstripped_binaries",
+    testonly = True,
+    expected_basenames = [
+        "example_cc_test_bin",
+        "libfdio.so",
+    ],
+    test = ":example_cc_test_unittest_package",
+)
+
+fx_packaged_binary(
+    name = "example_cc_test_packaged_bin",
+    testonly = True,
+    binary = ":example_cc_test_bin",
+    binary_name = "example_cc_test",
+    install_root = "test/",
+    tags = ["manual"],
+)
+
+genrule(
+    name = "example_cc_test_manifest_cml",
+    testonly = True,
+    outs = ["example_cc_test.cml"],
+    cmd = """cat > $@ <<'EOF'
+{
+    include: [
+        "//src/sys/test_runners/gtest/default.shard.cml",
+        "syslog/client.shard.cml",
+    ],
+    program: {
+        binary: "test/example_cc_test",
+    },
+}
+EOF
+""",
+    tags = ["manual"],
+)
+
+fx_component_manifest(
+    name = "example_cc_test_manifest",
+    testonly = True,
+    component_name = "example_cc_test",
+    includes = [
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/gtest:default.shard.cml",
+    ],
+    manifest = ":example_cc_test_manifest_cml",
+    tags = ["manual"],
+)
+
+fx_test_component(
+    name = "example_cc_test_component",
+    compiled_manifest = ":example_cc_test_manifest",
+    component_name = "example_cc_test",
+    tags = ["manual"],
+    deps = [":example_cc_test_packaged_bin"],
+)
+
+fx_package(
+    name = "example_cc_test_package",
+    package_name = "fx-cc-test-package-example",
+    tags = ["manual"],
+    test_components = [":example_cc_test_component"],
+)
+
+fx_test(
+    name = "example_cc_test",
+    package = ":example_cc_test_package",
+)
+
+verify_fx_test_unstripped_binaries(
+    name = "verify_example_cc_test_unstripped_binaries",
+    testonly = True,
+    expected_basenames = [
+        "example_cc_test_bin",
+        "libfdio.so",
+    ],
+    test = ":example_cc_test",
 )

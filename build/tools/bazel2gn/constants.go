@@ -98,6 +98,7 @@ var bazelRuleToGNTemplate = map[string]string{
 	"fx_cc_binary":          "executable",
 	"fx_cc_library_headers": "library_headers",
 	"fx_cc_library":         "static_library",
+	"fx_cc_test":            "test",
 
 	// C++ Zircon
 	"cc_shared_library_zx": "zx_library", // With `sdk="shared"` and `sdk_publishable` not specified.
@@ -246,6 +247,10 @@ var attrsToOmitByRules = map[string]map[string]bool{
 	// instead, and `fuchsia_component_manifest()` does not accept `includes`.
 	"fx_component_manifest": {"includes": true},
 	"fx_compiled_manifest":  {"includes": true},
+	// GN `test()` hardcodes `testonly = true` on its inner `cc_test_executable()`
+	// without reading `invoker.testonly`, so emitting `testonly` fails `gn gen`
+	// with "Assignment had no effect". (`callExprToGN()` rejects non-`True` values.)
+	"fx_cc_test": {"testonly": true},
 }
 
 // unsupportedAttrsByRules lists attributes that bazel2gn can't translate yet.
@@ -472,6 +477,7 @@ var attrMapsByRules = map[string]map[string]string{
 	"cc_binary_host_tool": ccBinAttrMap,
 	"fx_cc_binary":        fxCcBinaryAttrMap,
 	"fx_cc_library":       fxCcLibAttrMap,
+	"fx_cc_test":          fxCcBinaryAttrMap,
 
 	// C++ Zircon
 	"cc_shared_library_zx": ccLibAttrMap,

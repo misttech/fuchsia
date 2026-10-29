@@ -328,8 +328,9 @@ type packagedBinaryRecord struct {
 //  3. Resolves `fx_packaged_binary()` targets referenced by converted
 //     component `deps`: unwrapping directly to `:<binary>` when
 //     `install_root + binary_name` matches the GN binary's default
-//     `"bin/<output_name>"`, or rewriting the `fx_packaged_binary()` into a GN
-//     `renamed_binary()` target otherwise.
+//     destination (`"test/<output_name>"` for `fx_cc_test()`, or
+//     `"bin/<output_name>"` otherwise), or rewriting the
+//     `fx_packaged_binary()` into a GN `renamed_binary()` target otherwise.
 func resolveComponentTargets(f *syntax.File) error {
 	if err := checkCompiledManifestConsumers(f); err != nil {
 		return err
@@ -341,7 +342,7 @@ func resolveComponentTargets(f *syntax.File) error {
 		return err
 	}
 
-	gnBinOutputs, err := indexGNBinaryOutputNames(f)
+	gnBins, err := indexGNBinaries(f)
 	if err != nil {
 		return err
 	}
@@ -417,7 +418,7 @@ func resolveComponentTargets(f *syntax.File) error {
 				continue
 			}
 			kv := arg.(*syntax.BinaryExpr)
-			rewritten, err := resolveComponentDepsExpr(kv.Y, compName, pkgBins, gnBinOutputs, varStmts, visitedVars)
+			rewritten, err := resolveComponentDepsExpr(kv.Y, compName, pkgBins, gnBins, varStmts, visitedVars)
 			if err != nil {
 				return stmtError(stmt, err)
 			}
@@ -666,11 +667,18 @@ func hoistComponentManifests(f *syntax.File) error {
 	return nil
 }
 
-// indexGNBinaryOutputNames maps each un-skipped binary target name defined in
-// `f` to the executable `output_name` that its converted GN target produces in
-// `$root_out_dir`.
-func indexGNBinaryOutputNames(f *syntax.File) (map[string]string, error) {
-	outputs := map[string]string{}
+// gnBinaryInfo describes the output binary name in `$root_out_dir` and the
+// default package destination directory (`"bin/"` or `"test/"`) produced by an
+// un-skipped binary target in `BUILD.gn`.
+type gnBinaryInfo struct {
+	outputName         string
+	defaultInstallRoot string
+}
+
+// indexGNBinaries maps each un-skipped binary target name defined in `f` to
+// its converted GN output binary name and default package install root.
+func indexGNBinaries(f *syntax.File) (map[string]gnBinaryInfo, error) {
+	outputs := map[string]gnBinaryInfo{}
 	for _, stmt := range f.Stmts {
 		call, ok := callOfStmt(stmt)
 		if !ok {
@@ -703,14 +711,22 @@ func indexGNBinaryOutputNames(f *syntax.File) (map[string]string, error) {
 			if unskippedCallBoolTrue(call, "linkshared") {
 				outName = strings.TrimSuffix(outName, ".so") + ".so"
 			}
-			outputs[name] = outName
+			outputs[name] = gnBinaryInfo{outputName: outName, defaultInstallRoot: "bin/"}
+		case "fx_cc_test":
+			// GN `test()` (from //build/test.gni) sets `destination = "test/<output_file>"`
+			// in `distribution_entries`, unlike `executable()` which installs to `"bin/"`.
+			outName := name
+			if hasRawOut {
+				outName = rawOut
+			}
+			outputs[name] = gnBinaryInfo{outputName: outName, defaultInstallRoot: "test/"}
 		case "cc_binary_host_tool", "idk_cc_binary_host_tool",
 			"go_binary", "go_binary_host_tool", "idk_go_binary_host_tool":
+			outName := name
 			if hasRawOut {
-				outputs[name] = rawOut
-			} else {
-				outputs[name] = name
+				outName = rawOut
 			}
+			outputs[name] = gnBinaryInfo{outputName: outName, defaultInstallRoot: "bin/"}
 		case "rustc_binary", "rust_binary", "idk_rustc_binary_host_tool":
 			outName := name
 			if bn, ok := unskippedCallStringAttr(call, "binary_name"); ok {
@@ -721,9 +737,12 @@ func indexGNBinaryOutputNames(f *syntax.File) (map[string]string, error) {
 			if hasRawOut {
 				outName = rawOut
 			}
-			outputs[name] = outName
+			outputs[name] = gnBinaryInfo{outputName: outName, defaultInstallRoot: "bin/"}
 			if unskippedCallBoolTrue(call, "with_unit_tests") {
-				outputs[name+"_test"] = strings.ReplaceAll(outName+"_bin_test", "-", "_")
+				outputs[name+"_test"] = gnBinaryInfo{
+					outputName:         strings.ReplaceAll(outName+"_bin_test", "-", "_"),
+					defaultInstallRoot: "bin/",
+				}
 			}
 		case "rustc_test":
 			outName := name
@@ -735,14 +754,20 @@ func indexGNBinaryOutputNames(f *syntax.File) (map[string]string, error) {
 			if hasRawOut {
 				outName = rawOut
 			}
-			outputs[name] = strings.ReplaceAll(outName, "-", "_")
+			outputs[name] = gnBinaryInfo{
+				outputName:         strings.ReplaceAll(outName, "-", "_"),
+				defaultInstallRoot: "bin/",
+			}
 		case "rustc_library", "rust_library":
 			if unskippedCallBoolTrue(call, "with_unit_tests") {
 				crateName := name
 				if cn, ok := unskippedCallStringAttr(call, "crate_name"); ok {
 					crateName = cn
 				}
-				outputs[name+"_test"] = strings.ReplaceAll(crateName, "-", "_") + "_lib_test"
+				outputs[name+"_test"] = gnBinaryInfo{
+					outputName:         strings.ReplaceAll(crateName, "-", "_") + "_lib_test",
+					defaultInstallRoot: "bin/",
+				}
 			}
 		}
 	}
@@ -793,13 +818,13 @@ func resolveComponentDepsExpr(
 	expr syntax.Expr,
 	compName string,
 	pkgBins map[string]*packagedBinaryRecord,
-	gnBinOutputs map[string]string,
+	gnBins map[string]gnBinaryInfo,
 	varStmts map[string]*syntax.AssignStmt,
 	visitedVars map[string]bool,
 ) (syntax.Expr, error) {
 	switch v := expr.(type) {
 	case *syntax.ParenExpr:
-		inner, err := resolveComponentDepsExpr(v.X, compName, pkgBins, gnBinOutputs, varStmts, visitedVars)
+		inner, err := resolveComponentDepsExpr(v.X, compName, pkgBins, gnBins, varStmts, visitedVars)
 		if err != nil {
 			return nil, err
 		}
@@ -814,7 +839,7 @@ func resolveComponentDepsExpr(
 			if skip {
 				continue
 			}
-			rewritten, err := resolveComponentDepsExpr(elem, compName, pkgBins, gnBinOutputs, varStmts, visitedVars)
+			rewritten, err := resolveComponentDepsExpr(elem, compName, pkgBins, gnBins, varStmts, visitedVars)
 			if err != nil {
 				return nil, err
 			}
@@ -823,11 +848,11 @@ func resolveComponentDepsExpr(
 		return v, nil
 	case *syntax.BinaryExpr:
 		if v.Op == syntax.PLUS {
-			lhs, err := resolveComponentDepsExpr(v.X, compName, pkgBins, gnBinOutputs, varStmts, visitedVars)
+			lhs, err := resolveComponentDepsExpr(v.X, compName, pkgBins, gnBins, varStmts, visitedVars)
 			if err != nil {
 				return nil, err
 			}
-			rhs, err := resolveComponentDepsExpr(v.Y, compName, pkgBins, gnBinOutputs, varStmts, visitedVars)
+			rhs, err := resolveComponentDepsExpr(v.Y, compName, pkgBins, gnBins, varStmts, visitedVars)
 			if err != nil {
 				return nil, err
 			}
@@ -836,11 +861,11 @@ func resolveComponentDepsExpr(
 		}
 		return v, nil
 	case *syntax.CondExpr:
-		tBranch, err := resolveComponentDepsExpr(v.True, compName, pkgBins, gnBinOutputs, varStmts, visitedVars)
+		tBranch, err := resolveComponentDepsExpr(v.True, compName, pkgBins, gnBins, varStmts, visitedVars)
 		if err != nil {
 			return nil, err
 		}
-		fBranch, err := resolveComponentDepsExpr(v.False, compName, pkgBins, gnBinOutputs, varStmts, visitedVars)
+		fBranch, err := resolveComponentDepsExpr(v.False, compName, pkgBins, gnBins, varStmts, visitedVars)
 		if err != nil {
 			return nil, err
 		}
@@ -855,7 +880,7 @@ func resolveComponentDepsExpr(
 					if !ok {
 						continue
 					}
-					rewritten, err := resolveComponentDepsExpr(kv.Value, compName, pkgBins, gnBinOutputs, varStmts, visitedVars)
+					rewritten, err := resolveComponentDepsExpr(kv.Value, compName, pkgBins, gnBins, varStmts, visitedVars)
 					if err != nil {
 						return nil, err
 					}
@@ -867,7 +892,7 @@ func resolveComponentDepsExpr(
 	case *syntax.Ident:
 		if assign, ok := varStmts[v.Name]; ok && !visitedVars[v.Name] {
 			visitedVars[v.Name] = true
-			rewritten, err := resolveComponentDepsExpr(assign.RHS, compName, pkgBins, gnBinOutputs, varStmts, visitedVars)
+			rewritten, err := resolveComponentDepsExpr(assign.RHS, compName, pkgBins, gnBins, varStmts, visitedVars)
 			if err != nil {
 				return nil, err
 			}
@@ -887,7 +912,7 @@ func resolveComponentDepsExpr(
 		if !isPkgBin {
 			return v, nil
 		}
-		resolvedLabel, err := resolvePackagedBinaryRecord(rec, targetName, compName, gnBinOutputs)
+		resolvedLabel, err := resolvePackagedBinaryRecord(rec, targetName, compName, gnBins)
 		if err != nil {
 			return nil, err
 		}
@@ -907,7 +932,7 @@ func resolvePackagedBinaryRecord(
 	rec *packagedBinaryRecord,
 	pkgBinName string,
 	compName string,
-	gnBinOutputs map[string]string,
+	gnBins map[string]gnBinaryInfo,
 ) (string, error) {
 	if rec.emittedName {
 		return ":" + pkgBinName, nil
@@ -975,18 +1000,19 @@ func resolvePackagedBinaryRecord(
 	}
 
 	binTarget := strings.TrimPrefix(binaryLabel, ":")
-	gnOutName, ok := gnBinOutputs[binTarget]
+	binInfo, ok := gnBins[binTarget]
 	if !ok {
 		return "", fmt.Errorf("fx_packaged_binary %q binary %q (used by fx_component %q) does not refer to an unskipped binary target in the same BUILD.bazel; use # @bazel2gn:skip on fx_component %q and write the GN copy by hand", pkgBinName, binaryLabel, compName, compName)
 	}
 
 	dest := installRoot + binaryName
-	if dest == "bin/"+gnOutName {
+	defaultDest := binInfo.defaultInstallRoot + binInfo.outputName
+	if dest == defaultDest {
 		return ":" + binTarget, nil
 	}
 
 	if rec.skipped {
-		return "", fmt.Errorf("fx_packaged_binary %q is referenced by fx_component %q and requires a GN renamed_binary target (dest %q != default %q), so it cannot have # @bazel2gn:skip", pkgBinName, compName, dest, "bin/"+gnOutName)
+		return "", fmt.Errorf("fx_packaged_binary %q is referenced by fx_component %q and requires a GN renamed_binary target (dest %q != default %q), so it cannot have # @bazel2gn:skip", pkgBinName, compName, dest, defaultDest)
 	}
 	if hasRawAttributeAnnotation(rec.stmt) {
 		return "", errors.New("raw_attribute annotation is not supported on fx_packaged_binary")
@@ -997,7 +1023,7 @@ func resolvePackagedBinaryRecord(
 		newArgs = append(newArgs, testonlyArg)
 	}
 	newArgs = append(newArgs,
-		attrExpr("source", stringLiteral("$root_out_dir/"+gnOutName)),
+		attrExpr("source", stringLiteral("$root_out_dir/"+binInfo.outputName)),
 		attrExpr("source_deps", &syntax.ListExpr{List: []syntax.Expr{stringLiteral(":" + binTarget)}}),
 		attrExpr("dest", stringLiteral(dest)),
 	)

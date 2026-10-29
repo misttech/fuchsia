@@ -204,8 +204,9 @@ to GN `fuchsia_component_manifest()`, `cm()`, and `fuchsia_component()`:
     `:<packaged_bin>` defined in the same
     `BUILD.bazel` wrapping an un-skipped binary target in the same file:
     *   If `install_root + binary_name` matches the GN binary's default
-        `"bin/<output_name>"`, `:<packaged_bin>` in `deps` unwraps directly to
-        the underlying `:<binary>` target.
+        destination (`"test/<output_name>"` for `fx_cc_test()`, or
+        `"bin/<output_name>"` otherwise), `:<packaged_bin>` in `deps` unwraps
+        directly to the underlying `:<binary>` target.
     *   Otherwise, `bazel2gn` emits a GN `renamed_binary("<packaged_bin>")`
         target and keeps `:<packaged_bin>` in `deps`.
 
@@ -217,8 +218,8 @@ another un-skipped target).
 #### Starnix Linux binaries
 
 Starnix Linux binaries and shared objects packaged into Fuchsia components use
-standard binary rules (`fx_cc_binary()`, `cc_binary()`, `rustc_binary()`)
-paired with `linux_resource()` (from
+standard binary rules (`fx_cc_binary()`, `fx_cc_test()`, `cc_binary()`,
+`rustc_binary()`) paired with `linux_resource()` (from
 `//src/starnix/containers:linux_resource.bzl`), which syncs to GN's
 `linux_resource()` template (from `//src/starnix/build/linux_resource.gni`):
 
@@ -303,6 +304,12 @@ While a library is used in both build systems, its tests run in both (see
 [Testing libraries in both build systems](/docs/development/build/bazel_concepts/tests.md#tests-in-both-build-systems)),
 so `bazel2gn` translates test rules too:
 
+*   `fx_cc_test()` (from `//build/bazel/rules/cc:fx_cc_test.bzl`) maps to GN
+    `test()` (from `//build/test.gni`) with the same attribute mappings as
+    `fx_cc_binary()` (except `linkshared`, which is not supported on tests).
+    `testonly` is omitted in GN because `test()` hardcodes `testonly = true`
+    without reading `invoker.testonly` (`testonly = False` is an error), and
+    `disable_lto` passes through when explicitly set.
 *   `rustc_test()` maps to GN `rustc_test()`. With `crate = ":<lib>"`, the
     crate must be defined in the same `BUILD.bazel`, and its `srcs`,
     `crate_root`, `edition`, `rustc_env`, `deps`, `proc_macro_deps`,
