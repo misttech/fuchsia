@@ -1,0 +1,23 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fidl_library(
+    name = "wisdom",
+    srcs = ["intl_wisdom.fidl"],
+    enable_hlcpp = True,
+    # TODO(https://fxbug.dev/42111344): Remove lint exclusions by fixing known FIDL lint violations in this target
+    excluded_checks = ["string-bounds-not-specified"],
+    library_name = "fuchsia.examples.intl.wisdom",
+    visibility = [
+        "//examples/intl/wisdom/cpp/client:__pkg__",
+        "//examples/intl/wisdom/cpp/server:__pkg__",
+        "//examples/intl/wisdom/rust/client:__pkg__",
+        "//examples/intl/wisdom/rust/server:__pkg__",
+    ],
+    deps = ["//sdk/fidl/fuchsia.intl"],
+)
