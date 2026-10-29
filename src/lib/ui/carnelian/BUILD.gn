@@ -566,6 +566,10 @@ fuchsia_unittest_package("carnelian-layout-tests") {
   package_name = "carnelian-layout-tests-gn"
   component_name = "carnelian-layout-tests"
   deps = [ ":layout_gallery_test" ]
+  visibility = [
+    ":*",
+    "//src/lib/ui:*",
+  ]
 }
 rustc_binary("png") {
   sources = [ "examples/png.rs" ]
@@ -717,6 +721,7 @@ fuchsia_test_component("carnelian-render-tests-component") {
   cm_label = ":carnelian-render-tests-manifest"
   component_name = "carnelian-render-tests"
   deps = [ ":carnelian_test" ]
+  test_type = "system"
 }
 fuchsia_test_package("carnelian-render-tests-package") {
   package_name = "carnelian-render-tests-gn"

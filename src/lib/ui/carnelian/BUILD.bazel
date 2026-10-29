@@ -248,6 +248,7 @@ rustc_test(
 fx_unittest_package(
     name = "carnelian-layout-tests",
     unit_tests = [":layout_gallery_test"],
+    visibility = ["//src/lib/ui:__pkg__"],
 )
 
 rustc_binary(
@@ -368,6 +369,8 @@ fx_package(
 fx_test(
     name = "carnelian-render-tests",
     package = ":carnelian-render-tests-package",
+    test_type = "system",
+    visibility = ["//src/lib/ui:__pkg__"],
 )
 
 fx_component_manifest(
