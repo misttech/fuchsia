@@ -7,7 +7,7 @@ use core::mem::MaybeUninit;
 
 use crate::{
     Constrained, Decode, DecodeError, Encode, EncodeError, EncodeOption, Encoder, EncoderExt,
-    FromWire, FromWireRef, IntoNatural, Slot, ValidationError, Wire, wire,
+    FromWire, IntoNatural, Slot, ValidationError, Wire, wire,
 };
 
 /// The empty FIDL "unit" struct.
@@ -148,12 +148,12 @@ impl<'a> From<&'a Unit> for () {
 
 impl FromWire<Unit> for () {
     fn from_wire(wire: Unit) -> Self {
-        Self::from_wire_ref(&wire)
+        Self::from_wire(&wire)
     }
 }
 
-impl FromWireRef<Unit> for () {
-    fn from_wire_ref(_: &Unit) -> Self {}
+impl<'a> FromWire<&'a Unit> for () {
+    fn from_wire(_: &'a Unit) -> Self {}
 }
 
 impl IntoNatural for Unit {

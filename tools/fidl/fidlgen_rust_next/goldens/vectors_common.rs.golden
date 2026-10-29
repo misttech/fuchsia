@@ -177,13 +177,15 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::ExampleUseOfVectors<'de>> for ExampleUseOfVectors {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::ExampleUseOfVectors<'de>>
+        for ExampleUseOfVectors
+    {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ExampleUseOfVectors<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::ExampleUseOfVectors<'de>) -> Self {
             Self {
-                vector_of_uint8: ::fidl_next::FromWireRef::from_wire_ref(&wire.vector_of_uint8),
+                vector_of_uint8: ::fidl_next::FromWire::from_wire(&wire.vector_of_uint8),
 
-                vector_of_vector_of_bool: ::fidl_next::FromWireRef::from_wire_ref(
+                vector_of_vector_of_bool: ::fidl_next::FromWire::from_wire(
                     &wire.vector_of_vector_of_bool,
                 ),
             }

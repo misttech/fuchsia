@@ -110,9 +110,9 @@ impl ::fidl_next::FromWire<crate::wire::{{ name }}> for {{ name }} {
     }
 }
 
-impl ::fidl_next::FromWireRef<crate::wire::{{ name }}> for {{ name }} {
+impl<'a> ::fidl_next::FromWire<&'a crate::wire::{{ name }}> for {{ name }} {
     #[inline]
-    fn from_wire_ref(wire: &crate::wire::{{ name }}) -> Self {
+    fn from_wire(wire: &'a crate::wire::{{ name }}) -> Self {
         Self::from(*wire)
     }
 }

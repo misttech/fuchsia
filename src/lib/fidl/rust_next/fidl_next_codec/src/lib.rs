@@ -208,10 +208,6 @@
 //! conversion from some wire type. Like `Encode` and `Decode`, the [`FromWireOption`] variant
 //! allows types to be converted from wire optional types. Optionally and for convenience only, wire
 //! types can name a good default natural type to convert into with [`IntoNatural`].
-//!
-//! Natural types that can be converted from a reference to a wire type (i.e. without moving the
-//! wire type) may implement [`FromWireRef`]. Similarly for options, the [`FromWireOptionRef`] trait
-//! allows options to be converted from a reference to a wire type.
 
 #![deny(
     future_incompatible,

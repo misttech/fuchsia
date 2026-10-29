@@ -143,13 +143,13 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::Padding1ByteEnd> for Padding1ByteEnd {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::Padding1ByteEnd> for Padding1ByteEnd {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Padding1ByteEnd) -> Self {
+        fn from_wire(wire: &'a crate::wire::Padding1ByteEnd) -> Self {
             Self {
-                a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a),
+                a: ::fidl_next::FromWire::from_wire(&wire.a),
 
-                b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b),
+                b: ::fidl_next::FromWire::from_wire(&wire.b),
             }
         }
     }
@@ -293,13 +293,13 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::Padding1ByteMiddle> for Padding1ByteMiddle {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::Padding1ByteMiddle> for Padding1ByteMiddle {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Padding1ByteMiddle) -> Self {
+        fn from_wire(wire: &'a crate::wire::Padding1ByteMiddle) -> Self {
             Self {
-                a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a),
+                a: ::fidl_next::FromWire::from_wire(&wire.a),
 
-                b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b),
+                b: ::fidl_next::FromWire::from_wire(&wire.b),
             }
         }
     }
@@ -462,17 +462,17 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::Padding2ByteAlignmentLength6>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::Padding2ByteAlignmentLength6>
         for Padding2ByteAlignmentLength6
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Padding2ByteAlignmentLength6) -> Self {
+        fn from_wire(wire: &'a crate::wire::Padding2ByteAlignmentLength6) -> Self {
             Self {
-                a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a),
+                a: ::fidl_next::FromWire::from_wire(&wire.a),
 
-                b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b),
+                b: ::fidl_next::FromWire::from_wire(&wire.b),
 
-                c: ::fidl_next::FromWireRef::from_wire_ref(&wire.c),
+                c: ::fidl_next::FromWire::from_wire(&wire.c),
             }
         }
     }
@@ -616,13 +616,13 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::Padding2ByteEnd> for Padding2ByteEnd {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::Padding2ByteEnd> for Padding2ByteEnd {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Padding2ByteEnd) -> Self {
+        fn from_wire(wire: &'a crate::wire::Padding2ByteEnd) -> Self {
             Self {
-                a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a),
+                a: ::fidl_next::FromWire::from_wire(&wire.a),
 
-                b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b),
+                b: ::fidl_next::FromWire::from_wire(&wire.b),
             }
         }
     }
@@ -766,13 +766,13 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::Padding2ByteMiddle> for Padding2ByteMiddle {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::Padding2ByteMiddle> for Padding2ByteMiddle {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Padding2ByteMiddle) -> Self {
+        fn from_wire(wire: &'a crate::wire::Padding2ByteMiddle) -> Self {
             Self {
-                a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a),
+                a: ::fidl_next::FromWire::from_wire(&wire.a),
 
-                b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b),
+                b: ::fidl_next::FromWire::from_wire(&wire.b),
             }
         }
     }
@@ -916,13 +916,13 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::Padding3ByteEnd> for Padding3ByteEnd {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::Padding3ByteEnd> for Padding3ByteEnd {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Padding3ByteEnd) -> Self {
+        fn from_wire(wire: &'a crate::wire::Padding3ByteEnd) -> Self {
             Self {
-                a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a),
+                a: ::fidl_next::FromWire::from_wire(&wire.a),
 
-                b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b),
+                b: ::fidl_next::FromWire::from_wire(&wire.b),
             }
         }
     }
@@ -1066,13 +1066,13 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::Padding3ByteMiddle> for Padding3ByteMiddle {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::Padding3ByteMiddle> for Padding3ByteMiddle {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Padding3ByteMiddle) -> Self {
+        fn from_wire(wire: &'a crate::wire::Padding3ByteMiddle) -> Self {
             Self {
-                a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a),
+                a: ::fidl_next::FromWire::from_wire(&wire.a),
 
-                b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b),
+                b: ::fidl_next::FromWire::from_wire(&wire.b),
             }
         }
     }
@@ -1249,19 +1249,19 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::Padding4ByteAlignmentLength12>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::Padding4ByteAlignmentLength12>
         for Padding4ByteAlignmentLength12
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Padding4ByteAlignmentLength12) -> Self {
+        fn from_wire(wire: &'a crate::wire::Padding4ByteAlignmentLength12) -> Self {
             Self {
-                a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a),
+                a: ::fidl_next::FromWire::from_wire(&wire.a),
 
-                b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b),
+                b: ::fidl_next::FromWire::from_wire(&wire.b),
 
-                c: ::fidl_next::FromWireRef::from_wire_ref(&wire.c),
+                c: ::fidl_next::FromWire::from_wire(&wire.c),
 
-                d: ::fidl_next::FromWireRef::from_wire_ref(&wire.d),
+                d: ::fidl_next::FromWire::from_wire(&wire.d),
             }
         }
     }
@@ -1405,13 +1405,13 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::Padding4ByteEnd> for Padding4ByteEnd {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::Padding4ByteEnd> for Padding4ByteEnd {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Padding4ByteEnd) -> Self {
+        fn from_wire(wire: &'a crate::wire::Padding4ByteEnd) -> Self {
             Self {
-                a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a),
+                a: ::fidl_next::FromWire::from_wire(&wire.a),
 
-                b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b),
+                b: ::fidl_next::FromWire::from_wire(&wire.b),
             }
         }
     }
@@ -1555,13 +1555,13 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::Padding4ByteMiddle> for Padding4ByteMiddle {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::Padding4ByteMiddle> for Padding4ByteMiddle {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Padding4ByteMiddle) -> Self {
+        fn from_wire(wire: &'a crate::wire::Padding4ByteMiddle) -> Self {
             Self {
-                a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a),
+                a: ::fidl_next::FromWire::from_wire(&wire.a),
 
-                b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b),
+                b: ::fidl_next::FromWire::from_wire(&wire.b),
             }
         }
     }
@@ -1719,15 +1719,15 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::Padding5ByteEnd> for Padding5ByteEnd {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::Padding5ByteEnd> for Padding5ByteEnd {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Padding5ByteEnd) -> Self {
+        fn from_wire(wire: &'a crate::wire::Padding5ByteEnd) -> Self {
             Self {
-                a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a),
+                a: ::fidl_next::FromWire::from_wire(&wire.a),
 
-                b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b),
+                b: ::fidl_next::FromWire::from_wire(&wire.b),
 
-                c: ::fidl_next::FromWireRef::from_wire_ref(&wire.c),
+                c: ::fidl_next::FromWire::from_wire(&wire.c),
             }
         }
     }
@@ -1885,15 +1885,15 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::Padding5ByteMiddle> for Padding5ByteMiddle {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::Padding5ByteMiddle> for Padding5ByteMiddle {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Padding5ByteMiddle) -> Self {
+        fn from_wire(wire: &'a crate::wire::Padding5ByteMiddle) -> Self {
             Self {
-                a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a),
+                a: ::fidl_next::FromWire::from_wire(&wire.a),
 
-                b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b),
+                b: ::fidl_next::FromWire::from_wire(&wire.b),
 
-                c: ::fidl_next::FromWireRef::from_wire_ref(&wire.c),
+                c: ::fidl_next::FromWire::from_wire(&wire.c),
             }
         }
     }
@@ -2037,13 +2037,13 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::Padding6ByteEnd> for Padding6ByteEnd {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::Padding6ByteEnd> for Padding6ByteEnd {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Padding6ByteEnd) -> Self {
+        fn from_wire(wire: &'a crate::wire::Padding6ByteEnd) -> Self {
             Self {
-                a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a),
+                a: ::fidl_next::FromWire::from_wire(&wire.a),
 
-                b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b),
+                b: ::fidl_next::FromWire::from_wire(&wire.b),
             }
         }
     }
@@ -2187,13 +2187,13 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::Padding6ByteMiddle> for Padding6ByteMiddle {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::Padding6ByteMiddle> for Padding6ByteMiddle {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Padding6ByteMiddle) -> Self {
+        fn from_wire(wire: &'a crate::wire::Padding6ByteMiddle) -> Self {
             Self {
-                a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a),
+                a: ::fidl_next::FromWire::from_wire(&wire.a),
 
-                b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b),
+                b: ::fidl_next::FromWire::from_wire(&wire.b),
             }
         }
     }
@@ -2337,13 +2337,13 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::Padding7ByteEnd> for Padding7ByteEnd {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::Padding7ByteEnd> for Padding7ByteEnd {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Padding7ByteEnd) -> Self {
+        fn from_wire(wire: &'a crate::wire::Padding7ByteEnd) -> Self {
             Self {
-                a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a),
+                a: ::fidl_next::FromWire::from_wire(&wire.a),
 
-                b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b),
+                b: ::fidl_next::FromWire::from_wire(&wire.b),
             }
         }
     }
@@ -2487,13 +2487,13 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::Padding7ByteMiddle> for Padding7ByteMiddle {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::Padding7ByteMiddle> for Padding7ByteMiddle {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Padding7ByteMiddle) -> Self {
+        fn from_wire(wire: &'a crate::wire::Padding7ByteMiddle) -> Self {
             Self {
-                a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a),
+                a: ::fidl_next::FromWire::from_wire(&wire.a),
 
-                b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b),
+                b: ::fidl_next::FromWire::from_wire(&wire.b),
             }
         }
     }

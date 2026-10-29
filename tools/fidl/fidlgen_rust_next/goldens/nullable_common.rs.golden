@@ -141,10 +141,10 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::Int32Wrapper> for Int32Wrapper {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::Int32Wrapper> for Int32Wrapper {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Int32Wrapper) -> Self {
-            Self { val: ::fidl_next::FromWireRef::from_wire_ref(&wire.val) }
+        fn from_wire(wire: &'a crate::wire::Int32Wrapper) -> Self {
+            Self { val: ::fidl_next::FromWire::from_wire(&wire.val) }
         }
     }
 
@@ -320,13 +320,15 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::SimpleProtocolAddRequest> for SimpleProtocolAddRequest {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::SimpleProtocolAddRequest>
+        for SimpleProtocolAddRequest
+    {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::SimpleProtocolAddRequest) -> Self {
+        fn from_wire(wire: &'a crate::wire::SimpleProtocolAddRequest) -> Self {
             Self {
-                a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a),
+                a: ::fidl_next::FromWire::from_wire(&wire.a),
 
-                b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b),
+                b: ::fidl_next::FromWire::from_wire(&wire.b),
             }
         }
     }
@@ -482,12 +484,12 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::SimpleProtocolAddResponse>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::SimpleProtocolAddResponse>
         for SimpleProtocolAddResponse
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::SimpleProtocolAddResponse) -> Self {
-            Self { sum: ::fidl_next::FromWireRef::from_wire_ref(&wire.sum) }
+        fn from_wire(wire: &'a crate::wire::SimpleProtocolAddResponse) -> Self {
+            Self { sum: ::fidl_next::FromWire::from_wire(&wire.sum) }
         }
     }
 
@@ -625,15 +627,15 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::SimpleUnion> for SimpleUnion {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::SimpleUnion> for SimpleUnion {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::SimpleUnion) -> Self {
+        fn from_wire(wire: &'a crate::wire::SimpleUnion) -> Self {
             match wire.raw.ordinal() {
-                1 => Self::A(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                1 => Self::A(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<::fidl_next::wire::Int32>()
                 })),
 
-                2 => Self::B(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                2 => Self::B(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<::fidl_next::wire::Float32>()
                 })),
 
@@ -666,13 +668,13 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireOptionRef<crate::wire_optional::SimpleUnion> for Box<SimpleUnion> {
+    impl<'a> ::fidl_next::FromWireOption<&'a crate::wire_optional::SimpleUnion> for Box<SimpleUnion> {
         #[inline]
-        fn from_wire_option_ref(
-            wire: &crate::wire_optional::SimpleUnion,
+        fn from_wire_option(
+            wire: &'a crate::wire_optional::SimpleUnion,
         ) -> ::core::option::Option<Self> {
             if let Some(inner) = wire.as_ref() {
-                Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
+                Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
             } else {
                 None
             }
@@ -811,12 +813,12 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::StructWithNullableString<'de>>
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::StructWithNullableString<'de>>
         for StructWithNullableString
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::StructWithNullableString<'de>) -> Self {
-            Self { val: ::fidl_next::FromWireRef::from_wire_ref(&wire.val) }
+        fn from_wire(wire: &'a crate::wire::StructWithNullableString<'de>) -> Self {
+            Self { val: ::fidl_next::FromWire::from_wire(&wire.val) }
         }
     }
 
@@ -950,12 +952,12 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::StructWithNullableStruct<'de>>
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::StructWithNullableStruct<'de>>
         for StructWithNullableStruct
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::StructWithNullableStruct<'de>) -> Self {
-            Self { val: ::fidl_next::FromWireRef::from_wire_ref(&wire.val) }
+        fn from_wire(wire: &'a crate::wire::StructWithNullableStruct<'de>) -> Self {
+            Self { val: ::fidl_next::FromWire::from_wire(&wire.val) }
         }
     }
 
@@ -1113,10 +1115,12 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::StructWithNullableUnion> for StructWithNullableUnion {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::StructWithNullableUnion>
+        for StructWithNullableUnion
+    {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::StructWithNullableUnion) -> Self {
-            Self { val: ::fidl_next::FromWireRef::from_wire_ref(&wire.val) }
+        fn from_wire(wire: &'a crate::wire::StructWithNullableUnion) -> Self {
+            Self { val: ::fidl_next::FromWire::from_wire(&wire.val) }
         }
     }
 
@@ -1252,12 +1256,12 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::StructWithNullableVector<'de>>
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::StructWithNullableVector<'de>>
         for StructWithNullableVector
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::StructWithNullableVector<'de>) -> Self {
-            Self { val: ::fidl_next::FromWireRef::from_wire_ref(&wire.val) }
+        fn from_wire(wire: &'a crate::wire::StructWithNullableVector<'de>) -> Self {
+            Self { val: ::fidl_next::FromWire::from_wire(&wire.val) }
         }
     }
 }

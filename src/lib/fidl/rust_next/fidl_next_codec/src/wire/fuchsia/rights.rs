@@ -8,8 +8,8 @@ use core::mem::MaybeUninit;
 use munge::munge;
 
 use crate::{
-    Constrained, Decode, DecodeError, Encode, EncodeError, FromWire, FromWireRef, IntoNatural,
-    Slot, ValidationError, Wire, wire,
+    Constrained, Decode, DecodeError, Encode, EncodeError, FromWire, IntoNatural, Slot,
+    ValidationError, Wire, wire,
 };
 
 /// The wire type for [`zx::Rights`].
@@ -99,12 +99,12 @@ unsafe impl<E: ?Sized> Encode<Rights, E> for &zx::Rights {
 
 impl FromWire<Rights> for zx::Rights {
     fn from_wire(wire: Rights) -> Self {
-        Self::from_wire_ref(&wire)
+        Self::from_wire(&wire)
     }
 }
 
-impl FromWireRef<Rights> for zx::Rights {
-    fn from_wire_ref(wire: &Rights) -> Self {
+impl<'a> FromWire<&'a Rights> for zx::Rights {
+    fn from_wire(wire: &'a Rights) -> Self {
         Self::from_bits_retain(*wire.inner)
     }
 }

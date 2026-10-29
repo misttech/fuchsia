@@ -24,7 +24,7 @@ use fidl_next::fuchsia::create_channel as create_zircon_channel;
 use fidl_next::wire::Result as WireResult;
 use fidl_next::wire::fuchsia::Status as WireStatus;
 use fidl_next::{
-    Client, ClientDispatcher, ClientEnd, Decoded, Error as FidlError, FromWireRef, IgnoreEvents,
+    Client, ClientDispatcher, ClientEnd, Decoded, Error as FidlError, FromWire, IgnoreEvents,
     IntoNatural, ProtocolError, Request, Responder, ServerEnd, Wire,
 };
 use fidl_next_fuchsia_hardware_network::{
@@ -1163,9 +1163,7 @@ impl NetworkDeviceImplServerHandler<DriverChannel> for NetworkDeviceImplServer {
                 inner.netdev_ifc.clone()
             } else {
                 if let Some(dma) = &mut inner.dma {
-                    dma.rx_ring
-                        .pending_space
-                        .extend(buffers.iter().map(RxSpaceBuffer::from_wire_ref));
+                    dma.rx_ring.pending_space.extend(buffers.iter().map(RxSpaceBuffer::from_wire));
                 }
                 inner.process_rx_completions(&mut self.rx_buffers)
             }

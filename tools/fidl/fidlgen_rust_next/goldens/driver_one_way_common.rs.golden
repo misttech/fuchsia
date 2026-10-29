@@ -142,10 +142,10 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::Payload> for Payload {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::Payload> for Payload {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Payload) -> Self {
-            Self { value: ::fidl_next::FromWireRef::from_wire_ref(&wire.value) }
+        fn from_wire(wire: &'a crate::wire::Payload) -> Self {
+            Self { value: ::fidl_next::FromWire::from_wire(&wire.value) }
         }
     }
 
@@ -298,10 +298,10 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::OneWaySendRequest> for OneWaySendRequest {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::OneWaySendRequest> for OneWaySendRequest {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::OneWaySendRequest) -> Self {
-            Self { payload: ::fidl_next::FromWireRef::from_wire_ref(&wire.payload) }
+        fn from_wire(wire: &'a crate::wire::OneWaySendRequest) -> Self {
+            Self { payload: ::fidl_next::FromWire::from_wire(&wire.payload) }
         }
     }
 }

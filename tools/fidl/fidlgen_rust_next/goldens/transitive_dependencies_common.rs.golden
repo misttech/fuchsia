@@ -137,10 +137,10 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::Baz> for Baz {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::Baz> for Baz {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Baz) -> Self {
-            Self { g: ::fidl_next::FromWireRef::from_wire_ref(&wire.g) }
+        fn from_wire(wire: &'a crate::wire::Baz) -> Self {
+            Self { g: ::fidl_next::FromWire::from_wire(&wire.g) }
         }
     }
 }

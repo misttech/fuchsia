@@ -160,10 +160,12 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::EmptyProtocolSendRequest> for EmptyProtocolSendRequest {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::EmptyProtocolSendRequest>
+        for EmptyProtocolSendRequest
+    {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::EmptyProtocolSendRequest) -> Self {
-            Self { e: ::fidl_next::FromWireRef::from_wire_ref(&wire.e) }
+        fn from_wire(wire: &'a crate::wire::EmptyProtocolSendRequest) -> Self {
+            Self { e: ::fidl_next::FromWire::from_wire(&wire.e) }
         }
     }
 
@@ -324,12 +326,12 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::EmptyProtocolReceiveRequest>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::EmptyProtocolReceiveRequest>
         for EmptyProtocolReceiveRequest
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::EmptyProtocolReceiveRequest) -> Self {
-            Self { e: ::fidl_next::FromWireRef::from_wire_ref(&wire.e) }
+        fn from_wire(wire: &'a crate::wire::EmptyProtocolReceiveRequest) -> Self {
+            Self { e: ::fidl_next::FromWire::from_wire(&wire.e) }
         }
     }
 
@@ -490,12 +492,12 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::EmptyProtocolSendAndReceiveRequest>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::EmptyProtocolSendAndReceiveRequest>
         for EmptyProtocolSendAndReceiveRequest
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::EmptyProtocolSendAndReceiveRequest) -> Self {
-            Self { e: ::fidl_next::FromWireRef::from_wire_ref(&wire.e) }
+        fn from_wire(wire: &'a crate::wire::EmptyProtocolSendAndReceiveRequest) -> Self {
+            Self { e: ::fidl_next::FromWire::from_wire(&wire.e) }
         }
     }
 
@@ -657,12 +659,12 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::EmptyProtocolSendAndReceiveResponse>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::EmptyProtocolSendAndReceiveResponse>
         for EmptyProtocolSendAndReceiveResponse
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::EmptyProtocolSendAndReceiveResponse) -> Self {
-            Self { e: ::fidl_next::FromWireRef::from_wire_ref(&wire.e) }
+        fn from_wire(wire: &'a crate::wire::EmptyProtocolSendAndReceiveResponse) -> Self {
+            Self { e: ::fidl_next::FromWire::from_wire(&wire.e) }
         }
     }
 }

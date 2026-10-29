@@ -324,9 +324,9 @@ macro_rules! impl_fidl_convert {
             }
         }
 
-        impl $crate::FromWireRef<$name> for $prim {
+        impl<'a> $crate::FromWire<&'a $name> for $prim {
             #[inline]
-            fn from_wire_ref(wire: &$name) -> Self {
+            fn from_wire(wire: &'a $name) -> Self {
                 (*wire).into()
             }
         }

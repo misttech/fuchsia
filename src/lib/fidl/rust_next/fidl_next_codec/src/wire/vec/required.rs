@@ -13,8 +13,7 @@ use munge::munge;
 use super::raw::RawVector;
 use crate::{
     Chunk, Constrained, Decode, DecodeError, Decoder, DecoderExt as _, Encode, EncodeError,
-    Encoder, EncoderExt as _, FromWire, FromWireRef, IntoNatural, Slot, ValidationError, Wire,
-    wire,
+    Encoder, EncoderExt as _, FromWire, IntoNatural, Slot, ValidationError, Wire, wire,
 };
 
 /// A FIDL vector
@@ -428,8 +427,8 @@ impl<T: IntoNatural> IntoNatural for Vector<'_, T> {
     type Natural = Vec<T::Natural>;
 }
 
-impl<T: FromWireRef<W>, W> FromWireRef<Vector<'_, W>> for Vec<T> {
-    fn from_wire_ref(wire: &Vector<'_, W>) -> Self {
+impl<'a, T: FromWire<&'a W>, W> FromWire<&'a Vector<'_, W>> for Vec<T> {
+    fn from_wire(wire: &'a Vector<'_, W>) -> Self {
         let mut result = Vec::<T>::with_capacity(wire.len());
         if T::COPY_OPTIMIZATION.is_enabled() {
             // SAFETY: `T` has copy optimization enabled, meaning it is layout-compatible with `W`
@@ -445,7 +444,7 @@ impl<T: FromWireRef<W>, W> FromWireRef<Vector<'_, W>> for Vec<T> {
             }
         } else {
             for item in wire.iter() {
-                result.push(T::from_wire_ref(item));
+                result.push(T::from_wire(item));
             }
         }
         result

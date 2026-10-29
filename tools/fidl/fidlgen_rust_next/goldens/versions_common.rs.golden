@@ -59,9 +59,9 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::Bits> for Bits {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::Bits> for Bits {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Bits) -> Self {
+        fn from_wire(wire: &'a crate::wire::Bits) -> Self {
             Self::from(*wire)
         }
     }
@@ -146,9 +146,9 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::Enum> for Enum {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::Enum> for Enum {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Enum) -> Self {
+        fn from_wire(wire: &'a crate::wire::Enum) -> Self {
             Self::from(*wire)
         }
     }

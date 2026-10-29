@@ -140,13 +140,13 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::UnionSize12Alignment4<'de>>
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::UnionSize12Alignment4<'de>>
         for UnionSize12Alignment4
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::UnionSize12Alignment4<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::UnionSize12Alignment4<'de>) -> Self {
             match wire.raw.ordinal() {
-                1 => Self::Variant(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                1 => Self::Variant(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<[u8; 6]>()
                 })),
 
@@ -184,15 +184,15 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireOptionRef<crate::wire_optional::UnionSize12Alignment4<'de>>
+    impl<'a, 'de> ::fidl_next::FromWireOption<&'a crate::wire_optional::UnionSize12Alignment4<'de>>
         for Box<UnionSize12Alignment4>
     {
         #[inline]
-        fn from_wire_option_ref(
-            wire: &crate::wire_optional::UnionSize12Alignment4<'de>,
+        fn from_wire_option(
+            wire: &'a crate::wire_optional::UnionSize12Alignment4<'de>,
         ) -> ::core::option::Option<Self> {
             if let Some(inner) = wire.as_ref() {
-                Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
+                Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
             } else {
                 None
             }
@@ -370,17 +370,17 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::SandwichUnionSize12Alignment4<'de>>
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::SandwichUnionSize12Alignment4<'de>>
         for SandwichUnionSize12Alignment4
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::SandwichUnionSize12Alignment4<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::SandwichUnionSize12Alignment4<'de>) -> Self {
             Self {
-                before: ::fidl_next::FromWireRef::from_wire_ref(&wire.before),
+                before: ::fidl_next::FromWire::from_wire(&wire.before),
 
-                union: ::fidl_next::FromWireRef::from_wire_ref(&wire.union),
+                union: ::fidl_next::FromWire::from_wire(&wire.union),
 
-                after: ::fidl_next::FromWireRef::from_wire_ref(&wire.after),
+                after: ::fidl_next::FromWire::from_wire(&wire.after),
             }
         }
     }
@@ -557,13 +557,13 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::StructSize16Alignment8> for StructSize16Alignment8 {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::StructSize16Alignment8> for StructSize16Alignment8 {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::StructSize16Alignment8) -> Self {
+        fn from_wire(wire: &'a crate::wire::StructSize16Alignment8) -> Self {
             Self {
-                f1: ::fidl_next::FromWireRef::from_wire_ref(&wire.f1),
+                f1: ::fidl_next::FromWire::from_wire(&wire.f1),
 
-                f2: ::fidl_next::FromWireRef::from_wire_ref(&wire.f2),
+                f2: ::fidl_next::FromWire::from_wire(&wire.f2),
             }
         }
     }
@@ -701,13 +701,13 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::UnionSize24Alignment8<'de>>
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::UnionSize24Alignment8<'de>>
         for UnionSize24Alignment8
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::UnionSize24Alignment8<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::UnionSize24Alignment8<'de>) -> Self {
             match wire.raw.ordinal() {
-                1 => Self::Variant(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                1 => Self::Variant(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<crate::wire::StructSize16Alignment8>()
                 })),
 
@@ -745,15 +745,15 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireOptionRef<crate::wire_optional::UnionSize24Alignment8<'de>>
+    impl<'a, 'de> ::fidl_next::FromWireOption<&'a crate::wire_optional::UnionSize24Alignment8<'de>>
         for Box<UnionSize24Alignment8>
     {
         #[inline]
-        fn from_wire_option_ref(
-            wire: &crate::wire_optional::UnionSize24Alignment8<'de>,
+        fn from_wire_option(
+            wire: &'a crate::wire_optional::UnionSize24Alignment8<'de>,
         ) -> ::core::option::Option<Self> {
             if let Some(inner) = wire.as_ref() {
-                Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
+                Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
             } else {
                 None
             }
@@ -931,17 +931,17 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::SandwichUnionSize24Alignment8<'de>>
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::SandwichUnionSize24Alignment8<'de>>
         for SandwichUnionSize24Alignment8
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::SandwichUnionSize24Alignment8<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::SandwichUnionSize24Alignment8<'de>) -> Self {
             Self {
-                before: ::fidl_next::FromWireRef::from_wire_ref(&wire.before),
+                before: ::fidl_next::FromWire::from_wire(&wire.before),
 
-                union: ::fidl_next::FromWireRef::from_wire_ref(&wire.union),
+                union: ::fidl_next::FromWire::from_wire(&wire.union),
 
-                after: ::fidl_next::FromWireRef::from_wire_ref(&wire.after),
+                after: ::fidl_next::FromWire::from_wire(&wire.after),
             }
         }
     }
@@ -1082,13 +1082,13 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::UnionSize36Alignment4<'de>>
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::UnionSize36Alignment4<'de>>
         for UnionSize36Alignment4
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::UnionSize36Alignment4<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::UnionSize36Alignment4<'de>) -> Self {
             match wire.raw.ordinal() {
-                1 => Self::Variant(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                1 => Self::Variant(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<[u8; 32]>()
                 })),
 
@@ -1126,15 +1126,15 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireOptionRef<crate::wire_optional::UnionSize36Alignment4<'de>>
+    impl<'a, 'de> ::fidl_next::FromWireOption<&'a crate::wire_optional::UnionSize36Alignment4<'de>>
         for Box<UnionSize36Alignment4>
     {
         #[inline]
-        fn from_wire_option_ref(
-            wire: &crate::wire_optional::UnionSize36Alignment4<'de>,
+        fn from_wire_option(
+            wire: &'a crate::wire_optional::UnionSize36Alignment4<'de>,
         ) -> ::core::option::Option<Self> {
             if let Some(inner) = wire.as_ref() {
-                Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
+                Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
             } else {
                 None
             }
@@ -1312,17 +1312,17 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::SandwichUnionSize36Alignment4<'de>>
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::SandwichUnionSize36Alignment4<'de>>
         for SandwichUnionSize36Alignment4
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::SandwichUnionSize36Alignment4<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::SandwichUnionSize36Alignment4<'de>) -> Self {
             Self {
-                before: ::fidl_next::FromWireRef::from_wire_ref(&wire.before),
+                before: ::fidl_next::FromWire::from_wire(&wire.before),
 
-                union: ::fidl_next::FromWireRef::from_wire_ref(&wire.union),
+                union: ::fidl_next::FromWire::from_wire(&wire.union),
 
-                after: ::fidl_next::FromWireRef::from_wire_ref(&wire.after),
+                after: ::fidl_next::FromWire::from_wire(&wire.after),
             }
         }
     }
@@ -1454,11 +1454,11 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::UnionSize8Alignment4> for UnionSize8Alignment4 {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::UnionSize8Alignment4> for UnionSize8Alignment4 {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::UnionSize8Alignment4) -> Self {
+        fn from_wire(wire: &'a crate::wire::UnionSize8Alignment4) -> Self {
             match wire.raw.ordinal() {
-                1 => Self::Variant(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                1 => Self::Variant(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<::fidl_next::wire::Uint32>()
                 })),
 
@@ -1496,15 +1496,15 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireOptionRef<crate::wire_optional::UnionSize8Alignment4>
+    impl<'a> ::fidl_next::FromWireOption<&'a crate::wire_optional::UnionSize8Alignment4>
         for Box<UnionSize8Alignment4>
     {
         #[inline]
-        fn from_wire_option_ref(
-            wire: &crate::wire_optional::UnionSize8Alignment4,
+        fn from_wire_option(
+            wire: &'a crate::wire_optional::UnionSize8Alignment4,
         ) -> ::core::option::Option<Self> {
             if let Some(inner) = wire.as_ref() {
-                Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
+                Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
             } else {
                 None
             }
@@ -1669,17 +1669,17 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::SandwichUnionSize8Alignment4>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::SandwichUnionSize8Alignment4>
         for SandwichUnionSize8Alignment4
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::SandwichUnionSize8Alignment4) -> Self {
+        fn from_wire(wire: &'a crate::wire::SandwichUnionSize8Alignment4) -> Self {
             Self {
-                before: ::fidl_next::FromWireRef::from_wire_ref(&wire.before),
+                before: ::fidl_next::FromWire::from_wire(&wire.before),
 
-                union: ::fidl_next::FromWireRef::from_wire_ref(&wire.union),
+                union: ::fidl_next::FromWire::from_wire(&wire.union),
 
-                after: ::fidl_next::FromWireRef::from_wire_ref(&wire.after),
+                after: ::fidl_next::FromWire::from_wire(&wire.after),
             }
         }
     }

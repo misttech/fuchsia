@@ -10,8 +10,8 @@ use munge::munge;
 use super::raw::RawVector;
 use crate::{
     Constrained, Decode, DecodeError, Decoder, DecoderExt as _, Encode, EncodeError, EncodeOption,
-    Encoder, EncoderExt as _, FromWire, FromWireOption, FromWireOptionRef, FromWireRef,
-    IntoNatural, Slot, ValidationError, Wire, wire,
+    Encoder, EncoderExt as _, FromWire, FromWireOption, IntoNatural, Slot, ValidationError, Wire,
+    wire,
 };
 
 /// An optional FIDL vector
@@ -352,9 +352,9 @@ impl<T: IntoNatural> IntoNatural for OptionalVector<'_, T> {
     type Natural = Option<Vec<T::Natural>>;
 }
 
-impl<T: FromWireRef<W>, W> FromWireOptionRef<OptionalVector<'_, W>> for Vec<T> {
-    fn from_wire_option_ref(wire: &OptionalVector<'_, W>) -> Option<Self> {
-        wire.as_ref().map(Vec::from_wire_ref)
+impl<'a, T: FromWire<&'a W>, W> FromWireOption<&'a OptionalVector<'_, W>> for Vec<T> {
+    fn from_wire_option(wire: &'a OptionalVector<'_, W>) -> Option<Self> {
+        wire.as_ref().map(Vec::from_wire)
     }
 }
 

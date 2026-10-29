@@ -132,10 +132,10 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::SensitiveStruct<'de>> for SensitiveStruct {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::SensitiveStruct<'de>> for SensitiveStruct {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::SensitiveStruct<'de>) -> Self {
-            Self { field: ::fidl_next::FromWireRef::from_wire_ref(&wire.field) }
+        fn from_wire(wire: &'a crate::wire::SensitiveStruct<'de>) -> Self {
+            Self { field: ::fidl_next::FromWire::from_wire(&wire.field) }
         }
     }
 
@@ -272,12 +272,12 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::SensitiveTable<'de>> for SensitiveTable {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::SensitiveTable<'de>> for SensitiveTable {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::SensitiveTable<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::SensitiveTable<'de>) -> Self {
             Self {
                 field: wire.table.get(1).map(|envelope| {
-                    ::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                    ::fidl_next::FromWire::from_wire(unsafe {
                         envelope.deref_unchecked::<::fidl_next::wire::String<'de>>()
                     })
                 }),
@@ -409,11 +409,11 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::SensitiveUnion<'de>> for SensitiveUnion {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::SensitiveUnion<'de>> for SensitiveUnion {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::SensitiveUnion<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::SensitiveUnion<'de>) -> Self {
             match wire.raw.ordinal() {
-                1 => Self::Field(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                1 => Self::Field(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<::fidl_next::wire::String<'de>>()
                 })),
 
@@ -451,15 +451,15 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireOptionRef<crate::wire_optional::SensitiveUnion<'de>>
+    impl<'a, 'de> ::fidl_next::FromWireOption<&'a crate::wire_optional::SensitiveUnion<'de>>
         for Box<SensitiveUnion>
     {
         #[inline]
-        fn from_wire_option_ref(
-            wire: &crate::wire_optional::SensitiveUnion<'de>,
+        fn from_wire_option(
+            wire: &'a crate::wire_optional::SensitiveUnion<'de>,
         ) -> ::core::option::Option<Self> {
             if let Some(inner) = wire.as_ref() {
-                Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
+                Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
             } else {
                 None
             }
@@ -692,23 +692,23 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::ContainerWithPropagation<'de>>
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::ContainerWithPropagation<'de>>
         for ContainerWithPropagation
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ContainerWithPropagation<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::ContainerWithPropagation<'de>) -> Self {
             Self {
-                unannotated_field: ::fidl_next::FromWireRef::from_wire_ref(&wire.unannotated_field),
+                unannotated_field: ::fidl_next::FromWire::from_wire(&wire.unannotated_field),
 
-                sensitive_struct_field: ::fidl_next::FromWireRef::from_wire_ref(
+                sensitive_struct_field: ::fidl_next::FromWire::from_wire(
                     &wire.sensitive_struct_field,
                 ),
 
-                sensitive_table_field: ::fidl_next::FromWireRef::from_wire_ref(
+                sensitive_table_field: ::fidl_next::FromWire::from_wire(
                     &wire.sensitive_table_field,
                 ),
 
-                sensitive_union_field: ::fidl_next::FromWireRef::from_wire_ref(
+                sensitive_union_field: ::fidl_next::FromWire::from_wire(
                     &wire.sensitive_union_field,
                 ),
             }
@@ -887,13 +887,15 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::NonSensitiveStruct<'de>> for NonSensitiveStruct {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::NonSensitiveStruct<'de>>
+        for NonSensitiveStruct
+    {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::NonSensitiveStruct<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::NonSensitiveStruct<'de>) -> Self {
             Self {
-                sensitive_field: ::fidl_next::FromWireRef::from_wire_ref(&wire.sensitive_field),
+                sensitive_field: ::fidl_next::FromWire::from_wire(&wire.sensitive_field),
 
-                sensitive_struct_field: ::fidl_next::FromWireRef::from_wire_ref(
+                sensitive_struct_field: ::fidl_next::FromWire::from_wire(
                     &wire.sensitive_struct_field,
                 ),
             }
@@ -1074,18 +1076,18 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::NonSensitiveTable<'de>> for NonSensitiveTable {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::NonSensitiveTable<'de>> for NonSensitiveTable {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::NonSensitiveTable<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::NonSensitiveTable<'de>) -> Self {
             Self {
                 sensitive_field: wire.table.get(1).map(|envelope| {
-                    ::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                    ::fidl_next::FromWire::from_wire(unsafe {
                         envelope.deref_unchecked::<::fidl_next::wire::String<'de>>()
                     })
                 }),
 
                 sensitive_struct_field: wire.table.get(2).map(|envelope| {
-                    ::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                    ::fidl_next::FromWire::from_wire(unsafe {
                         envelope.deref_unchecked::<crate::wire::SensitiveStruct<'de>>()
                     })
                 }),
@@ -1238,15 +1240,15 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::NonSensitiveUnion<'de>> for NonSensitiveUnion {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::NonSensitiveUnion<'de>> for NonSensitiveUnion {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::NonSensitiveUnion<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::NonSensitiveUnion<'de>) -> Self {
             match wire.raw.ordinal() {
-                1 => Self::SensitiveField(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                1 => Self::SensitiveField(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<::fidl_next::wire::String<'de>>()
                 })),
 
-                2 => Self::SensitiveStructField(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                2 => Self::SensitiveStructField(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<crate::wire::SensitiveStruct<'de>>()
                 })),
 
@@ -1284,15 +1286,15 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireOptionRef<crate::wire_optional::NonSensitiveUnion<'de>>
+    impl<'a, 'de> ::fidl_next::FromWireOption<&'a crate::wire_optional::NonSensitiveUnion<'de>>
         for Box<NonSensitiveUnion>
     {
         #[inline]
-        fn from_wire_option_ref(
-            wire: &crate::wire_optional::NonSensitiveUnion<'de>,
+        fn from_wire_option(
+            wire: &'a crate::wire_optional::NonSensitiveUnion<'de>,
         ) -> ::core::option::Option<Self> {
             if let Some(inner) = wire.as_ref() {
-                Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
+                Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
             } else {
                 None
             }

@@ -8,7 +8,7 @@ use core::{concat, stringify};
 
 use fidl_next_codec::{
     Constrained, Decode, DecodeError, Encode, EncodeError, EncodeOption, FromWire, FromWireOption,
-    FromWireOptionRef, FromWireRef, IntoNatural, Slot, ValidationError, Wire, munge,
+    IntoNatural, Slot, ValidationError, Wire, munge,
 };
 use fidl_next_protocol::{ProtocolError, Transport};
 
@@ -213,14 +213,14 @@ macro_rules! endpoint {
             type Natural = $name<P, T::Natural>;
         }
 
-        impl<P, T, U> FromWireRef<$name<P, U>> for $name<P, T>
+        impl<'a, P, T, U> FromWire<&'a $name<P, U>> for $name<P, T>
         where
-            T: FromWireRef<U>,
+            T: FromWire<&'a U>,
         {
             #[inline]
-            fn from_wire_ref(wire: &$name<P, U>) -> Self {
+            fn from_wire(wire: &'a $name<P, U>) -> Self {
                 $name {
-                    transport: T::from_wire_ref(&wire.transport),
+                    transport: T::from_wire(&wire.transport),
                     _protocol: PhantomData,
                 }
             }
@@ -241,15 +241,15 @@ macro_rules! endpoint {
             }
         }
 
-        impl<P, T, U> FromWireOptionRef<$name<P, U>> for $name<P, T>
+        impl<'a, P, T, U> FromWireOption<&'a $name<P, U>> for $name<P, T>
         where
             P: 'static,
-            T: FromWireOptionRef<U>,
+            T: FromWireOption<&'a U>,
             U: Wire,
         {
             #[inline]
-            fn from_wire_option_ref(wire: &$name<P, U>) -> Option<Self> {
-                T::from_wire_option_ref(&wire.transport).map(|transport| $name {
+            fn from_wire_option(wire: &'a $name<P, U>) -> Option<Self> {
+                T::from_wire_option(&wire.transport).map(|transport| $name {
                     transport,
                     _protocol: PhantomData,
                 })

@@ -7,33 +7,21 @@ use core::ptr::copy_nonoverlapping;
 
 use crate::CopyOptimization;
 
-/// A type which is convertible from an owned value.
+/// A type which is convertible from a wire type.
 pub trait FromWire<W>: Sized {
     /// Whether the conversion from `W` to `Self` is equivalent to copying the raw bytes of `W`.
     ///
     /// Copy optimization is disabled by default.
     const COPY_OPTIMIZATION: CopyOptimization<W, Self> = CopyOptimization::disable();
 
-    /// Converts the given owned value to this type.
+    /// Converts the given wire value to this type.
     fn from_wire(wire: W) -> Self;
 }
 
-/// A type which is convertible from a reference.
-pub trait FromWireRef<W>: FromWire<W> {
-    /// Converts the given reference to this type.
-    fn from_wire_ref(wire: &W) -> Self;
-}
-
-/// An optional type which is convertible from an owned value.
+/// An optional type which is convertible from a wire type.
 pub trait FromWireOption<W>: Sized {
-    /// Converts the given owned value to an option of this type.
+    /// Converts the given wire value to an option of this type.
     fn from_wire_option(wire: W) -> Option<Self>;
-}
-
-/// An optional type which is convertible from a reference.
-pub trait FromWireOptionRef<W>: FromWireOption<W> {
-    /// Converts the given reference to an option of this type.
-    fn from_wire_option_ref(wire: &W) -> Option<Self>;
 }
 
 impl<T: FromWire<W>, W, const N: usize> FromWire<[W; N]> for [T; N] {
@@ -59,8 +47,8 @@ impl<T: FromWire<W>, W, const N: usize> FromWire<[W; N]> for [T; N] {
     }
 }
 
-impl<T: FromWireRef<W>, W, const N: usize> FromWireRef<[W; N]> for [T; N] {
-    fn from_wire_ref(wire: &[W; N]) -> Self {
+impl<'a, T: FromWire<&'a W>, W, const N: usize> FromWire<&'a [W; N]> for [T; N] {
+    fn from_wire(wire: &'a [W; N]) -> Self {
         let mut result = MaybeUninit::<[T; N]>::uninit();
         if T::COPY_OPTIMIZATION.is_enabled() {
             // SAFETY: `T` has copy optimization enabled and so is safe to copy bytewise.
@@ -72,7 +60,7 @@ impl<T: FromWireRef<W>, W, const N: usize> FromWireRef<[W; N]> for [T; N] {
                 // SAFETY: `i` is in bounds for the array of size `N`, and the pointer is valid to
                 // write.
                 unsafe {
-                    result.as_mut_ptr().cast::<T>().add(i).write(T::from_wire_ref(item));
+                    result.as_mut_ptr().cast::<T>().add(i).write(T::from_wire(item));
                 }
             }
         }
@@ -87,20 +75,8 @@ impl<T: FromWire<W>, W> FromWire<W> for Box<T> {
     }
 }
 
-impl<T: FromWireRef<W>, W> FromWireRef<W> for Box<T> {
-    fn from_wire_ref(wire: &W) -> Self {
-        Box::new(T::from_wire_ref(wire))
-    }
-}
-
 impl<T: FromWireOption<W>, W> FromWire<W> for Option<T> {
     fn from_wire(wire: W) -> Self {
         T::from_wire_option(wire)
-    }
-}
-
-impl<T: FromWireOptionRef<W>, W> FromWireRef<W> for Option<T> {
-    fn from_wire_ref(wire: &W) -> Self {
-        T::from_wire_option_ref(wire)
     }
 }

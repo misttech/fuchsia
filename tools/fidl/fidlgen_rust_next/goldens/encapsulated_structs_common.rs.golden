@@ -138,13 +138,13 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::Int16Int8> for Int16Int8 {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::Int16Int8> for Int16Int8 {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Int16Int8) -> Self {
+        fn from_wire(wire: &'a crate::wire::Int16Int8) -> Self {
             Self {
-                a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a),
+                a: ::fidl_next::FromWire::from_wire(&wire.a),
 
-                b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b),
+                b: ::fidl_next::FromWire::from_wire(&wire.b),
             }
         }
     }
@@ -271,10 +271,10 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::ArrayInt16Int8> for ArrayInt16Int8 {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::ArrayInt16Int8> for ArrayInt16Int8 {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ArrayInt16Int8) -> Self {
-            Self { arr: ::fidl_next::FromWireRef::from_wire_ref(&wire.arr) }
+        fn from_wire(wire: &'a crate::wire::ArrayInt16Int8) -> Self {
+            Self { arr: ::fidl_next::FromWire::from_wire(&wire.arr) }
         }
     }
 
@@ -412,13 +412,13 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::Int8Int32> for Int8Int32 {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::Int8Int32> for Int8Int32 {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Int8Int32) -> Self {
+        fn from_wire(wire: &'a crate::wire::Int8Int32) -> Self {
             Self {
-                a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a),
+                a: ::fidl_next::FromWire::from_wire(&wire.a),
 
-                b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b),
+                b: ::fidl_next::FromWire::from_wire(&wire.b),
             }
         }
     }
@@ -578,15 +578,17 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::StructPaddingTestStruct> for StructPaddingTestStruct {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::StructPaddingTestStruct>
+        for StructPaddingTestStruct
+    {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::StructPaddingTestStruct) -> Self {
+        fn from_wire(wire: &'a crate::wire::StructPaddingTestStruct) -> Self {
             Self {
-                trailing: ::fidl_next::FromWireRef::from_wire_ref(&wire.trailing),
+                trailing: ::fidl_next::FromWire::from_wire(&wire.trailing),
 
-                inner: ::fidl_next::FromWireRef::from_wire_ref(&wire.inner),
+                inner: ::fidl_next::FromWire::from_wire(&wire.inner),
 
-                array: ::fidl_next::FromWireRef::from_wire_ref(&wire.array),
+                array: ::fidl_next::FromWire::from_wire(&wire.array),
             }
         }
     }

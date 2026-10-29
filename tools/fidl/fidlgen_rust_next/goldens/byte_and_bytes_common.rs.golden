@@ -135,10 +135,10 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::ByteAndBytes> for ByteAndBytes {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::ByteAndBytes> for ByteAndBytes {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ByteAndBytes) -> Self {
-            Self { single_byte: ::fidl_next::FromWireRef::from_wire_ref(&wire.single_byte) }
+        fn from_wire(wire: &'a crate::wire::ByteAndBytes) -> Self {
+            Self { single_byte: ::fidl_next::FromWire::from_wire(&wire.single_byte) }
         }
     }
 }

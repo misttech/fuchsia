@@ -205,17 +205,17 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::AllInstants> for AllInstants {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::AllInstants> for AllInstants {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::AllInstants) -> Self {
+        fn from_wire(wire: &'a crate::wire::AllInstants) -> Self {
             Self {
-                monotonic: ::fidl_next::FromWireRef::from_wire_ref(&wire.monotonic),
+                monotonic: ::fidl_next::FromWire::from_wire(&wire.monotonic),
 
-                boot: ::fidl_next::FromWireRef::from_wire_ref(&wire.boot),
+                boot: ::fidl_next::FromWire::from_wire(&wire.boot),
 
-                monotonic_ticks: ::fidl_next::FromWireRef::from_wire_ref(&wire.monotonic_ticks),
+                monotonic_ticks: ::fidl_next::FromWire::from_wire(&wire.monotonic_ticks),
 
-                boot_ticks: ::fidl_next::FromWireRef::from_wire_ref(&wire.boot_ticks),
+                boot_ticks: ::fidl_next::FromWire::from_wire(&wire.boot_ticks),
             }
         }
     }
@@ -472,32 +472,32 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::ComplexInstants<'de>> for ComplexInstants {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::ComplexInstants<'de>> for ComplexInstants {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ComplexInstants<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::ComplexInstants<'de>) -> Self {
             Self {
 
 
                 monotonic: wire.table.get(1)
-                    .map(|envelope| ::fidl_next::FromWireRef::from_wire_ref(
+                    .map(|envelope| ::fidl_next::FromWire::from_wire(
                         unsafe { envelope.deref_unchecked::<[::fidl_next::wire::Int64; 10]>() }
                     )),
 
 
                 boot: wire.table.get(2)
-                    .map(|envelope| ::fidl_next::FromWireRef::from_wire_ref(
+                    .map(|envelope| ::fidl_next::FromWire::from_wire(
                         unsafe { envelope.deref_unchecked::<::fidl_next::wire::Vector<'de, ::fidl_next::wire::Int64>>() }
                     )),
 
 
                 monotonic_ticks: wire.table.get(3)
-                    .map(|envelope| ::fidl_next::FromWireRef::from_wire_ref(
+                    .map(|envelope| ::fidl_next::FromWire::from_wire(
                         unsafe { envelope.deref_unchecked::<[::fidl_next::wire::Int64; 10]>() }
                     )),
 
 
                 boot_ticks: wire.table.get(4)
-                    .map(|envelope| ::fidl_next::FromWireRef::from_wire_ref(
+                    .map(|envelope| ::fidl_next::FromWire::from_wire(
                         unsafe { envelope.deref_unchecked::<[::fidl_next::wire::Int64; 10]>() }
                     )),
 

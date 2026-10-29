@@ -63,9 +63,9 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::ExampleBits> for ExampleBits {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::ExampleBits> for ExampleBits {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ExampleBits) -> Self {
+        fn from_wire(wire: &'a crate::wire::ExampleBits) -> Self {
             Self::from(*wire)
         }
     }
@@ -148,9 +148,9 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::ExampleEnum> for ExampleEnum {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::ExampleEnum> for ExampleEnum {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ExampleEnum) -> Self {
+        fn from_wire(wire: &'a crate::wire::ExampleEnum) -> Self {
             Self::from(*wire)
         }
     }
@@ -312,12 +312,12 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::ExampleProtocolMethodRequest>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::ExampleProtocolMethodRequest>
         for ExampleProtocolMethodRequest
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ExampleProtocolMethodRequest) -> Self {
-            Self { arg: ::fidl_next::FromWireRef::from_wire_ref(&wire.arg) }
+        fn from_wire(wire: &'a crate::wire::ExampleProtocolMethodRequest) -> Self {
+            Self { arg: ::fidl_next::FromWire::from_wire(&wire.arg) }
         }
     }
 
@@ -459,10 +459,10 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::ExampleStruct> for ExampleStruct {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::ExampleStruct> for ExampleStruct {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ExampleStruct) -> Self {
-            Self { member: ::fidl_next::FromWireRef::from_wire_ref(&wire.member) }
+        fn from_wire(wire: &'a crate::wire::ExampleStruct) -> Self {
+            Self { member: ::fidl_next::FromWire::from_wire(&wire.member) }
         }
     }
 
@@ -599,12 +599,12 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::ExampleTable<'de>> for ExampleTable {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::ExampleTable<'de>> for ExampleTable {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ExampleTable<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::ExampleTable<'de>) -> Self {
             Self {
                 member: wire.table.get(1).map(|envelope| {
-                    ::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                    ::fidl_next::FromWire::from_wire(unsafe {
                         envelope.deref_unchecked::<::fidl_next::wire::Uint32>()
                     })
                 }),
@@ -731,11 +731,11 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::ExampleUnion> for ExampleUnion {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::ExampleUnion> for ExampleUnion {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ExampleUnion) -> Self {
+        fn from_wire(wire: &'a crate::wire::ExampleUnion) -> Self {
             match wire.raw.ordinal() {
-                1 => Self::Variant(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                1 => Self::Variant(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<::fidl_next::wire::Uint32>()
                 })),
 
@@ -768,13 +768,13 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireOptionRef<crate::wire_optional::ExampleUnion> for Box<ExampleUnion> {
+    impl<'a> ::fidl_next::FromWireOption<&'a crate::wire_optional::ExampleUnion> for Box<ExampleUnion> {
         #[inline]
-        fn from_wire_option_ref(
-            wire: &crate::wire_optional::ExampleUnion,
+        fn from_wire_option(
+            wire: &'a crate::wire_optional::ExampleUnion,
         ) -> ::core::option::Option<Self> {
             if let Some(inner) = wire.as_ref() {
-                Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
+                Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
             } else {
                 None
             }

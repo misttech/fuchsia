@@ -86,9 +86,9 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::ResultEnum> for ResultEnum {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::ResultEnum> for ResultEnum {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ResultEnum) -> Self {
+        fn from_wire(wire: &'a crate::wire::ResultEnum) -> Self {
             Self::from(*wire)
         }
     }
@@ -174,9 +174,9 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::ResultEnumAlias> for ResultEnumAlias {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::ResultEnumAlias> for ResultEnumAlias {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ResultEnumAlias) -> Self {
+        fn from_wire(wire: &'a crate::wire::ResultEnumAlias) -> Self {
             Self::from(*wire)
         }
     }
@@ -334,10 +334,10 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::ResultProtocolARequest> for ResultProtocolARequest {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::ResultProtocolARequest> for ResultProtocolARequest {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ResultProtocolARequest) -> Self {
-            Self { arg: ::fidl_next::FromWireRef::from_wire_ref(&wire.arg) }
+        fn from_wire(wire: &'a crate::wire::ResultProtocolARequest) -> Self {
+            Self { arg: ::fidl_next::FromWire::from_wire(&wire.arg) }
         }
     }
 
@@ -495,10 +495,12 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::ResultProtocolAResponse> for ResultProtocolAResponse {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::ResultProtocolAResponse>
+        for ResultProtocolAResponse
+    {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ResultProtocolAResponse) -> Self {
-            Self { result: ::fidl_next::FromWireRef::from_wire_ref(&wire.result) }
+        fn from_wire(wire: &'a crate::wire::ResultProtocolAResponse) -> Self {
+            Self { result: ::fidl_next::FromWire::from_wire(&wire.result) }
         }
     }
 
@@ -651,10 +653,10 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::ResultProtocolBRequest> for ResultProtocolBRequest {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::ResultProtocolBRequest> for ResultProtocolBRequest {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ResultProtocolBRequest) -> Self {
-            Self { arg: ::fidl_next::FromWireRef::from_wire_ref(&wire.arg) }
+        fn from_wire(wire: &'a crate::wire::ResultProtocolBRequest) -> Self {
+            Self { arg: ::fidl_next::FromWire::from_wire(&wire.arg) }
         }
     }
 
@@ -808,10 +810,12 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::ResultProtocolBResponse> for ResultProtocolBResponse {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::ResultProtocolBResponse>
+        for ResultProtocolBResponse
+    {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ResultProtocolBResponse) -> Self {
-            Self { result: ::fidl_next::FromWireRef::from_wire_ref(&wire.result) }
+        fn from_wire(wire: &'a crate::wire::ResultProtocolBResponse) -> Self {
+            Self { result: ::fidl_next::FromWire::from_wire(&wire.result) }
         }
     }
 
@@ -985,15 +989,15 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::ResultStruct<'de>> for ResultStruct {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::ResultStruct<'de>> for ResultStruct {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ResultStruct<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::ResultStruct<'de>) -> Self {
             Self {
-                result: ::fidl_next::FromWireRef::from_wire_ref(&wire.result),
+                result: ::fidl_next::FromWire::from_wire(&wire.result),
 
-                result_array: ::fidl_next::FromWireRef::from_wire_ref(&wire.result_array),
+                result_array: ::fidl_next::FromWire::from_wire(&wire.result_array),
 
-                result_vector: ::fidl_next::FromWireRef::from_wire_ref(&wire.result_vector),
+                result_vector: ::fidl_next::FromWire::from_wire(&wire.result_vector),
             }
         }
     }
@@ -1168,15 +1172,15 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::ResultStructAlias<'de>> for ResultStructAlias {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::ResultStructAlias<'de>> for ResultStructAlias {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ResultStructAlias<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::ResultStructAlias<'de>) -> Self {
             Self {
-                result: ::fidl_next::FromWireRef::from_wire_ref(&wire.result),
+                result: ::fidl_next::FromWire::from_wire(&wire.result),
 
-                result_array: ::fidl_next::FromWireRef::from_wire_ref(&wire.result_array),
+                result_array: ::fidl_next::FromWire::from_wire(&wire.result_array),
 
-                result_vector: ::fidl_next::FromWireRef::from_wire_ref(&wire.result_vector),
+                result_vector: ::fidl_next::FromWire::from_wire(&wire.result_vector),
             }
         }
     }
@@ -1408,24 +1412,24 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::ResultTable<'de>> for ResultTable {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::ResultTable<'de>> for ResultTable {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ResultTable<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::ResultTable<'de>) -> Self {
             Self {
                 result: wire.table.get(1).map(|envelope| {
-                    ::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                    ::fidl_next::FromWire::from_wire(unsafe {
                         envelope.deref_unchecked::<::fidl_next::wire::fuchsia::StatusResult>()
                     })
                 }),
 
                 result_array: wire.table.get(2).map(|envelope| {
-                    ::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                    ::fidl_next::FromWire::from_wire(unsafe {
                         envelope.deref_unchecked::<[::fidl_next::wire::fuchsia::StatusResult; 10]>()
                     })
                 }),
 
                 result_vector: wire.table.get(3).map(|envelope| {
-                    ::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                    ::fidl_next::FromWire::from_wire(unsafe {
                         envelope.deref_unchecked::<::fidl_next::wire::Vector<
                                 'de,
                                 ::fidl_next::wire::fuchsia::StatusResult,
@@ -1649,26 +1653,26 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::ResultTableAlias<'de>> for ResultTableAlias {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::ResultTableAlias<'de>> for ResultTableAlias {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ResultTableAlias<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::ResultTableAlias<'de>) -> Self {
             Self {
 
 
                 result: wire.table.get(1)
-                    .map(|envelope| ::fidl_next::FromWireRef::from_wire_ref(
+                    .map(|envelope| ::fidl_next::FromWire::from_wire(
                         unsafe { envelope.deref_unchecked::<::fidl_next::wire::Int32>() }
                     )),
 
 
                 result_array: wire.table.get(2)
-                    .map(|envelope| ::fidl_next::FromWireRef::from_wire_ref(
+                    .map(|envelope| ::fidl_next::FromWire::from_wire(
                         unsafe { envelope.deref_unchecked::<[::fidl_next::wire::Int32; 10]>() }
                     )),
 
 
                 result_vector: wire.table.get(3)
-                    .map(|envelope| ::fidl_next::FromWireRef::from_wire_ref(
+                    .map(|envelope| ::fidl_next::FromWire::from_wire(
                         unsafe { envelope.deref_unchecked::<::fidl_next::wire::Vector<'de, ::fidl_next::wire::Int32>>() }
                     )),
 
@@ -1857,21 +1861,21 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::ResultUnion<'de>> for ResultUnion {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::ResultUnion<'de>> for ResultUnion {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ResultUnion<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::ResultUnion<'de>) -> Self {
             match wire.raw.ordinal() {
-                1 => Self::Result(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                1 => Self::Result(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<::fidl_next::wire::fuchsia::StatusResult>()
                 })),
 
-                2 => Self::ResultArray(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                2 => Self::ResultArray(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw
                         .get()
                         .deref_unchecked::<[::fidl_next::wire::fuchsia::StatusResult; 10]>()
                 })),
 
-                3 => Self::ResultVector(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                3 => Self::ResultVector(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<::fidl_next::wire::Vector<'de, ::fidl_next::wire::fuchsia::StatusResult>>()
                 })),
 
@@ -1904,15 +1908,15 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireOptionRef<crate::wire_optional::ResultUnion<'de>>
+    impl<'a, 'de> ::fidl_next::FromWireOption<&'a crate::wire_optional::ResultUnion<'de>>
         for Box<ResultUnion>
     {
         #[inline]
-        fn from_wire_option_ref(
-            wire: &crate::wire_optional::ResultUnion<'de>,
+        fn from_wire_option(
+            wire: &'a crate::wire_optional::ResultUnion<'de>,
         ) -> ::core::option::Option<Self> {
             if let Some(inner) = wire.as_ref() {
-                Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
+                Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
             } else {
                 None
             }
@@ -2104,19 +2108,19 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::ResultUnionAlias<'de>> for ResultUnionAlias {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::ResultUnionAlias<'de>> for ResultUnionAlias {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ResultUnionAlias<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::ResultUnionAlias<'de>) -> Self {
             match wire.raw.ordinal() {
-                1 => Self::Result(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                1 => Self::Result(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<::fidl_next::wire::Int32>()
                 })),
 
-                2 => Self::ResultArray(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                2 => Self::ResultArray(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<[::fidl_next::wire::Int32; 10]>()
                 })),
 
-                3 => Self::ResultVector(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                3 => Self::ResultVector(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<::fidl_next::wire::Vector<'de, ::fidl_next::wire::Int32>>()
                 })),
 
@@ -2154,15 +2158,15 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireOptionRef<crate::wire_optional::ResultUnionAlias<'de>>
+    impl<'a, 'de> ::fidl_next::FromWireOption<&'a crate::wire_optional::ResultUnionAlias<'de>>
         for Box<ResultUnionAlias>
     {
         #[inline]
-        fn from_wire_option_ref(
-            wire: &crate::wire_optional::ResultUnionAlias<'de>,
+        fn from_wire_option(
+            wire: &'a crate::wire_optional::ResultUnionAlias<'de>,
         ) -> ::core::option::Option<Self> {
             if let Some(inner) = wire.as_ref() {
-                Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
+                Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
             } else {
                 None
             }
@@ -2251,9 +2255,9 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::StatusEnum> for StatusEnum {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::StatusEnum> for StatusEnum {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::StatusEnum) -> Self {
+        fn from_wire(wire: &'a crate::wire::StatusEnum) -> Self {
             Self::from(*wire)
         }
     }
@@ -2339,9 +2343,9 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::StatusEnumAlias> for StatusEnumAlias {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::StatusEnumAlias> for StatusEnumAlias {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::StatusEnumAlias) -> Self {
+        fn from_wire(wire: &'a crate::wire::StatusEnumAlias) -> Self {
             Self::from(*wire)
         }
     }
@@ -2496,10 +2500,10 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::StatusProtocolARequest> for StatusProtocolARequest {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::StatusProtocolARequest> for StatusProtocolARequest {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::StatusProtocolARequest) -> Self {
-            Self { arg: ::fidl_next::FromWireRef::from_wire_ref(&wire.arg) }
+        fn from_wire(wire: &'a crate::wire::StatusProtocolARequest) -> Self {
+            Self { arg: ::fidl_next::FromWire::from_wire(&wire.arg) }
         }
     }
 
@@ -2654,10 +2658,12 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::StatusProtocolAResponse> for StatusProtocolAResponse {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::StatusProtocolAResponse>
+        for StatusProtocolAResponse
+    {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::StatusProtocolAResponse) -> Self {
-            Self { status: ::fidl_next::FromWireRef::from_wire_ref(&wire.status) }
+        fn from_wire(wire: &'a crate::wire::StatusProtocolAResponse) -> Self {
+            Self { status: ::fidl_next::FromWire::from_wire(&wire.status) }
         }
     }
 
@@ -2810,10 +2816,10 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::StatusProtocolBRequest> for StatusProtocolBRequest {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::StatusProtocolBRequest> for StatusProtocolBRequest {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::StatusProtocolBRequest) -> Self {
-            Self { arg: ::fidl_next::FromWireRef::from_wire_ref(&wire.arg) }
+        fn from_wire(wire: &'a crate::wire::StatusProtocolBRequest) -> Self {
+            Self { arg: ::fidl_next::FromWire::from_wire(&wire.arg) }
         }
     }
 
@@ -2967,10 +2973,12 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::StatusProtocolBResponse> for StatusProtocolBResponse {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::StatusProtocolBResponse>
+        for StatusProtocolBResponse
+    {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::StatusProtocolBResponse) -> Self {
-            Self { status: ::fidl_next::FromWireRef::from_wire_ref(&wire.status) }
+        fn from_wire(wire: &'a crate::wire::StatusProtocolBResponse) -> Self {
+            Self { status: ::fidl_next::FromWire::from_wire(&wire.status) }
         }
     }
 
@@ -3143,15 +3151,15 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::StatusStruct<'de>> for StatusStruct {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::StatusStruct<'de>> for StatusStruct {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::StatusStruct<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::StatusStruct<'de>) -> Self {
             Self {
-                status: ::fidl_next::FromWireRef::from_wire_ref(&wire.status),
+                status: ::fidl_next::FromWire::from_wire(&wire.status),
 
-                status_array: ::fidl_next::FromWireRef::from_wire_ref(&wire.status_array),
+                status_array: ::fidl_next::FromWire::from_wire(&wire.status_array),
 
-                status_vector: ::fidl_next::FromWireRef::from_wire_ref(&wire.status_vector),
+                status_vector: ::fidl_next::FromWire::from_wire(&wire.status_vector),
             }
         }
     }
@@ -3326,15 +3334,15 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::StatusStructAlias<'de>> for StatusStructAlias {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::StatusStructAlias<'de>> for StatusStructAlias {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::StatusStructAlias<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::StatusStructAlias<'de>) -> Self {
             Self {
-                status: ::fidl_next::FromWireRef::from_wire_ref(&wire.status),
+                status: ::fidl_next::FromWire::from_wire(&wire.status),
 
-                status_array: ::fidl_next::FromWireRef::from_wire_ref(&wire.status_array),
+                status_array: ::fidl_next::FromWire::from_wire(&wire.status_array),
 
-                status_vector: ::fidl_next::FromWireRef::from_wire_ref(&wire.status_vector),
+                status_vector: ::fidl_next::FromWire::from_wire(&wire.status_vector),
             }
         }
     }
@@ -3558,26 +3566,26 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::StatusTable<'de>> for StatusTable {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::StatusTable<'de>> for StatusTable {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::StatusTable<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::StatusTable<'de>) -> Self {
             Self {
 
 
                 status: wire.table.get(1)
-                    .map(|envelope| ::fidl_next::FromWireRef::from_wire_ref(
+                    .map(|envelope| ::fidl_next::FromWire::from_wire(
                         unsafe { envelope.deref_unchecked::<::fidl_next::wire::fuchsia::Status>() }
                     )),
 
 
                 status_array: wire.table.get(2)
-                    .map(|envelope| ::fidl_next::FromWireRef::from_wire_ref(
+                    .map(|envelope| ::fidl_next::FromWire::from_wire(
                         unsafe { envelope.deref_unchecked::<[::fidl_next::wire::fuchsia::Status; 10]>() }
                     )),
 
 
                 status_vector: wire.table.get(3)
-                    .map(|envelope| ::fidl_next::FromWireRef::from_wire_ref(
+                    .map(|envelope| ::fidl_next::FromWire::from_wire(
                         unsafe { envelope.deref_unchecked::<::fidl_next::wire::Vector<'de, ::fidl_next::wire::fuchsia::Status>>() }
                     )),
 
@@ -3798,26 +3806,26 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::StatusTableAlias<'de>> for StatusTableAlias {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::StatusTableAlias<'de>> for StatusTableAlias {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::StatusTableAlias<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::StatusTableAlias<'de>) -> Self {
             Self {
 
 
                 status: wire.table.get(1)
-                    .map(|envelope| ::fidl_next::FromWireRef::from_wire_ref(
+                    .map(|envelope| ::fidl_next::FromWire::from_wire(
                         unsafe { envelope.deref_unchecked::<::fidl_next::wire::Int32>() }
                     )),
 
 
                 status_array: wire.table.get(2)
-                    .map(|envelope| ::fidl_next::FromWireRef::from_wire_ref(
+                    .map(|envelope| ::fidl_next::FromWire::from_wire(
                         unsafe { envelope.deref_unchecked::<[::fidl_next::wire::Int32; 10]>() }
                     )),
 
 
                 status_vector: wire.table.get(3)
-                    .map(|envelope| ::fidl_next::FromWireRef::from_wire_ref(
+                    .map(|envelope| ::fidl_next::FromWire::from_wire(
                         unsafe { envelope.deref_unchecked::<::fidl_next::wire::Vector<'de, ::fidl_next::wire::Int32>>() }
                     )),
 
@@ -4004,19 +4012,19 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::StatusUnion<'de>> for StatusUnion {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::StatusUnion<'de>> for StatusUnion {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::StatusUnion<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::StatusUnion<'de>) -> Self {
             match wire.raw.ordinal() {
-                1 => Self::Status(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                1 => Self::Status(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<::fidl_next::wire::fuchsia::Status>()
                 })),
 
-                2 => Self::StatusArray(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                2 => Self::StatusArray(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<[::fidl_next::wire::fuchsia::Status; 10]>()
                 })),
 
-                3 => Self::StatusVector(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                3 => Self::StatusVector(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<::fidl_next::wire::Vector<'de, ::fidl_next::wire::fuchsia::Status>>()
                 })),
 
@@ -4049,15 +4057,15 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireOptionRef<crate::wire_optional::StatusUnion<'de>>
+    impl<'a, 'de> ::fidl_next::FromWireOption<&'a crate::wire_optional::StatusUnion<'de>>
         for Box<StatusUnion>
     {
         #[inline]
-        fn from_wire_option_ref(
-            wire: &crate::wire_optional::StatusUnion<'de>,
+        fn from_wire_option(
+            wire: &'a crate::wire_optional::StatusUnion<'de>,
         ) -> ::core::option::Option<Self> {
             if let Some(inner) = wire.as_ref() {
-                Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
+                Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
             } else {
                 None
             }
@@ -4249,19 +4257,19 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::StatusUnionAlias<'de>> for StatusUnionAlias {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::StatusUnionAlias<'de>> for StatusUnionAlias {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::StatusUnionAlias<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::StatusUnionAlias<'de>) -> Self {
             match wire.raw.ordinal() {
-                1 => Self::Status(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                1 => Self::Status(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<::fidl_next::wire::Int32>()
                 })),
 
-                2 => Self::StatusArray(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                2 => Self::StatusArray(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<[::fidl_next::wire::Int32; 10]>()
                 })),
 
-                3 => Self::StatusVector(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                3 => Self::StatusVector(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<::fidl_next::wire::Vector<'de, ::fidl_next::wire::Int32>>()
                 })),
 
@@ -4299,15 +4307,15 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireOptionRef<crate::wire_optional::StatusUnionAlias<'de>>
+    impl<'a, 'de> ::fidl_next::FromWireOption<&'a crate::wire_optional::StatusUnionAlias<'de>>
         for Box<StatusUnionAlias>
     {
         #[inline]
-        fn from_wire_option_ref(
-            wire: &crate::wire_optional::StatusUnionAlias<'de>,
+        fn from_wire_option(
+            wire: &'a crate::wire_optional::StatusUnionAlias<'de>,
         ) -> ::core::option::Option<Self> {
             if let Some(inner) = wire.as_ref() {
-                Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
+                Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
             } else {
                 None
             }

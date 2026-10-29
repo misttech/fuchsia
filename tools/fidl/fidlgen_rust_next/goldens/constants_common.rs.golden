@@ -61,9 +61,9 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::Bits> for Bits {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::Bits> for Bits {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Bits) -> Self {
+        fn from_wire(wire: &'a crate::wire::Bits) -> Self {
             Self::from(*wire)
         }
     }
@@ -127,9 +127,9 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::BitsType> for BitsType {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::BitsType> for BitsType {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::BitsType) -> Self {
+        fn from_wire(wire: &'a crate::wire::BitsType) -> Self {
             Self::from(*wire)
         }
     }
@@ -212,9 +212,9 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::Enum> for Enum {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::Enum> for Enum {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Enum) -> Self {
+        fn from_wire(wire: &'a crate::wire::Enum) -> Self {
             Self::from(*wire)
         }
     }
@@ -304,9 +304,9 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::EnumType> for EnumType {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::EnumType> for EnumType {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::EnumType) -> Self {
+        fn from_wire(wire: &'a crate::wire::EnumType) -> Self {
             Self::from(*wire)
         }
     }
@@ -520,23 +520,19 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::Struct<'de>> for Struct {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::Struct<'de>> for Struct {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Struct<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::Struct<'de>) -> Self {
             Self {
-                int64_with_default: ::fidl_next::FromWireRef::from_wire_ref(
-                    &wire.int64_with_default,
-                ),
+                int64_with_default: ::fidl_next::FromWire::from_wire(&wire.int64_with_default),
 
-                string_with_default: ::fidl_next::FromWireRef::from_wire_ref(
-                    &wire.string_with_default,
-                ),
+                string_with_default: ::fidl_next::FromWire::from_wire(&wire.string_with_default),
 
-                bool_with_default: ::fidl_next::FromWireRef::from_wire_ref(&wire.bool_with_default),
+                bool_with_default: ::fidl_next::FromWire::from_wire(&wire.bool_with_default),
 
-                enum_with_default: ::fidl_next::FromWireRef::from_wire_ref(&wire.enum_with_default),
+                enum_with_default: ::fidl_next::FromWire::from_wire(&wire.enum_with_default),
 
-                bits_with_default: ::fidl_next::FromWireRef::from_wire_ref(&wire.bits_with_default),
+                bits_with_default: ::fidl_next::FromWire::from_wire(&wire.bits_with_default),
             }
         }
     }

@@ -175,13 +175,13 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::LocalStructPayload> for LocalStructPayload {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::LocalStructPayload> for LocalStructPayload {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::LocalStructPayload) -> Self {
+        fn from_wire(wire: &'a crate::wire::LocalStructPayload) -> Self {
             Self {
-                a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a),
+                a: ::fidl_next::FromWire::from_wire(&wire.a),
 
-                b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b),
+                b: ::fidl_next::FromWire::from_wire(&wire.b),
             }
         }
     }
@@ -362,15 +362,15 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::MainProtocolOneWayAnonRequest>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::MainProtocolOneWayAnonRequest>
         for MainProtocolOneWayAnonRequest
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::MainProtocolOneWayAnonRequest) -> Self {
+        fn from_wire(wire: &'a crate::wire::MainProtocolOneWayAnonRequest) -> Self {
             Self {
-                a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a),
+                a: ::fidl_next::FromWire::from_wire(&wire.a),
 
-                b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b),
+                b: ::fidl_next::FromWire::from_wire(&wire.b),
             }
         }
     }
@@ -551,15 +551,15 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::MainProtocolTwoWayAnonRequest>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::MainProtocolTwoWayAnonRequest>
         for MainProtocolTwoWayAnonRequest
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::MainProtocolTwoWayAnonRequest) -> Self {
+        fn from_wire(wire: &'a crate::wire::MainProtocolTwoWayAnonRequest) -> Self {
             Self {
-                a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a),
+                a: ::fidl_next::FromWire::from_wire(&wire.a),
 
-                b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b),
+                b: ::fidl_next::FromWire::from_wire(&wire.b),
             }
         }
     }
@@ -740,15 +740,15 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::MainProtocolTwoWayAnonResponse>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::MainProtocolTwoWayAnonResponse>
         for MainProtocolTwoWayAnonResponse
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::MainProtocolTwoWayAnonResponse) -> Self {
+        fn from_wire(wire: &'a crate::wire::MainProtocolTwoWayAnonResponse) -> Self {
             Self {
-                a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a),
+                a: ::fidl_next::FromWire::from_wire(&wire.a),
 
-                b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b),
+                b: ::fidl_next::FromWire::from_wire(&wire.b),
             }
         }
     }
@@ -940,15 +940,15 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::MainProtocolTwoWayAnonWithErrorRequest>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::MainProtocolTwoWayAnonWithErrorRequest>
         for MainProtocolTwoWayAnonWithErrorRequest
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::MainProtocolTwoWayAnonWithErrorRequest) -> Self {
+        fn from_wire(wire: &'a crate::wire::MainProtocolTwoWayAnonWithErrorRequest) -> Self {
             Self {
-                a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a),
+                a: ::fidl_next::FromWire::from_wire(&wire.a),
 
-                b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b),
+                b: ::fidl_next::FromWire::from_wire(&wire.b),
             }
         }
     }
@@ -1141,15 +1141,15 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::MainProtocolTwoWayAnonWithErrorResponse>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::MainProtocolTwoWayAnonWithErrorResponse>
         for MainProtocolTwoWayAnonWithErrorResponse
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::MainProtocolTwoWayAnonWithErrorResponse) -> Self {
+        fn from_wire(wire: &'a crate::wire::MainProtocolTwoWayAnonWithErrorResponse) -> Self {
             Self {
-                a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a),
+                a: ::fidl_next::FromWire::from_wire(&wire.a),
 
-                b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b),
+                b: ::fidl_next::FromWire::from_wire(&wire.b),
             }
         }
     }
@@ -1328,15 +1328,15 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::MainProtocolOnAnonRequest>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::MainProtocolOnAnonRequest>
         for MainProtocolOnAnonRequest
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::MainProtocolOnAnonRequest) -> Self {
+        fn from_wire(wire: &'a crate::wire::MainProtocolOnAnonRequest) -> Self {
             Self {
-                a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a),
+                a: ::fidl_next::FromWire::from_wire(&wire.a),
 
-                b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b),
+                b: ::fidl_next::FromWire::from_wire(&wire.b),
             }
         }
     }

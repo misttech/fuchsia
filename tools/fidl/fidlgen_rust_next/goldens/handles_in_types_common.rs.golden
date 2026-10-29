@@ -89,9 +89,9 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::ObjType> for ObjType {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::ObjType> for ObjType {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ObjType) -> Self {
+        fn from_wire(wire: &'a crate::wire::ObjType) -> Self {
             Self::from(*wire)
         }
     }

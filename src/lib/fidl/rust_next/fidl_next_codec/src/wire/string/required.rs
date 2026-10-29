@@ -10,8 +10,8 @@ use core::str::{from_utf8, from_utf8_unchecked};
 use munge::munge;
 
 use crate::{
-    Constrained, Decode, DecodeError, Decoder, Encode, EncodeError, Encoder, FromWire, FromWireRef,
-    IntoNatural, Slot, ValidationError, Wire, wire,
+    Constrained, Decode, DecodeError, Decoder, Encode, EncodeError, Encoder, FromWire, IntoNatural,
+    Slot, ValidationError, Wire, wire,
 };
 
 use std::string::String as StdString;
@@ -199,7 +199,7 @@ unsafe impl<E: Encoder + ?Sized> Encode<String<'static>, E> for &str {
 impl FromWire<String<'_>> for StdString {
     #[inline]
     fn from_wire(wire: String<'_>) -> Self {
-        StdString::from_wire_ref(&wire)
+        StdString::from_wire(&wire)
     }
 }
 
@@ -207,11 +207,11 @@ impl IntoNatural for String<'_> {
     type Natural = StdString;
 }
 
-impl FromWireRef<String<'_>> for StdString {
+impl<'a> FromWire<&'a String<'_>> for StdString {
     #[inline]
-    fn from_wire_ref(wire: &String<'_>) -> Self {
+    fn from_wire(wire: &'a String<'_>) -> Self {
         // SAFETY: The bytes of a decoded `String` are validated to be valid UTF-8.
-        unsafe { StdString::from_utf8_unchecked(Vec::from_wire_ref(&wire.vec)) }
+        unsafe { StdString::from_utf8_unchecked(Vec::from_wire(&wire.vec)) }
     }
 }
 

@@ -137,14 +137,14 @@ impl<'de> ::fidl_next::FromWire<crate::wire::{{ name }}<'de>> for {{ name }} {
 }
 
 {% if !table.is_resource %}
-impl<'de> ::fidl_next::FromWireRef<crate::wire::{{ name }}<'de>> for {{ name }} {
+impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::{{ name }}<'de>> for {{ name }} {
     #[inline]
-    fn from_wire_ref(wire: &crate::wire::{{ name }}<'de>) -> Self {
+    fn from_wire(wire: &'a crate::wire::{{ name }}<'de>) -> Self {
         Self {
             {% for member in table.members %}
                 {% let member_name = member.name.snake() %}
                 {{ member_name }}: wire.table.get({{ member.ordinal }})
-                    .map(|envelope| ::fidl_next::FromWireRef::from_wire_ref(
+                    .map(|envelope| ::fidl_next::FromWire::from_wire(
                         unsafe { envelope.deref_unchecked::<{{ self.wire_type(member.ty, member.from_alias.as_ref()) }}>() }
                     )),
             {% endfor %}

@@ -163,15 +163,15 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::FlexibleFoo<'de>> for FlexibleFoo {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::FlexibleFoo<'de>> for FlexibleFoo {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::FlexibleFoo<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::FlexibleFoo<'de>) -> Self {
             match wire.raw.ordinal() {
-                1 => Self::S(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                1 => Self::S(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<::fidl_next::wire::String<'de>>()
                 })),
 
-                2 => Self::I(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                2 => Self::I(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<::fidl_next::wire::Int32>()
                 })),
 
@@ -204,15 +204,15 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireOptionRef<crate::wire_optional::FlexibleFoo<'de>>
+    impl<'a, 'de> ::fidl_next::FromWireOption<&'a crate::wire_optional::FlexibleFoo<'de>>
         for Box<FlexibleFoo>
     {
         #[inline]
-        fn from_wire_option_ref(
-            wire: &crate::wire_optional::FlexibleFoo<'de>,
+        fn from_wire_option(
+            wire: &'a crate::wire_optional::FlexibleFoo<'de>,
         ) -> ::core::option::Option<Self> {
             if let Some(inner) = wire.as_ref() {
-                Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
+                Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
             } else {
                 None
             }
@@ -356,15 +356,15 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::StrictFoo<'de>> for StrictFoo {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::StrictFoo<'de>> for StrictFoo {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::StrictFoo<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::StrictFoo<'de>) -> Self {
             match wire.raw.ordinal() {
-                1 => Self::S(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                1 => Self::S(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<::fidl_next::wire::String<'de>>()
                 })),
 
-                2 => Self::I(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                2 => Self::I(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<::fidl_next::wire::Int32>()
                 })),
 
@@ -397,13 +397,15 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireOptionRef<crate::wire_optional::StrictFoo<'de>> for Box<StrictFoo> {
+    impl<'a, 'de> ::fidl_next::FromWireOption<&'a crate::wire_optional::StrictFoo<'de>>
+        for Box<StrictFoo>
+    {
         #[inline]
-        fn from_wire_option_ref(
-            wire: &crate::wire_optional::StrictFoo<'de>,
+        fn from_wire_option(
+            wire: &'a crate::wire_optional::StrictFoo<'de>,
         ) -> ::core::option::Option<Self> {
             if let Some(inner) = wire.as_ref() {
-                Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
+                Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
             } else {
                 None
             }
@@ -566,15 +568,15 @@ pub mod natural {
         }
     }
 
-    impl<'de>
-        ::fidl_next::FromWireRef<crate::wire::ProtocolRequestStrictResponseFlexibleRequest<'de>>
+    impl<'a, 'de>
+        ::fidl_next::FromWire<&'a crate::wire::ProtocolRequestStrictResponseFlexibleRequest<'de>>
         for ProtocolRequestStrictResponseFlexibleRequest
     {
         #[inline]
-        fn from_wire_ref(
-            wire: &crate::wire::ProtocolRequestStrictResponseFlexibleRequest<'de>,
+        fn from_wire(
+            wire: &'a crate::wire::ProtocolRequestStrictResponseFlexibleRequest<'de>,
         ) -> Self {
-            Self { s: ::fidl_next::FromWireRef::from_wire_ref(&wire.s) }
+            Self { s: ::fidl_next::FromWire::from_wire(&wire.s) }
         }
     }
 
@@ -736,15 +738,15 @@ pub mod natural {
         }
     }
 
-    impl<'de>
-        ::fidl_next::FromWireRef<crate::wire::ProtocolRequestStrictResponseFlexibleResponse<'de>>
+    impl<'a, 'de>
+        ::fidl_next::FromWire<&'a crate::wire::ProtocolRequestStrictResponseFlexibleResponse<'de>>
         for ProtocolRequestStrictResponseFlexibleResponse
     {
         #[inline]
-        fn from_wire_ref(
-            wire: &crate::wire::ProtocolRequestStrictResponseFlexibleResponse<'de>,
+        fn from_wire(
+            wire: &'a crate::wire::ProtocolRequestStrictResponseFlexibleResponse<'de>,
         ) -> Self {
-            Self { f: ::fidl_next::FromWireRef::from_wire_ref(&wire.f) }
+            Self { f: ::fidl_next::FromWire::from_wire(&wire.f) }
         }
     }
 
@@ -904,15 +906,15 @@ pub mod natural {
         }
     }
 
-    impl<'de>
-        ::fidl_next::FromWireRef<crate::wire::ProtocolRequestFlexibleResponseStrictRequest<'de>>
+    impl<'a, 'de>
+        ::fidl_next::FromWire<&'a crate::wire::ProtocolRequestFlexibleResponseStrictRequest<'de>>
         for ProtocolRequestFlexibleResponseStrictRequest
     {
         #[inline]
-        fn from_wire_ref(
-            wire: &crate::wire::ProtocolRequestFlexibleResponseStrictRequest<'de>,
+        fn from_wire(
+            wire: &'a crate::wire::ProtocolRequestFlexibleResponseStrictRequest<'de>,
         ) -> Self {
-            Self { s: ::fidl_next::FromWireRef::from_wire_ref(&wire.s) }
+            Self { s: ::fidl_next::FromWire::from_wire(&wire.s) }
         }
     }
 
@@ -1074,15 +1076,15 @@ pub mod natural {
         }
     }
 
-    impl<'de>
-        ::fidl_next::FromWireRef<crate::wire::ProtocolRequestFlexibleResponseStrictResponse<'de>>
+    impl<'a, 'de>
+        ::fidl_next::FromWire<&'a crate::wire::ProtocolRequestFlexibleResponseStrictResponse<'de>>
         for ProtocolRequestFlexibleResponseStrictResponse
     {
         #[inline]
-        fn from_wire_ref(
-            wire: &crate::wire::ProtocolRequestFlexibleResponseStrictResponse<'de>,
+        fn from_wire(
+            wire: &'a crate::wire::ProtocolRequestFlexibleResponseStrictResponse<'de>,
         ) -> Self {
-            Self { f: ::fidl_next::FromWireRef::from_wire_ref(&wire.f) }
+            Self { f: ::fidl_next::FromWire::from_wire(&wire.f) }
         }
     }
 }

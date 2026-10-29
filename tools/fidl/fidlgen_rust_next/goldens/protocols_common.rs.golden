@@ -179,15 +179,15 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::ChannelProtocolMethodARequest>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::ChannelProtocolMethodARequest>
         for ChannelProtocolMethodARequest
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ChannelProtocolMethodARequest) -> Self {
+        fn from_wire(wire: &'a crate::wire::ChannelProtocolMethodARequest) -> Self {
             Self {
-                a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a),
+                a: ::fidl_next::FromWire::from_wire(&wire.a),
 
-                b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b),
+                b: ::fidl_next::FromWire::from_wire(&wire.b),
             }
         }
     }
@@ -367,15 +367,15 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::ChannelProtocolEventARequest>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::ChannelProtocolEventARequest>
         for ChannelProtocolEventARequest
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ChannelProtocolEventARequest) -> Self {
+        fn from_wire(wire: &'a crate::wire::ChannelProtocolEventARequest) -> Self {
             Self {
-                a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a),
+                a: ::fidl_next::FromWire::from_wire(&wire.a),
 
-                b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b),
+                b: ::fidl_next::FromWire::from_wire(&wire.b),
             }
         }
     }
@@ -555,15 +555,15 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::ChannelProtocolMethodBRequest>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::ChannelProtocolMethodBRequest>
         for ChannelProtocolMethodBRequest
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ChannelProtocolMethodBRequest) -> Self {
+        fn from_wire(wire: &'a crate::wire::ChannelProtocolMethodBRequest) -> Self {
             Self {
-                a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a),
+                a: ::fidl_next::FromWire::from_wire(&wire.a),
 
-                b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b),
+                b: ::fidl_next::FromWire::from_wire(&wire.b),
             }
         }
     }
@@ -721,12 +721,12 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::ChannelProtocolMethodBResponse>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::ChannelProtocolMethodBResponse>
         for ChannelProtocolMethodBResponse
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ChannelProtocolMethodBResponse) -> Self {
-            Self { result: ::fidl_next::FromWireRef::from_wire_ref(&wire.result) }
+        fn from_wire(wire: &'a crate::wire::ChannelProtocolMethodBResponse) -> Self {
+            Self { result: ::fidl_next::FromWire::from_wire(&wire.result) }
         }
     }
 
@@ -815,9 +815,9 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::ErrorEnum> for ErrorEnum {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::ErrorEnum> for ErrorEnum {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ErrorEnum) -> Self {
+        fn from_wire(wire: &'a crate::wire::ErrorEnum) -> Self {
             Self::from(*wire)
         }
     }
@@ -1195,41 +1195,41 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::ManyParametersFifteenRequest>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::ManyParametersFifteenRequest>
         for ManyParametersFifteenRequest
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ManyParametersFifteenRequest) -> Self {
+        fn from_wire(wire: &'a crate::wire::ManyParametersFifteenRequest) -> Self {
             Self {
-                p1: ::fidl_next::FromWireRef::from_wire_ref(&wire.p1),
+                p1: ::fidl_next::FromWire::from_wire(&wire.p1),
 
-                p2: ::fidl_next::FromWireRef::from_wire_ref(&wire.p2),
+                p2: ::fidl_next::FromWire::from_wire(&wire.p2),
 
-                p3: ::fidl_next::FromWireRef::from_wire_ref(&wire.p3),
+                p3: ::fidl_next::FromWire::from_wire(&wire.p3),
 
-                p4: ::fidl_next::FromWireRef::from_wire_ref(&wire.p4),
+                p4: ::fidl_next::FromWire::from_wire(&wire.p4),
 
-                p5: ::fidl_next::FromWireRef::from_wire_ref(&wire.p5),
+                p5: ::fidl_next::FromWire::from_wire(&wire.p5),
 
-                p6: ::fidl_next::FromWireRef::from_wire_ref(&wire.p6),
+                p6: ::fidl_next::FromWire::from_wire(&wire.p6),
 
-                p7: ::fidl_next::FromWireRef::from_wire_ref(&wire.p7),
+                p7: ::fidl_next::FromWire::from_wire(&wire.p7),
 
-                p8: ::fidl_next::FromWireRef::from_wire_ref(&wire.p8),
+                p8: ::fidl_next::FromWire::from_wire(&wire.p8),
 
-                p9: ::fidl_next::FromWireRef::from_wire_ref(&wire.p9),
+                p9: ::fidl_next::FromWire::from_wire(&wire.p9),
 
-                p10: ::fidl_next::FromWireRef::from_wire_ref(&wire.p10),
+                p10: ::fidl_next::FromWire::from_wire(&wire.p10),
 
-                p11: ::fidl_next::FromWireRef::from_wire_ref(&wire.p11),
+                p11: ::fidl_next::FromWire::from_wire(&wire.p11),
 
-                p12: ::fidl_next::FromWireRef::from_wire_ref(&wire.p12),
+                p12: ::fidl_next::FromWire::from_wire(&wire.p12),
 
-                p13: ::fidl_next::FromWireRef::from_wire_ref(&wire.p13),
+                p13: ::fidl_next::FromWire::from_wire(&wire.p13),
 
-                p14: ::fidl_next::FromWireRef::from_wire_ref(&wire.p14),
+                p14: ::fidl_next::FromWire::from_wire(&wire.p14),
 
-                p15: ::fidl_next::FromWireRef::from_wire_ref(&wire.p15),
+                p15: ::fidl_next::FromWire::from_wire(&wire.p15),
             }
         }
     }
@@ -1375,11 +1375,11 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::TheUnion<'de>> for TheUnion {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::TheUnion<'de>> for TheUnion {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::TheUnion<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::TheUnion<'de>) -> Self {
             match wire.raw.ordinal() {
-                1 => Self::V(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                1 => Self::V(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<::fidl_next::wire::Uint32>()
                 })),
 
@@ -1412,13 +1412,15 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireOptionRef<crate::wire_optional::TheUnion<'de>> for Box<TheUnion> {
+    impl<'a, 'de> ::fidl_next::FromWireOption<&'a crate::wire_optional::TheUnion<'de>>
+        for Box<TheUnion>
+    {
         #[inline]
-        fn from_wire_option_ref(
-            wire: &crate::wire_optional::TheUnion<'de>,
+        fn from_wire_option(
+            wire: &'a crate::wire_optional::TheUnion<'de>,
         ) -> ::core::option::Option<Self> {
             if let Some(inner) = wire.as_ref() {
-                Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
+                Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
             } else {
                 None
             }
@@ -1573,12 +1575,12 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::MethodWithUnionUnionMethodRequest<'de>>
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::MethodWithUnionUnionMethodRequest<'de>>
         for MethodWithUnionUnionMethodRequest
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::MethodWithUnionUnionMethodRequest<'de>) -> Self {
-            Self { u: ::fidl_next::FromWireRef::from_wire_ref(&wire.u) }
+        fn from_wire(wire: &'a crate::wire::MethodWithUnionUnionMethodRequest<'de>) -> Self {
+            Self { u: ::fidl_next::FromWire::from_wire(&wire.u) }
         }
     }
 
@@ -1730,12 +1732,12 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::MethodWithUnionUnionMethodResponse<'de>>
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::MethodWithUnionUnionMethodResponse<'de>>
         for MethodWithUnionUnionMethodResponse
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::MethodWithUnionUnionMethodResponse<'de>) -> Self {
-            Self { u: ::fidl_next::FromWireRef::from_wire_ref(&wire.u) }
+        fn from_wire(wire: &'a crate::wire::MethodWithUnionUnionMethodResponse<'de>) -> Self {
+            Self { u: ::fidl_next::FromWire::from_wire(&wire.u) }
         }
     }
 
@@ -1905,16 +1907,16 @@ pub mod natural {
         }
     }
 
-    impl<'de>
-        ::fidl_next::FromWireRef<
-            crate::wire::WithAndWithoutRequestResponseNoRequestWithResponseResponse<'de>,
+    impl<'a, 'de>
+        ::fidl_next::FromWire<
+            &'a crate::wire::WithAndWithoutRequestResponseNoRequestWithResponseResponse<'de>,
         > for WithAndWithoutRequestResponseNoRequestWithResponseResponse
     {
         #[inline]
-        fn from_wire_ref(
-            wire: &crate::wire::WithAndWithoutRequestResponseNoRequestWithResponseResponse<'de>,
+        fn from_wire(
+            wire: &'a crate::wire::WithAndWithoutRequestResponseNoRequestWithResponseResponse<'de>,
         ) -> Self {
-            Self { ret: ::fidl_next::FromWireRef::from_wire_ref(&wire.ret) }
+            Self { ret: ::fidl_next::FromWire::from_wire(&wire.ret) }
         }
     }
 
@@ -2080,16 +2082,16 @@ pub mod natural {
         }
     }
 
-    impl<'de>
-        ::fidl_next::FromWireRef<
-            crate::wire::WithAndWithoutRequestResponseWithRequestNoResponseRequest<'de>,
+    impl<'a, 'de>
+        ::fidl_next::FromWire<
+            &'a crate::wire::WithAndWithoutRequestResponseWithRequestNoResponseRequest<'de>,
         > for WithAndWithoutRequestResponseWithRequestNoResponseRequest
     {
         #[inline]
-        fn from_wire_ref(
-            wire: &crate::wire::WithAndWithoutRequestResponseWithRequestNoResponseRequest<'de>,
+        fn from_wire(
+            wire: &'a crate::wire::WithAndWithoutRequestResponseWithRequestNoResponseRequest<'de>,
         ) -> Self {
-            Self { arg: ::fidl_next::FromWireRef::from_wire_ref(&wire.arg) }
+            Self { arg: ::fidl_next::FromWire::from_wire(&wire.arg) }
         }
     }
 
@@ -2259,16 +2261,18 @@ pub mod natural {
         }
     }
 
-    impl<'de>
-        ::fidl_next::FromWireRef<
-            crate::wire::WithAndWithoutRequestResponseWithRequestEmptyResponseRequest<'de>,
+    impl<'a, 'de>
+        ::fidl_next::FromWire<
+            &'a crate::wire::WithAndWithoutRequestResponseWithRequestEmptyResponseRequest<'de>,
         > for WithAndWithoutRequestResponseWithRequestEmptyResponseRequest
     {
         #[inline]
-        fn from_wire_ref(
-            wire: &crate::wire::WithAndWithoutRequestResponseWithRequestEmptyResponseRequest<'de>,
+        fn from_wire(
+            wire: &'a crate::wire::WithAndWithoutRequestResponseWithRequestEmptyResponseRequest<
+                'de,
+            >,
         ) -> Self {
-            Self { arg: ::fidl_next::FromWireRef::from_wire_ref(&wire.arg) }
+            Self { arg: ::fidl_next::FromWire::from_wire(&wire.arg) }
         }
     }
 
@@ -2438,16 +2442,16 @@ pub mod natural {
         }
     }
 
-    impl<'de>
-        ::fidl_next::FromWireRef<
-            crate::wire::WithAndWithoutRequestResponseWithRequestWithResponseRequest<'de>,
+    impl<'a, 'de>
+        ::fidl_next::FromWire<
+            &'a crate::wire::WithAndWithoutRequestResponseWithRequestWithResponseRequest<'de>,
         > for WithAndWithoutRequestResponseWithRequestWithResponseRequest
     {
         #[inline]
-        fn from_wire_ref(
-            wire: &crate::wire::WithAndWithoutRequestResponseWithRequestWithResponseRequest<'de>,
+        fn from_wire(
+            wire: &'a crate::wire::WithAndWithoutRequestResponseWithRequestWithResponseRequest<'de>,
         ) -> Self {
-            Self { arg: ::fidl_next::FromWireRef::from_wire_ref(&wire.arg) }
+            Self { arg: ::fidl_next::FromWire::from_wire(&wire.arg) }
         }
     }
 
@@ -2617,16 +2621,18 @@ pub mod natural {
         }
     }
 
-    impl<'de>
-        ::fidl_next::FromWireRef<
-            crate::wire::WithAndWithoutRequestResponseWithRequestWithResponseResponse<'de>,
+    impl<'a, 'de>
+        ::fidl_next::FromWire<
+            &'a crate::wire::WithAndWithoutRequestResponseWithRequestWithResponseResponse<'de>,
         > for WithAndWithoutRequestResponseWithRequestWithResponseResponse
     {
         #[inline]
-        fn from_wire_ref(
-            wire: &crate::wire::WithAndWithoutRequestResponseWithRequestWithResponseResponse<'de>,
+        fn from_wire(
+            wire: &'a crate::wire::WithAndWithoutRequestResponseWithRequestWithResponseResponse<
+                'de,
+            >,
         ) -> Self {
-            Self { ret: ::fidl_next::FromWireRef::from_wire_ref(&wire.ret) }
+            Self { ret: ::fidl_next::FromWire::from_wire(&wire.ret) }
         }
     }
 
@@ -2791,16 +2797,16 @@ pub mod natural {
         }
     }
 
-    impl<'de>
-        ::fidl_next::FromWireRef<
-            crate::wire::WithAndWithoutRequestResponseOnWithResponseRequest<'de>,
+    impl<'a, 'de>
+        ::fidl_next::FromWire<
+            &'a crate::wire::WithAndWithoutRequestResponseOnWithResponseRequest<'de>,
         > for WithAndWithoutRequestResponseOnWithResponseRequest
     {
         #[inline]
-        fn from_wire_ref(
-            wire: &crate::wire::WithAndWithoutRequestResponseOnWithResponseRequest<'de>,
+        fn from_wire(
+            wire: &'a crate::wire::WithAndWithoutRequestResponseOnWithResponseRequest<'de>,
         ) -> Self {
-            Self { ret: ::fidl_next::FromWireRef::from_wire_ref(&wire.ret) }
+            Self { ret: ::fidl_next::FromWire::from_wire(&wire.ret) }
         }
     }
 
@@ -3011,17 +3017,17 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::WithErrorSyntaxResponseAsStructResponse>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::WithErrorSyntaxResponseAsStructResponse>
         for WithErrorSyntaxResponseAsStructResponse
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::WithErrorSyntaxResponseAsStructResponse) -> Self {
+        fn from_wire(wire: &'a crate::wire::WithErrorSyntaxResponseAsStructResponse) -> Self {
             Self {
-                a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a),
+                a: ::fidl_next::FromWire::from_wire(&wire.a),
 
-                b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b),
+                b: ::fidl_next::FromWire::from_wire(&wire.b),
 
-                c: ::fidl_next::FromWireRef::from_wire_ref(&wire.c),
+                c: ::fidl_next::FromWire::from_wire(&wire.c),
             }
         }
     }

@@ -9,7 +9,7 @@ use core::ops::Deref;
 
 use fidl_next_codec::{
     Chunk, Constrained, Decode, DecodeError, Decoder, Encode, EncodeError, Encoder, FromWire,
-    FromWireRef, IntoNatural, Slot, ValidationError, Wire, munge, wire,
+    IntoNatural, Slot, ValidationError, Wire, munge, wire,
 };
 
 const ORD_OK: u64 = 1;
@@ -151,13 +151,13 @@ impl<T: IntoNatural> IntoNatural for Flexible<'_, T> {
     type Natural = crate::Flexible<T::Natural>;
 }
 
-impl<T, W> FromWireRef<Flexible<'_, W>> for crate::Flexible<T>
+impl<'a, T, W> FromWire<&'a Flexible<'_, W>> for crate::Flexible<T>
 where
-    T: FromWireRef<W>,
+    T: FromWire<&'a W>,
 {
     #[inline]
-    fn from_wire_ref(wire: &Flexible<'_, W>) -> Self {
-        crate::Flexible(T::from_wire_ref(wire.as_ref()))
+    fn from_wire(wire: &'a Flexible<'_, W>) -> Self {
+        crate::Flexible(T::from_wire(wire.as_ref()))
     }
 }
 

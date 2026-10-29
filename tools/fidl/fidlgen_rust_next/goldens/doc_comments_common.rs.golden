@@ -148,11 +148,11 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::FlexibleUnion<'de>> for FlexibleUnion {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::FlexibleUnion<'de>> for FlexibleUnion {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::FlexibleUnion<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::FlexibleUnion<'de>) -> Self {
             match wire.raw.ordinal() {
-                1 => Self::Field(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                1 => Self::Field(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<::fidl_next::wire::Int32>()
                 })),
 
@@ -188,15 +188,15 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireOptionRef<crate::wire_optional::FlexibleUnion<'de>>
+    impl<'a, 'de> ::fidl_next::FromWireOption<&'a crate::wire_optional::FlexibleUnion<'de>>
         for Box<FlexibleUnion>
     {
         #[inline]
-        fn from_wire_option_ref(
-            wire: &crate::wire_optional::FlexibleUnion<'de>,
+        fn from_wire_option(
+            wire: &'a crate::wire_optional::FlexibleUnion<'de>,
         ) -> ::core::option::Option<Self> {
             if let Some(inner) = wire.as_ref() {
-                Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
+                Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
             } else {
                 None
             }
@@ -257,9 +257,9 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::MyFlexibleBits> for MyFlexibleBits {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::MyFlexibleBits> for MyFlexibleBits {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::MyFlexibleBits) -> Self {
+        fn from_wire(wire: &'a crate::wire::MyFlexibleBits) -> Self {
             Self::from(*wire)
         }
     }
@@ -352,9 +352,9 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::MyFlexibleEnum> for MyFlexibleEnum {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::MyFlexibleEnum> for MyFlexibleEnum {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::MyFlexibleEnum) -> Self {
+        fn from_wire(wire: &'a crate::wire::MyFlexibleEnum) -> Self {
             Self::from(*wire)
         }
     }
@@ -417,9 +417,9 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::MyStrictBits> for MyStrictBits {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::MyStrictBits> for MyStrictBits {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::MyStrictBits) -> Self {
+        fn from_wire(wire: &'a crate::wire::MyStrictBits) -> Self {
             Self::from(*wire)
         }
     }
@@ -510,9 +510,9 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::MyStrictEnum> for MyStrictEnum {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::MyStrictEnum> for MyStrictEnum {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::MyStrictEnum) -> Self {
+        fn from_wire(wire: &'a crate::wire::MyStrictEnum) -> Self {
             Self::from(*wire)
         }
     }
@@ -636,11 +636,11 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::StrictUnion> for StrictUnion {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::StrictUnion> for StrictUnion {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::StrictUnion) -> Self {
+        fn from_wire(wire: &'a crate::wire::StrictUnion) -> Self {
             match wire.raw.ordinal() {
-                1 => Self::Field(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                1 => Self::Field(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<::fidl_next::wire::Int32>()
                 })),
 
@@ -673,13 +673,13 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireOptionRef<crate::wire_optional::StrictUnion> for Box<StrictUnion> {
+    impl<'a> ::fidl_next::FromWireOption<&'a crate::wire_optional::StrictUnion> for Box<StrictUnion> {
         #[inline]
-        fn from_wire_option_ref(
-            wire: &crate::wire_optional::StrictUnion,
+        fn from_wire_option(
+            wire: &'a crate::wire_optional::StrictUnion,
         ) -> ::core::option::Option<Self> {
             if let Some(inner) = wire.as_ref() {
-                Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
+                Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
             } else {
                 None
             }
@@ -824,10 +824,10 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::Struct> for Struct {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::Struct> for Struct {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Struct) -> Self {
-            Self { field: ::fidl_next::FromWireRef::from_wire_ref(&wire.field) }
+        fn from_wire(wire: &'a crate::wire::Struct) -> Self {
+            Self { field: ::fidl_next::FromWire::from_wire(&wire.field) }
         }
     }
 
@@ -964,12 +964,12 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::Table<'de>> for Table {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::Table<'de>> for Table {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Table<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::Table<'de>) -> Self {
             Self {
                 field: wire.table.get(1).map(|envelope| {
-                    ::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                    ::fidl_next::FromWire::from_wire(unsafe {
                         envelope.deref_unchecked::<::fidl_next::wire::Int32>()
                     })
                 }),

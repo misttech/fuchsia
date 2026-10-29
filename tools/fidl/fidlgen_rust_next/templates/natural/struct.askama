@@ -174,13 +174,13 @@ impl{{ de }} ::fidl_next::FromWire<crate::wire::{{ name }}{{ de }}> for {{ name 
 }
 
 {% if !strct.is_resource %}
-impl{{ de }} ::fidl_next::FromWireRef<crate::wire::{{ name }}{{ de }}> for {{ name }} {
+impl<'a{% if !is_static %}, 'de{% endif %}> ::fidl_next::FromWire<&'a crate::wire::{{ name }}{{ de }}> for {{ name }} {
     #[inline]
-    fn from_wire_ref(wire: &crate::wire::{{ name }}{{ de }}) -> Self {
+    fn from_wire(wire: &'a crate::wire::{{ name }}{{ de }}) -> Self {
         Self {
             {% for member in strct.members %}
                 {% let member_name = member.name.snake() %}
-                {{ member_name }}: ::fidl_next::FromWireRef::from_wire_ref(&wire.{{ member_name }}),
+                {{ member_name }}: ::fidl_next::FromWire::from_wire(&wire.{{ member_name }}),
             {% endfor %}
         }
     }

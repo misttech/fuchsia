@@ -6,8 +6,8 @@ use core::mem::MaybeUninit;
 use core::ops::Deref;
 
 use fidl_next_codec::{
-    Constrained, Decode, DecodeError, Encode, EncodeError, Encoder, FromWire, FromWireRef,
-    IntoNatural, Slot, ValidationError, Wire, munge,
+    Constrained, Decode, DecodeError, Encode, EncodeError, Encoder, FromWire, IntoNatural, Slot,
+    ValidationError, Wire, munge,
 };
 
 /// A strict FIDL message.
@@ -127,13 +127,13 @@ impl<T: IntoNatural> IntoNatural for Strict<T> {
     type Natural = crate::Strict<T::Natural>;
 }
 
-impl<T, W> FromWireRef<Strict<W>> for crate::Strict<T>
+impl<'a, T, W> FromWire<&'a Strict<W>> for crate::Strict<T>
 where
-    T: FromWireRef<W>,
+    T: FromWire<&'a W>,
 {
     #[inline]
-    fn from_wire_ref(wire: &Strict<W>) -> Self {
-        crate::Strict(T::from_wire_ref(wire.as_ref()))
+    fn from_wire(wire: &'a Strict<W>) -> Self {
+        crate::Strict(T::from_wire(wire.as_ref()))
     }
 }
 

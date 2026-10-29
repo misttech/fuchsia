@@ -151,12 +151,12 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::ShouldNeverAppearInAnyBinding4>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::ShouldNeverAppearInAnyBinding4>
         for ShouldNeverAppearInAnyBinding4
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ShouldNeverAppearInAnyBinding4) -> Self {
-            Self { a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a) }
+        fn from_wire(wire: &'a crate::wire::ShouldNeverAppearInAnyBinding4) -> Self {
+            Self { a: ::fidl_next::FromWire::from_wire(&wire.a) }
         }
     }
 
@@ -300,16 +300,14 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::ShouldNeverAppearInAnyBinding5<'de>>
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::ShouldNeverAppearInAnyBinding5<'de>>
         for ShouldNeverAppearInAnyBinding5
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ShouldNeverAppearInAnyBinding5<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::ShouldNeverAppearInAnyBinding5<'de>) -> Self {
             Self {
                 a: wire.table.get(1).map(|envelope| {
-                    ::fidl_next::FromWireRef::from_wire_ref(unsafe {
-                        envelope.deref_unchecked::<bool>()
-                    })
+                    ::fidl_next::FromWire::from_wire(unsafe { envelope.deref_unchecked::<bool>() })
                 }),
             }
         }
@@ -476,13 +474,13 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::ShouldNeverAppearInAnyBinding6<'de>>
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::ShouldNeverAppearInAnyBinding6<'de>>
         for ShouldNeverAppearInAnyBinding6
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ShouldNeverAppearInAnyBinding6<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::ShouldNeverAppearInAnyBinding6<'de>) -> Self {
             match wire.raw.ordinal() {
-                1 => Self::A(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                1 => Self::A(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<bool>()
                 })),
 
@@ -520,16 +518,16 @@ pub mod natural {
         }
     }
 
-    impl<'de>
-        ::fidl_next::FromWireOptionRef<crate::wire_optional::ShouldNeverAppearInAnyBinding6<'de>>
+    impl<'a, 'de>
+        ::fidl_next::FromWireOption<&'a crate::wire_optional::ShouldNeverAppearInAnyBinding6<'de>>
         for Box<ShouldNeverAppearInAnyBinding6>
     {
         #[inline]
-        fn from_wire_option_ref(
-            wire: &crate::wire_optional::ShouldNeverAppearInAnyBinding6<'de>,
+        fn from_wire_option(
+            wire: &'a crate::wire_optional::ShouldNeverAppearInAnyBinding6<'de>,
         ) -> ::core::option::Option<Self> {
             if let Some(inner) = wire.as_ref() {
-                Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
+                Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
             } else {
                 None
             }
@@ -742,21 +740,21 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::AllowedDeniedResponse<'de>>
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::AllowedDeniedResponse<'de>>
         for AllowedDeniedResponse
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::AllowedDeniedResponse<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::AllowedDeniedResponse<'de>) -> Self {
             Self {
-                should_never_appear_in_any_binding_4: ::fidl_next::FromWireRef::from_wire_ref(
+                should_never_appear_in_any_binding_4: ::fidl_next::FromWire::from_wire(
                     &wire.should_never_appear_in_any_binding_4,
                 ),
 
-                should_never_appear_in_any_binding_5: ::fidl_next::FromWireRef::from_wire_ref(
+                should_never_appear_in_any_binding_5: ::fidl_next::FromWire::from_wire(
                     &wire.should_never_appear_in_any_binding_5,
                 ),
 
-                should_never_appear_in_any_binding_6: ::fidl_next::FromWireRef::from_wire_ref(
+                should_never_appear_in_any_binding_6: ::fidl_next::FromWire::from_wire(
                     &wire.should_never_appear_in_any_binding_6,
                 ),
             }
@@ -910,12 +908,12 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::ShouldNeverAppearInAnyBinding1>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::ShouldNeverAppearInAnyBinding1>
         for ShouldNeverAppearInAnyBinding1
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ShouldNeverAppearInAnyBinding1) -> Self {
-            Self { a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a) }
+        fn from_wire(wire: &'a crate::wire::ShouldNeverAppearInAnyBinding1) -> Self {
+            Self { a: ::fidl_next::FromWire::from_wire(&wire.a) }
         }
     }
 
@@ -1059,16 +1057,14 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::ShouldNeverAppearInAnyBinding2<'de>>
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::ShouldNeverAppearInAnyBinding2<'de>>
         for ShouldNeverAppearInAnyBinding2
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ShouldNeverAppearInAnyBinding2<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::ShouldNeverAppearInAnyBinding2<'de>) -> Self {
             Self {
                 a: wire.table.get(1).map(|envelope| {
-                    ::fidl_next::FromWireRef::from_wire_ref(unsafe {
-                        envelope.deref_unchecked::<bool>()
-                    })
+                    ::fidl_next::FromWire::from_wire(unsafe { envelope.deref_unchecked::<bool>() })
                 }),
             }
         }
@@ -1235,13 +1231,13 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::ShouldNeverAppearInAnyBinding3<'de>>
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::ShouldNeverAppearInAnyBinding3<'de>>
         for ShouldNeverAppearInAnyBinding3
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ShouldNeverAppearInAnyBinding3<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::ShouldNeverAppearInAnyBinding3<'de>) -> Self {
             match wire.raw.ordinal() {
-                1 => Self::A(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                1 => Self::A(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<bool>()
                 })),
 
@@ -1279,16 +1275,16 @@ pub mod natural {
         }
     }
 
-    impl<'de>
-        ::fidl_next::FromWireOptionRef<crate::wire_optional::ShouldNeverAppearInAnyBinding3<'de>>
+    impl<'a, 'de>
+        ::fidl_next::FromWireOption<&'a crate::wire_optional::ShouldNeverAppearInAnyBinding3<'de>>
         for Box<ShouldNeverAppearInAnyBinding3>
     {
         #[inline]
-        fn from_wire_option_ref(
-            wire: &crate::wire_optional::ShouldNeverAppearInAnyBinding3<'de>,
+        fn from_wire_option(
+            wire: &'a crate::wire_optional::ShouldNeverAppearInAnyBinding3<'de>,
         ) -> ::core::option::Option<Self> {
             if let Some(inner) = wire.as_ref() {
-                Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
+                Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
             } else {
                 None
             }
@@ -1525,23 +1521,24 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::DeniedShouldNeverAppearInAnyBindingRequest<'de>>
+    impl<'a, 'de>
+        ::fidl_next::FromWire<&'a crate::wire::DeniedShouldNeverAppearInAnyBindingRequest<'de>>
         for DeniedShouldNeverAppearInAnyBindingRequest
     {
         #[inline]
-        fn from_wire_ref(
-            wire: &crate::wire::DeniedShouldNeverAppearInAnyBindingRequest<'de>,
+        fn from_wire(
+            wire: &'a crate::wire::DeniedShouldNeverAppearInAnyBindingRequest<'de>,
         ) -> Self {
             Self {
-                should_never_appear_in_any_binding_1: ::fidl_next::FromWireRef::from_wire_ref(
+                should_never_appear_in_any_binding_1: ::fidl_next::FromWire::from_wire(
                     &wire.should_never_appear_in_any_binding_1,
                 ),
 
-                should_never_appear_in_any_binding_2: ::fidl_next::FromWireRef::from_wire_ref(
+                should_never_appear_in_any_binding_2: ::fidl_next::FromWire::from_wire(
                     &wire.should_never_appear_in_any_binding_2,
                 ),
 
-                should_never_appear_in_any_binding_3: ::fidl_next::FromWireRef::from_wire_ref(
+                should_never_appear_in_any_binding_3: ::fidl_next::FromWire::from_wire(
                     &wire.should_never_appear_in_any_binding_3,
                 ),
             }
@@ -1695,12 +1692,12 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::ShouldNeverAppearInAnyBinding7>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::ShouldNeverAppearInAnyBinding7>
         for ShouldNeverAppearInAnyBinding7
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ShouldNeverAppearInAnyBinding7) -> Self {
-            Self { a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a) }
+        fn from_wire(wire: &'a crate::wire::ShouldNeverAppearInAnyBinding7) -> Self {
+            Self { a: ::fidl_next::FromWire::from_wire(&wire.a) }
         }
     }
 
@@ -1844,16 +1841,14 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::ShouldNeverAppearInAnyBinding8<'de>>
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::ShouldNeverAppearInAnyBinding8<'de>>
         for ShouldNeverAppearInAnyBinding8
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ShouldNeverAppearInAnyBinding8<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::ShouldNeverAppearInAnyBinding8<'de>) -> Self {
             Self {
                 a: wire.table.get(1).map(|envelope| {
-                    ::fidl_next::FromWireRef::from_wire_ref(unsafe {
-                        envelope.deref_unchecked::<bool>()
-                    })
+                    ::fidl_next::FromWire::from_wire(unsafe { envelope.deref_unchecked::<bool>() })
                 }),
             }
         }
@@ -2020,13 +2015,13 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::ShouldNeverAppearInAnyBinding9<'de>>
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::ShouldNeverAppearInAnyBinding9<'de>>
         for ShouldNeverAppearInAnyBinding9
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ShouldNeverAppearInAnyBinding9<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::ShouldNeverAppearInAnyBinding9<'de>) -> Self {
             match wire.raw.ordinal() {
-                1 => Self::A(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                1 => Self::A(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<bool>()
                 })),
 
@@ -2064,16 +2059,16 @@ pub mod natural {
         }
     }
 
-    impl<'de>
-        ::fidl_next::FromWireOptionRef<crate::wire_optional::ShouldNeverAppearInAnyBinding9<'de>>
+    impl<'a, 'de>
+        ::fidl_next::FromWireOption<&'a crate::wire_optional::ShouldNeverAppearInAnyBinding9<'de>>
         for Box<ShouldNeverAppearInAnyBinding9>
     {
         #[inline]
-        fn from_wire_option_ref(
-            wire: &crate::wire_optional::ShouldNeverAppearInAnyBinding9<'de>,
+        fn from_wire_option(
+            wire: &'a crate::wire_optional::ShouldNeverAppearInAnyBinding9<'de>,
         ) -> ::core::option::Option<Self> {
             if let Some(inner) = wire.as_ref() {
-                Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
+                Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
             } else {
                 None
             }
@@ -2284,19 +2279,19 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::DeniedAnonymous<'de>> for DeniedAnonymous {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::DeniedAnonymous<'de>> for DeniedAnonymous {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::DeniedAnonymous<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::DeniedAnonymous<'de>) -> Self {
             Self {
-                should_never_appear_in_any_binding_7: ::fidl_next::FromWireRef::from_wire_ref(
+                should_never_appear_in_any_binding_7: ::fidl_next::FromWire::from_wire(
                     &wire.should_never_appear_in_any_binding_7,
                 ),
 
-                should_never_appear_in_any_binding_8: ::fidl_next::FromWireRef::from_wire_ref(
+                should_never_appear_in_any_binding_8: ::fidl_next::FromWire::from_wire(
                     &wire.should_never_appear_in_any_binding_8,
                 ),
 
-                should_never_appear_in_any_binding_9: ::fidl_next::FromWireRef::from_wire_ref(
+                should_never_appear_in_any_binding_9: ::fidl_next::FromWire::from_wire(
                     &wire.should_never_appear_in_any_binding_9,
                 ),
             }
@@ -2450,12 +2445,12 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::DenyEachBindingOnlyDenyCppRequest>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::DenyEachBindingOnlyDenyCppRequest>
         for DenyEachBindingOnlyDenyCppRequest
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::DenyEachBindingOnlyDenyCppRequest) -> Self {
-            Self { a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a) }
+        fn from_wire(wire: &'a crate::wire::DenyEachBindingOnlyDenyCppRequest) -> Self {
+            Self { a: ::fidl_next::FromWire::from_wire(&wire.a) }
         }
     }
 
@@ -2612,12 +2607,12 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::DenyEachBindingOnlyDenyCppResponse>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::DenyEachBindingOnlyDenyCppResponse>
         for DenyEachBindingOnlyDenyCppResponse
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::DenyEachBindingOnlyDenyCppResponse) -> Self {
-            Self { b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b) }
+        fn from_wire(wire: &'a crate::wire::DenyEachBindingOnlyDenyCppResponse) -> Self {
+            Self { b: ::fidl_next::FromWire::from_wire(&wire.b) }
         }
     }
 
@@ -2768,12 +2763,12 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::DenyEachBindingOnlyDenyDartRequest>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::DenyEachBindingOnlyDenyDartRequest>
         for DenyEachBindingOnlyDenyDartRequest
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::DenyEachBindingOnlyDenyDartRequest) -> Self {
-            Self { a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a) }
+        fn from_wire(wire: &'a crate::wire::DenyEachBindingOnlyDenyDartRequest) -> Self {
+            Self { a: ::fidl_next::FromWire::from_wire(&wire.a) }
         }
     }
 
@@ -2931,12 +2926,12 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::DenyEachBindingOnlyDenyDartResponse>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::DenyEachBindingOnlyDenyDartResponse>
         for DenyEachBindingOnlyDenyDartResponse
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::DenyEachBindingOnlyDenyDartResponse) -> Self {
-            Self { b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b) }
+        fn from_wire(wire: &'a crate::wire::DenyEachBindingOnlyDenyDartResponse) -> Self {
+            Self { b: ::fidl_next::FromWire::from_wire(&wire.b) }
         }
     }
 
@@ -3087,12 +3082,12 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::DenyEachBindingOnlyDenyGoRequest>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::DenyEachBindingOnlyDenyGoRequest>
         for DenyEachBindingOnlyDenyGoRequest
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::DenyEachBindingOnlyDenyGoRequest) -> Self {
-            Self { a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a) }
+        fn from_wire(wire: &'a crate::wire::DenyEachBindingOnlyDenyGoRequest) -> Self {
+            Self { a: ::fidl_next::FromWire::from_wire(&wire.a) }
         }
     }
 
@@ -3249,12 +3244,12 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::DenyEachBindingOnlyDenyGoResponse>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::DenyEachBindingOnlyDenyGoResponse>
         for DenyEachBindingOnlyDenyGoResponse
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::DenyEachBindingOnlyDenyGoResponse) -> Self {
-            Self { b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b) }
+        fn from_wire(wire: &'a crate::wire::DenyEachBindingOnlyDenyGoResponse) -> Self {
+            Self { b: ::fidl_next::FromWire::from_wire(&wire.b) }
         }
     }
 
@@ -3406,12 +3401,12 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::DenyEachBindingOnlyDenyPythonRequest>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::DenyEachBindingOnlyDenyPythonRequest>
         for DenyEachBindingOnlyDenyPythonRequest
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::DenyEachBindingOnlyDenyPythonRequest) -> Self {
-            Self { a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a) }
+        fn from_wire(wire: &'a crate::wire::DenyEachBindingOnlyDenyPythonRequest) -> Self {
+            Self { a: ::fidl_next::FromWire::from_wire(&wire.a) }
         }
     }
 
@@ -3569,12 +3564,12 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::DenyEachBindingOnlyDenyPythonResponse>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::DenyEachBindingOnlyDenyPythonResponse>
         for DenyEachBindingOnlyDenyPythonResponse
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::DenyEachBindingOnlyDenyPythonResponse) -> Self {
-            Self { b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b) }
+        fn from_wire(wire: &'a crate::wire::DenyEachBindingOnlyDenyPythonResponse) -> Self {
+            Self { b: ::fidl_next::FromWire::from_wire(&wire.b) }
         }
     }
 
@@ -3725,12 +3720,12 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::DenyEachBindingOnlyDenyRustRequest>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::DenyEachBindingOnlyDenyRustRequest>
         for DenyEachBindingOnlyDenyRustRequest
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::DenyEachBindingOnlyDenyRustRequest) -> Self {
-            Self { a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a) }
+        fn from_wire(wire: &'a crate::wire::DenyEachBindingOnlyDenyRustRequest) -> Self {
+            Self { a: ::fidl_next::FromWire::from_wire(&wire.a) }
         }
     }
 
@@ -3888,12 +3883,12 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::DenyEachBindingOnlyDenyRustResponse>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::DenyEachBindingOnlyDenyRustResponse>
         for DenyEachBindingOnlyDenyRustResponse
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::DenyEachBindingOnlyDenyRustResponse) -> Self {
-            Self { b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b) }
+        fn from_wire(wire: &'a crate::wire::DenyEachBindingOnlyDenyRustResponse) -> Self {
+            Self { b: ::fidl_next::FromWire::from_wire(&wire.b) }
         }
     }
 
@@ -4056,12 +4051,12 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::DenyEachBindingOnlyDenySyzkallerRequest>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::DenyEachBindingOnlyDenySyzkallerRequest>
         for DenyEachBindingOnlyDenySyzkallerRequest
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::DenyEachBindingOnlyDenySyzkallerRequest) -> Self {
-            Self { a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a) }
+        fn from_wire(wire: &'a crate::wire::DenyEachBindingOnlyDenySyzkallerRequest) -> Self {
+            Self { a: ::fidl_next::FromWire::from_wire(&wire.a) }
         }
     }
 
@@ -4230,12 +4225,12 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::DenyEachBindingOnlyDenySyzkallerResponse>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::DenyEachBindingOnlyDenySyzkallerResponse>
         for DenyEachBindingOnlyDenySyzkallerResponse
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::DenyEachBindingOnlyDenySyzkallerResponse) -> Self {
-            Self { b: ::fidl_next::FromWireRef::from_wire_ref(&wire.b) }
+        fn from_wire(wire: &'a crate::wire::DenyEachBindingOnlyDenySyzkallerResponse) -> Self {
+            Self { b: ::fidl_next::FromWire::from_wire(&wire.b) }
         }
     }
 
@@ -4387,12 +4382,12 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::MemberOnlyAppearsInImportingLibrary>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::MemberOnlyAppearsInImportingLibrary>
         for MemberOnlyAppearsInImportingLibrary
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::MemberOnlyAppearsInImportingLibrary) -> Self {
-            Self { a: ::fidl_next::FromWireRef::from_wire_ref(&wire.a) }
+        fn from_wire(wire: &'a crate::wire::MemberOnlyAppearsInImportingLibrary) -> Self {
+            Self { a: ::fidl_next::FromWire::from_wire(&wire.a) }
         }
     }
 
@@ -4576,13 +4571,13 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::OnlyAppearsInImportingLibrary>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::OnlyAppearsInImportingLibrary>
         for OnlyAppearsInImportingLibrary
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::OnlyAppearsInImportingLibrary) -> Self {
+        fn from_wire(wire: &'a crate::wire::OnlyAppearsInImportingLibrary) -> Self {
             Self {
-                member_only_appears_in_importing_library: ::fidl_next::FromWireRef::from_wire_ref(
+                member_only_appears_in_importing_library: ::fidl_next::FromWire::from_wire(
                     &wire.member_only_appears_in_importing_library,
                 ),
             }
@@ -4667,9 +4662,9 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::OnlyDart> for OnlyDart {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::OnlyDart> for OnlyDart {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::OnlyDart) -> Self {
+        fn from_wire(wire: &'a crate::wire::OnlyDart) -> Self {
             Self::from(*wire)
         }
     }
@@ -4794,11 +4789,11 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::OnlyLlcpp> for OnlyLlcpp {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::OnlyLlcpp> for OnlyLlcpp {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::OnlyLlcpp) -> Self {
+        fn from_wire(wire: &'a crate::wire::OnlyLlcpp) -> Self {
             match wire.raw.ordinal() {
-                1 => Self::X(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                1 => Self::X(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<::fidl_next::wire::Uint32>()
                 })),
 
@@ -4827,13 +4822,13 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireOptionRef<crate::wire_optional::OnlyLlcpp> for Box<OnlyLlcpp> {
+    impl<'a> ::fidl_next::FromWireOption<&'a crate::wire_optional::OnlyLlcpp> for Box<OnlyLlcpp> {
         #[inline]
-        fn from_wire_option_ref(
-            wire: &crate::wire_optional::OnlyLlcpp,
+        fn from_wire_option(
+            wire: &'a crate::wire_optional::OnlyLlcpp,
         ) -> ::core::option::Option<Self> {
             if let Some(inner) = wire.as_ref() {
-                Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
+                Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
             } else {
                 None
             }
@@ -4932,9 +4927,9 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::OnlyPython<'de>> for OnlyPython {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::OnlyPython<'de>> for OnlyPython {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::OnlyPython<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::OnlyPython<'de>) -> Self {
             Self {}
         }
     }
@@ -5031,9 +5026,9 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::OnlyRust<'de>> for OnlyRust {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::OnlyRust<'de>> for OnlyRust {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::OnlyRust<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::OnlyRust<'de>) -> Self {
             Self {}
         }
     }
@@ -5095,9 +5090,9 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::OnlySyzkaller> for OnlySyzkaller {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::OnlySyzkaller> for OnlySyzkaller {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::OnlySyzkaller) -> Self {
+        fn from_wire(wire: &'a crate::wire::OnlySyzkaller) -> Self {
             Self::from(*wire)
         }
     }

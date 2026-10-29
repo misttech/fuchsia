@@ -180,13 +180,13 @@ impl{{ de }} ::fidl_next::FromWire<crate::wire::{{ name }}{{ de }}> for {{ name 
 }
 
 {% if !union_.is_resource %}
-impl{{ de }} ::fidl_next::FromWireRef<crate::wire::{{ name }}{{ de }}> for {{ name }} {
+impl<'a{% if !is_static %}, 'de{% endif %}> ::fidl_next::FromWire<&'a crate::wire::{{ name }}{{ de }}> for {{ name }} {
     #[inline]
-    fn from_wire_ref(wire: &crate::wire::{{ name }}{{ de }}) -> Self {
+    fn from_wire(wire: &'a crate::wire::{{ name }}{{ de }}) -> Self {
         match wire.raw.ordinal() {
             {% for member in union_.members %}
                 {{ member.ordinal }} => Self::{{ member.name.camel() }}(
-                    ::fidl_next::FromWireRef::from_wire_ref(
+                    ::fidl_next::FromWire::from_wire(
                         unsafe { wire.raw.get().deref_unchecked::<{{ self.wire_type(member.ty, member.from_alias.as_ref()) }}>() }
                     )
                 ),
@@ -222,11 +222,11 @@ impl{{ de }} ::fidl_next::FromWireOption<crate::wire_optional::{{ name }}{{ de }
 }
 
 {% if !union_.is_resource %}
-impl{{ de }} ::fidl_next::FromWireOptionRef<crate::wire_optional::{{ name }}{{ de }}> for Box<{{ name }}> {
+impl<'a{% if !is_static %}, 'de{% endif %}> ::fidl_next::FromWireOption<&'a crate::wire_optional::{{ name }}{{ de }}> for Box<{{ name }}> {
     #[inline]
-    fn from_wire_option_ref(wire: &crate::wire_optional::{{ name }}{{ de }}) -> ::core::option::Option<Self> {
+    fn from_wire_option(wire: &'a crate::wire_optional::{{ name }}{{ de }}) -> ::core::option::Option<Self> {
         if let Some(inner) = wire.as_ref() {
-            Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
+            Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
         } else {
             None
         }

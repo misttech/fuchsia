@@ -146,16 +146,17 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::ComposedProtocolOneWayAnonComposedRequest<'de>>
+    impl<'a, 'de>
+        ::fidl_next::FromWire<&'a crate::wire::ComposedProtocolOneWayAnonComposedRequest<'de>>
         for ComposedProtocolOneWayAnonComposedRequest
     {
         #[inline]
-        fn from_wire_ref(
-            wire: &crate::wire::ComposedProtocolOneWayAnonComposedRequest<'de>,
+        fn from_wire(
+            wire: &'a crate::wire::ComposedProtocolOneWayAnonComposedRequest<'de>,
         ) -> Self {
             Self {
                 a: wire.table.get(1).map(|envelope| {
-                    ::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                    ::fidl_next::FromWire::from_wire(unsafe {
                         envelope.deref_unchecked::<::fidl_next::wire::Uint16>()
                     })
                 }),
@@ -312,13 +313,13 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::ComposedProtocolTwoWayAnonComposedRequest>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::ComposedProtocolTwoWayAnonComposedRequest>
         for ComposedProtocolTwoWayAnonComposedRequest
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ComposedProtocolTwoWayAnonComposedRequest) -> Self {
+        fn from_wire(wire: &'a crate::wire::ComposedProtocolTwoWayAnonComposedRequest) -> Self {
             match wire.raw.ordinal() {
-                1 => Self::B(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                1 => Self::B(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<bool>()
                 })),
 
@@ -358,17 +359,17 @@ pub mod natural {
         }
     }
 
-    impl
-        ::fidl_next::FromWireOptionRef<
-            crate::wire_optional::ComposedProtocolTwoWayAnonComposedRequest,
+    impl<'a>
+        ::fidl_next::FromWireOption<
+            &'a crate::wire_optional::ComposedProtocolTwoWayAnonComposedRequest,
         > for Box<ComposedProtocolTwoWayAnonComposedRequest>
     {
         #[inline]
-        fn from_wire_option_ref(
-            wire: &crate::wire_optional::ComposedProtocolTwoWayAnonComposedRequest,
+        fn from_wire_option(
+            wire: &'a crate::wire_optional::ComposedProtocolTwoWayAnonComposedRequest,
         ) -> ::core::option::Option<Self> {
             if let Some(inner) = wire.as_ref() {
-                Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
+                Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
             } else {
                 None
             }
@@ -517,16 +518,17 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::ComposedProtocolTwoWayAnonComposedResponse<'de>>
+    impl<'a, 'de>
+        ::fidl_next::FromWire<&'a crate::wire::ComposedProtocolTwoWayAnonComposedResponse<'de>>
         for ComposedProtocolTwoWayAnonComposedResponse
     {
         #[inline]
-        fn from_wire_ref(
-            wire: &crate::wire::ComposedProtocolTwoWayAnonComposedResponse<'de>,
+        fn from_wire(
+            wire: &'a crate::wire::ComposedProtocolTwoWayAnonComposedResponse<'de>,
         ) -> Self {
             Self {
                 a: wire.table.get(1).map(|envelope| {
-                    ::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                    ::fidl_next::FromWire::from_wire(unsafe {
                         envelope.deref_unchecked::<::fidl_next::wire::Uint16>()
                     })
                 }),
@@ -683,18 +685,18 @@ pub mod natural {
         }
     }
 
-    impl<'de>
-        ::fidl_next::FromWireRef<
-            crate::wire::ComposedProtocolTwoWayAnonComposedWithErrorRequest<'de>,
+    impl<'a, 'de>
+        ::fidl_next::FromWire<
+            &'a crate::wire::ComposedProtocolTwoWayAnonComposedWithErrorRequest<'de>,
         > for ComposedProtocolTwoWayAnonComposedWithErrorRequest
     {
         #[inline]
-        fn from_wire_ref(
-            wire: &crate::wire::ComposedProtocolTwoWayAnonComposedWithErrorRequest<'de>,
+        fn from_wire(
+            wire: &'a crate::wire::ComposedProtocolTwoWayAnonComposedWithErrorRequest<'de>,
         ) -> Self {
             Self {
                 a: wire.table.get(1).map(|envelope| {
-                    ::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                    ::fidl_next::FromWire::from_wire(unsafe {
                         envelope.deref_unchecked::<::fidl_next::wire::Uint16>()
                     })
                 }),
@@ -857,15 +859,16 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::ComposedProtocolTwoWayAnonComposedWithErrorResponse>
+    impl<'a>
+        ::fidl_next::FromWire<&'a crate::wire::ComposedProtocolTwoWayAnonComposedWithErrorResponse>
         for ComposedProtocolTwoWayAnonComposedWithErrorResponse
     {
         #[inline]
-        fn from_wire_ref(
-            wire: &crate::wire::ComposedProtocolTwoWayAnonComposedWithErrorResponse,
+        fn from_wire(
+            wire: &'a crate::wire::ComposedProtocolTwoWayAnonComposedWithErrorResponse,
         ) -> Self {
             match wire.raw.ordinal() {
-                1 => Self::B(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                1 => Self::B(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<bool>()
                 })),
 
@@ -907,17 +910,17 @@ pub mod natural {
         }
     }
 
-    impl
-        ::fidl_next::FromWireOptionRef<
-            crate::wire_optional::ComposedProtocolTwoWayAnonComposedWithErrorResponse,
+    impl<'a>
+        ::fidl_next::FromWireOption<
+            &'a crate::wire_optional::ComposedProtocolTwoWayAnonComposedWithErrorResponse,
         > for Box<ComposedProtocolTwoWayAnonComposedWithErrorResponse>
     {
         #[inline]
-        fn from_wire_option_ref(
-            wire: &crate::wire_optional::ComposedProtocolTwoWayAnonComposedWithErrorResponse,
+        fn from_wire_option(
+            wire: &'a crate::wire_optional::ComposedProtocolTwoWayAnonComposedWithErrorResponse,
         ) -> ::core::option::Option<Self> {
             if let Some(inner) = wire.as_ref() {
-                Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
+                Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
             } else {
                 None
             }
@@ -1064,13 +1067,13 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::ComposedProtocolOnAnonComposedRequest>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::ComposedProtocolOnAnonComposedRequest>
         for ComposedProtocolOnAnonComposedRequest
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ComposedProtocolOnAnonComposedRequest) -> Self {
+        fn from_wire(wire: &'a crate::wire::ComposedProtocolOnAnonComposedRequest) -> Self {
             match wire.raw.ordinal() {
-                1 => Self::B(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                1 => Self::B(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<bool>()
                 })),
 
@@ -1108,15 +1111,16 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireOptionRef<crate::wire_optional::ComposedProtocolOnAnonComposedRequest>
+    impl<'a>
+        ::fidl_next::FromWireOption<&'a crate::wire_optional::ComposedProtocolOnAnonComposedRequest>
         for Box<ComposedProtocolOnAnonComposedRequest>
     {
         #[inline]
-        fn from_wire_option_ref(
-            wire: &crate::wire_optional::ComposedProtocolOnAnonComposedRequest,
+        fn from_wire_option(
+            wire: &'a crate::wire_optional::ComposedProtocolOnAnonComposedRequest,
         ) -> ::core::option::Option<Self> {
             if let Some(inner) = wire.as_ref() {
-                Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
+                Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
             } else {
                 None
             }
@@ -1256,12 +1260,12 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::TablePayload<'de>> for TablePayload {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::TablePayload<'de>> for TablePayload {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::TablePayload<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::TablePayload<'de>) -> Self {
             Self {
                 a: wire.table.get(1).map(|envelope| {
-                    ::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                    ::fidl_next::FromWire::from_wire(unsafe {
                         envelope.deref_unchecked::<::fidl_next::wire::Uint16>()
                     })
                 }),
@@ -1394,11 +1398,11 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::UnionPayload> for UnionPayload {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::UnionPayload> for UnionPayload {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::UnionPayload) -> Self {
+        fn from_wire(wire: &'a crate::wire::UnionPayload) -> Self {
             match wire.raw.ordinal() {
-                1 => Self::B(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                1 => Self::B(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<bool>()
                 })),
 
@@ -1431,13 +1435,13 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireOptionRef<crate::wire_optional::UnionPayload> for Box<UnionPayload> {
+    impl<'a> ::fidl_next::FromWireOption<&'a crate::wire_optional::UnionPayload> for Box<UnionPayload> {
         #[inline]
-        fn from_wire_option_ref(
-            wire: &crate::wire_optional::UnionPayload,
+        fn from_wire_option(
+            wire: &'a crate::wire_optional::UnionPayload,
         ) -> ::core::option::Option<Self> {
             if let Some(inner) = wire.as_ref() {
-                Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
+                Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
             } else {
                 None
             }
@@ -1581,14 +1585,14 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::MainProtocolOneWayAnonRequest<'de>>
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::MainProtocolOneWayAnonRequest<'de>>
         for MainProtocolOneWayAnonRequest
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::MainProtocolOneWayAnonRequest<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::MainProtocolOneWayAnonRequest<'de>) -> Self {
             Self {
                 a: wire.table.get(1).map(|envelope| {
-                    ::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                    ::fidl_next::FromWire::from_wire(unsafe {
                         envelope.deref_unchecked::<::fidl_next::wire::Uint16>()
                     })
                 }),
@@ -1752,13 +1756,13 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::MainProtocolTwoWayAnonRequest<'de>>
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::MainProtocolTwoWayAnonRequest<'de>>
         for MainProtocolTwoWayAnonRequest
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::MainProtocolTwoWayAnonRequest<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::MainProtocolTwoWayAnonRequest<'de>) -> Self {
             match wire.raw.ordinal() {
-                1 => Self::B(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                1 => Self::B(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<bool>()
                 })),
 
@@ -1796,16 +1800,16 @@ pub mod natural {
         }
     }
 
-    impl<'de>
-        ::fidl_next::FromWireOptionRef<crate::wire_optional::MainProtocolTwoWayAnonRequest<'de>>
+    impl<'a, 'de>
+        ::fidl_next::FromWireOption<&'a crate::wire_optional::MainProtocolTwoWayAnonRequest<'de>>
         for Box<MainProtocolTwoWayAnonRequest>
     {
         #[inline]
-        fn from_wire_option_ref(
-            wire: &crate::wire_optional::MainProtocolTwoWayAnonRequest<'de>,
+        fn from_wire_option(
+            wire: &'a crate::wire_optional::MainProtocolTwoWayAnonRequest<'de>,
         ) -> ::core::option::Option<Self> {
             if let Some(inner) = wire.as_ref() {
-                Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
+                Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
             } else {
                 None
             }
@@ -1954,14 +1958,14 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::MainProtocolTwoWayAnonResponse<'de>>
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::MainProtocolTwoWayAnonResponse<'de>>
         for MainProtocolTwoWayAnonResponse
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::MainProtocolTwoWayAnonResponse<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::MainProtocolTwoWayAnonResponse<'de>) -> Self {
             Self {
                 a: wire.table.get(1).map(|envelope| {
-                    ::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                    ::fidl_next::FromWire::from_wire(unsafe {
                         envelope.deref_unchecked::<::fidl_next::wire::Uint16>()
                     })
                 }),
@@ -2111,14 +2115,15 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::MainProtocolTwoWayAnonWithErrorRequest<'de>>
+    impl<'a, 'de>
+        ::fidl_next::FromWire<&'a crate::wire::MainProtocolTwoWayAnonWithErrorRequest<'de>>
         for MainProtocolTwoWayAnonWithErrorRequest
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::MainProtocolTwoWayAnonWithErrorRequest<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::MainProtocolTwoWayAnonWithErrorRequest<'de>) -> Self {
             Self {
                 a: wire.table.get(1).map(|envelope| {
-                    ::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                    ::fidl_next::FromWire::from_wire(unsafe {
                         envelope.deref_unchecked::<::fidl_next::wire::Uint16>()
                     })
                 }),
@@ -2285,13 +2290,14 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::MainProtocolTwoWayAnonWithErrorResponse<'de>>
+    impl<'a, 'de>
+        ::fidl_next::FromWire<&'a crate::wire::MainProtocolTwoWayAnonWithErrorResponse<'de>>
         for MainProtocolTwoWayAnonWithErrorResponse
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::MainProtocolTwoWayAnonWithErrorResponse<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::MainProtocolTwoWayAnonWithErrorResponse<'de>) -> Self {
             match wire.raw.ordinal() {
-                1 => Self::B(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                1 => Self::B(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<bool>()
                 })),
 
@@ -2333,17 +2339,17 @@ pub mod natural {
         }
     }
 
-    impl<'de>
-        ::fidl_next::FromWireOptionRef<
-            crate::wire_optional::MainProtocolTwoWayAnonWithErrorResponse<'de>,
+    impl<'a, 'de>
+        ::fidl_next::FromWireOption<
+            &'a crate::wire_optional::MainProtocolTwoWayAnonWithErrorResponse<'de>,
         > for Box<MainProtocolTwoWayAnonWithErrorResponse>
     {
         #[inline]
-        fn from_wire_option_ref(
-            wire: &crate::wire_optional::MainProtocolTwoWayAnonWithErrorResponse<'de>,
+        fn from_wire_option(
+            wire: &'a crate::wire_optional::MainProtocolTwoWayAnonWithErrorResponse<'de>,
         ) -> ::core::option::Option<Self> {
             if let Some(inner) = wire.as_ref() {
-                Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
+                Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
             } else {
                 None
             }
@@ -2501,13 +2507,13 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::MainProtocolOnAnonRequest<'de>>
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::MainProtocolOnAnonRequest<'de>>
         for MainProtocolOnAnonRequest
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::MainProtocolOnAnonRequest<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::MainProtocolOnAnonRequest<'de>) -> Self {
             match wire.raw.ordinal() {
-                1 => Self::B(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                1 => Self::B(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<bool>()
                 })),
 
@@ -2545,15 +2551,16 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireOptionRef<crate::wire_optional::MainProtocolOnAnonRequest<'de>>
+    impl<'a, 'de>
+        ::fidl_next::FromWireOption<&'a crate::wire_optional::MainProtocolOnAnonRequest<'de>>
         for Box<MainProtocolOnAnonRequest>
     {
         #[inline]
-        fn from_wire_option_ref(
-            wire: &crate::wire_optional::MainProtocolOnAnonRequest<'de>,
+        fn from_wire_option(
+            wire: &'a crate::wire_optional::MainProtocolOnAnonRequest<'de>,
         ) -> ::core::option::Option<Self> {
             if let Some(inner) = wire.as_ref() {
-                Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
+                Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
             } else {
                 None
             }

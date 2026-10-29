@@ -8,7 +8,7 @@ use core::mem::{ManuallyDrop, MaybeUninit};
 
 use crate::{
     Chunk, Constrained, Decode, DecodeError, Decoder, Encode, EncodeError, Encoder, FromWire,
-    FromWireRef, IntoNatural, Slot, ValidationError, Wire, munge, wire,
+    IntoNatural, Slot, ValidationError, Wire, munge, wire,
 };
 
 use core::result::Result as CoreResult;
@@ -248,16 +248,16 @@ impl<T: IntoNatural, E: IntoNatural> IntoNatural for Result<'_, T, E> {
     type Natural = CoreResult<T::Natural, E::Natural>;
 }
 
-impl<T, E, WT, WE> FromWireRef<Result<'_, WT, WE>> for CoreResult<T, E>
+impl<'a, T, E, WT, WE> FromWire<&'a Result<'_, WT, WE>> for CoreResult<T, E>
 where
-    T: FromWireRef<WT>,
-    E: FromWireRef<WE>,
+    T: FromWire<&'a WT>,
+    E: FromWire<&'a WE>,
 {
     #[inline]
-    fn from_wire_ref(wire: &Result<'_, WT, WE>) -> Self {
+    fn from_wire(wire: &'a Result<'_, WT, WE>) -> Self {
         match wire.as_ref() {
-            Ok(value) => Ok(T::from_wire_ref(value)),
-            Err(error) => Err(E::from_wire_ref(error)),
+            Ok(value) => Ok(T::from_wire(value)),
+            Err(error) => Err(E::from_wire(error)),
         }
     }
 }

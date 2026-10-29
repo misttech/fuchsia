@@ -165,15 +165,15 @@ pub mod natural {
         }
     }
 
-    impl<'de>
-        ::fidl_next::FromWireRef<crate::wire::ExampleUseOfErrorSyntaxCallWhichMayFailRequest<'de>>
+    impl<'a, 'de>
+        ::fidl_next::FromWire<&'a crate::wire::ExampleUseOfErrorSyntaxCallWhichMayFailRequest<'de>>
         for ExampleUseOfErrorSyntaxCallWhichMayFailRequest
     {
         #[inline]
-        fn from_wire_ref(
-            wire: &crate::wire::ExampleUseOfErrorSyntaxCallWhichMayFailRequest<'de>,
+        fn from_wire(
+            wire: &'a crate::wire::ExampleUseOfErrorSyntaxCallWhichMayFailRequest<'de>,
         ) -> Self {
-            Self { s: ::fidl_next::FromWireRef::from_wire_ref(&wire.s) }
+            Self { s: ::fidl_next::FromWire::from_wire(&wire.s) }
         }
     }
 
@@ -348,14 +348,14 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::ExampleUseOfErrorSyntaxCallWhichMayFailResponse>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::ExampleUseOfErrorSyntaxCallWhichMayFailResponse>
         for ExampleUseOfErrorSyntaxCallWhichMayFailResponse
     {
         #[inline]
-        fn from_wire_ref(
-            wire: &crate::wire::ExampleUseOfErrorSyntaxCallWhichMayFailResponse,
+        fn from_wire(
+            wire: &'a crate::wire::ExampleUseOfErrorSyntaxCallWhichMayFailResponse,
         ) -> Self {
-            Self { value: ::fidl_next::FromWireRef::from_wire_ref(&wire.value) }
+            Self { value: ::fidl_next::FromWire::from_wire(&wire.value) }
         }
     }
 }

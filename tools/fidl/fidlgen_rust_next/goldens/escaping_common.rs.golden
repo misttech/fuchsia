@@ -137,10 +137,12 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::DocCommentWithStars<'de>> for DocCommentWithStars {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::DocCommentWithStars<'de>>
+        for DocCommentWithStars
+    {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::DocCommentWithStars<'de>) -> Self {
-            Self { field: ::fidl_next::FromWireRef::from_wire_ref(&wire.field) }
+        fn from_wire(wire: &'a crate::wire::DocCommentWithStars<'de>) -> Self {
+            Self { field: ::fidl_next::FromWire::from_wire(&wire.field) }
         }
     }
 }

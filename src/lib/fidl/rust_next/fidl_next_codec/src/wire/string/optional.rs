@@ -10,7 +10,7 @@ use munge::munge;
 
 use crate::{
     Constrained, Decode, DecodeError, Decoder, EncodeError, EncodeOption, Encoder, FromWireOption,
-    FromWireOptionRef, IntoNatural, Slot, ValidationError, Wire, wire,
+    IntoNatural, Slot, ValidationError, Wire, wire,
 };
 
 /// An optional FIDL string
@@ -200,11 +200,11 @@ impl IntoNatural for OptionalString<'_> {
     type Natural = Option<String>;
 }
 
-impl FromWireOptionRef<OptionalString<'_>> for String {
+impl<'a> FromWireOption<&'a OptionalString<'_>> for String {
     #[inline]
-    fn from_wire_option_ref(wire: &OptionalString<'_>) -> Option<Self> {
+    fn from_wire_option(wire: &'a OptionalString<'_>) -> Option<Self> {
         // SAFETY: The bytes in a decoded `OptionalString` are validated to be valid UTF-8.
-        Vec::from_wire_option_ref(&wire.vec).map(|vec| unsafe { String::from_utf8_unchecked(vec) })
+        Vec::from_wire_option(&wire.vec).map(|vec| unsafe { String::from_utf8_unchecked(vec) })
     }
 }
 

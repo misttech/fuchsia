@@ -5,8 +5,7 @@
 use core::mem::MaybeUninit;
 
 use fidl_next_codec::{
-    Constrained, Decode, Encode, EncodeError, FromWire, FromWireRef, IntoNatural, Slot,
-    ValidationError, Wire,
+    Constrained, Decode, Encode, EncodeError, FromWire, IntoNatural, Slot, ValidationError, Wire,
 };
 
 /// The wire type for an empty message body.
@@ -70,8 +69,8 @@ impl FromWire<EmptyMessageBody> for () {
     fn from_wire(_: EmptyMessageBody) -> Self {}
 }
 
-impl FromWireRef<EmptyMessageBody> for () {
-    fn from_wire_ref(_: &EmptyMessageBody) -> Self {}
+impl<'a> FromWire<&'a EmptyMessageBody> for () {
+    fn from_wire(_: &'a EmptyMessageBody) -> Self {}
 }
 
 impl IntoNatural for EmptyMessageBody {

@@ -77,9 +77,9 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::MyEmptyFlexibleEnum> for MyEmptyFlexibleEnum {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::MyEmptyFlexibleEnum> for MyEmptyFlexibleEnum {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::MyEmptyFlexibleEnum) -> Self {
+        fn from_wire(wire: &'a crate::wire::MyEmptyFlexibleEnum) -> Self {
             Self::from(*wire)
         }
     }
@@ -171,9 +171,9 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::MyFlexibleEnum> for MyFlexibleEnum {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::MyFlexibleEnum> for MyFlexibleEnum {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::MyFlexibleEnum) -> Self {
+        fn from_wire(wire: &'a crate::wire::MyFlexibleEnum) -> Self {
             Self::from(*wire)
         }
     }
@@ -278,11 +278,11 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::MyFlexibleEnumWithCustomUnknown>
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::MyFlexibleEnumWithCustomUnknown>
         for MyFlexibleEnumWithCustomUnknown
     {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::MyFlexibleEnumWithCustomUnknown) -> Self {
+        fn from_wire(wire: &'a crate::wire::MyFlexibleEnumWithCustomUnknown) -> Self {
             Self::from(*wire)
         }
     }
@@ -372,9 +372,9 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::MyStrictEnum> for MyStrictEnum {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::MyStrictEnum> for MyStrictEnum {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::MyStrictEnum) -> Self {
+        fn from_wire(wire: &'a crate::wire::MyStrictEnum) -> Self {
             Self::from(*wire)
         }
     }

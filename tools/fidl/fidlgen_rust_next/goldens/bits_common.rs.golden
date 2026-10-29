@@ -56,9 +56,9 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::EmptyBits> for EmptyBits {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::EmptyBits> for EmptyBits {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::EmptyBits) -> Self {
+        fn from_wire(wire: &'a crate::wire::EmptyBits) -> Self {
             Self::from(*wire)
         }
     }
@@ -117,9 +117,9 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::FlexibleBits> for FlexibleBits {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::FlexibleBits> for FlexibleBits {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::FlexibleBits) -> Self {
+        fn from_wire(wire: &'a crate::wire::FlexibleBits) -> Self {
             Self::from(*wire)
         }
     }
@@ -183,9 +183,9 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::MyBits> for MyBits {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::MyBits> for MyBits {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::MyBits) -> Self {
+        fn from_wire(wire: &'a crate::wire::MyBits) -> Self {
             Self::from(*wire)
         }
     }
@@ -248,9 +248,9 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::StrictBits> for StrictBits {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::StrictBits> for StrictBits {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::StrictBits) -> Self {
+        fn from_wire(wire: &'a crate::wire::StrictBits) -> Self {
             Self::from(*wire)
         }
     }

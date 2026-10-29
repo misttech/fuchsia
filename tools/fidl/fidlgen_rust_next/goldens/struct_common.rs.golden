@@ -147,13 +147,13 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::BasicStruct<'de>> for BasicStruct {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::BasicStruct<'de>> for BasicStruct {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::BasicStruct<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::BasicStruct<'de>) -> Self {
             Self {
-                x: ::fidl_next::FromWireRef::from_wire_ref(&wire.x),
+                x: ::fidl_next::FromWire::from_wire(&wire.x),
 
-                y: ::fidl_next::FromWireRef::from_wire_ref(&wire.y),
+                y: ::fidl_next::FromWire::from_wire(&wire.y),
             }
         }
     }
@@ -307,13 +307,13 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::Simple> for Simple {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::Simple> for Simple {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Simple) -> Self {
+        fn from_wire(wire: &'a crate::wire::Simple) -> Self {
             Self {
-                f1: ::fidl_next::FromWireRef::from_wire_ref(&wire.f1),
+                f1: ::fidl_next::FromWire::from_wire(&wire.f1),
 
-                f2: ::fidl_next::FromWireRef::from_wire_ref(&wire.f2),
+                f2: ::fidl_next::FromWire::from_wire(&wire.f2),
             }
         }
     }

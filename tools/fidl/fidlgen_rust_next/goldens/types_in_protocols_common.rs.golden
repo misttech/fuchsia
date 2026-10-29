@@ -304,33 +304,33 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::ArrayBasic<'de>> for ArrayBasic {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::ArrayBasic<'de>> for ArrayBasic {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ArrayBasic<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::ArrayBasic<'de>) -> Self {
             Self {
-                array_uint8: ::fidl_next::FromWireRef::from_wire_ref(&wire.array_uint8),
+                array_uint8: ::fidl_next::FromWire::from_wire(&wire.array_uint8),
 
-                array_uint16: ::fidl_next::FromWireRef::from_wire_ref(&wire.array_uint16),
+                array_uint16: ::fidl_next::FromWire::from_wire(&wire.array_uint16),
 
-                array_uint32: ::fidl_next::FromWireRef::from_wire_ref(&wire.array_uint32),
+                array_uint32: ::fidl_next::FromWire::from_wire(&wire.array_uint32),
 
-                array_uint64: ::fidl_next::FromWireRef::from_wire_ref(&wire.array_uint64),
+                array_uint64: ::fidl_next::FromWire::from_wire(&wire.array_uint64),
 
-                array_int8: ::fidl_next::FromWireRef::from_wire_ref(&wire.array_int8),
+                array_int8: ::fidl_next::FromWire::from_wire(&wire.array_int8),
 
-                array_int16: ::fidl_next::FromWireRef::from_wire_ref(&wire.array_int16),
+                array_int16: ::fidl_next::FromWire::from_wire(&wire.array_int16),
 
-                array_int32: ::fidl_next::FromWireRef::from_wire_ref(&wire.array_int32),
+                array_int32: ::fidl_next::FromWire::from_wire(&wire.array_int32),
 
-                array_int64: ::fidl_next::FromWireRef::from_wire_ref(&wire.array_int64),
+                array_int64: ::fidl_next::FromWire::from_wire(&wire.array_int64),
 
-                array_float32: ::fidl_next::FromWireRef::from_wire_ref(&wire.array_float32),
+                array_float32: ::fidl_next::FromWire::from_wire(&wire.array_float32),
 
-                array_float64: ::fidl_next::FromWireRef::from_wire_ref(&wire.array_float64),
+                array_float64: ::fidl_next::FromWire::from_wire(&wire.array_float64),
 
-                array_string: ::fidl_next::FromWireRef::from_wire_ref(&wire.array_string),
+                array_string: ::fidl_next::FromWire::from_wire(&wire.array_string),
 
-                array_opt_string: ::fidl_next::FromWireRef::from_wire_ref(&wire.array_opt_string),
+                array_opt_string: ::fidl_next::FromWire::from_wire(&wire.array_opt_string),
             }
         }
     }
@@ -388,9 +388,9 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::Bits> for Bits {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::Bits> for Bits {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Bits) -> Self {
+        fn from_wire(wire: &'a crate::wire::Bits) -> Self {
             Self::from(*wire)
         }
     }
@@ -475,9 +475,9 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::Enum> for Enum {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::Enum> for Enum {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Enum) -> Self {
+        fn from_wire(wire: &'a crate::wire::Enum) -> Self {
             Self::from(*wire)
         }
     }
@@ -576,9 +576,9 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::Table<'de>> for Table {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::Table<'de>> for Table {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Table<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::Table<'de>) -> Self {
             Self {}
         }
     }
@@ -721,11 +721,11 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::Union<'de>> for Union {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::Union<'de>> for Union {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Union<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::Union<'de>) -> Self {
             match wire.raw.ordinal() {
-                1 => Self::B(::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                1 => Self::B(::fidl_next::FromWire::from_wire(unsafe {
                     wire.raw.get().deref_unchecked::<bool>()
                 })),
 
@@ -758,13 +758,13 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireOptionRef<crate::wire_optional::Union<'de>> for Box<Union> {
+    impl<'a, 'de> ::fidl_next::FromWireOption<&'a crate::wire_optional::Union<'de>> for Box<Union> {
         #[inline]
-        fn from_wire_option_ref(
-            wire: &crate::wire_optional::Union<'de>,
+        fn from_wire_option(
+            wire: &'a crate::wire_optional::Union<'de>,
         ) -> ::core::option::Option<Self> {
             if let Some(inner) = wire.as_ref() {
-                Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
+                Some(Box::new(::fidl_next::FromWire::from_wire(inner)))
             } else {
                 None
             }
@@ -987,23 +987,23 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::ArrayCompound<'de>> for ArrayCompound {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::ArrayCompound<'de>> for ArrayCompound {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ArrayCompound<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::ArrayCompound<'de>) -> Self {
             Self {
-                array_bits: ::fidl_next::FromWireRef::from_wire_ref(&wire.array_bits),
+                array_bits: ::fidl_next::FromWire::from_wire(&wire.array_bits),
 
-                array_enum: ::fidl_next::FromWireRef::from_wire_ref(&wire.array_enum),
+                array_enum: ::fidl_next::FromWire::from_wire(&wire.array_enum),
 
-                array_struct: ::fidl_next::FromWireRef::from_wire_ref(&wire.array_struct),
+                array_struct: ::fidl_next::FromWire::from_wire(&wire.array_struct),
 
-                array_table: ::fidl_next::FromWireRef::from_wire_ref(&wire.array_table),
+                array_table: ::fidl_next::FromWire::from_wire(&wire.array_table),
 
-                array_union: ::fidl_next::FromWireRef::from_wire_ref(&wire.array_union),
+                array_union: ::fidl_next::FromWire::from_wire(&wire.array_union),
 
-                array_opt_struct: ::fidl_next::FromWireRef::from_wire_ref(&wire.array_opt_struct),
+                array_opt_struct: ::fidl_next::FromWire::from_wire(&wire.array_opt_struct),
 
-                array_opt_union: ::fidl_next::FromWireRef::from_wire_ref(&wire.array_opt_union),
+                array_opt_union: ::fidl_next::FromWire::from_wire(&wire.array_opt_union),
             }
         }
     }
@@ -1222,23 +1222,17 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::ArrayVectorNested<'de>> for ArrayVectorNested {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::ArrayVectorNested<'de>> for ArrayVectorNested {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::ArrayVectorNested<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::ArrayVectorNested<'de>) -> Self {
             Self {
-                array_array_uint8: ::fidl_next::FromWireRef::from_wire_ref(&wire.array_array_uint8),
+                array_array_uint8: ::fidl_next::FromWire::from_wire(&wire.array_array_uint8),
 
-                array_vector_uint8: ::fidl_next::FromWireRef::from_wire_ref(
-                    &wire.array_vector_uint8,
-                ),
+                array_vector_uint8: ::fidl_next::FromWire::from_wire(&wire.array_vector_uint8),
 
-                vector_array_uint8: ::fidl_next::FromWireRef::from_wire_ref(
-                    &wire.vector_array_uint8,
-                ),
+                vector_array_uint8: ::fidl_next::FromWire::from_wire(&wire.vector_array_uint8),
 
-                vector_vector_uint8: ::fidl_next::FromWireRef::from_wire_ref(
-                    &wire.vector_vector_uint8,
-                ),
+                vector_vector_uint8: ::fidl_next::FromWire::from_wire(&wire.vector_vector_uint8),
             }
         }
     }
@@ -1527,33 +1521,33 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::Basic<'de>> for Basic {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::Basic<'de>> for Basic {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Basic<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::Basic<'de>) -> Self {
             Self {
-                uint8: ::fidl_next::FromWireRef::from_wire_ref(&wire.uint8),
+                uint8: ::fidl_next::FromWire::from_wire(&wire.uint8),
 
-                uint16: ::fidl_next::FromWireRef::from_wire_ref(&wire.uint16),
+                uint16: ::fidl_next::FromWire::from_wire(&wire.uint16),
 
-                uint32: ::fidl_next::FromWireRef::from_wire_ref(&wire.uint32),
+                uint32: ::fidl_next::FromWire::from_wire(&wire.uint32),
 
-                uint64: ::fidl_next::FromWireRef::from_wire_ref(&wire.uint64),
+                uint64: ::fidl_next::FromWire::from_wire(&wire.uint64),
 
-                int8: ::fidl_next::FromWireRef::from_wire_ref(&wire.int8),
+                int8: ::fidl_next::FromWire::from_wire(&wire.int8),
 
-                int16: ::fidl_next::FromWireRef::from_wire_ref(&wire.int16),
+                int16: ::fidl_next::FromWire::from_wire(&wire.int16),
 
-                int32: ::fidl_next::FromWireRef::from_wire_ref(&wire.int32),
+                int32: ::fidl_next::FromWire::from_wire(&wire.int32),
 
-                int64: ::fidl_next::FromWireRef::from_wire_ref(&wire.int64),
+                int64: ::fidl_next::FromWire::from_wire(&wire.int64),
 
-                float32: ::fidl_next::FromWireRef::from_wire_ref(&wire.float32),
+                float32: ::fidl_next::FromWire::from_wire(&wire.float32),
 
-                float64: ::fidl_next::FromWireRef::from_wire_ref(&wire.float64),
+                float64: ::fidl_next::FromWire::from_wire(&wire.float64),
 
-                string: ::fidl_next::FromWireRef::from_wire_ref(&wire.string),
+                string: ::fidl_next::FromWire::from_wire(&wire.string),
 
-                opt_string: ::fidl_next::FromWireRef::from_wire_ref(&wire.opt_string),
+                opt_string: ::fidl_next::FromWire::from_wire(&wire.opt_string),
             }
         }
     }
@@ -1768,23 +1762,23 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::Compound<'de>> for Compound {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::Compound<'de>> for Compound {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::Compound<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::Compound<'de>) -> Self {
             Self {
-                bits: ::fidl_next::FromWireRef::from_wire_ref(&wire.bits),
+                bits: ::fidl_next::FromWire::from_wire(&wire.bits),
 
-                enum_: ::fidl_next::FromWireRef::from_wire_ref(&wire.enum_),
+                enum_: ::fidl_next::FromWire::from_wire(&wire.enum_),
 
-                struct_: ::fidl_next::FromWireRef::from_wire_ref(&wire.struct_),
+                struct_: ::fidl_next::FromWire::from_wire(&wire.struct_),
 
-                table: ::fidl_next::FromWireRef::from_wire_ref(&wire.table),
+                table: ::fidl_next::FromWire::from_wire(&wire.table),
 
-                union: ::fidl_next::FromWireRef::from_wire_ref(&wire.union),
+                union: ::fidl_next::FromWire::from_wire(&wire.union),
 
-                opt_struct: ::fidl_next::FromWireRef::from_wire_ref(&wire.opt_struct),
+                opt_struct: ::fidl_next::FromWire::from_wire(&wire.opt_struct),
 
-                opt_union: ::fidl_next::FromWireRef::from_wire_ref(&wire.opt_union),
+                opt_union: ::fidl_next::FromWire::from_wire(&wire.opt_union),
             }
         }
     }
@@ -2223,33 +2217,33 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::VectorBasic<'de>> for VectorBasic {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::VectorBasic<'de>> for VectorBasic {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::VectorBasic<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::VectorBasic<'de>) -> Self {
             Self {
-                vector_uint8: ::fidl_next::FromWireRef::from_wire_ref(&wire.vector_uint8),
+                vector_uint8: ::fidl_next::FromWire::from_wire(&wire.vector_uint8),
 
-                vector_uint16: ::fidl_next::FromWireRef::from_wire_ref(&wire.vector_uint16),
+                vector_uint16: ::fidl_next::FromWire::from_wire(&wire.vector_uint16),
 
-                vector_uint32: ::fidl_next::FromWireRef::from_wire_ref(&wire.vector_uint32),
+                vector_uint32: ::fidl_next::FromWire::from_wire(&wire.vector_uint32),
 
-                vector_uint64: ::fidl_next::FromWireRef::from_wire_ref(&wire.vector_uint64),
+                vector_uint64: ::fidl_next::FromWire::from_wire(&wire.vector_uint64),
 
-                vector_int8: ::fidl_next::FromWireRef::from_wire_ref(&wire.vector_int8),
+                vector_int8: ::fidl_next::FromWire::from_wire(&wire.vector_int8),
 
-                vector_int16: ::fidl_next::FromWireRef::from_wire_ref(&wire.vector_int16),
+                vector_int16: ::fidl_next::FromWire::from_wire(&wire.vector_int16),
 
-                vector_int32: ::fidl_next::FromWireRef::from_wire_ref(&wire.vector_int32),
+                vector_int32: ::fidl_next::FromWire::from_wire(&wire.vector_int32),
 
-                vector_int64: ::fidl_next::FromWireRef::from_wire_ref(&wire.vector_int64),
+                vector_int64: ::fidl_next::FromWire::from_wire(&wire.vector_int64),
 
-                vector_float32: ::fidl_next::FromWireRef::from_wire_ref(&wire.vector_float32),
+                vector_float32: ::fidl_next::FromWire::from_wire(&wire.vector_float32),
 
-                vector_float64: ::fidl_next::FromWireRef::from_wire_ref(&wire.vector_float64),
+                vector_float64: ::fidl_next::FromWire::from_wire(&wire.vector_float64),
 
-                vector_string: ::fidl_next::FromWireRef::from_wire_ref(&wire.vector_string),
+                vector_string: ::fidl_next::FromWire::from_wire(&wire.vector_string),
 
-                vector_opt_string: ::fidl_next::FromWireRef::from_wire_ref(&wire.vector_opt_string),
+                vector_opt_string: ::fidl_next::FromWire::from_wire(&wire.vector_opt_string),
             }
         }
     }
@@ -2547,23 +2541,23 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::VectorCompound<'de>> for VectorCompound {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::VectorCompound<'de>> for VectorCompound {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::VectorCompound<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::VectorCompound<'de>) -> Self {
             Self {
-                vector_bits: ::fidl_next::FromWireRef::from_wire_ref(&wire.vector_bits),
+                vector_bits: ::fidl_next::FromWire::from_wire(&wire.vector_bits),
 
-                vector_enum: ::fidl_next::FromWireRef::from_wire_ref(&wire.vector_enum),
+                vector_enum: ::fidl_next::FromWire::from_wire(&wire.vector_enum),
 
-                vector_struct: ::fidl_next::FromWireRef::from_wire_ref(&wire.vector_struct),
+                vector_struct: ::fidl_next::FromWire::from_wire(&wire.vector_struct),
 
-                vector_table: ::fidl_next::FromWireRef::from_wire_ref(&wire.vector_table),
+                vector_table: ::fidl_next::FromWire::from_wire(&wire.vector_table),
 
-                vector_union: ::fidl_next::FromWireRef::from_wire_ref(&wire.vector_union),
+                vector_union: ::fidl_next::FromWire::from_wire(&wire.vector_union),
 
-                vector_opt_struct: ::fidl_next::FromWireRef::from_wire_ref(&wire.vector_opt_struct),
+                vector_opt_struct: ::fidl_next::FromWire::from_wire(&wire.vector_opt_struct),
 
-                vector_opt_union: ::fidl_next::FromWireRef::from_wire_ref(&wire.vector_opt_union),
+                vector_opt_union: ::fidl_next::FromWire::from_wire(&wire.vector_opt_union),
             }
         }
     }
@@ -2795,17 +2789,17 @@ pub mod natural {
         }
     }
 
-    impl<'de> ::fidl_next::FromWireRef<crate::wire::VectorOptional<'de>> for VectorOptional {
+    impl<'a, 'de> ::fidl_next::FromWire<&'a crate::wire::VectorOptional<'de>> for VectorOptional {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::VectorOptional<'de>) -> Self {
+        fn from_wire(wire: &'a crate::wire::VectorOptional<'de>) -> Self {
             Self {
-                opt_vector_uint8: ::fidl_next::FromWireRef::from_wire_ref(&wire.opt_vector_uint8),
+                opt_vector_uint8: ::fidl_next::FromWire::from_wire(&wire.opt_vector_uint8),
 
-                opt_vector_string: ::fidl_next::FromWireRef::from_wire_ref(&wire.opt_vector_string),
+                opt_vector_string: ::fidl_next::FromWire::from_wire(&wire.opt_vector_string),
 
-                opt_vector_struct: ::fidl_next::FromWireRef::from_wire_ref(&wire.opt_vector_struct),
+                opt_vector_struct: ::fidl_next::FromWire::from_wire(&wire.opt_vector_struct),
 
-                opt_vector_opt_struct: ::fidl_next::FromWireRef::from_wire_ref(
+                opt_vector_opt_struct: ::fidl_next::FromWire::from_wire(
                     &wire.opt_vector_opt_struct,
                 ),
             }

@@ -175,13 +175,13 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::TwoWayAddRequest> for TwoWayAddRequest {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::TwoWayAddRequest> for TwoWayAddRequest {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::TwoWayAddRequest) -> Self {
+        fn from_wire(wire: &'a crate::wire::TwoWayAddRequest) -> Self {
             Self {
-                addend1: ::fidl_next::FromWireRef::from_wire_ref(&wire.addend1),
+                addend1: ::fidl_next::FromWire::from_wire(&wire.addend1),
 
-                addend2: ::fidl_next::FromWireRef::from_wire_ref(&wire.addend2),
+                addend2: ::fidl_next::FromWire::from_wire(&wire.addend2),
             }
         }
     }
@@ -335,10 +335,10 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::FromWireRef<crate::wire::TwoWayAddResponse> for TwoWayAddResponse {
+    impl<'a> ::fidl_next::FromWire<&'a crate::wire::TwoWayAddResponse> for TwoWayAddResponse {
         #[inline]
-        fn from_wire_ref(wire: &crate::wire::TwoWayAddResponse) -> Self {
-            Self { sum: ::fidl_next::FromWireRef::from_wire_ref(&wire.sum) }
+        fn from_wire(wire: &'a crate::wire::TwoWayAddResponse) -> Self {
+            Self { sum: ::fidl_next::FromWire::from_wire(&wire.sum) }
         }
     }
 }

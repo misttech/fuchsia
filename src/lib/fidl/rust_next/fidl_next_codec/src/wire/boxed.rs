@@ -10,7 +10,7 @@ use munge::munge;
 
 use crate::{
     Constrained, Decode, DecodeError, Decoder, DecoderExt as _, FromWire, FromWireOption,
-    FromWireOptionRef, FromWireRef, IntoNatural, Slot, ValidationError, Wire, wire,
+    IntoNatural, Slot, ValidationError, Wire, wire,
 };
 
 /// A boxed (optional) FIDL value.
@@ -126,9 +126,9 @@ impl<T: IntoNatural> IntoNatural for Box<'_, T> {
     type Natural = Option<T::Natural>;
 }
 
-impl<T: FromWireRef<W>, W> FromWireOptionRef<Box<'_, W>> for T {
-    fn from_wire_option_ref(wire: &Box<'_, W>) -> Option<Self> {
-        wire.as_ref().map(T::from_wire_ref)
+impl<'a, T: FromWire<&'a W>, W> FromWireOption<&'a Box<'_, W>> for T {
+    fn from_wire_option(wire: &'a Box<'_, W>) -> Option<Self> {
+        wire.as_ref().map(T::from_wire)
     }
 }
 
