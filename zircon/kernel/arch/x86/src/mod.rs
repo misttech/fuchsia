@@ -15,20 +15,22 @@ pub mod bootstrap16;
 pub mod cache;
 mod cache_ffi;
 pub mod cpuid;
+mod crashlog;
+mod crashlog_ffi;
 pub mod fake_msr_access;
 pub mod feature;
 pub mod hwp;
 mod hwp_ffi;
 mod idle_states;
 mod idle_states_ffi;
+mod idt;
+mod idt_ffi;
 mod intel;
 mod intel_ffi;
 pub mod interrupts;
 pub mod ioapic;
 pub mod lapic;
-#[cfg(console_enabled)]
-pub mod mmu_mem_types;
-#[cfg(console_enabled)]
+mod mmu_mem_types;
 mod mmu_mem_types_ffi;
 pub mod mp;
 mod mp_ffi;

@@ -191,7 +191,6 @@ source_set("x86") {
     "arch.cc",
     "asm.S",
     "bootstrap16.cc",
-    "crashlog.cc",
     "debugger.cc",
     "descriptor.cc",
     "exceptions.S",
@@ -199,10 +198,8 @@ source_set("x86") {
     "feature.cc",
     "gdt.S",
     "handoff.cc",
-    "idt.cc",
     "ioport.cc",
     "mmu.cc",
-    "mmu_mem_types.cc",
     "mp.cc",
     "msr_bench.cc",
     "ops.S",
@@ -322,8 +319,20 @@ kernel_bindgen_crate("arch-x86-aspace-bindings") {
     "USER_ASPACE_BASE",
     "USER_ASPACE_SIZE",
     "USER_RESTRICTED_ASPACE_SIZE",
+    "X86_PAT_.*",
   ]
   notice_year = 2026
+}
+
+kernel_bindgen_crate("x86-crashlog-bindings") {
+  headers = [ "include/arch/crashlog_regs.h" ]
+  cpp = true
+  non_rust_deps = [ ":headers" ]
+  notice_year = 2026
+  raw_lines = [ "#![no_std]" ]
+  type_allowlist = [ "crashlog_regs_t" ]
+  opaque_types = [ "iframe_t" ]
+  explicit_padding = false
 }
 
 kernel_bindgen_crate("x86-idle-states-bindings") {
@@ -409,12 +418,16 @@ kernel_rust_mod("arch-x86-rs") {
     "src/cache.rs",
     "src/cache_ffi.rs",
     "src/cpuid.rs",
+    "src/crashlog.rs",
+    "src/crashlog_ffi.rs",
     "src/fake_msr_access.rs",
     "src/feature.rs",
     "src/hwp.rs",
     "src/hwp_ffi.rs",
     "src/idle_states.rs",
     "src/idle_states_ffi.rs",
+    "src/idt.rs",
+    "src/idt_ffi.rs",
     "src/intel.rs",
     "src/intel_ffi.rs",
     "src/interrupts.rs",
@@ -440,6 +453,7 @@ kernel_rust_mod("arch-x86-rs") {
   deps = [
     ":arch-x86-aspace-bindings",
     ":arch-x86-vm-bindings",
+    ":x86-crashlog-bindings",
     ":x86-feature-bindings",
     ":x86-idle-states-bindings",
     "//sdk/rust/zbi",
@@ -458,6 +472,7 @@ kernel_rust_mod("arch-x86-rs") {
     "//zircon/kernel/lib/arch:arch-rs",
     "//zircon/kernel/lib/boot-options:boot-options-rs",
     "//zircon/kernel/lib/debug",
+    "//zircon/kernel/lib/libc:rust",
     "//zircon/kernel/lib/page:page-rs",
     "//zircon/system/ulib/fbl/rust:fbl",
   ]

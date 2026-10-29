@@ -8,6 +8,7 @@
 #define ZIRCON_KERNEL_ARCH_X86_INCLUDE_ARCH_CRASHLOG_REGS_H_
 
 #include <stdint.h>
+#include <stdio.h>
 
 #include <arch/regs.h>
 

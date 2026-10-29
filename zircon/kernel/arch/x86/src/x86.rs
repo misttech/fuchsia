@@ -4,14 +4,17 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use core::ffi::c_void;
+
 use zx_status::Status;
 use zx_types::zx_status_t;
 
 /// # Safety
 ///
-/// Caller must ensure that:
+/// The caller must ensure that:
 /// 1. The I/O port address `port` is valid and mapped on the system.
-/// 2. Reading from the port does not cause side effects that violate memory safety or system stability.
+/// 2. Reading from the port does not cause side effects that violate memory safety or system
+///    stability.
 pub unsafe fn inp(port: u16) -> u8 {
     let value: u8;
     // SAFETY: Input from CPU I/O port as requested by the caller.
@@ -28,9 +31,10 @@ pub unsafe fn inp(port: u16) -> u8 {
 
 /// # Safety
 ///
-/// Caller must ensure that:
+/// The caller must ensure that:
 /// 1. The I/O port address `port` is valid and mapped on the system.
-/// 2. Reading from the port does not cause side effects that violate memory safety or system stability.
+/// 2. Reading from the port does not cause side effects that violate memory safety or system
+///    stability.
 pub unsafe fn inpw(port: u16) -> u16 {
     let value: u16;
     // SAFETY: Input from CPU I/O port as requested by the caller.
@@ -47,9 +51,10 @@ pub unsafe fn inpw(port: u16) -> u16 {
 
 /// # Safety
 ///
-/// Caller must ensure that:
+/// The caller must ensure that:
 /// 1. The I/O port address `port` is valid and mapped on the system.
-/// 2. Reading from the port does not cause side effects that violate memory safety or system stability.
+/// 2. Reading from the port does not cause side effects that violate memory safety or system
+///    stability.
 pub unsafe fn inpd(port: u16) -> u32 {
     let value: u32;
     // SAFETY: Input from CPU I/O port as requested by the caller.
@@ -66,9 +71,10 @@ pub unsafe fn inpd(port: u16) -> u32 {
 
 /// # Safety
 ///
-/// Caller must ensure that:
+/// The caller must ensure that:
 /// 1. The I/O port address `port` is valid and mapped on the system.
-/// 2. Writing `value` to the port does not cause side effects that violate memory safety or system stability.
+/// 2. Writing `value` to the port does not cause side effects that violate memory safety or system
+///    stability.
 pub unsafe fn outp(port: u16, value: u8) {
     // SAFETY: Output to CPU I/O port as requested by the caller.
     unsafe {
@@ -83,9 +89,10 @@ pub unsafe fn outp(port: u16, value: u8) {
 
 /// # Safety
 ///
-/// Caller must ensure that:
+/// The caller must ensure that:
 /// 1. The I/O port address `port` is valid and mapped on the system.
-/// 2. Writing `value` to the port does not cause side effects that violate memory safety or system stability.
+/// 2. Writing `value` to the port does not cause side effects that violate memory safety or system
+///    stability.
 pub unsafe fn outpw(port: u16, value: u16) {
     // SAFETY: Output to CPU I/O port as requested by the caller.
     unsafe {
@@ -100,9 +107,10 @@ pub unsafe fn outpw(port: u16, value: u16) {
 
 /// # Safety
 ///
-/// Caller must ensure that:
+/// The caller must ensure that:
 /// 1. The I/O port address `port` is valid and mapped on the system.
-/// 2. Writing `value` to the port does not cause side effects that violate memory safety or system stability.
+/// 2. Writing `value` to the port does not cause side effects that violate memory safety or system
+///    stability.
 pub unsafe fn outpd(port: u16, value: u32) {
     // SAFETY: Output to CPU I/O port as requested by the caller.
     unsafe {
@@ -119,12 +127,14 @@ pub unsafe fn outpd(port: u16, value: u32) {
 ///
 /// # Safety
 ///
-/// Caller must ensure that `msr_id` is a valid MSR supported by the current CPU.
-/// Reading an unsupported MSR will cause a General Protection Fault (#GP).
+/// The caller must ensure that `msr_id` is a valid MSR supported by the current CPU. Reading an
+/// unsupported MSR will cause a General Protection Fault (#GP).
+#[inline]
 pub unsafe fn read_msr(msr_id: u32) -> u64 {
     let low: u32;
     let high: u32;
-    // SAFETY: rdmsr reads the MSR specified in ecx into edx:eax. Caller guarantees `msr_id` is valid.
+    // SAFETY: rdmsr reads the MSR specified in ecx into edx:eax. Caller guarantees `msr_id` is
+    // valid.
     unsafe {
         core::arch::asm!(
             "rdmsr",
@@ -141,11 +151,13 @@ pub unsafe fn read_msr(msr_id: u32) -> u64 {
 ///
 /// # Safety
 ///
-/// Caller must ensure that `msr_id` is a valid MSR supported by the current CPU.
-/// Reading an unsupported MSR will cause a General Protection Fault (#GP).
+/// The caller must ensure that `msr_id` is a valid MSR supported by the current CPU. Reading an
+/// unsupported MSR will cause a General Protection Fault (#GP).
+#[inline]
 pub unsafe fn read_msr32(msr_id: u32) -> u32 {
     let low: u32;
-    // SAFETY: rdmsr reads the MSR specified in ecx into edx:eax. Caller guarantees `msr_id` is valid.
+    // SAFETY: rdmsr reads the MSR specified in ecx into edx:eax. Caller guarantees `msr_id` is
+    // valid.
     unsafe {
         core::arch::asm!(
             "rdmsr",
@@ -162,13 +174,15 @@ pub unsafe fn read_msr32(msr_id: u32) -> u32 {
 ///
 /// # Safety
 ///
-/// Caller must ensure that `msr_id` is a valid MSR supported by the current CPU and that `val`
+/// The caller must ensure that `msr_id` is a valid MSR supported by the current CPU and that `val`
 /// contains valid configuration bits for that MSR. Writing invalid values or writing to an
 /// unsupported MSR will cause a General Protection Fault (#GP) or undefined behavior.
+#[inline]
 pub unsafe fn write_msr(msr_id: u32, val: u64) {
     let low = val as u32;
     let high = (val >> 32) as u32;
-    // SAFETY: wrmsr writes edx:eax to the MSR specified in ecx. Caller guarantees `msr_id` and `val` are valid.
+    // SAFETY: wrmsr writes edx:eax to the MSR specified in ecx. Caller guarantees `msr_id` and
+    // `val` are valid.
     unsafe {
         core::arch::asm!(
             "wrmsr",
@@ -185,17 +199,44 @@ mod ffi {
 
     // Implemented in assembly.
     unsafe extern "C" {
-        /// Reads MSR `msr_id` into `*val`. Returns `ZX_OK` if the read was successful or a non-OK
-        /// status if the read failed because we received a `#GP` fault.
+        /// Reads MSR `msr_id` into `val`.
+        ///
+        /// # Safety
+        ///
+        /// `val` must point to a live (not freed) object properly aligned for `u64` and valid for
+        /// writes for the duration of the call.
         pub(super) fn read_msr_safe(msr_id: u32, val: *mut u64) -> zx_status_t;
         /// Writes value `val` into MSR `msr_id`. Returns `ZX_OK` if the write was successful or a
         /// non-OK status if the write failed because we received a `#GP` fault.
+        ///
+        /// # Safety
+        ///
+        /// Writing to `msr_id` must be safe for the current architectural state.
         pub(super) fn write_msr_safe(msr_id: u32, val: u64) -> zx_status_t;
+
         /// Arms the CPU's `MWAIT` address monitor at `addr`.
+        ///
+        /// # Safety
+        ///
+        /// `CPL == 0` must hold, `MONITOR` must be enabled on the current logical processor, and
+        /// `addr` must point to canonical, readable Write-Back (`WB`) memory.
         pub(super) fn x86_monitor(addr: *const core::ffi::c_void);
+
         /// Enables maskable interrupts and enters `MWAIT` with `hints` (`sti; mwait`).
+        ///
+        /// # Safety
+        ///
+        /// `CPL == 0` and `RFLAGS.IF == 0` must hold on entry with `MONITOR`/`MWAIT` enabled,
+        /// enabling interrupts on return must be sound, and deep C-state side effects must be
+        /// handled by the caller.
         pub(super) fn x86_enable_ints_and_mwait(hints: u32);
-        /// Fills the CPU's Return Address Stack / Return Stack Buffer (`RSB`).
+
+        /// Overwrites the hardware Return Address Stack (RAS/RSB) with 32 speculation-trap
+        /// entries.
+        ///
+        /// # Safety
+        ///
+        /// At least 264 bytes of kernel stack space must be available below `%rsp`.
         pub(super) fn x86_ras_fill();
     }
 }
@@ -295,5 +336,184 @@ pub fn x86_hlt() {
     // SAFETY: Executing `hlt` in ring 0 halts the processor until the next interrupt.
     unsafe {
         core::arch::asm!("hlt", options(nostack, preserves_flags));
+    }
+}
+
+/// Reads the `CR0` control register.
+///
+/// # Safety
+///
+/// The caller must ensure that the current privilege level is CPL 0.
+#[inline]
+pub unsafe fn x86_get_cr0() -> u64 {
+    let val: u64;
+    // SAFETY: Reading CR0 at CPL 0 preserves stack and flags.
+    unsafe {
+        core::arch::asm!(
+            "mov {}, cr0",
+            out(reg) val,
+            options(nostack, preserves_flags),
+        );
+    }
+    val
+}
+
+/// Writes `val` to the `CR0` control register.
+///
+/// # Safety
+///
+/// The caller must ensure that the current privilege level is CPL 0 and `val` is a valid `CR0`
+/// configuration that preserves paging and protected mode invariants required by the kernel.
+#[inline]
+pub unsafe fn x86_set_cr0(val: u64) {
+    // SAFETY: Caller guarantees `val` is a valid CR0 configuration at CPL 0.
+    unsafe {
+        core::arch::asm!(
+            "mov cr0, {}",
+            in(reg) val,
+            options(nostack, preserves_flags),
+        );
+    }
+}
+
+/// Reads the `CR2` page-fault linear address register.
+///
+/// # Safety
+///
+/// The caller must ensure that the current privilege level is CPL 0.
+#[inline]
+pub unsafe fn x86_get_cr2() -> u64 {
+    let val: u64;
+    // SAFETY: Reading CR2 at CPL 0 preserves stack and flags.
+    unsafe {
+        core::arch::asm!(
+            "mov {}, cr2",
+            out(reg) val,
+            options(nostack, preserves_flags),
+        );
+    }
+    val
+}
+
+/// Reads the `CR3` page-directory base register.
+///
+/// # Safety
+///
+/// The caller must ensure that the current privilege level is CPL 0.
+#[inline]
+pub unsafe fn x86_get_cr3() -> u64 {
+    let val: u64;
+    // SAFETY: Reading CR3 at CPL 0 preserves stack and flags.
+    unsafe {
+        core::arch::asm!(
+            "mov {}, cr3",
+            out(reg) val,
+            options(nostack, preserves_flags),
+        );
+    }
+    val
+}
+
+/// Writes `val` to the `CR3` page-directory base register.
+///
+/// # Safety
+///
+/// The caller must ensure that the current privilege level is CPL 0 and `val` is a valid physical
+/// PML4 address / PCID configuration that keeps the current kernel code and stack mapped.
+#[inline]
+pub unsafe fn x86_set_cr3(val: u64) {
+    // SAFETY: Caller guarantees `val` is a valid CR3 value at CPL 0.
+    unsafe {
+        core::arch::asm!(
+            "mov cr3, {}",
+            in(reg) val,
+            options(preserves_flags),
+        );
+    }
+}
+
+/// Reads the `CR4` control register.
+///
+/// # Safety
+///
+/// The caller must ensure that the current privilege level is CPL 0.
+#[inline]
+pub unsafe fn x86_get_cr4() -> u64 {
+    let val: u64;
+    // SAFETY: Reading CR4 at CPL 0 preserves stack and flags.
+    unsafe {
+        core::arch::asm!(
+            "mov {}, cr4",
+            out(reg) val,
+            options(nostack, preserves_flags),
+        );
+    }
+    val
+}
+
+/// Writes `val` to the `CR4` control register.
+///
+/// # Safety
+///
+/// The caller must ensure that the current privilege level is CPL 0 and `val` is a valid `CR4`
+/// configuration supported by the current CPU.
+#[inline]
+pub unsafe fn x86_set_cr4(val: u64) {
+    // SAFETY: Caller guarantees `val` is a valid CR4 configuration at CPL 0.
+    unsafe {
+        core::arch::asm!(
+            "mov cr4, {}",
+            in(reg) val,
+            options(nostack, preserves_flags),
+        );
+    }
+}
+
+/// Loads the Interrupt Descriptor Table Register (`IDTR`) from the 10-byte descriptor at `base`.
+///
+/// # Safety
+///
+/// The caller must ensure that the current privilege level is CPL 0 and `base` points to a valid
+/// 10-byte `Idtr` descriptor whose IDT remains mapped and valid while loaded.
+#[inline]
+pub unsafe fn x86_lidt(base: *const c_void) {
+    // SAFETY: Caller guarantees `base` points to a valid IDTR descriptor.
+    unsafe {
+        core::arch::asm!(
+            "lidt [{}]",
+            in(reg) base,
+            options(nostack, preserves_flags),
+        );
+    }
+}
+
+/// Loads the Global Descriptor Table Register (`GDTR`) from the 10-byte descriptor at `base`.
+///
+/// # Safety
+///
+/// The caller must ensure that the current privilege level is CPL 0 and `base` points to a valid
+/// 10-byte `Gdtr` descriptor whose GDT remains mapped and valid while loaded.
+#[inline]
+pub unsafe fn x86_lgdt(base: *const c_void) {
+    // SAFETY: Caller guarantees `base` points to a valid GDTR descriptor.
+    unsafe {
+        core::arch::asm!(
+            "lgdt [{}]",
+            in(reg) base,
+            options(nostack, preserves_flags),
+        );
+    }
+}
+
+/// Writes back and invalidates all processor caches (`wbinvd`).
+///
+/// # Safety
+///
+/// The caller must ensure that the current privilege level is CPL 0.
+#[inline]
+pub unsafe fn wbinvd() {
+    // SAFETY: `wbinvd` writes back modified cache lines and invalidates internal caches at CPL 0.
+    unsafe {
+        core::arch::asm!("wbinvd", options(nostack, preserves_flags),);
     }
 }
