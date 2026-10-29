@@ -1,0 +1,19 @@
+# Verify narrow stack stores (stxb) propagate liveness to the source register
+# when the target stack slot is read later.
+-- asm
+mov %r6, %r1
+stdw [%r10-8], 0
+call 2
+jne %r0, 0, +2
+mov %r2, 0
+ja +1
+mov %r2, 8
+stxb [%r10-8], %r2
+ldxdw %r3, [%r10-8]
+add %r6, %r3
+ldxb %r0, [%r6]
+exit
+-- mem
+0001
+-- error
+out of bounds memory access

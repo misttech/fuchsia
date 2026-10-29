@@ -1,0 +1,11 @@
+# Verify dead stack loads still mark the read stack slot as a data dependency
+# so uninitialized stack reads on pruned branches are rejected.
+-- asm
+call 2
+jne %r0, 0, +1
+stdw [%r10-8], 0
+ldxdw %r2, [%r10-8]
+mov %r0, 0
+exit
+-- error
+reading unwritten value from the stack

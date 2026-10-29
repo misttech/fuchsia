@@ -1514,6 +1514,9 @@ impl Stack {
         } else {
             match value {
                 Type::ScalarValue(data) => {
+                    if Self::extract_sub_value(data.unwritten_mask, 0, width.bytes()) != 0 {
+                        return Err(VerifierErrorKind::InvalidStoredValue);
+                    }
                     let old_data = match self.get(index) {
                         Type::ScalarValue(data) => *data,
                         _ => {
@@ -3296,16 +3299,16 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         offset: i16,
         src: Register,
-        width: DataWidth,
+        _width: DataWidth,
     ) -> Result<(), VerifierErrorKind> {
         let context = &context.computation_context;
-        if self.has_reg(dst) {
-            let addr = context.reg(src)?;
-            if let Type::PtrToStack { offset: stack_offset } = addr {
-                let stack_offset = stack_offset.add(offset);
-                stack_offset.check_valid_offset()?;
-                self.add_stack(stack_offset.array_index());
-            }
+        self.remove_reg(dst);
+        let reg = context.reg(src)?;
+        let addr = reg.inner(context)?;
+        if let Type::PtrToStack { offset: stack_offset } = *addr {
+            let stack_offset = stack_offset.add(offset);
+            stack_offset.check_valid_offset()?;
+            self.add_stack(stack_offset.array_index());
         }
         self.add_reg(src);
         Ok(())
@@ -3353,20 +3356,20 @@ impl BpfVisitor for DataDependencies {
         width: DataWidth,
     ) -> Result<(), VerifierErrorKind> {
         let context = &context.computation_context;
-        let addr = context.reg(dst)?;
-        if let Type::PtrToStack { offset: stack_offset } = addr {
+        let reg = context.reg(dst)?;
+        let addr = reg.inner(context)?;
+        self.add_reg(dst);
+        let src_is_live = if let Type::PtrToStack { offset: stack_offset } = *addr {
             let stack_offset = stack_offset.add(offset);
             stack_offset.check_valid_offset()?;
-            if self.remove_stack(stack_offset.array_index()) {
-                if let Source::Reg(src) = src {
-                    self.add_reg(src);
-                }
-            }
+            width != DataWidth::U64 || self.remove_stack(stack_offset.array_index())
         } else {
+            true
+        };
+        if src_is_live {
             if let Source::Reg(src) = src {
                 self.add_reg(src);
             }
-            self.add_reg(dst);
         }
 
         Ok(())

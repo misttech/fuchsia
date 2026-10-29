@@ -1,0 +1,14 @@
+# Verify state pruning marks the destination base register live on stack
+# stores so a scalar cannot be substituted for a stack pointer at a prune
+# point.
+-- asm
+call 2
+jne %r0, 0, +2
+mov %r2, %r10
+ja +1
+mov %r2, 0x41414141
+stdw [%r2-8], 0
+mov %r0, 0
+exit
+-- error
+store through a non-pointer value

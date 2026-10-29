@@ -1,0 +1,14 @@
+# Verify state pruning marks the source register live on narrow stack stores
+# (stxb) so a non-scalar pointer cannot be substituted for a scalar at a prune
+# point.
+-- asm
+call 2
+jne %r0, 0, +2
+mov %r2, 0
+ja +1
+mov %r2, %r10
+stxb [%r10-8], %r2
+mov %r0, 0
+exit
+-- error
+cannot store part of a non scalar value on the stack

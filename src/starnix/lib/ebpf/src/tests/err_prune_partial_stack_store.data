@@ -1,0 +1,11 @@
+# Verify narrow stack stores (stb) do not clear the 8-byte stack slot
+# dependency during state pruning.
+-- asm
+call 2
+jne %r0, 0, +1
+stdw [%r10-8], 0
+stb [%r10-8], 0
+ldxdw %r0, [%r10-8]
+exit
+-- error
+reading unwritten value from the stack

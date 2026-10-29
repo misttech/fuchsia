@@ -1,0 +1,13 @@
+# Verify narrow stack stores (stxb) reject unwritten source bytes so an
+# uninitialized source register cannot dominate and prune a non-scalar partial
+# stack store.
+-- asm
+call 2
+jne %r0, 0, +1
+ja +1
+mov %r2, %r10
+stxb [%r10-8], %r2
+mov %r0, 0
+exit
+-- error
+cannot store a pointer or an uninitialized value to memory
