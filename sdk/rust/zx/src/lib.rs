@@ -72,7 +72,6 @@ mod property;
 #[cfg(target_os = "fuchsia")]
 mod resource;
 mod rights;
-#[cfg(target_os = "fuchsia")]
 mod signals;
 #[cfg(target_os = "fuchsia")]
 mod socket;
@@ -165,7 +164,6 @@ pub use self::property::*;
 #[cfg(target_os = "fuchsia")]
 pub use self::resource::*;
 pub use self::rights::*;
-#[cfg(target_os = "fuchsia")]
 pub use self::signals::*;
 #[cfg(target_os = "fuchsia")]
 pub use self::socket::*;
