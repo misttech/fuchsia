@@ -1,0 +1,22 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# Builds the FIDL library into a set of language specific bindings. Bindings for
+# a given language may be imported by depending on this target, followed by a
+# language-specific underscore:
+#
+#   ":examples.calculator.baseline_rust"
+#   ":examples.calculator.baseline_cpp"
+#   ...and so on
+#
+fidl_library(
+    name = "examples.calculator.baseline",
+    srcs = ["calculator.test.fidl"],
+    # TODO(https://fxbug.dev/381096879): Fix lint warnings and remove.
+    excluded_checks = ["wrong-prefix-for-platform-source-library"],
+)
