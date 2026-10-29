@@ -1,0 +1,29 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "dt-schema-lib",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+
+    # Do not include any fuchsia rust crates. This module will eventually be
+    # released as a separate open source rust crate.
+    deps = [],
+)
+
+rustc_binary(
+    name = "dt-schema",
+    srcs = ["bin/validator.rs"],
+    crate_root = "bin/validator.rs",
+    edition = "2024",
+
+    # Do not include any fuchsia rust crates. This module will eventually be
+    # released as a separate open source rust crate.
+    deps = [":dt-schema-lib"],
+)
