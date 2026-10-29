@@ -979,6 +979,7 @@ def is_gn_component_target_blocked(gname, gtmpl, gbody, pre_targets, bazel_targe
         "rust_binary",
         "cc_binary",
         "fx_cc_binary",
+        "fx_cc_test",
         "go_binary",
         "cc_binary_host_tool",
         "go_binary_host_tool",
@@ -2934,7 +2935,7 @@ for pkg_dir in sorted(candidate_dirs):
         for t in bazel_targets:
             tname = t["name"]
             rule = t["rule"]
-            is_test_bin = rule in ("fx_cc_binary", "cc_binary") and t.get("testonly")
+            is_test_bin = rule == "fx_cc_test" or (rule in ("fx_cc_binary", "cc_binary") and t.get("testonly"))
             is_test_target = rule in BAZEL_TEST_RULES or is_test_bin
             # Test skips added in this change (not present at the change base) are surfaced for a
             # human, and the dual-testing cost exception never applies to sdk_*() libraries.
@@ -3056,7 +3057,7 @@ for pkg_dir in sorted(candidate_dirs):
                             "(see \"Testing libraries in both build systems\" in docs/development/build/bazel_concepts/tests.md)."
                         ),
                     })
-            is_test_bin = rule in ("fx_cc_binary", "cc_binary") and t.get("testonly")
+            is_test_bin = rule == "fx_cc_test" or (rule in ("fx_cc_binary", "cc_binary") and t.get("testonly"))
             if t["skip_line"] is not None and (rule in BAZEL_TEST_RULES or is_test_bin):
                 t5_owner_reason = t.get("has_skip_reason") or bool(base_target_skips.get(tname))
                 if not (has_technical_test_skip_condition(t, targets_by_name) or t5_owner_reason):
@@ -4025,7 +4026,7 @@ for pkg_dir in sorted(candidate_dirs):
                     + (
                         "an explicit `rustc_test(...)`, "
                         if is_rust
-                        else "`fx_cc_binary(testonly = True, tags = [\"manual\"])` for the test executable, "
+                        else "`fx_cc_test(tags = [\"manual\"])` for a GN `test()` (or `fx_cc_binary(testonly = True, tags = [\"manual\"])` for a GN `cc_test_executable()`), "
                     )
                     + f"and package it with `fx_unittest_package(name = \"{gname}\", "
                     + (f"package_name = \"{gn_pkg_name}\", " if gn_pkg_name != gname else "")

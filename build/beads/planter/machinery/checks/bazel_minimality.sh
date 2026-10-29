@@ -1373,6 +1373,7 @@ for rel_path, full_path in bazel_files:
             "rustc_binary",
             "fx_cc_library",
             "fx_cc_binary",
+            "fx_cc_test",
             "cc_library",
             "cc_binary",
             "go_library",

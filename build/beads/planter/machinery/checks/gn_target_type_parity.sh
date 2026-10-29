@@ -85,6 +85,8 @@ ALWAYSLINK = re.compile(r'\balwayslink\s*=\s*(True|False)\b')
 # With fx_test in the checkout, a GN test package migrated to Bazel is replaced by a GN
 # bazel_test_suite of the same name that exports the Bazel tests to tests.json.
 FX_TEST_AVAILABLE = os.path.isfile(os.path.join(workdir, "build/bazel/rules/testing/fx_test.bzl"))
+# With fx_cc_test in the checkout, bazel2gn can generate GN test() from BUILD.bazel.
+FX_CC_TEST_AVAILABLE = os.path.isfile(os.path.join(workdir, "build/bazel/rules/cc/fx_cc_test.bzl"))
 GN_TEST_TEMPLATES = {
     "fuchsia_unittest_package",
     "fuchsia_test_package",
@@ -450,6 +452,20 @@ def type_change_finding(label, name, pkg, gn_rel, line, old_types, new_types):
             remediation=(
                 f"Remove `alwayslink = True` from the `{name}` cc_library/fx_cc_library in {pkg}/BUILD.bazel and run "
                 f"`fx bazel2gn -d {pkg}`."
+            ),
+        )
+    elif FX_CC_TEST_AVAILABLE and "test" in old_types and "test" not in new_types and "executable" in new_types:
+        f.update(
+            category="test_became_executable",
+            message=(
+                f"`{label}` was a GN C++ `test()` and is now an `executable()`, usually because BUILD.bazel uses "
+                "`fx_cc_binary(testonly = True)`. GN `test()` disables FatLTO linking, installs the binary to "
+                "`test/<output_name>` in packages and adds a `host_test()` on host; `executable()` does none of these."
+            ),
+            remediation=(
+                f"Replace the `{name}` `fx_cc_binary(testonly = True)` in {pkg}/BUILD.bazel with `fx_cc_test` (load "
+                "`//build/bazel/rules/cc:fx_cc_test.bzl`, drop `testonly`) so bazel2gn generates `test()`, and run "
+                f"`fx bazel2gn -d {pkg}`. Do not dispute this finding."
             ),
         )
     else:

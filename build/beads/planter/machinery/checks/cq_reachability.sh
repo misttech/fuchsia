@@ -66,6 +66,7 @@ target_dirs = [d.strip().strip("/") for d in re.split(r"[\s,]+", raw_dirs) if d.
 TEST_RULES = {
     "rustc_test",
     "cc_test",
+    "fx_cc_test",
     "go_test",
     "host_go_test",
     "host_rustc_test",
@@ -2557,7 +2558,7 @@ for td in target_dirs:
             )
             ref_in_gn_post_pkg = (
                 not needs_host_gn_ref
-                and (rule_name in ("rustc_test", "cc_test") or rule_name.startswith("rustc_"))
+                and (rule_name in ("rustc_test", "cc_test", "fx_cc_test") or rule_name.startswith("rustc_"))
                 and bool(re.search(r'":' + re.escape(t_name) + r'"', gn_post_code))
             )
             ref_in_ancestor_gn = False

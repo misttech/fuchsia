@@ -1287,7 +1287,7 @@ def check_dep_alignment_info(
             continue
         elif b_norm.replace("-", "_") in base_fs_canons:
             continue
-        elif bt_rule in ("fx_cc_binary", "cc_binary") and b_norm == "//sdk/lib/fdio":
+        elif bt_rule in ("fx_cc_binary", "fx_cc_test", "cc_binary") and b_norm == "//sdk/lib/fdio":
             continue
         # Covered by a dep of another if/else branch of the base GN target (Bazel select()).
         elif any(

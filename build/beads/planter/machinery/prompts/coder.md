@@ -133,7 +133,8 @@ the Bazel test keeps the label).
   generate the GN copy: do NOT put `# @bazel2gn:skip` on test rules or on the `with_unit_tests`,
   `with_host_unit_tests` and `test_deps` attributes, except under the conditions in
   "`# @bazel2gn:skip` rules for tests" below. bazel2gn translates `rustc_test` (including
-  `crate = ":<lib>"`), `fx_cc_binary(testonly = True)`, `go_test`, `host_go_test`,
+  `crate = ":<lib>"`), `fx_cc_test` (to GN `test()`), `fx_cc_binary(testonly = True)` (to GN
+  `executable()`), `go_test`, `host_go_test`,
   `host_rustc_test`, `fx_unittest_package` (without `resources`, as GN package `<package_name>-gn`;
   the component keeps its name), explicit test packages (`fx_package(test_components = ...)` as GN
   `fuchsia_test_package("<fx_package name>")` with package `<package_name>-gn`, its same-file
@@ -151,7 +152,7 @@ the Bazel test keeps the label).
   something bazel2gn rejects (`fx_package` `resources`/`tools`, custom `fx_test_environment`
   environments, an `fx_test_component` attribute other than `compiled_manifest`,
   `component_name`, `check_includes`, `deps`, `test_type`, or `fx_unittest_package(resources = [...])`)
-  put `# @bazel2gn:skip` on the package (not on the `rustc_test`/`fx_cc_binary` test binary), let
+  put `# @bazel2gn:skip` on the package (not on the `rustc_test`/`fx_cc_test`/`fx_cc_binary` test binary), let
   bazel2gn generate the test binary below the sentinel, and hand-write only the GN test package
   (`package_name = "<pkg>-gn"`, `deps = [ ":<generated test binary>" ]`) above the sentinel. List
   every GN copy in the package's hand-written `group("tests")` (generated test packages by their
@@ -188,6 +189,21 @@ the Bazel test keeps the label).
   Never add `# @bazel2gn:skip` to a translatable test for any other reason (preserve any
   pre-existing `# @bazel2gn:skip` annotations added by human code owners). When
   the library's last GN user migrates, delete the GN library and its GN test copies.
+- **C++ test binaries keep their GN template.** A GN `test("<name>")` becomes
+  `fx_cc_test(name = "<name>", ...)` from `//build/bazel/rules/cc:fx_cc_test.bzl` (always
+  `testonly`, so omit `testonly`; add `tags = ["manual"]` when it only runs through a test package
+  or `host_test()`), and bazel2gn generates GN `test("<name>")` back. NEVER use
+  `fx_cc_binary(testonly = True)` for a GN `test()`: bazel2gn turns it into `executable()`, which
+  drops `test()`'s FatLTO-disabled linking, its `test/<output_name>` package path and its host
+  `host_test()` (`gn_target_type_parity` reports this as ERROR `test_became_executable`; do not
+  dispute it). A GN `cc_test_executable()` still becomes `fx_cc_binary(testonly = True)` (INFO
+  `cc_test_executable_converted`). In Bazel, `fx_unittest_package` installs every test binary to
+  `bin/` while the GN copy of a `test()` installs to `test/`; both sides generate their own
+  manifest, so this is expected: do not unroll the package or add a `.cml` to change it. In an
+  explicit custom-manifest package, wrap the `fx_cc_test` in
+  `fx_packaged_binary(install_root = "test/", binary_name = "<output_name>")` with
+  `program: { binary: "test/<output_name>" }` so bazel2gn unwraps it to the `test()` target
+  (the default `bin/` becomes a GN `renamed_binary()`).
 - **Default to `fx_unittest_package` (or `fx_unittest_component`) for unit tests without a custom manifest.**
   For a `fuchsia_unittest_package` (or `fuchsia_unittest_component`) with no custom `.cml` or extra
   capability shards, use `fx_unittest_package` from
@@ -223,7 +239,8 @@ the Bazel test keeps the label).
   `fx_component_manifest(includes)`, defining `cml_shard` targets (or `exports_files([...], visibility = [...])`
   under `src/sys/test_runners/`) when a shard directory has no Bazel target yet.
 - **Constructing a custom-manifest test package explicitly** (only when `fx_unittest_package` / `fx_unittest_component` cannot be used):
-  1. Test binary: C++ `fx_cc_binary(testonly = True, tags = ["manual"])`
+  1. Test binary: C++ `fx_cc_test(tags = ["manual"])` for a GN `test()` (or
+     `fx_cc_binary(testonly = True, tags = ["manual"])` for a GN `cc_test_executable()`/`executable()`)
      with the test main in `deps`; Rust standalone `rustc_test(...)`
      from `//build/bazel/rules/rust:rustc_test.bzl` (never `with_unit_tests` on `rustc_library`/`rustc_binary`).
   2. `fx_packaged_binary(testonly = True, binary = ..., binary_name = ...)`
@@ -299,9 +316,11 @@ package_name = "foo-tests", test_components = [...])` + `fx_test(name = "foo-tes
 `BUILD.bazel` without `# @bazel2gn:skip`; bazel2gn generates
 `fuchsia_component_manifest`, `fuchsia_test_component` and
 `fuchsia_test_package("foo-tests-package") { package_name = "foo-tests-gn" ... }` below the
-sentinel, and `group("tests")` lists `":foo-tests-package"`. C++ unit tests work the same way with `cc_test` or
-`fx_cc_binary(name = "foo_unittest_bin", testonly = True, tags = ["manual"], deps = [..., "//src/lib/fxl/test:gtest_main"])`
-in `unit_tests = [":foo_unittest_bin"]`. Wire `":foo-tests"` into `group("tests")` in the leaf
+sentinel, and `group("tests")` lists `":foo-tests-package"`. C++ unit tests work the same way: a GN
+`test("foo_unittest_bin")` becomes
+`fx_cc_test(name = "foo_unittest_bin", tags = ["manual"], deps = [..., "//src/lib/fxl/test:gtest_main"])`
+in `unit_tests = [":foo_unittest_bin"]` (bazel2gn generates `test("foo_unittest_bin")`), and a GN
+`cc_test_executable()` becomes `fx_cc_binary(testonly = True, tags = ["manual"], ...)`. Wire `":foo-tests"` into `group("tests")` in the leaf
 `BUILD.gn` and `"//src/area/foo:foo-tests"` into `test_suite(name = "target_tests")` in
 `//src/area/BUILD.bazel` (or into a local `bazel_test_suite("bazel_tests")` only when no ancestor
 test suite exists).
