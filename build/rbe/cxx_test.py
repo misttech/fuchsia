@@ -4,6 +4,7 @@
 # found in the LICENSE file.
 
 import sys
+import tempfile
 import unittest
 from collections.abc import Sequence
 from pathlib import Path
@@ -864,7 +865,301 @@ class CxxActionTests(unittest.TestCase):
             )
         )
         self.assertEqual(c.profile_list, profile)
+        self.assertEqual(c.profile_lists, [profile])
         self.assertEqual(set(c.input_files()), {source, profile})
+
+    def test_multiple_profile_lists(self) -> None:
+        source = Path("hello.cc")
+        output = Path("hello.o")
+        profile1 = Path("profile-source-files.list")
+        profile2 = Path("profile-cts.list")
+        c = cxx.CxxAction(
+            _strs(
+                [
+                    "clang++",
+                    "-c",
+                    source,
+                    "-o",
+                    output,
+                    f"-fprofile-list={profile1}",
+                    f"-fprofile-list={profile2}",
+                ]
+            )
+        )
+        self.assertEqual(c.profile_list, profile2)
+        self.assertEqual(c.profile_lists, [profile1, profile2])
+        self.assertEqual(set(c.input_files()), {source, profile1, profile2})
+
+    def test_iquote_and_idirafter(self) -> None:
+        source = Path("hello.cc")
+        output = Path("hello.o")
+        c = cxx.CxxAction(
+            _strs(
+                [
+                    "clang++",
+                    "-iquote",
+                    "quote/dir1",
+                    "-iquotequote/dir2",
+                    "-idirafter",
+                    "after/dir1",
+                    "-idirafterafter/dir2",
+                    "-c",
+                    source,
+                    "-o",
+                    output,
+                ]
+            )
+        )
+        self.assertEqual(
+            c._cpp_attributes.iquote,
+            [Path("quote/dir1"), Path("quote/dir2")],
+        )
+        self.assertEqual(
+            c._cpp_attributes.idirafter,
+            [Path("after/dir1"), Path("after/dir2")],
+        )
+
+    def test_matches_profile_source_files_list(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            fake_root = Path(td)
+            fake_builddir = Path("out/default")
+            fake_cwd = fake_root / fake_builddir
+            fake_cwd.mkdir(parents=True)
+            (fake_root / "src").mkdir(parents=True)
+            matched_cc = fake_root / "src/matched.cc"
+            unmatched_cc = fake_root / "src/unmatched.cc"
+            matched_cc.write_text("int f() { return 1; }\n")
+            unmatched_cc.write_text("int g() { return 2; }\n")
+
+            profile_list = Path("profile-source-files.list")
+            (fake_cwd / profile_list).write_text(
+                "default:skip\n"
+                "source:../../prebuilt/*=skip\n"
+                "source:../../src/matched.cc\n"
+            )
+
+            base_flags = [
+                "clang++",
+                "--target=x86_64-unknown-fuchsia",
+                "-fprofile-instr-generate",
+                "-fcoverage-mapping",
+                f"-fprofile-list={profile_list}",
+            ]
+
+            unmatched_action = cxx.CxxAction(
+                [
+                    *base_flags,
+                    "-c",
+                    "../../src/unmatched.cc",
+                    "-o",
+                    "unmatched.o",
+                ]
+            )
+            self.assertFalse(
+                unmatched_action.matches_profile_source_files_list(
+                    profile_list, working_dir=fake_cwd, exec_root=fake_root
+                )
+            )
+
+            matched_action = cxx.CxxAction(
+                [
+                    *base_flags,
+                    "-c",
+                    "../../src/matched.cc",
+                    "-o",
+                    "matched.o",
+                ]
+            )
+            self.assertTrue(
+                matched_action.matches_profile_source_files_list(
+                    profile_list, working_dir=fake_cwd, exec_root=fake_root
+                )
+            )
+
+            # Verify that an extensionless header or build-dir-relative
+            # generated header in profile-source-files.list is also matched
+            # when included by a source file.
+            extless_hdr = fake_root / "src/extless_header"
+            extless_hdr.write_text("inline int h() { return 3; }\n")
+            inc_cc = fake_root / "src/includes_extless.cc"
+            inc_cc.write_text(
+                '#include "extless_header"\nint k() { return h(); }\n'
+            )
+            (fake_cwd / profile_list).write_text(
+                "default:skip\n" "source:../../src/extless_header\n"
+            )
+            hdr_matched_action = cxx.CxxAction(
+                [
+                    *base_flags,
+                    "-c",
+                    "../../src/includes_extless.cc",
+                    "-o",
+                    "includes_extless.o",
+                ]
+            )
+            self.assertTrue(
+                hdr_matched_action.matches_profile_source_files_list(
+                    profile_list, working_dir=fake_cwd, exec_root=fake_root
+                )
+            )
+
+            # Verify that an intermediate header resolved via -I that
+            # transitively includes an allowed header under exec_root is
+            # also matched by the DFS.
+            sdk_inc_dir = fake_root / "sdk/lib/baz/include"
+            (sdk_inc_dir / "lib/baz").mkdir(parents=True)
+            (sdk_inc_dir / "lib/baz/baz.h").write_text('#include "src/bar.h"\n')
+            (fake_root / "src/bar.h").write_text(
+                "inline int bar() { return 4; }\n"
+            )
+            (fake_root / "src/transitive_inc.cc").write_text(
+                "#include <lib/baz/baz.h>\nint m() { return bar(); }\n"
+            )
+            (fake_cwd / profile_list).write_text(
+                "default:skip\n" "source:../../src/bar.h\n"
+            )
+            transitive_action = cxx.CxxAction(
+                [
+                    *base_flags,
+                    "-I../../sdk/lib/baz/include",
+                    "-c",
+                    "../../src/transitive_inc.cc",
+                    "-o",
+                    "transitive_inc.o",
+                ]
+            )
+            self.assertTrue(
+                transitive_action.matches_profile_source_files_list(
+                    profile_list, working_dir=fake_cwd, exec_root=fake_root
+                )
+            )
+
+            # Negative header-allowlist case: allowlist names a header that
+            # the TU does not include (while the TU includes a different
+            # header), verifying the DFS returns False.
+            (fake_root / "src/unused_header.h").write_text(
+                "inline int unused() { return 0; }\n"
+            )
+            (fake_cwd / profile_list).write_text(
+                "default:skip\n" "source:../../src/unused_header.h\n"
+            )
+            self.assertFalse(
+                transitive_action.matches_profile_source_files_list(
+                    profile_list, working_dir=fake_cwd, exec_root=fake_root
+                )
+            )
+
+            # Textually #included .cc file in profile-source-files.list is
+            # also matched by the include walk.
+            (fake_root / "src/impl.cc").write_text(
+                "int impl_fn() { return 7; }\n"
+            )
+            (fake_root / "src/wrapper.cc").write_text(
+                '#include "impl.cc"\nint wrap() { return impl_fn(); }\n'
+            )
+            (fake_cwd / profile_list).write_text(
+                "default:skip\n" "source:../../src/impl.cc\n"
+            )
+            inc_cc_action = cxx.CxxAction(
+                [
+                    *base_flags,
+                    "-c",
+                    "../../src/wrapper.cc",
+                    "-o",
+                    "wrapper.o",
+                ]
+            )
+            self.assertTrue(
+                inc_cc_action.matches_profile_source_files_list(
+                    profile_list, working_dir=fake_cwd, exec_root=fake_root
+                )
+            )
+
+            # Fallback cases on an unmatched TU that must conservatively
+            # return True:
+            # 1. No default:skip (e.g. full-tree //* or missing default:skip)
+            # 2. Wildcard source: pattern
+            # 3. Unrecognized section (e.g. fun:)
+            for fallback_content in (
+                "source:../../prebuilt/*=skip\nsource:../../src/matched.cc\n",
+                "default:skip\nsource:../../src/*\n",
+                "default:skip\nfun:my_func\n",
+            ):
+                (fake_cwd / profile_list).write_text(fallback_content)
+                self.assertTrue(
+                    unmatched_action.matches_profile_source_files_list(
+                        profile_list, working_dir=fake_cwd, exec_root=fake_root
+                    )
+                )
+
+    def test_strip_coverage_flags(self) -> None:
+        profile_list = Path("profile-source-files.list")
+        command = [
+            "clang++",
+            "-fprofile-instr-generate",
+            "-fcoverage-mapping",
+            f"-fprofile-list={profile_list}",
+            "-mllvm",
+            "-profile-correlate=binary",
+            "-mllvm",
+            "-system-headers-coverage",
+            "-mllvm",
+            "-enable-name-compression=false",
+            "-c",
+            "foo.cc",
+            "-o",
+            "foo.o",
+        ]
+        self.assertEqual(
+            cxx.strip_coverage_flags(
+                command,
+                profile_list_to_remove=profile_list,
+                strip_all_coverage=True,
+            ),
+            [
+                "clang++",
+                "-mllvm",
+                "-enable-name-compression=false",
+                "-c",
+                "foo.cc",
+                "-o",
+                "foo.o",
+            ],
+        )
+
+    def test_strip_coverage_flags_preserves_other_lists(self) -> None:
+        command = [
+            "clang++",
+            "-fprofile-instr-generate",
+            "-fcoverage-mapping",
+            "-fprofile-list=profile-source-files.list",
+            "-fprofile-list=profile-cts.list",
+            "-mllvm",
+            "-profile-correlate=binary",
+            "-c",
+            "foo.cc",
+            "-o",
+            "foo.o",
+        ]
+        self.assertEqual(
+            cxx.strip_coverage_flags(
+                command,
+                profile_list_to_remove=Path("profile-source-files.list"),
+                strip_all_coverage=False,
+            ),
+            [
+                "clang++",
+                "-fprofile-instr-generate",
+                "-fcoverage-mapping",
+                "-fprofile-list=profile-cts.list",
+                "-mllvm",
+                "-profile-correlate=binary",
+                "-c",
+                "foo.cc",
+                "-o",
+                "foo.o",
+            ],
+        )
 
     def test_profile_generate(self) -> None:
         source = Path("hello.cc")

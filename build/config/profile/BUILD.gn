@@ -46,7 +46,19 @@ _has_c_files =
 _has_rust_files = filter_include(profile_source_files, _rust_patterns) != [] ||
                   profile_source_files == [ "//*" ]
 
+_is_selective_coverage =
+    profile_source_files != [] && profile_source_files != [ "//*" ]
+
 _profile_source_files_lines = []
+if (_is_selective_coverage) {
+  # Clang's ProfileList::getDefault (clang/lib/Basic/ProfileList.cpp) only
+  # defaults to excluding unmatched files when the legacy `src:` or `fun:`
+  # section names are used. Because //build/config/profile/ standardizes on
+  # `source:` rules, `default:skip` must be specified explicitly so unmatched
+  # files receive the `skipprofile` attribute instead of being instrumented by
+  # default.
+  _profile_source_files_lines += [ "default:skip" ]
+}
 foreach(file, dont_profile_source_files) {
   file = rebase_path(file, root_build_dir)
 
@@ -89,9 +101,23 @@ write_file(_profile_source_files_file,
 profile_source_files_list_files += [ _profile_source_files_file ]
 
 _coverage_inputs = profile_source_files_list_files
+_coverage_cflags = []
 foreach(file, profile_source_files_list_files) {
-  _coverage_c_family_flags +=
-      [ "-fprofile-list=" + rebase_path(file, root_build_dir) ]
+  if (_is_selective_coverage) {
+    # Under selective coverage, pass -fprofile-list via cflags rather than
+    # c_family_flags so that asmflags and ldflags do not depend on the per-CL
+    # profile-source-files.list (cxx_remote_wrapper.py strips it from unmatched
+    # C/C++ compile actions).
+    _coverage_cflags +=
+        [ "-fprofile-list=" + rebase_path(file, root_build_dir) ]
+  } else {
+    # Full-tree builds (profile_source_files == ["//*"]) still pass
+    # profile-source-files.list to exclude dont_profile_source_files
+    # (//prebuilt/*). Keeping it in _coverage_c_family_flags preserves the exact
+    # flag ordering and RBE action digests on main CI.
+    _coverage_c_family_flags +=
+        [ "-fprofile-list=" + rebase_path(file, root_build_dir) ]
+  }
 }
 
 # A toolchain like user.basic that doesn't support the Fuchsia compiler ABI
@@ -138,15 +164,16 @@ variant("coverage") {
     c_family_flags = _coverage_c_family_flags
     inputs = _coverage_inputs
 
-    cflags = [
-      # Enable binary profile correlation.
-      "-mllvm",
-      "-profile-correlate=binary",
+    cflags =
+        _coverage_cflags + [
+          # Enable binary profile correlation.
+          "-mllvm",
+          "-profile-correlate=binary",
 
-      # TODO(https://fxbug.dev/551939010): Re-enable single-byte coverage.
-      # "-mllvm",
-      # "-enable-single-byte-coverage=true",
-    ]
+          # TODO(https://fxbug.dev/551939010): Re-enable single-byte coverage.
+          # "-mllvm",
+          # "-enable-single-byte-coverage=true",
+        ]
 
     # Enable runtime counter relocation in Linux.
     if (is_linux) {
@@ -202,21 +229,21 @@ variant("coverage-cts") {
   deps = [ ":runtime-deps" ]
 
   c_family_flags = _coverage_c_family_flags
-  inputs = _coverage_inputs
-
   c_family_flags +=
       [ "-fprofile-list=" + rebase_path("profile-cts.list", root_build_dir) ]
+  inputs = _coverage_inputs
   inputs += [ "profile-cts.list" ]
 
-  cflags = [
-    # Enable binary profile correlation.
-    "-mllvm",
-    "-profile-correlate=binary",
+  cflags =
+      _coverage_cflags + [
+        # Enable binary profile correlation.
+        "-mllvm",
+        "-profile-correlate=binary",
 
-    # TODO(https://fxbug.dev/551939010): Re-enable single-byte coverage.
-    # "-mllvm",
-    # "-enable-single-byte-coverage=true",
-  ]
+        # TODO(https://fxbug.dev/551939010): Re-enable single-byte coverage.
+        # "-mllvm",
+        # "-enable-single-byte-coverage=true",
+      ]
 
   # Enable runtime counter relocation in Linux.
   if (is_linux) {

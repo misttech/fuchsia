@@ -646,6 +646,78 @@ class CxxRemoteActionTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         mock_call.assert_called_once()
 
+    def test_coverage_profile_list_selective_stripping(self) -> None:
+        fake_root = Path("/home/project")
+        fake_builddir = Path("out/default")
+        fake_cwd = fake_root / fake_builddir
+        profile_list = Path("profile-source-files.list")
+        command = [
+            "--",
+            "clang++",
+            "--target=x86_64-unknown-fuchsia",
+            "-fprofile-instr-generate",
+            "-fcoverage-mapping",
+            f"-fprofile-list={profile_list}",
+            "-mllvm",
+            "-profile-correlate=binary",
+            "-mllvm",
+            "-system-headers-coverage",
+            "-c",
+            "../../src/foo.cc",
+            "-o",
+            "foo.o",
+        ]
+        with mock.patch.object(
+            cxx_remote_wrapper, "check_missing_remote_tools"
+        ), mock.patch.object(
+            fuchsia,
+            "remote_clang_compiler_toolchain_inputs",
+            return_value=iter([]),
+        ):
+            with mock.patch.object(
+                cxx.CxxAction,
+                "matches_profile_source_files_list",
+                return_value=False,
+            ):
+                unmatched_action = cxx_remote_wrapper.CxxRemoteAction(
+                    command,
+                    exec_root=fake_root,
+                    working_dir=fake_cwd,
+                    host_platform=fuchsia.REMOTE_PLATFORM,
+                    auto_reproxy=False,
+                )
+                self.assertEqual(unmatched_action.prepare(), 0)
+                self.assertNotIn(
+                    fake_builddir / profile_list,
+                    unmatched_action.remote_action.inputs_relative_to_project_root,
+                )
+                self.assertNotIn(
+                    "-fprofile-instr-generate",
+                    unmatched_action.remote_action.launch_command,
+                )
+
+            with mock.patch.object(
+                cxx.CxxAction,
+                "matches_profile_source_files_list",
+                return_value=True,
+            ):
+                matched_action = cxx_remote_wrapper.CxxRemoteAction(
+                    command,
+                    exec_root=fake_root,
+                    working_dir=fake_cwd,
+                    host_platform=fuchsia.REMOTE_PLATFORM,
+                    auto_reproxy=False,
+                )
+                self.assertEqual(matched_action.prepare(), 0)
+                self.assertIn(
+                    fake_builddir / profile_list,
+                    matched_action.remote_action.inputs_relative_to_project_root,
+                )
+                self.assertIn(
+                    "-fprofile-instr-generate",
+                    matched_action.remote_action.launch_command,
+                )
+
 
 class MainTests(unittest.TestCase):
     def test_help_implicit(self) -> None:

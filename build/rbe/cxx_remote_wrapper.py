@@ -301,6 +301,31 @@ class CxxRemoteAction(object):
             # TODO: might need -Wno-constant-logical-operand to workaround
             #   ZX_DEBUG_ASSERT.
 
+        # In selective coverage builds (e.g. coverage tryjobs that write touched
+        # files into profile-source-files.list), stripping coverage flags and
+        # removing profile-source-files.list from remote_inputs for unaffected
+        # translation units prevents changes to profile-source-files.list from
+        # invalidating their RBE action keys and allows them to share RBE cache
+        # hits across CLs (b/574062081).
+        profile_lists = self.cxx_action.profile_lists
+        for profile_list_path in profile_lists:
+            if (
+                profile_list_path.name == "profile-source-files.list"
+                and not self.cxx_action.matches_profile_source_files_list(
+                    profile_list_path,
+                    working_dir=self.working_dir,
+                    exec_root=self.exec_root,
+                )
+            ):
+                remote_inputs = [
+                    p for p in remote_inputs if p != profile_list_path
+                ]
+                remote_command = cxx.strip_coverage_flags(
+                    remote_command,
+                    profile_list_to_remove=profile_list_path,
+                    strip_all_coverage=(len(profile_lists) == 1),
+                )
+
         if self.cxx_action.compiler_is_clang:
             # Include sanitizer-specific toolchain support files
             remote_inputs.extend(

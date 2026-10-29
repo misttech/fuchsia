@@ -4,6 +4,7 @@
 
 import("//build/config/compiler_config.gni")
 import("//build/config/lto/config.gni")
+import("//build/config/profile/config.gni")
 import("//build/dist/distribution_manifest_copy.gni")
 import("//build/dist/resource.gni")
 import("//build/testing/host_test_data.gni")
@@ -2088,6 +2089,19 @@ test_executable("llvm-profdata") {
 
   # workaround for b/349448459 to remote-link successfully
   configs = [ "//build/config/rbe:remote_link_scandeps_workaround" ]
+
+  # //sdk/lib/ld/test/modules:llvm-profdata verifies that every test module has
+  # a non-empty __llvm_prf_data section in the coverage variant unless
+  # //build/config:no_profile is in its configs. Under selective coverage,
+  # cxx_remote_wrapper.py strips coverage flags from compile actions whose
+  # sources are not in profile_source_files, so test modules linked against
+  # //sdk/lib/ld:ld-startup (zircon-startup.cc) will only contain
+  # __llvm_prf_data when zircon-startup.cc itself is instrumented.
+  if (profile_source_files != [] &&
+      filter_include([ "//sdk/lib/ld/zircon-startup.cc" ],
+                     profile_source_files) == []) {
+    configs += [ "//build/config:no_profile" ]
+  }
 }
 
 test_executable("backtrace") {

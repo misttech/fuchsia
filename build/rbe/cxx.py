@@ -8,11 +8,74 @@
 import argparse
 import dataclasses
 import enum
+import os
+import re
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import AbstractSet, Any
 
 import cl_utils
+
+_SOURCE_EXTENSIONS = frozenset(
+    {".c", ".cc", ".cpp", ".cxx", ".c++", ".s", ".S", ".asm"}
+)
+_INCLUDE_RE = re.compile(rb'^\s*#\s*include\s+["<]([^">]+)[">]', re.MULTILINE)
+_COVERAGE_MLLVM_FLAGS = frozenset(
+    {
+        "-profile-correlate=binary",
+        "-runtime-counter-relocation",
+        "-system-headers-coverage",
+        "-enable-single-byte-coverage=true",
+    }
+)
+
+
+def strip_coverage_flags(
+    command: Sequence[str],
+    profile_list_to_remove: Path | None = None,
+    strip_all_coverage: bool = True,
+) -> list[str]:
+    """Remove Clang coverage instrumentation flags from a command."""
+    profile_list_arg = (
+        f"-fprofile-list={profile_list_to_remove}"
+        if profile_list_to_remove is not None
+        else None
+    )
+    result: list[str] = []
+    i = 0
+    n = len(command)
+    while i < n:
+        tok = command[i]
+        if profile_list_arg is not None and tok == profile_list_arg:
+            i += 1
+            continue
+        if (
+            profile_list_to_remove is not None
+            and tok == "-fprofile-list"
+            and i + 1 < n
+            and command[i + 1] == str(profile_list_to_remove)
+        ):
+            i += 2
+            continue
+        if strip_all_coverage:
+            if tok == "-fprofile-instr-generate" or tok.startswith(
+                "-fprofile-instr-generate="
+            ):
+                i += 1
+                continue
+            if tok == "-fcoverage-mapping":
+                i += 1
+                continue
+            if (
+                tok == "-mllvm"
+                and i + 1 < n
+                and command[i + 1] in _COVERAGE_MLLVM_FLAGS
+            ):
+                i += 2
+                continue
+        result.append(tok)
+        i += 1
+    return result
 
 
 def _remove_suffix(text: str, suffix: str) -> str:
@@ -103,10 +166,11 @@ def _cxx_command_scanner() -> tuple[argparse.ArgumentParser, Sequence[str]]:
     parser.add_argument(
         "-fprofile-list",
         type=Path,
-        dest="profile_list",
-        default=None,
+        dest="profile_lists",
+        action="append",
+        default=[],
         metavar="FILE",
-        help="profile list",
+        help="profile list (repeatable)",
     )
     parser.add_argument(
         "-fcrash-diagnostics-dir",
@@ -326,6 +390,22 @@ def _c_preprocess_arg_parser() -> argparse.ArgumentParser:
         help="system include paths",
     )
     parser.add_argument(
+        "-iquote",
+        type=Path,
+        action="append",
+        default=[],
+        metavar="DIR",
+        help="quote include paths",
+    )
+    parser.add_argument(
+        "-idirafter",
+        type=Path,
+        action="append",
+        default=[],
+        metavar="DIR",
+        help="after include paths",
+    )
+    parser.add_argument(
         "--sysroot",
         type=Path,
         help="compiler sysroot",
@@ -465,7 +545,17 @@ _LINKER_DRIVER_PARSER = _linker_driver_arg_parser()
 
 # These are flags that are joined with their arguments with
 # no separator (no '=' or space).
-_CPP_FUSED_FLAGS = ["-I", "-D", "-L", "-l", "-U", "-isystem", "-T"]
+_CPP_FUSED_FLAGS = [
+    "-I",
+    "-D",
+    "-L",
+    "-l",
+    "-U",
+    "-isystem",
+    "-iquote",
+    "-idirafter",
+    "-T",
+]
 
 
 def expand_forwarded_driver_flags(args: Iterable[str]) -> Iterable[str]:
@@ -804,8 +894,16 @@ class CxxAction(object):
         return "undefined" in self._attributes.sanitize
 
     @property
+    def profile_lists(self) -> Sequence[Path]:
+        return self._attributes.profile_lists
+
+    @property
     def profile_list(self) -> Path | None:
-        return self._attributes.profile_list
+        return (
+            self._attributes.profile_lists[-1]
+            if self._attributes.profile_lists
+            else None
+        )
 
     @property
     def profile_generate(self) -> Path | None:
@@ -880,8 +978,149 @@ class CxxAction(object):
             yield s.file
 
         # Support for -fprofile-list was added to re-client in b/220028444.
-        if self.profile_list:
-            yield self.profile_list
+        yield from self.profile_lists
+
+    def matches_profile_source_files_list(
+        self,
+        profile_list_path: Path,
+        working_dir: Path,
+        exec_root: Path,
+    ) -> bool:
+        """Returns True if this compile action may be instrumented by profile_list_path.
+
+        When profile-source-files.list uses `default:skip` and lists explicit
+        `source:` files without wildcards, any compile action whose sources and
+        included headers do not intersect those files emits no counters with or
+        without coverage flags. Stripping still undefines the
+        `__LLVM_INSTR_PROFILE_GENERATE` predefined macro, so TUs that test it
+        can differ between remote (stripped) and local (unstripped) builds.
+        """
+        full_profile_list = working_dir / profile_list_path
+        if not full_profile_list.is_file() or not self.sources:
+            return True
+
+        try:
+            lines = full_profile_list.read_text().splitlines()
+        except OSError:
+            return True
+
+        working_dir_str = str(working_dir)
+        has_default_skip = False
+        allowed_patterns: list[str] = []
+        raw_skipped_prefixes: list[str] = []
+        for raw_line in lines:
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line in ("default:skip", "default:forbid"):
+                has_default_skip = True
+                continue
+            if line.startswith("source:"):
+                _, _, rest = line.partition(":")
+                if rest.endswith("=skip") or rest.endswith("=forbid"):
+                    skip_pat = rest.rsplit("=", 1)[0]
+                    if skip_pat.endswith("/*") and not any(
+                        c in skip_pat[:-2] for c in "*?["
+                    ):
+                        raw_skipped_prefixes.append(
+                            os.path.normpath(
+                                os.path.join(working_dir_str, skip_pat[:-2])
+                            )
+                            + os.sep
+                        )
+                    continue
+                if rest.endswith("=allow"):
+                    rest = rest[: -len("=allow")]
+                allowed_patterns.append(rest)
+            else:
+                return True
+
+        if not has_default_skip:
+            return True
+        if not allowed_patterns:
+            return False
+        if any(
+            "*" in pat or "?" in pat or "[" in pat for pat in allowed_patterns
+        ):
+            return True
+
+        allowed_sources: set[str] = set()
+        allowed_headers: set[str] = set()
+        for pat in allowed_patterns:
+            norm = os.path.normpath(os.path.join(working_dir_str, pat))
+            allowed_headers.add(norm)
+            if Path(pat).suffix in _SOURCE_EXTENSIONS:
+                allowed_sources.add(norm)
+
+        for s in self.sources:
+            s_norm = os.path.normpath(
+                os.path.join(working_dir_str, str(s.file))
+            )
+            if s_norm in allowed_sources:
+                return True
+
+        if not allowed_headers:
+            return False
+
+        cpp_attrs = self._cpp_attributes
+        exec_root_norm = os.path.normpath(str(exec_root))
+        working_dir_norm = os.path.normpath(working_dir_str)
+        include_dirs_norm: list[str] = []
+        for inc_dir in (
+            *(getattr(cpp_attrs, "includes", None) or ()),
+            *(getattr(cpp_attrs, "isystem", None) or ()),
+            *(getattr(cpp_attrs, "iquote", None) or ()),
+            *(getattr(cpp_attrs, "idirafter", None) or ()),
+        ):
+            inc_dir_norm = os.path.normpath(
+                os.path.join(working_dir_str, str(inc_dir))
+            )
+            if inc_dir_norm in (exec_root_norm, working_dir_norm):
+                continue
+            include_dirs_norm.append(inc_dir_norm)
+            prefix = inc_dir_norm + os.sep
+            if any(h.startswith(prefix) for h in allowed_headers):
+                return True
+
+        skipped_prefixes = tuple(
+            p
+            for p in raw_skipped_prefixes
+            if not any(h.startswith(p) for h in allowed_headers)
+        )
+        visited: set[str] = set()
+        stack = [
+            os.path.normpath(os.path.join(working_dir_str, str(s.file)))
+            for s in self.sources
+        ] + [
+            os.path.normpath(os.path.join(working_dir_str, str(inc_file)))
+            for inc_file in getattr(cpp_attrs, "include", None) or ()
+        ]
+        search_bases = (exec_root_norm, working_dir_norm, *include_dirs_norm)
+        while stack:
+            curr = stack.pop()
+            if curr in visited:
+                continue
+            visited.add(curr)
+            if curr in allowed_headers:
+                return True
+            try:
+                data = Path(curr).read_bytes()
+            except OSError:
+                continue
+            curr_dir = os.path.dirname(curr)
+            for m in _INCLUDE_RE.finditer(data):
+                inc_rel = m.group(1).decode("utf-8", errors="ignore")
+                for base in (curr_dir, *search_bases):
+                    cand = os.path.normpath(os.path.join(base, inc_rel))
+                    if cand in allowed_headers:
+                        return True
+                    if skipped_prefixes and cand.startswith(skipped_prefixes):
+                        continue
+                    if cand not in visited and os.path.isfile(cand):
+                        stack.append(cand)
+                        break
+
+        return False
 
     def output_files(self) -> Iterable[Path]:
         # Note: reclient already infers many C++ outputs in its own

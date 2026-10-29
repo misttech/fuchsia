@@ -1,5 +1,6 @@
+default:skip
 # Include SDK sources
-src:../../sdk/*
-src:../../zircon/system/ulib/*
+source:../../sdk/*
+source:../../zircon/system/ulib/*
 # Include generated FIDL bindings
-src:fidling/*
+source:fidling/*
