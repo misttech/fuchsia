@@ -8,6 +8,7 @@ load("@fuchsia_rules_common//build_flags:extra_linker_flags.bzl", "extra_linker_
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
 load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/cc:fx_cc_shared_library.bzl", "fx_cc_shared_library")
 load("//build/bazel/rules/cc:fx_cc_test.bzl", "fx_cc_test")
 load("//build/bazel/rules/host_tests:host_test.bzl", "host_test")
 load(
@@ -144,11 +145,68 @@ build_flags(
     defines = ["IN_FX_CC_LIBRARY=1"],
 )
 
+build_flags(
+    name = "flags_custom_soname",
+    ldflags = ["-Wl,-soname=libcustom_soname.so"],
+)
+
 fx_cc_library(
     name = "fx_cc_library_for_test",
     srcs = ["fx_cc_library_for_test.cc"],
     build_flags = [":fx_cc_library_flags"],
     disable_build_flags = [":flags2"],
+)
+
+fx_cc_binary(
+    name = "fx_cc_binary_linkshared_default_soname_for_test",
+    srcs = ["fx_cc_library_for_test.cc"],
+    build_flags = [
+        ":fx_cc_library_flags",
+        ":flags_invalid_ldflags",
+    ],
+    disable_build_flags = [
+        ":flags2",
+        ":flags_invalid_ldflags",
+    ],
+    linkshared = True,
+)
+
+fx_cc_binary(
+    name = "fx_cc_binary_linkshared_for_test",
+    srcs = ["fx_cc_library_for_test.cc"],
+    build_flags = [
+        ":fx_cc_library_flags",
+        ":flags_custom_soname",
+        ":flags_invalid_ldflags",
+    ],
+    disable_build_flags = [
+        ":flags2",
+        ":flags_invalid_ldflags",
+    ],
+    linkshared = True,
+)
+
+fx_cc_shared_library(
+    name = "fx_cc_shared_library_default_soname_for_test",
+    build_flags = [":flags_invalid_ldflags"],
+    disable_build_flags = [
+        ":flags2",
+        ":flags_invalid_ldflags",
+    ],
+    deps = [":fx_cc_library_for_test"],
+)
+
+fx_cc_shared_library(
+    name = "fx_cc_shared_library_for_test",
+    build_flags = [
+        ":flags_custom_soname",
+        ":flags_invalid_ldflags",
+    ],
+    disable_build_flags = [
+        ":flags2",
+        ":flags_invalid_ldflags",
+    ],
+    deps = [":fx_cc_library_for_test"],
 )
 
 build_flags(
@@ -163,6 +221,12 @@ fx_cc_binary(
         ":flags1",
         ":flags2",
     ],
+    data = [
+        ":fx_cc_binary_linkshared_default_soname_for_test",
+        ":fx_cc_binary_linkshared_for_test",
+        ":fx_cc_shared_library_default_soname_for_test",
+        ":fx_cc_shared_library_for_test",
+    ],
     disable_build_flags = [":flags2"],
     deps = [":fx_cc_library_for_test"],
 )
@@ -170,6 +234,18 @@ fx_cc_binary(
 host_test(
     name = "fx_cc_binary_test",
     binary = ":fx_cc_binary_test_bin",
+    data = [
+        ":fx_cc_binary_linkshared_default_soname_for_test",
+        ":fx_cc_binary_linkshared_for_test",
+        ":fx_cc_shared_library_default_soname_for_test",
+        ":fx_cc_shared_library_for_test",
+    ],
+    test_args = [
+        "$(location :fx_cc_binary_linkshared_default_soname_for_test)=libfx_cc_binary_linkshared_default_soname_for_test.so",
+        "$(location :fx_cc_binary_linkshared_for_test)=libcustom_soname.so",
+        "$(location :fx_cc_shared_library_default_soname_for_test)=libfx_cc_shared_library_default_soname_for_test.so",
+        "$(location :fx_cc_shared_library_for_test)=libcustom_soname.so",
+    ],
 )
 
 # Checks for fx_cc_test(): implicit `testonly = True` (verified by depending on

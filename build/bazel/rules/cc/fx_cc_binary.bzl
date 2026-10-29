@@ -10,29 +10,19 @@ load(
     "wrap_cc_macro_args_with_build_flags",
 )
 load("@rules_cc//cc:defs.bzl", "cc_binary")
-
-# The C++ toolchain features that build a target with instrumentation, such as
-# sanitizers. These are disabled for targets that set
-# `disable_instrumentation = True`.
-#
-# LINT.IfChange(instrumentation_features)
-_INSTRUMENTATION_FEATURES = [
-    "asan",
-    "coverage",
-    "coverage-rust",
-    "hwasan",
-    "lsan",
-    "msan",
-    "profile",
-    "profile-rust",
-    "sancov",
-    "tsan",
-    "ubsan",
-]
-# LINT.ThenChange(//build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/sanitizer.bzl:sanitizer_features)
+load(
+    "//build/bazel/rules/cc:fx_cc_shared_library.bzl",
+    "get_shared_library_name_and_soname",
+)
+load(
+    "//build/bazel/rules/cc:instrumentation.bzl",
+    "CC_INSTRUMENTATION_ATTRS",
+    "get_cc_instrumentation_features",
+)
 
 def _fx_cc_binary_impl(
         name,
+        linkshared,
         public_configs,  # buildifier: disable=unused-variable - For GN conversion only.
         disable_syslog_backend,  # buildifier: disable=unused-variable - For GN conversion only.
         build_flags,
@@ -42,11 +32,10 @@ def _fx_cc_binary_impl(
         **kwargs):
     """Implementation for the fx_cc_binary() macro."""
 
-    if disable_instrumentation:
-        features = (features or []) + ["-" + f for f in _INSTRUMENTATION_FEATURES]
+    features = get_cc_instrumentation_features(features, disable_instrumentation)
 
     wrapped_kwargs = wrap_cc_macro_args_with_build_flags(
-        kwargs = kwargs | {"features": features},
+        kwargs = kwargs | {"features": features, "linkshared": linkshared},
         name = name,
         cc_rule_name = "cc_binary",
         # LINT.IfChange(fdio_config)
@@ -60,8 +49,17 @@ def _fx_cc_binary_impl(
 
         # cc_binary() produces a shared library if linkshared=True, or
         # an executable if it is False (the default).
-        target_type = "cxx_shared_library" if kwargs.get("linkshared") else "cxx_executable",
+        target_type = "cxx_shared_library" if linkshared else "cxx_executable",
     )
+
+    if linkshared:
+        # Prepend default -Wl,-soname=<soname> before the build_flags response
+        # file and linkopts so that custom soname flags in build_flags(ldflags = ...)
+        # or linkopts appear later on the linker command line and override it.
+        _, soname = get_shared_library_name_and_soname(name)
+        wrapped_kwargs["linkopts"] = [
+            "-Wl,-soname={}".format(soname),
+        ] + (wrapped_kwargs.get("linkopts") or [])
 
     cc_binary(
         name = name,
@@ -91,28 +89,6 @@ fx_cc_binary = macro(
             doc = "Unused in Bazel, for GN conversion only.",
             default = [],
         ),
-        "disable_instrumentation": attr.bool(
-            doc = """Never build this binary with instrumentation enabled (e.g. sanitizers).
-
-            This disables the toolchain features listed in
-            `_INSTRUMENTATION_FEATURES` for this target. Unlike GN's
-            `exclude_toolchain_tags = [ "instrumented" ]`, which bazel2gn
-            generates from this attribute, this does not affect the
-            target's dependencies. These are still built with
-            instrumentation and will likely need the instrumentation
-            runtime, so this currently only works for binaries without
-            dependencies.
-
-            TODO(b/568698143): Apply the features to dependencies too with
-            a transition, like `transitive_features` in the SDK
-            `fuchsia_cc_binary()`. Note that until a transition is used,
-            this attribute also cannot be used with `fx_packaged_binary`,
-            because packaging rules select the variant library directory
-            from the build configuration.
-            """,
-            default = False,
-            configurable = False,
-        ),
         "disable_syslog_backend": attr.bool(
             doc = """Unused in Bazel, for GN conversion only.
 
@@ -123,5 +99,5 @@ fx_cc_binary = macro(
             default = False,
             configurable = False,
         ),
-    } | BUILD_FLAGS_CC_MACRO_ATTRS,
+    } | CC_INSTRUMENTATION_ATTRS | BUILD_FLAGS_CC_MACRO_ATTRS,
 )

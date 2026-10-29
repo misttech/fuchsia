@@ -351,9 +351,10 @@ def get_sanitizer_features(
     )
     # LINT.ThenChange(//build/config/sanitizers/BUILD.gn:sancov)
 
+    # Note: _INSTRUMENTATION_FEATURES in instrumentation.bzl includes these sanitizer
+    # features plus "coverage", "coverage-rust", "profile", and "profile-rust"
+    # (defined in toolchain_utils.bzl).
     # LINT.IfChange(sanitizer_features)
-    # Note: _INSTRUMENTATION_FEATURES in fx_cc_binary.bzl includes these sanitizer
-    # features plus "coverage" (defined in toolchain_utils.bzl).
     return [
         clang_sanitizer_feature,
         asan_feature,
@@ -364,7 +365,7 @@ def get_sanitizer_features(
         ubsan_feature,
         sancov_feature,
     ]
-    # LINT.ThenChange(//build/bazel/rules/cc/fx_cc_binary.bzl:instrumentation_features)
+    # LINT.ThenChange(//build/bazel/rules/cc/instrumentation.bzl:instrumentation_features)
 
 sanitizer_features = get_sanitizer_features("fuchsia", False)
 

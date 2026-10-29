@@ -300,7 +300,7 @@ def wrap_cc_macro_args_with_build_flags(
         *,
         kwargs,
         name,
-        cc_rule_name,  # buildifier: disable=unused-variable
+        cc_rule_name,
         build_flags,
         disable_build_flags,
         target_type):
@@ -338,7 +338,8 @@ def wrap_cc_macro_args_with_build_flags(
     Args:
        kwargs: (dict) Keyword-argument dictionary of wrapper macro.
        name: (string) Target name
-       cc_rule_name: (string) Name of wrapped cc_xxxx() rule (used for debugging)
+       cc_rule_name: (string) Name of wrapped cc_xxxx() rule (e.g. "cc_binary",
+          "cc_library", "cc_shared_library").
        build_flags: (list[label]) List of build_flags() labels.
        disable_build_flags: (list[label]) List of build_flags() labels to disable.
        target_type: (string) The type of target being wrapped, must
@@ -372,6 +373,36 @@ def wrap_cc_macro_args_with_build_flags(
         testonly = testonly,
     )
 
+    result = dict(kwargs)
+
+    # Ensure the special BUILD_FLAGS_FEATURE_NAME feature is disabled, since this wrapping
+    # will add all the default flags, while removing the disabled ones.
+    result["features"] = (kwargs.get("features") or []) + ["-{}".format(BUILD_FLAGS_FEATURE_NAME)]
+
+    # Only generate and apply linker flags for targets that actually link (executables and shared libraries)
+    if target_type != "cxx_common":
+        link_response_name = _cc_response_file(
+            target_name = name,
+            action_kind = ACTION_KIND_CPP_LINK,
+            final_build_flags = final_build_flags_name,
+            testonly = testonly,
+        )
+        result["additional_linker_inputs"] = (kwargs.get("additional_linker_inputs") or []) + [
+            ":" + link_response_name,
+            ":" + final_build_flags_name,
+        ]
+        if cc_rule_name == "cc_shared_library":
+            # @rules_cc's cc_shared_library rule links existing cc_library deps
+            # without compiling sources of its own. It accepts custom linker
+            # options via user_link_flags (rather than linkopts) and requires
+            # deps to be standard cc_library targets, so final_build_flags_name
+            # is not added to deps (extra_linker_flags(link_deps = ...) is not
+            # supported for cc_shared_library).
+            result["user_link_flags"] = ["@$(location :{})".format(link_response_name)] + (kwargs.get("user_link_flags") or [])
+            return result
+
+        result["linkopts"] = ["@$(location {})".format(link_response_name)] + (kwargs.get("linkopts") or [])
+
     common_response_name = _cc_response_file(
         target_name = name,
         action_kind = ACTION_KIND_COMPILE_COMMON,
@@ -400,7 +431,6 @@ def wrap_cc_macro_args_with_build_flags(
     #    flags (`cflags_c` / `cflags_cc`), and
     # 2) Target-specific `copts` appear after default warning/optimization `cflags`
     #    on the compiler command line.
-    result = dict(kwargs)
     result["copts"] = ["@$(location {})".format(common_response_name)] + (kwargs.get("copts") or [])
     result["cxxopts"] = ["@$(location {})".format(cxx_response_name)] + (kwargs.get("cxxopts") or [])
     result["conlyopts"] = ["@$(location {})".format(conly_response_name)] + (kwargs.get("conlyopts") or [])
@@ -414,23 +444,10 @@ def wrap_cc_macro_args_with_build_flags(
         ":" + conly_response_name,
     ]
 
-    # Ensure the special BUILD_FLAGS_FEATURE_NAME feature is disabled, since this wrapping
-    # will add all the default flags, while removing the disabled ones.
-    result["features"] = (kwargs.get("features") or []) + ["-{}".format(BUILD_FLAGS_FEATURE_NAME)]
-
-    # Only generate and apply linker flags for targets that actually link (executables and shared libraries)
     if target_type != "cxx_common":
-        link_response_name = _cc_response_file(
-            target_name = name,
-            action_kind = ACTION_KIND_CPP_LINK,
-            final_build_flags = final_build_flags_name,
-            testonly = testonly,
-        )
-        result["linkopts"] = ["@$(location {})".format(link_response_name)] + (kwargs.get("linkopts") or [])
-        result["additional_linker_inputs"] = (kwargs.get("additional_linker_inputs") or []) + [
-            ":" + link_response_name,
-            ":" + final_build_flags_name,
-        ]
+        # Propagate CcInfo(linking_context = ...) from extra_linker_flags()
+        # targets (link_deps and executable_link_deps) collected by
+        # final_build_flags_name.
         result["deps"] = result["deps"] + [
             ":" + final_build_flags_name,
         ]
