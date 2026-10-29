@@ -15,6 +15,7 @@ use starnix_core::task::{CurrentTask, EventHandler, Kernel, WaitCanceler, WaitQu
 use starnix_core::vfs::buffers::{
     Buffer, InputBuffer, InputBufferExt as _, OutputBuffer, OutputBufferCallback,
 };
+use starnix_core::vfs::pipe::Pipe;
 use starnix_core::vfs::pseudo::dynamic_file::{DynamicFile, DynamicFileBuf, DynamicFileSource};
 use starnix_core::vfs::pseudo::simple_directory::SimpleDirectory;
 use starnix_core::vfs::pseudo::simple_file::SimpleFileNode;
@@ -1346,9 +1347,12 @@ impl FsNodeOps for FuseNode {
         current_task: &CurrentTask,
         flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
+        let mode = node.info().mode;
+        if mode.is_fifo() {
+            return Pipe::open(current_task, node.fifo(current_task), flags);
+        }
         // The node already exists. The creation has been handled before calling this method.
         let flags = flags & !(OpenFlags::CREAT | OpenFlags::EXCL);
-        let mode = node.info().mode;
         let response = self.connection.lock().execute_operation(
             current_task,
             self,

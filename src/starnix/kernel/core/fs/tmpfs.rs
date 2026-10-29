@@ -5,6 +5,7 @@
 use crate::mm::PAGE_SIZE;
 use crate::task::{CurrentTask, Kernel};
 use crate::vfs::memory_directory::MemoryDirectoryFile;
+use crate::vfs::pipe::Pipe;
 use crate::vfs::{
     CacheMode, FileOps, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode,
     FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, MemoryRegularNode, MemoryXattrStorage,
@@ -392,11 +393,12 @@ impl FsNodeOps for TmpFsSpecialNode {
 
     fn create_file_ops(
         &self,
-        _node: &FsNode,
-        _current_task: &CurrentTask,
-        _flags: OpenFlags,
+        node: &FsNode,
+        current_task: &CurrentTask,
+        flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
-        unreachable!("Special nodes cannot be opened.");
+        assert!(node.is_fifo(), "Only FIFO special nodes can create file ops.");
+        Pipe::open(current_task, node.fifo(current_task), flags)
     }
 }
 

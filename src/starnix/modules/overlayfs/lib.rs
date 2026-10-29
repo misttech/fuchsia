@@ -12,6 +12,7 @@ use starnix_core::mm::memory::MemoryObject;
 use starnix_core::security::{self, PermissionFlags};
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::fs_args::MountParams;
+use starnix_core::vfs::pipe::Pipe;
 use starnix_core::vfs::rw_queue::{RwQueueReadGuard, RwQueueWriteGuard};
 use starnix_core::vfs::{
     AppendLockWriteGuard, CacheMode, CheckAccessReason, DirEntry, DirEntryHandle,
@@ -516,6 +517,9 @@ impl FsNodeOps for OverlayNodeOps {
         current_task: &CurrentTask,
         flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
+        if node.is_fifo() {
+            return Pipe::open(current_task, node.fifo(current_task), flags);
+        }
         self.node.as_mounter(current_task, || {
             if flags.can_write() {
                 // Only upper FS can be writable.

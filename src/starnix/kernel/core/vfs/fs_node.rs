@@ -1184,11 +1184,12 @@ impl FsNodeOps for SpecialNode {
 
     fn create_file_ops(
         &self,
-        _node: &FsNode,
-        _current_task: &CurrentTask,
-        _flags: OpenFlags,
+        node: &FsNode,
+        current_task: &CurrentTask,
+        flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
-        unreachable!("Special nodes cannot be opened.");
+        assert!(node.is_fifo(), "Only FIFO special nodes can create file ops.");
+        Pipe::open(current_task, node.fifo(current_task), flags)
     }
 }
 
@@ -1377,31 +1378,19 @@ impl FsNode {
         };
 
         match mode & FileMode::IFMT {
-            FileMode::IFCHR => {
+            FileMode::IFCHR | FileMode::IFBLK => {
                 if namespace_node.mount.flags().contains(MountFlags::NODEV) {
                     return error!(EACCES);
                 }
+                let device_mode = if mode.is_chr() { DeviceMode::Char } else { DeviceMode::Block };
                 current_task.kernel().open_device(
                     current_task,
                     namespace_node,
                     flags,
                     rdev,
-                    DeviceMode::Char,
+                    device_mode,
                 )
             }
-            FileMode::IFBLK => {
-                if namespace_node.mount.flags().contains(MountFlags::NODEV) {
-                    return error!(EACCES);
-                }
-                current_task.kernel().open_device(
-                    current_task,
-                    namespace_node,
-                    flags,
-                    rdev,
-                    DeviceMode::Block,
-                )
-            }
-            FileMode::IFIFO => Pipe::open(current_task, self.fifo(current_task), flags),
             // UNIX domain sockets can't be opened.
             FileMode::IFSOCK => error!(ENXIO),
             _ => self.create_file_ops(current_task, flags),

@@ -14,7 +14,7 @@ use crate::vfs::buffers::{InputBuffer, OutputBuffer, with_iovec_segments};
 use crate::vfs::file_server::serve_file_tagged;
 use crate::vfs::fs_args::MountParams;
 use crate::vfs::fsverity::FsVerityState;
-use crate::vfs::pipe::new_pipe_file;
+use crate::vfs::pipe::{Pipe, new_pipe_file};
 use crate::vfs::socket::{Socket, SocketFile, SocketHandle, ZxioBackedSocket};
 use crate::vfs::{
     Anon, AppendLockWriteGuard, CacheMode, DEFAULT_BYTES_PER_BLOCK, DirEntry, DirectoryEntryType,
@@ -1692,11 +1692,12 @@ impl<I: SyncIo> FsNodeOps for RemoteSpecialNode<I> {
 
     fn create_file_ops(
         &self,
-        _node: &FsNode,
-        _current_task: &CurrentTask,
-        _flags: OpenFlags,
+        node: &FsNode,
+        current_task: &CurrentTask,
+        flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
-        unreachable!("Special nodes cannot be opened.");
+        assert!(node.is_fifo(), "Only FIFO special nodes can create file ops.");
+        Pipe::open(current_task, node.fifo(current_task), flags)
     }
 
     fn update_attributes(

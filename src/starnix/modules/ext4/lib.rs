@@ -11,6 +11,7 @@ use once_cell::sync::OnceCell;
 use starnix_core::mm::ProtectionFlags;
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::task::CurrentTask;
+use starnix_core::vfs::pipe::Pipe;
 use starnix_core::vfs::{
     CacheMode, DEFAULT_BYTES_PER_BLOCK, DirEntry, DirectoryEntryType, DirentSink, FileObject,
     FileOps, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeFlags,
@@ -269,9 +270,12 @@ impl FsNodeOps for ExtFile {
     fn create_file_ops(
         &self,
         node: &FsNode,
-        _current_task: &CurrentTask,
-        _flags: OpenFlags,
+        current_task: &CurrentTask,
+        flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
+        if node.is_fifo() {
+            return Pipe::open(current_task, node.fifo(current_task), flags);
+        }
         let fs = node.fs();
         let fs_ops = fs.downcast_ops::<ExtFilesystem>().unwrap();
         let inode_num = self.inner.inode_num;
