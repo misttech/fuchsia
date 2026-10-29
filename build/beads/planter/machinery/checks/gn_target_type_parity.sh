@@ -30,7 +30,10 @@ set -euo pipefail
 #      Bazel and bazel2gn does not translate them). A GN host binary or
 #      `install_host_tools` target (`rustc_binary`, `go_binary`, `executable`,
 #      `install_host_tools`) may likewise become a `bazel_host_tool` (or a
-#      forwarding `group` in a `BUILD.gn` that defines a `bazel_host_tool`), and a
+#      forwarding `group` in a `BUILD.gn` that defines a `bazel_host_tool`), a
+#      GN `fuchsia_package` or `fuchsia_package_with_single_component` migrated
+#      to `fx_package` in `BUILD.bazel` may become a `bazel_fuchsia_package` of
+#      the same name for remaining GN dependents, and a
 #      `bazel_input_file` or `bazel_input_directory` whose generator moved to
 #      Bazel may become an empty `group` for soft transitions (while keeping
 #      `bazel_input_file` for a Bazel-migrated/`bazel_host_tool` generator or
@@ -405,6 +408,20 @@ def bazel_cc_libraries(text):
     return out
 
 
+# Map each BUILD.bazel target name to the 1-based line number of its rule call.
+def bazel_target_lines(text):
+    if not text:
+        return {}
+    code = blank_comments(text)
+    out = {}
+    for m in re.finditer(r"(?<![\w.])([A-Za-z_]\w*)\s*\(", code):
+        body = code[m.end() - 1 : call_end(code, m.end() - 1)]
+        name = BAZEL_NAME.search(body)
+        if name and name.group(1) not in out:
+            out[name.group(1)] = line_of(code, m.start())
+    return out
+
+
 def type_change_finding(label, name, pkg, gn_rel, line, old_types, new_types):
     was, now = "/".join(sorted(old_types)), "/".join(sorted(new_types))
     f = {"source": "gn_target_type_parity", "severity": "ERROR", "file": gn_rel, "line": line}
@@ -589,7 +606,7 @@ for p in changed_all:
             continue
         if (
             d
-            and d not in ("tools", "src", "sdk")
+            and d not in ("tools", "src", "sdk", "build")
             and not any(d == ex or d.startswith(ex + "/") for ex in EXCLUDED_GLOBAL_DIRS)
             and not (target_dir and d == os.path.dirname(target_dir) and f"{d}/BUILD.bazel" not in changed_set)
         ):
@@ -615,6 +632,7 @@ for pkg in sorted(candidate_dirs):
     new = gn_types(after) if after is not None else {}
     bazel_text = new_text(bazel_rel)
     bazel_names = set(BAZEL_NAME.findall(blank_comments(bazel_text))) if bazel_text else set()
+    bazel_lines = bazel_target_lines(bazel_text)
     cc_libs = bazel_cc_libraries(bazel_text) if bazel_text else {}
     has_bazel_host_tool = any("bazel_host_tool" in t for t, _ in new.values())
     had_bazel_input = any(t & GN_BAZEL_INPUT_TEMPLATES for t, _ in old.values())
@@ -704,6 +722,25 @@ for pkg in sorted(candidate_dirs):
                 is_feature_set_expansion = all(
                     "rustc_library" in new.get(v, (set(), 0))[0] for v in variant_names
                 )
+            if is_feature_set_expansion and name in bazel_names:
+                bz_line = bazel_target_line(bazel_text, name)
+                if bz_line:
+                    findings.append(
+                        {
+                            "source": "gn_target_type_parity",
+                            "category": "template_parity",
+                            "severity": "INFO",
+                            "file": bazel_rel,
+                            "line": bz_line,
+                            "message": (
+                                f'Target "{name}" (Rule & Directives): bazel2gn generated '
+                                f'rustc_library("{name}") below the sentinel ({gn_rel}:{line}), '
+                                "but the original GN target was "
+                                f'rustc_library_with_features("{name}"); the migration must keep '
+                                "the GN template"
+                            ),
+                        }
+                    )
             # Accept a GN cc_test_executable converted from a Bazel fx_cc_binary(testonly = True):
             # bazel2gn maps fx_cc_binary/cc_binary to executable() and has no form that emits
             # cc_test_executable(), a thin executable() wrapper that only adds LTO link settings.

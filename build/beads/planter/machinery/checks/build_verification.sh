@@ -163,7 +163,7 @@ for p in changed:
         d = os.path.dirname(p).strip("/")
         if (
             d
-            and d not in ("tools", "src", "sdk")
+            and d not in ("tools", "src", "sdk", "build")
             and not any(d == ex or d.startswith(ex + "/") for ex in EXCLUDED_GLOBAL_DIRS)
             and not _is_ancestor_test_wiring_only(d)
             and d not in dirs
@@ -393,6 +393,36 @@ def load_toolchains():
     return toolchains, None
 
 
+# Collect GN target labels in changed BUILD.gn files that are absent from ninja_outputs.json.
+def unconfigured_own_gn_labels(toolchains):
+    if toolchains is None:
+        return []
+    unconfigured = []
+    for d in dirs:
+        blocks = gn_blocks(read(f"{d}/BUILD.gn") or "")
+        for name, (tmpl, _) in sorted(blocks.items()):
+            if tmpl == "config":
+                continue
+            lbl = f"//{d}:{name}"
+            if lbl not in toolchains and lbl not in unconfigured:
+                unconfigured.append(lbl)
+    return unconfigured
+
+
+def unconfigured_own_gn_note(unconfigured):
+    if not unconfigured:
+        return None
+    shown = " ".join(unconfigured)
+    return (
+        f"Not in the configured GN graph (<build dir>/ninja_outputs.json): {shown}. "
+        f"Do NOT run `fx build {shown}` or include unconfigured GN labels in "
+        "`CoderReport.test_footers` or `Test:` commit footers (Planter's `test_verifier` runs "
+        "`fx gn desc` and fails with `missing_gn_test_target` / `Unknown GN label`); verify "
+        "migrated Bazel targets with `fx bazel build --config=fuchsia_platform @//<dir>:<target>` "
+        "instead."
+    )
+
+
 def dependent_labels():
     """(labels, notes) for gn_build_dependents: the changed packages' `:tests` groups and test/binary/library targets,
     then GN targets of other packages that depend on a changed package (tests and binaries, `<name>_test` of
@@ -401,16 +431,13 @@ def dependent_labels():
     if toolchains is None:
         return [], [f"Cannot read the GN target list (<build dir>/ninja_outputs.json): {err}. GN dependents were not built."]
     own, linked, unit_tests, libraries = [], [], [], []
-    unconfigured_own_tests = []
+    unconfigured_own_tests = unconfigured_own_gn_labels(toolchains)
     for d in dirs:
         blocks = gn_blocks(read(f"{d}/BUILD.gn") or "")
         if "tests" in blocks:
-            t_lbl = f"//{d}:tests"
-            own.append(t_lbl)
-            if t_lbl not in toolchains:
-                unconfigured_own_tests.append(t_lbl)
+            own.append(f"//{d}:tests")
         for name, (tmpl, body) in sorted(blocks.items()):
-            if tmpl in LINKED_TEMPLATES or tmpl in LIBRARY_TEMPLATES:
+            if tmpl in LINKED_TEMPLATES or tmpl in LIBRARY_TEMPLATES or tmpl == "bazel_fuchsia_package":
                 own.append(f"//{d}:{name}")
             if tmpl.startswith("rustc_") and UNIT_TESTS.search(body):
                 own.append(f"//{d}:{name}_test")
@@ -448,12 +475,9 @@ def dependent_labels():
         if key and key not in labels:
             labels.append(key)
     notes = []
-    if unconfigured_own_tests:
-        notes.append(
-            f"Not in the configured GN graph (<build dir>/ninja_outputs.json): {' '.join(unconfigured_own_tests)}. "
-            f"Do NOT run `fx build {' '.join(unconfigured_own_tests)}` or include unconfigured GN labels in "
-            "`CoderReport.test_footers` or `Test:` commit footers (Planter's test_verifier will fail with `Unknown GN label`)."
-        )
+    unconf_note = unconfigured_own_gn_note(unconfigured_own_tests)
+    if unconf_note:
+        notes.append(unconf_note)
     if len(labels) > dependent_limit:
         notes.append(
             f"gn_build_dependents builds only the first {dependent_limit} of {len(labels)} labels "
@@ -1221,6 +1245,19 @@ if not dry_run and os.environ.get("PLANTER_BUILD_NO_REUSE", "").strip() in ("", 
     except (OSError, ValueError, subprocess.CalledProcessError):
         pass
 
+if reused is not None or (skip_build and not dry_run):
+    unconf_note = unconfigured_own_gn_note(unconfigured_own_gn_labels(load_toolchains()[0]))
+    if unconf_note and not any(
+        f.get("category") == "dependents_note" and f.get("message") == unconf_note
+        for f in (reused or [])
+    ):
+        findings.append({
+            "source": "build_verification",
+            "category": "dependents_note",
+            "severity": "INFO",
+            "message": unconf_note,
+        })
+
 if reused is not None:
     # Refresh cached bazel_tests_note / dependents_note wording when reusing a build result.
     for rf in reused:
@@ -1251,7 +1288,7 @@ if reused is not None:
     print(json.dumps(findings, indent=2))
     sys.exit(0)
 
-if skip_build:
+if skip_build and not dry_run:
     if exported_tests["host_tests"] or exported_tests["target_tests"]:
         for n in bazel_tests_export_notes():
             findings.append({

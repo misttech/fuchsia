@@ -43,6 +43,7 @@ python3 - "$WORKDIR" "$TARGET_DIRS" <<'PYEOF'
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 
@@ -56,6 +57,7 @@ ALLOWED_BASENAMES = {"BUILD.gn", "BUILD.bazel", "BUILD", "MODULE.bazel"}
 ALLOWED_SUFFIXES = (".gni", ".bzl", ".bazelrc", ".BUILD.bazel", ".BUILD", ".MODULE.bazel")
 ALLOWED_PREFIX_BASENAMES = ("WORKSPACE",)
 SOURCE_SUFFIXES = (".rs", ".cc", ".cpp", ".c", ".h", ".hpp")
+CPP_SOURCE_SUFFIXES = (".c", ".cc", ".cpp", ".h", ".hh", ".hpp")
 NON_BUILD_GN_CALLS = {
     "group",
     "template",
@@ -82,10 +84,55 @@ def git_lines(args):
     return [l.strip() for l in out.splitlines() if l.strip()]
 
 
+def git_out(args):
+    try:
+        return subprocess.check_output(
+            ["git", "-C", workdir] + args, stderr=subprocess.DEVNULL, text=True
+        ).strip()
+    except Exception:
+        return ""
+
+
+def is_ancestor(anc, desc):
+    if not anc or not desc:
+        return False
+    return (
+        subprocess.run(
+            ["git", "-C", workdir, "merge-base", "--is-ancestor", anc, desc],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        ).returncode
+        == 0
+    )
+
+
+def resolve_effective_change_base(raw_base):
+    """Advance change_base to merge-base(origin/main, HEAD) when HEAD was rebased onto a newer
+    origin/main after PLANTER_CHANGE_BASE was pinned, so upstream commits are not flagged."""
+    base = (raw_base or "").strip() or "HEAD"
+    head_sha = git_out(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])
+    base_sha = git_out(["rev-parse", "--verify", "--quiet", f"{base}^{{commit}}"])
+    origin_main = git_out(["rev-parse", "--verify", "--quiet", "origin/main^{commit}"])
+    merge_base = (
+        git_out(["merge-base", origin_main, head_sha]) if (origin_main and head_sha) else ""
+    )
+    if (
+        base_sha
+        and merge_base
+        and base_sha != merge_base
+        and is_ancestor(base_sha, merge_base)
+    ):
+        return merge_base
+    if head_sha and base_sha and not is_ancestor(base_sha, head_sha):
+        return merge_base or "HEAD~1"
+    return base
+
+
 changed = set()
 # The task's change: everything since PLANTER_CHANGE_BASE ("HEAD~1" when HEAD is the task's own
 # commit, "HEAD" when HEAD is unrelated upstream history or a stacked parent commit) plus untracked files.
-change_base = os.environ.get("PLANTER_CHANGE_BASE", "").strip() or "HEAD"
+change_base = resolve_effective_change_base(os.environ.get("PLANTER_CHANGE_BASE", ""))
 raw_tdirs = re.split(
     r"[\s,]+",
     (os.environ.get("PLANTER_TARGET_DIRS", "") or target_dir).strip(),
@@ -393,6 +440,111 @@ def is_package_readme_label_update(path: str) -> bool:
         or (l.startswith("-") and not l.startswith("---"))
     ]
     return bool(mod_lines) and all(f"//{pkg}" in l for l in mod_lines)
+
+
+# Check whether a modified C/C++ file only normalizes checkout-root-relative
+# `#include <sdk/lib/...>` directives to `<lib/...>` (for `idk_cc_source_library`
+# targets with `include_base = "//sdk"`, where GN's `-I//` allowed `<sdk/lib/...>`
+# while Bazel exposes `<lib/...>` on `-isystem`) plus clang-format include sorting.
+INCLUDE_LINE_RE = re.compile(r'^#\s*include\s+[<"][^>"]+[>"]\s*(?://.*|/\*.*\*/)?$')
+SDK_LIB_INCLUDE_RE = re.compile(r"^(\s*#\s*include\s+<)sdk/(lib/[^>]+>.*)$")
+
+
+def is_idk_include_path_fix(path: str) -> bool:
+    if path in added or not path.endswith(CPP_SOURCE_SUFFIXES):
+        return False
+    full_path = os.path.join(workdir, path)
+    if not os.path.isfile(full_path):
+        return False
+    try:
+        diff_out = subprocess.check_output(
+            ["git", "-C", workdir, "diff", "-U0", change_base, "--", path],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except Exception:
+        return False
+    removed = []
+    added_lines = []
+    for raw in diff_out.splitlines():
+        if raw.startswith(("diff ", "index ", "--- ", "+++ ", "@@ ")):
+            continue
+        if raw.startswith("-"):
+            removed.append(raw[1:])
+        elif raw.startswith("+"):
+            added_lines.append(raw[1:])
+    if not removed and not added_lines:
+        return True
+    for line in removed + added_lines:
+        stripped = line.strip()
+        if stripped and not INCLUDE_LINE_RE.match(stripped):
+            return False
+    has_sdk_lib_rewrite = any(SDK_LIB_INCLUDE_RE.match(l.strip()) for l in removed)
+    if not has_sdk_lib_rewrite:
+        return False
+    norm_removed = sorted(
+        SDK_LIB_INCLUDE_RE.sub(r"\1\2", l.strip()) for l in removed if l.strip()
+    )
+    norm_added = sorted(
+        SDK_LIB_INCLUDE_RE.sub(r"\1\2", l.strip()) for l in added_lines if l.strip()
+    )
+    return norm_removed == norm_added
+
+
+# Verify that any modified C/C++ file with normalized `#include` directives is
+# properly formatted with clang-format so Format/ClangFormat does not fail in CQ.
+def find_clang_format() -> str:
+    for plat in ("linux-x64", "mac-x64", "mac-arm64"):
+        cand = os.path.join(
+            workdir, "prebuilt", "third_party", "clang", plat, "bin", "clang-format"
+        )
+        if os.path.isfile(cand) and os.access(cand, os.X_OK):
+            return cand
+    return shutil.which("clang-format") or ""
+
+
+def check_cpp_include_formatting(path: str):
+    clang_format_bin = find_clang_format()
+    if not clang_format_bin:
+        return None
+    full_path = os.path.join(workdir, path)
+    try:
+        current = open(full_path, encoding="utf-8").read()
+        formatted = subprocess.check_output(
+            [clang_format_bin, "--style=file", full_path],
+            cwd=workdir,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except Exception:
+        return None
+    if current == formatted:
+        return None
+    diff_line = 1
+    for idx, (cur_l, fmt_l) in enumerate(
+        zip(current.splitlines(), formatted.splitlines()), start=1
+    ):
+        if cur_l != fmt_l:
+            diff_line = idx
+            break
+    msg = (
+        f"File '{path}' is not formatted properly (Format/ClangFormat) after "
+        "normalizing '<sdk/lib/...>' include path to '<lib/...>'."
+    )
+    remediation = (
+        f"Run 'fx format-code --changed-lines --files={path}' "
+        f"(or '{clang_format_bin} -i --style=file {path}') so all #include "
+        "directives are sorted according to Fuchsia clang-format rules."
+    )
+    return {
+        "source": "build_only_scope",
+        "category": "unformatted_cpp_include_fix",
+        "severity": "error",
+        "file": path,
+        "line": diff_line,
+        "message": msg,
+        "remediation": remediation,
+    }
 findings = []
 
 # Note untracked agent report files that were left out of the scope check.
@@ -449,6 +601,11 @@ for path in sorted(changed):
             ),
         })
         continue
+    if is_idk_include_path_fix(path):
+        fmt_finding = check_cpp_include_formatting(path)
+        if fmt_finding is not None:
+            findings.append(fmt_finding)
+        continue
     bitrot_dir = check_unbuilt_target_bitrot_fix(path, unbuilt_dirs)
     if bitrot_dir is not None:
         bitrot_fixed_dirs.add(bitrot_dir)
@@ -484,7 +641,10 @@ for path in sorted(changed):
         "Revert this file to its pre-migration contents (git checkout $PLANTER_CHANGE_BASE "
         "-- <file> or git checkout -- <file>). If the Bazel build surfaces new lint/compile "
         "errors on a target built in GN, fix the BUILD.bazel attributes (lint_config, "
-        "rustc_flags, configs, features, deps) instead of editing sources."
+        "rustc_flags, configs, features, deps) instead of editing sources (for a C/C++ "
+        "'#include <sdk/lib/...>' on an idk_cc_source_library with include_base = '//sdk', "
+        "rewrite only that include to '<lib/...>' and run 'fx format-code --changed-lines "
+        "--files=<file>'); if parity is impossible, stop and report it."
     )
     findings.append({
         "source": "build_only_scope",

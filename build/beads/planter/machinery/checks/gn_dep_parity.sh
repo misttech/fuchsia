@@ -389,7 +389,7 @@ for p in changed_all:
         d = os.path.dirname(p).strip("/")
         if (
             d
-            and d not in ("tools", "src", "sdk")
+            and d not in ("tools", "src", "sdk", "build")
             and not any(d == ex or d.startswith(ex + "/") for ex in EXCLUDED_GLOBAL_DIRS)
             and not (target_dir and d == os.path.dirname(target_dir) and f"{d}/BUILD.bazel" not in changed_set)
         ):
@@ -449,10 +449,11 @@ for pkg in sorted(candidate_dirs):
             continue
         if name in folded_from_group:
             old_t = old_targets[folded_from_group[name]]
-        # Skip targets replaced by a Bazel host binary or test suite bridge in GN.
+        # Skip targets replaced by a Bazel host binary, test suite, or package bridge in GN.
         if (
             name not in new_targets
-            or new_targets[name]["tmpl"] in ("bazel_host_tool", "bazel_test_suite")
+            or new_targets[name]["tmpl"]
+            in ("bazel_host_tool", "bazel_test_suite", "bazel_fuchsia_package")
             or (
                 has_bazel_test_suite
                 and new_targets[name]["tmpl"] == "group"

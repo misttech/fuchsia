@@ -117,7 +117,53 @@ while i < len(args):
     i += 1
 
 workdir = os.environ.get("PLANTER_WORKDIR", "") or os.getcwd()
-change_base = os.environ.get("PLANTER_CHANGE_BASE", "").strip() or "HEAD"
+raw_change_base = os.environ.get("PLANTER_CHANGE_BASE", "").strip() or "HEAD"
+
+
+def resolve_effective_change_base(raw_base):
+    """Advance change_base to merge-base(origin/main, HEAD) when HEAD was rebased onto a newer
+    origin/main after PLANTER_CHANGE_BASE was pinned, so checks diff against the rebased base."""
+    def _git_out(cmd_args):
+        try:
+            return subprocess.check_output(
+                ["git", "-C", workdir] + cmd_args, stderr=subprocess.DEVNULL, text=True
+            ).strip()
+        except Exception:
+            return ""
+
+    def _is_anc(anc, desc):
+        if not anc or not desc:
+            return False
+        return (
+            subprocess.run(
+                ["git", "-C", workdir, "merge-base", "--is-ancestor", anc, desc],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            ).returncode
+            == 0
+        )
+
+    base = (raw_base or "").strip() or "HEAD"
+    head_sha = _git_out(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])
+    base_sha = _git_out(["rev-parse", "--verify", "--quiet", f"{base}^{{commit}}"])
+    origin_main = _git_out(["rev-parse", "--verify", "--quiet", "origin/main^{commit}"])
+    merge_base = (
+        _git_out(["merge-base", origin_main, head_sha]) if (origin_main and head_sha) else ""
+    )
+    if (
+        base_sha
+        and merge_base
+        and base_sha != merge_base
+        and _is_anc(base_sha, merge_base)
+    ):
+        return merge_base
+    if head_sha and base_sha and not _is_anc(base_sha, head_sha):
+        return merge_base or "HEAD~1"
+    return base
+
+
+change_base = resolve_effective_change_base(raw_change_base)
 
 
 def normalize_dir(d):
@@ -905,6 +951,12 @@ def downgrade_check_cfg_diff_findings(findings):
                 or "rustflags in GN not carried over to Bazel" in f["message"]
             ):
                 f["severity"] = "INFO"
+        elif (
+            f["category"] == "template_parity"
+            and "rustc_library_with_features(" in f["message"]
+            and "bazel2gn generated rustc_library(" in f["message"]
+        ):
+            f["severity"] = "INFO"
         elif (
             f["category"] == "attribute_alignment"
             and "Unusual rule mapping from fuchsia_" in f["message"]

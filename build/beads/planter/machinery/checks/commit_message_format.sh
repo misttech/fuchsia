@@ -132,11 +132,27 @@ def is_task_migration_head(head_sha, parent_sha, subj):
 
 head = resolve_rev("HEAD")
 base_rev = resolve_rev(base)
-# In a jj colocated checkout, git HEAD stays at @- while the working-copy
-# commit @ holds the change and commit message once described.
-if head and base_rev and head == base_rev and os.path.isdir(os.path.join(workdir, ".jj")):
+uploaded_rev = resolve_rev(os.environ.get("PLANTER_UPLOADED_COMMIT", "").strip())
+# In a jj colocated checkout with base="@-" (or resolved to @-'s commit SHA),
+# git HEAD stays at @- while the working-copy commit @ holds the change and
+# commit message once described. Never fall back to a stale jj @ snapshot when
+# git HEAD is at PLANTER_CHANGE_BASE with uncommitted working-tree edits or
+# when @ is the previous uploaded commit.
+if (
+    head
+    and base_rev
+    and head == base_rev
+    and os.path.isdir(os.path.join(workdir, ".jj"))
+    and (base == "@-" or base_rev == resolve_rev("@-"))
+):
     at_rev = resolve_rev("@")
-    if at_rev and at_rev != base_rev and git("log", "-1", "--format=%B", at_rev).strip():
+    if (
+        at_rev
+        and at_rev != base_rev
+        and at_rev != uploaded_rev
+        and not git("diff", "--name-only", at_rev)
+        and git("log", "-1", "--format=%B", at_rev).strip()
+    ):
         head = at_rev
 
 parent_rev = git("rev-parse", "--verify", f"{head}~1^{{commit}}") if head else ""

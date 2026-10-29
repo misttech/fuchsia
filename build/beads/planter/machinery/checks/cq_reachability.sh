@@ -482,6 +482,125 @@ def foreign_suite_tests(label, pkg, td, seen):
     return out
 
 
+# Check whether sibling packages under td's parent or intermediate subsystem directories already
+# export tests via a per-package bazel_test_suite in BUILD.gn instead of an ancestor test_suite.
+def has_sibling_local_bazel_test_suite(td, anc_pkg=""):
+    cur = td
+    while True:
+        parent_dir = os.path.dirname(cur)
+        if not parent_dir or parent_dir == anc_pkg or (anc_pkg and not parent_dir.startswith(anc_pkg + "/")):
+            break
+        parent_abs = os.path.join(workdir, parent_dir)
+        cur_base = os.path.basename(cur)
+        if os.path.isdir(parent_abs):
+            try:
+                entries = sorted(os.listdir(parent_abs))
+            except OSError:
+                entries = []
+            for name in entries:
+                if name == cur_base or name.startswith("."):
+                    continue
+                sib_gn_rel = os.path.join(parent_dir, name, "BUILD.gn")
+                if os.path.isfile(os.path.join(workdir, sib_gn_rel)):
+                    if SUITE_RE.search(read_gn(sib_gn_rel)):
+                        return True
+        cur = parent_dir
+    return False
+
+
+# Read the base version of a package's BUILD.bazel to check pre-existing test_suite entries.
+_base_bazel_src_cache = {}
+
+
+def base_bazel_src_of(pkg):
+    if pkg not in _base_bazel_src_cache:
+        rel = os.path.join(pkg, "BUILD.bazel") if pkg else "BUILD.bazel"
+        b_ref = os.environ.get("PLANTER_CHANGE_BASE", "").strip() or "HEAD"
+        refs = [b_ref, "HEAD~1"] if b_ref == "HEAD" else [b_ref]
+        content = ""
+        for r in refs:
+            try:
+                content = subprocess.check_output(
+                    ["git", "-C", workdir, "show", f"{r}:{rel}"],
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                )
+                break
+            except Exception:
+                pass
+        _base_bazel_src_cache[pkg] = content
+    return _base_bazel_src_cache[pkg]
+
+
+# Check whether an ancestor BUILD.bazel test_suite already aggregates tests from td's
+# child subtree under anc_pkg (or td is a direct child of anc_pkg).
+def ancestor_suite_covers_subtree(anc_pkg, anc_suite, td):
+    if has_sibling_local_bazel_test_suite(td, anc_pkg):
+        return False
+    in_scope_pkgs = set(target_dirs) | {td}
+    base_anc_src = base_bazel_src_of(anc_pkg)
+    visited = set()
+    queue = [(anc_pkg, anc_suite)]
+    member_pkgs = set()
+    while queue:
+        cur_pkg, cur_suite = queue.pop(0)
+        if (cur_pkg, cur_suite) in visited:
+            continue
+        visited.add((cur_pkg, cur_suite))
+        cur_base_src = base_bazel_src_of(cur_pkg)
+        for lbl in bazel_suites_of(cur_pkg).get(cur_suite) or []:
+            sp = split_label(lbl, cur_pkg)
+            if not sp:
+                continue
+            m_pkg, m_name = sp
+            # Ignore newly added references to target_dirs packages when deciding whether
+            # an ancestor suite already covered td's subtree at the change base.
+            if m_pkg in in_scope_pkgs and f"//{m_pkg}:" not in cur_base_src:
+                continue
+            member_pkgs.add(m_pkg)
+            if m_name in bazel_suites_of(m_pkg):
+                queue.append((m_pkg, m_name))
+    if td in member_pkgs:
+        return True
+    if os.path.dirname(td) == anc_pkg:
+        return bool(member_pkgs) or not base_anc_src
+    rel_td = os.path.relpath(td, anc_pkg)
+    first_seg = rel_td.split("/")[0]
+    sub_root = os.path.join(anc_pkg, first_seg) if anc_pkg else first_seg
+    return any(p == sub_root or p.startswith(sub_root + "/") for p in member_pkgs)
+
+
+# Find any ancestor BUILD.bazel test_suite that newly hooks up //<td>:<t_name> directly.
+def find_direct_ancestor_suite_hookup(td, t_name):
+    parts = [p for p in td.split("/") if p]
+    ancestors = ["/".join(parts[:i]) for i in range(1, len(parts))]
+    target_lbl = f"//{td}:{t_name}"
+    for anc in reversed(ancestors):
+        anc_suites = bazel_suites_of(anc)
+        if not anc_suites:
+            continue
+        base_src = base_bazel_src_of(anc)
+        if target_lbl in base_src:
+            continue
+        for s_name, s_members in anc_suites.items():
+            for lbl in s_members or []:
+                if split_label(lbl, anc) == (td, t_name):
+                    anc_bz_rel = os.path.join(anc, "BUILD.bazel")
+                    line_no = 1
+                    try:
+                        with open(
+                            os.path.join(workdir, anc_bz_rel), "r", encoding="utf-8"
+                        ) as af:
+                            for idx, raw_l in enumerate(af, 1):
+                                if target_lbl in raw_l:
+                                    line_no = idx
+                                    break
+                    except OSError:
+                        pass
+                    return (anc, s_name, anc_bz_rel, line_no)
+    return None
+
+
 # Find the nearest ancestor BUILD.bazel test_suite exported by a wired ancestor bazel_test_suite.
 def nearest_ancestor_test_suite(td, param):
     parts = [p for p in td.split("/") if p]
@@ -529,21 +648,39 @@ def nearest_ancestor_test_suite(td, param):
                 seen.add(sp)
                 queue.append(sp)
                 discovered.append(sp)
+    discovered = [
+        item
+        for item in discovered
+        if ancestor_suite_covers_subtree(item[0], item[1], td)
+    ]
     if not discovered:
         return None
-    discovered.sort(key=lambda item: (item[0].count("/"), len(item[0]), item[1] == param))
+    discovered.sort(
+        key=lambda item: (item[0].count("/"), len(item[0]), item[1] == param)
+    )
     return discovered[-1]
 
 
 # Find the canonical ancestor area directory where a flat BUILD.bazel test_suite and BUILD.gn
 # bazel_test_suite should be created when no ancestor suite for `param` exists yet.
 def preferred_ancestor_area_suite(td, param):
+    if has_sibling_local_bazel_test_suite(td):
+        return None
+    gn_rel_td = os.path.join(td, "BUILD.gn")
+    if SENTINEL_RE.search(read_gn(gn_rel_td)) or SUITE_RE.search(read_gn(gn_rel_td)):
+        return None
     parts = [p for p in td.split("/") if p]
     ancestors = ["/".join(parts[:i]) for i in range(1, len(parts))]
     if not ancestors:
         return None
-    # Prefer the nearest ancestor that already defines any wired bazel_test_suite or test_suite.
+    # Prefer the nearest ancestor that already defines a wired bazel_test_suite covering td's
+    # subtree (or where td is a direct child of that ancestor).
     for anc in reversed(ancestors):
+        if os.path.dirname(td) != anc and not any(
+            ancestor_suite_covers_subtree(anc, s_name, td)
+            for s_name in bazel_suites_of(anc)
+        ):
+            continue
         anc_gn_rel = os.path.join(anc, "BUILD.gn")
         code = read_gn(anc_gn_rel)
         if code and any(
@@ -554,18 +691,6 @@ def preferred_ancestor_area_suite(td, param):
             r'\bgroup\(\s*"tests(?:_no_e2e)?"\s*\)\s*\{', code
         ):
             return (anc, param)
-    # Otherwise, resolve the top-level area root (e.g., //<root>/<area> or //<top>).
-    cand = None
-    if parts[0] == "src" and len(parts) >= 3:
-        cand = "/".join(parts[:2])
-    elif parts[:2] == ["zircon", "system"] and len(parts) >= 4:
-        cand = "/".join(parts[:3])
-    elif len(parts) >= 2 and parts[0] not in ("src", "zircon", "third_party"):
-        cand = parts[0]
-    if cand and cand != td:
-        cand_gn = read_gn(os.path.join(cand, "BUILD.gn"))
-        if cand_gn and re.search(r'\bgroup\(\s*"tests(?:_no_e2e)?"\s*\)\s*\{', cand_gn):
-            return (cand, param)
     return None
 
 
@@ -752,6 +877,9 @@ head_is_on_origin_main = bool(
     origin_main and head_sha and is_ancestor(head_sha, origin_main)
 )
 base_sha = git_out(["rev-parse", "--verify", "--quiet", f"{change_base}^{{commit}}"])
+merge_base_with_origin = (
+    git_out(["merge-base", origin_main, head_sha]) if (origin_main and head_sha) else ""
+)
 effective_diff_base = change_base
 wt_changed_files = (
     git_lines(["diff", "--name-only", "HEAD"])
@@ -767,7 +895,14 @@ head_commit_files = (
 head_touches_target = bool(target_dirs) and any(
     any(p.startswith(td + "/") for td in target_dirs) for p in head_commit_files
 )
-if parent_sha and (
+if (
+    base_sha
+    and merge_base_with_origin
+    and base_sha != merge_base_with_origin
+    and is_ancestor(base_sha, merge_base_with_origin)
+):
+    effective_diff_base = merge_base_with_origin
+elif parent_sha and (
     not base_sha
     or (
         change_base == "HEAD"
@@ -778,7 +913,8 @@ if parent_sha and (
     )
     or not is_ancestor(base_sha, head_sha)
 ):
-    effective_diff_base = "HEAD~1"
+    effective_diff_base = merge_base_with_origin or "HEAD~1"
+
 # Check whether HEAD is the task's own commit rather than an upstream origin/main commit,
 # PLANTER_CHANGE_BASE, or a shared base commit during a parallel uncommitted working-tree migration.
 head_is_task_commit = bool(
@@ -921,9 +1057,9 @@ if origin_main and head_sha and head_sha != origin_main:
         else:
             git_dir = git_out(["rev-parse", "--absolute-git-dir"])
             if git_dir and os.path.isdir(git_dir):
-                fd, tmp_idx = tempfile.mkstemp(
-                    dir=git_dir, prefix=".planter-cq-merge-index."
-                )
+                # Allocate temporary index in system temp dir so worktrees with read-only
+                # parent .git directories still run merge-tree cleanly.
+                fd, tmp_idx = tempfile.mkstemp(prefix=".planter-cq-merge-index.")
                 os.close(fd)
                 try:
                     real_idx = os.path.join(git_dir, "index")
@@ -956,6 +1092,66 @@ if origin_main and head_sha and head_sha != origin_main:
                         os.unlink(tmp_idx)
                     except OSError:
                         pass
+        # Check whether upstream origin/main has newer bazel2gn rule conversion support
+        # than merge_base for a Bazel rule that a target package skips or duplicates in GN.
+        b2gn_upstream_diff = git_lines(
+            ["diff", "--name-only", merge_base, origin_main, "--", "build/tools/bazel2gn"]
+        )
+        if b2gn_upstream_diff:
+            base_known = git_out(["show", f"{merge_base}:build/tools/bazel2gn/known_rules.go"])
+            main_known = git_out(["show", f"{origin_main}:build/tools/bazel2gn/known_rules.go"])
+            base_rule_strs = set(re.findall(r'"([a-zA-Z0-9_]+)"', base_known))
+            main_rule_strs = set(re.findall(r'"([a-zA-Z0-9_]+)"', main_known))
+            newly_supported_rules = main_rule_strs - base_rule_strs
+            first_td_gn = ""
+            matched_new_rules = []
+            if newly_supported_rules:
+                for td in target_dirs:
+                    cand_gn = os.path.join(td, "BUILD.gn")
+                    cand_bz = os.path.join(td, "BUILD.bazel")
+                    if not (
+                        os.path.isfile(os.path.join(workdir, cand_gn))
+                        and os.path.isfile(os.path.join(workdir, cand_bz))
+                    ):
+                        continue
+                    try:
+                        with open(os.path.join(workdir, cand_bz), "r", encoding="utf-8") as bf:
+                            bz_txt = bf.read()
+                        with open(os.path.join(workdir, cand_gn), "r", encoding="utf-8") as gf:
+                            gn_txt = gf.read()
+                    except OSError:
+                        continue
+                    used_new = sorted(
+                        r for r in newly_supported_rules if re.search(r"\b" + re.escape(r) + r"\s*\(", bz_txt)
+                    )
+                    if used_new and ("@bazel2gn:skip" in bz_txt or not SENTINEL_RE.search(gn_txt)):
+                        first_td_gn = cand_gn
+                        matched_new_rules = used_new
+                        break
+            if first_td_gn and matched_new_rules:
+                rules_desc = ", ".join(f"`{r}`" for r in matched_new_rules)
+                findings.append({
+                    "source": "cq_reachability",
+                    "category": "upstream_rebase_conflict",
+                    "severity": "error",
+                    "file": first_td_gn,
+                    "line": 1,
+                    "message": (
+                        f"Checkout base {merge_base[:11]} is behind upstream `origin/main` "
+                        f"({origin_main[:11]}), which adds `build/tools/bazel2gn` rule "
+                        f"conversion support for {rules_desc} used in this package. "
+                        "Migrating on a stale base leaves parallel hand-written target "
+                        "definitions in `BUILD.gn`."
+                    ),
+                    "remediation": (
+                        "Rebase the checkout onto the latest `origin/main` before running "
+                        "`fx bazel2gn`: commit or stash any worktree edits, run "
+                        "`git fetch origin main && git rebase origin/main`, resolve any "
+                        "conflicts keeping both upstream and migration changes, remove "
+                        "obsolete `# @bazel2gn:skip` annotations and parallel `BUILD.gn` "
+                        "definitions above `## BAZEL2GN SENTINEL`, and re-run `fx bazel2gn`."
+                    ),
+                })
         if worktree_tree:
             mt_proc = subprocess.run(
                 [
@@ -1096,18 +1292,58 @@ if origin_main and head_sha and head_sha != origin_main:
                                     ),
                                 })
 
+# Extract Gerrit CL numbers from a 'Depends on:' line or block in a commit message,
+# ignoring Gerrit 'Reviewed-on:' footers and unrelated prose links.
+def extract_depends_on_cl_nums(msg):
+    if not msg:
+        return []
+    dep_cl_re = re.compile(
+        r"(?:fxrev\.dev|fuchsia-review\.googlesource\.com/c/fuchsia/\+)/(\d+)"
+    )
+    cl_nums = []
+    in_depends_on = False
+    for raw_line in msg.splitlines():
+        line = raw_line.strip()
+        if not line:
+            in_depends_on = False
+            continue
+        if re.match(r"(?i)^Reviewed-on\s*:", line):
+            in_depends_on = False
+            continue
+        if re.match(r"(?i)^Depends\s+on\s*:", line):
+            in_depends_on = True
+            for cl_num in dep_cl_re.findall(line):
+                if cl_num not in cl_nums:
+                    cl_nums.append(cl_num)
+            continue
+        if in_depends_on:
+            if re.match(r"^[A-Za-z][A-Za-z0-9-]*\s*:", line) and not re.match(
+                r"(?i)^https?:", line
+            ):
+                in_depends_on = False
+                continue
+            for cl_num in dep_cl_re.findall(line):
+                if cl_num not in cl_nums:
+                    cl_nums.append(cl_num)
+    return cl_nums
+
+
 # Check whether HEAD is stacked on a local ancestor commit that has already landed on
 # origin/main, or still carries a 'Depends on:' reference to a CL now in origin/main.
 def check_landed_ancestor_commits(merge_base, origin_main, parent_sha, head_sha):
+    # When HEAD is an ancestor of origin/main (merge_base == head_sha), there are no
+    # local commits ahead of origin/main (e.g. uncommitted working-tree edits on top
+    # of a base commit after origin/main advanced).
+    if not merge_base or merge_base == head_sha:
+        return
     landed_ancestors = []
     upstream_log = ""
-    if merge_base and merge_base != origin_main:
+    if merge_base != origin_main:
         upstream_log = git_out(
             ["log", "--format=%H%n%B%n---END---", f"{merge_base}..{origin_main}"]
         )
     if (
-        merge_base
-        and parent_sha
+        parent_sha
         and merge_base != origin_main
         and merge_base != parent_sha
         and is_ancestor(merge_base, parent_sha)
@@ -1130,7 +1366,13 @@ def check_landed_ancestor_commits(merge_base, origin_main, parent_sha, head_sha)
                 )
                 landed_ancestors.append((anc[:11], anc_subj))
 
-    head_msg = git_out(["log", "-1", "--format=%B", head_sha]) if head_sha else ""
+    # Only inspect HEAD's commit message for 'Depends on:' when HEAD is a task commit
+    # distinct from $PLANTER_CHANGE_BASE.
+    head_msg = (
+        git_out(["log", "-1", "--format=%B", head_sha])
+        if head_sha and not (base_sha and head_sha == base_sha)
+        else ""
+    )
     if re.search(r"(?m)^Reviewed-on:\s+\S+", head_msg) and not head_touches_target:
         return
     head_cids = set(re.findall(r"^Change-Id:\s*(I[0-9a-f]{40})\b", head_msg, re.M))
@@ -2748,6 +2990,44 @@ for td in target_dirs:
                 "message": msg_text,
                 "remediation": rem_text,
             })
+        elif anc_suite_info is None and missing_anc_area is None:
+            # Reject newly hooking //<td>:<t_name> into an ancestor BUILD.bazel test_suite
+            # when sibling packages in td's subtree use per-package bazel_test_suite in
+            # BUILD.gn or the ancestor test_suite does not aggregate td's subtree yet.
+            hookup = find_direct_ancestor_suite_hookup(td, t_name)
+            if hookup is not None:
+                h_anc, h_suite, h_bz_rel, h_line = hookup
+                sib_reason = (
+                    "sibling packages in this subtree export their Bazel tests via a "
+                    "per-package `bazel_test_suite` in `BUILD.gn`"
+                    if has_sibling_local_bazel_test_suite(td, h_anc)
+                    else f"`//{h_anc}:{h_suite}` does not aggregate tests from `{td}`'s "
+                    "subtree yet"
+                )
+                msg_text = (
+                    f"`test_suite(name = \"{h_suite}\")` in '{h_bz_rel}' hooks up "
+                    f"`\"//{td}:{t_name}\"`, but {sib_reason}; keep this package's "
+                    f"Bazel test export as a local `bazel_test_suite` in '{gn_rel}' "
+                    "for now."
+                )
+                rem_text = (
+                    f"Remove `\"//{td}:{t_name}\"` from `test_suite(name = \"{h_suite}\")` "
+                    f"in '{h_bz_rel}' (revert '{h_bz_rel}' if no other changes remain), "
+                    f"omit `visibility = [\"//{h_anc}:__pkg__\"]` on `:{t_name}` in "
+                    f"'{bazel_rel}', and export `\"//{td}:{t_name}\"` via "
+                    f"`bazel_test_suite(\"bazel_tests\") {{ {param} = [ \"//{td}:{t_name}\" ] }}` "
+                    f"(wired into `group(\"tests\")` above `## BAZEL2GN SENTINEL`) in "
+                    f"'{gn_rel}'."
+                )
+                findings.append({
+                    "source": "cq_reachability",
+                    "category": "unwanted_ancestor_test_suite_hookup",
+                    "severity": "error",
+                    "file": h_bz_rel,
+                    "line": h_line,
+                    "message": msg_text,
+                    "remediation": rem_text,
+                })
         for s_rel, s_name, s_param, s_line in entries:
             if s_param != param:
                 findings.append({

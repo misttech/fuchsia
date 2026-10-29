@@ -133,6 +133,8 @@ BENIGN_UNMAPPED_GN_ATTRS = {
     "check_cfgs",
     "feature_sets",
     "with_unit_tests",
+    "output_name",
+    "cm_label",
 }
 
 
@@ -576,12 +578,16 @@ def check_output_name_alignment_info(
         "cc_binary_host_tool",
     )
     rust_bin = bt_rule in ("rustc_binary", "rust_binary", "rustc_test", "rust_test", "fidl_library", "zither_fidl_library")
+    fidl_lib = bt_rule in ("fidl_library", "_fidl_library", "fidl_ir") and "library_name" in bt_kws
+    sc_lib = bt_rule.startswith("fuchsia_structured_config_") and "crate_name" in bt_kws
     preserved_in_gn = bool(
         cur_top and (cur_top.get("output_name") == gn_out or cur_top.get("name") == gn_out)
     )
     if (
         cc_bin
         or rust_bin
+        or fidl_lib
+        or sc_lib
         or gn_out == [name]
         or preserved_in_gn
     ):
@@ -1016,6 +1022,24 @@ def check_args_alignment_info(
             ),
         }
     return None
+
+
+# Record non-blocking INFO attribute_alignment when GN cm_label on a component maps to
+# compiled_manifest on fx_component / fx_test_component in Bazel.
+def check_cm_label_alignment_info(bazel_rel, name, bt_line, bt_kws, gn_top):
+    if "cm_label" not in gn_top or "cm_label" in bt_kws or "compiled_manifest" not in bt_kws:
+        return None
+    return {
+        "source": "gn_attr_parity",
+        "category": "attribute_alignment",
+        "severity": "info",
+        "file": bazel_rel,
+        "line": bt_line,
+        "message": (
+            f'Target "{name}" (Target Attributes): '
+            "cm_label in GN not carried over to Bazel"
+        ),
+    }
 
 
 # Record non-blocking INFO dep_alignment when unmatched GN/Bazel deps are accounted for by
@@ -2071,7 +2095,7 @@ def is_benign_alignment_clause(clause, is_crate_test=False):
     suffix = " in GN not carried over to Bazel"
     if clause.endswith(suffix):
         attr = clause[: -len(suffix)]
-        if attr in BENIGN_UNMAPPED_GN_ATTRS:
+        if attr in BENIGN_UNMAPPED_GN_ATTRS or attr.startswith("_"):
             return True
         if is_crate_test and attr in ("edition", "source_root", "rustenv"):
             return True
@@ -2174,11 +2198,7 @@ def collect_diffengine_alignment_findings(allowed_targets, crate_test_targets=()
         and not dirs
     ):
         return []
-    planter_bin = shutil.which("planter")
-    if not planter_bin:
-        cand = os.path.expanduser("~/.local/bin/planter")
-        if os.path.isfile(cand) and os.access(cand, os.X_OK):
-            planter_bin = cand
+    planter_bin = find_planter_bin()
     if not planter_bin:
         return []
     env = dict(os.environ)
@@ -2209,6 +2229,7 @@ def collect_diffengine_alignment_findings(allowed_targets, crate_test_targets=()
     out = []
     attr_pat = re.compile(r'^Target "([^"]+)" \(Target Attributes\): (.+)$')
     tgt_msg_pat = re.compile(r'^(?:GN )?[Tt]arget "([^"]+)"')
+    tmpl_pat = re.compile(r'^Target "([^"]+)" \(Rule & Directives\): ')
     for item in items:
         if not isinstance(item, dict):
             continue
@@ -2217,6 +2238,18 @@ def collect_diffengine_alignment_findings(allowed_targets, crate_test_targets=()
         f_line = item.get("line", 0)
         msg = item.get("message", "")
         pkg = os.path.dirname(f_file).strip("/")
+        if cat == "template_parity" and "rustc_library_with_features" in msg:
+            tm = tmpl_pat.match(msg)
+            if tm and (f_file, tm.group(1)) in allowed_targets:
+                out.append({
+                    "source": "gn_attr_parity",
+                    "category": "template_parity",
+                    "severity": "info",
+                    "file": f_file,
+                    "line": f_line,
+                    "message": msg,
+                })
+                continue
         if (
             cat == "dep_alignment"
             and f_file.endswith("BUILD.bazel")
@@ -3183,7 +3216,9 @@ for pkg in sorted(d for d in dirs if d):
                 out_infos = check_output_name_alignment_info(
                     bazel_rel, name, bt_rule, bt_line, bt_kws, gn_top, cur_top, top_vars
                 )
-                findings.extend(out_infos)
+                if out_infos:
+                    allowed_alignment_targets.add((bazel_rel, name))
+                    findings.extend(out_infos)
                 args_info = check_args_alignment_info(
                     bazel_rel,
                     name,
@@ -3458,8 +3493,40 @@ for pkg in sorted(d for d in dirs if d):
                         has_bazel_test_rule or has_gn_test_rule,
                     )
                 )
+                local_gn_helper_attrs = [
+                    attr for attr in gn_top if attr.startswith("_") and attr not in bt_kws
+                ]
+                if local_gn_helper_attrs:
+                    allowed_alignment_targets.add((bazel_rel, name))
+                    for attr in local_gn_helper_attrs:
+                        findings.append({
+                            "source": "gn_attr_parity",
+                            "category": "attribute_alignment",
+                            "severity": "info",
+                            "file": bazel_rel,
+                            "line": bt_line,
+                            "message": (
+                                f'Target "{name}" (Target Attributes): '
+                                f"{attr} in GN not carried over to Bazel"
+                            ),
+                        })
                 if tmpl == "rustc_library_with_features" and bt_rule == "rustc_library":
                     allowed_alignment_targets.add((bazel_rel, name))
+                    if cur and cur[0] == "rustc_library":
+                        findings.append({
+                            "source": "gn_attr_parity",
+                            "category": "template_parity",
+                            "severity": "info",
+                            "file": bazel_rel,
+                            "line": bt_line,
+                            "message": (
+                                f'Target "{name}" (Rule & Directives): bazel2gn generated '
+                                f'rustc_library("{name}") below the sentinel ({gn_rel}:{cur[1]}), '
+                                "but the original GN target was "
+                                f'rustc_library_with_features("{name}"); the migration must keep '
+                                "the GN template"
+                            ),
+                        })
                 if tmpl in IDK_ZX_GN_TEMPLATES and bt_rule in IDK_ZX_BAZEL_RULES:
                     allowed_alignment_targets.add((bazel_rel, name))
                     prefix_notes, extra_attrs = idk_zx_alignment_notes(top_body, bt_kws)
@@ -3474,13 +3541,6 @@ for pkg in sorted(d for d in dirs if d):
                                 "line": bt_line,
                                 "message": f'Target "{name}" (Target Attributes): {"; ".join(notes)}',
                             })
-
-seen_keys = {(f["category"], f["file"], f["line"], f["message"]) for f in findings}
-for df in collect_diffengine_alignment_findings(allowed_alignment_targets):
-    key = (df["category"], df["file"], df["line"], df["message"])
-    if key not in seen_keys:
-        seen_keys.add(key)
-        findings.append(df)
 
 # Check for GN root_out_dir binary output_name collisions on migrated rustc_test targets
 def check_rust_test_output_name_collision():
@@ -3622,5 +3682,13 @@ def check_rust_test_output_name_collision():
 
 check_rust_test_output_name_collision()
 
-print(json.dumps(findings, indent=2))
+deduped_findings = []
+seen_keys = set()
+for f in findings + collect_diffengine_alignment_findings(allowed_alignment_targets):
+    key = (f["category"], f["file"], f["line"], f["message"])
+    if key not in seen_keys:
+        seen_keys.add(key)
+        deduped_findings.append(f)
+
+print(json.dumps(deduped_findings, indent=2))
 PYEOF

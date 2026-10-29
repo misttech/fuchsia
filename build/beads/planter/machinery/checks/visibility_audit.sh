@@ -2118,7 +2118,19 @@ for rel_path in sorted(candidate_files):
         new_entries = [(val, lineno) for (val, lineno) in entries if val not in preexisting_vis]
         if check_narrow_shared_test_support_visibility():
             continue
-        if len(new_entries) > max_rollup_entries and (is_globally_used or len(area_rollup_vis) < len(entries)):
+        # Audit sprawling visibility lists whenever a target's visibility is authored or
+        # extended by this change (new_entries is non-empty), checking the total entry count
+        # so lists that grow one caller at a time across migrations are rolled up instead of
+        # accumulating dozens of leaf :__pkg__ entries.
+        sprawling_vis = bool(new_entries) and (
+            (len(entries) > max_rollup_entries and (is_globally_used or len(area_rollup_vis) < len(entries)))
+            or (
+                len(entries) > 10
+                and len(distinct_areas) >= 3
+                and len(area_rollup_vis) < len(entries)
+            )
+        )
+        if sprawling_vis:
             if is_globally_used:
                 findings.append({
                     "source": "visibility_audit",
@@ -2139,6 +2151,12 @@ for rel_path in sorted(candidate_files):
                     ),
                 })
             else:
+                top_roots = {r.split("/")[0] for r in target_rdeps if r.strip("/")}
+                top_rollup_hint = (
+                    ' (or ["//src:__subpackages__"] when widely used across //src)'
+                    if top_roots == {"src"} and len(distinct_areas) >= 3
+                    else ""
+                )
                 findings.append({
                     "source": "visibility_audit",
                     "category": "overly_narrow_global_visibility",
@@ -2146,12 +2164,13 @@ for rel_path in sorted(candidate_files):
                     "file": rel_path,
                     "line": vis_kw.lineno,
                     "message": (
-                        f"Target '{target_name}' enumerates {len(entries)} narrow visibility entries across multiple "
-                        f"subtrees. Drop visibility to 2-3 levels deep instead of listing dozens of leaf packages."
+                        f"Target '{target_name}' enumerates {len(entries)} narrow visibility entries across "
+                        f"{len(distinct_areas)} areas. Roll up visibility to subsystem or top-level subtrees "
+                        f"instead of appending individual leaf packages."
                     ),
                     "remediation": (
-                        f"Replace visibility on '{target_name}' with 2-3 level area rollup entries: "
-                        f"{json.dumps(area_rollup_vis)} and re-run fx bazel2gn."
+                        f"Replace visibility on '{target_name}' with rollup entries "
+                        f"{json.dumps(area_rollup_vis)}{top_rollup_hint} and re-run fx bazel2gn."
                     ),
                 })
             continue

@@ -304,6 +304,7 @@ def is_allowed_scope(path: str) -> bool:
         if norm.startswith(prefix):
             return True
     if norm in (
+        "build/BUILD.gn",
         "tools/BUILD.gn",
         "src/BUILD.gn",
         "sdk/BUILD.gn",

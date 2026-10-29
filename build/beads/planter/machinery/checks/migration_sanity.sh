@@ -467,7 +467,7 @@ for p in changed:
             all_changed_build_dirs.add(d)
         if (
             d
-            and d not in ("tools", "src", "sdk")
+            and d not in ("tools", "src", "sdk", "build")
             and not any(d == ex or d.startswith(ex + "/") for ex in EXCLUDED_GLOBAL_DIRS)
         ):
             candidate_dirs.add(d)
@@ -756,7 +756,10 @@ def is_bazel_only_private_test_dep(
             + r'(?:_[A-Za-z0-9_]+)?(?:"|\()'
         )
         for ptmpl, _, pbody in gn_info["pre_targets"].values():
-            if ptmpl not in ("bazel_test_suite", "bazel_host_tool") and ref_pat.search(pbody):
+            if (
+                ptmpl not in ("bazel_test_suite", "bazel_host_tool", "bazel_fuchsia_package")
+                and ref_pat.search(pbody)
+            ):
                 return False
     has_bazel_test_consumer = False
     for other in bazel_targets:
@@ -1348,6 +1351,11 @@ for pkg_dir in sorted(candidate_dirs):
     def check_cross_tree_package_name_collisions(all_pkgs, cur_pkg_dir, brel, grel, g_info):
         has_sent = bool(g_info and g_info.get("has_sentinel"))
         for pt in all_pkgs:
+            # Non-test fx_package targets (such as drop-in replacement subpackages) have fixed
+            # runtime package URLs consumed by .cml manifests or assembly and are not exported to
+            # tests.json via bazel_test_suite.
+            if not pt.get("is_test_pkg"):
+                continue
             p_name = pt["package_name"]
             candidates = [p_name]
             if (
@@ -2880,7 +2888,7 @@ for pkg_dir in sorted(candidate_dirs):
                 )
             )
             ref_in_pre_gn = rule in CONVERTIBLE_BAZEL_RULES and any(
-                ptmpl not in ("bazel_test_suite", "bazel_host_tool")
+                ptmpl not in ("bazel_test_suite", "bazel_host_tool", "bazel_fuchsia_package")
                 and bool(
                     re.search(
                         r'"(?::|//' + re.escape(pkg_dir) + r':)' + re.escape(tname) + r'(?:_[A-Za-z0-9_]+)?(?:"|\()',
@@ -2969,12 +2977,16 @@ for pkg_dir in sorted(candidate_dirs):
                             if in_pre_gn
                             else ""
                         )
+                        + (f" while referenced by `:{tname}` in '{gn_rel}'" if ref_in_pre_gn else "")
                         + f". `bazel2gn` natively converts `{rule}` into `{gn_comp_tmpl}` "
                         "below the sentinel, so it must not be skipped."
                     )
                     skip_rem = (
-                        f"Remove `# @bazel2gn:skip` above `{rule}(name = \"{tname}\")` in "
-                        f"'{bazel_rel}', delete any manual `{gn_comp_tmpl}(\"{tname}\")` "
+                        f"If the checkout is behind `origin/main`, first rebase onto "
+                        "`origin/main` (`git fetch origin main && git rebase origin/main`) so "
+                        f"`fx bazel2gn` includes `{rule}` support. Then remove "
+                        f"`# @bazel2gn:skip` (and its comment) above `{rule}(name = \"{tname}\")` "
+                        f"in '{bazel_rel}', delete any manual `{gn_comp_tmpl}(\"{tname}\")` "
                         f"definition above `## BAZEL2GN SENTINEL` in '{gn_rel}', and re-run "
                         f"`fx bazel2gn -d {pkg_dir}`."
                     )
@@ -3470,6 +3482,20 @@ for pkg_dir in sorted(candidate_dirs):
                     cfg_m = re.search(r'\bconfigs\s*\+=\s*\[\s*"([^"]+)"\s*\]', gbody)
                     if cfg_m:
                         attr_hints.append(f"map `configs += [ \"{cfg_m.group(1)}\" ]` to `lint_config = \"{cfg_m.group(1)}\"`")
+                if gtmpl in ("fuchsia_component", "fuchsia_component_manifest"):
+                    bz_rule = (
+                        "fx_component"
+                        if gtmpl == "fuchsia_component"
+                        else "fx_component_manifest"
+                    )
+                    attr_hints.append(
+                        f"author `{bz_rule}(name = \"{gname}\", ...)` in '{bazel_rel}' "
+                        "(loaded from `//build/bazel/rules/components:fx_component.bzl`, "
+                        "wrapping any binary dep in `fx_packaged_binary` for `fx_component`) "
+                        "without `# @bazel2gn:skip`, and if `fx bazel2gn` in the current "
+                        "checkout does not yet translate it, rebase onto `origin/main` first "
+                        "(`git fetch origin main && git rebase origin/main`)"
+                    )
 
                 dep_msg = (
                     f" Unmigrated first-party dependencies referenced by `{gname}` that also need a BUILD.bazel in this change: "
@@ -4133,11 +4159,14 @@ for pkg_dir in sorted(candidate_dirs):
             b2gn_conv = {
                 n
                 for n in cand_dups
-                if has_sentinel
-                and pre_targets[n][0] == "fuchsia_component"
-                and not is_gn_component_target_blocked(
-                    n, pre_targets[n][0], pre_targets[n][2], pre_targets, btargets, pdir
+                if (
+                    has_sentinel
+                    and pre_targets[n][0] == "fuchsia_component"
+                    and not is_gn_component_target_blocked(
+                        n, pre_targets[n][0], pre_targets[n][2], pre_targets, btargets, pdir
+                    )
                 )
+                or pre_targets[n][0] in ("fuchsia_package", "fuchsia_package_with_single_component")
             }
             kept = {
                 n
@@ -4159,6 +4188,75 @@ for pkg_dir in sorted(candidate_dirs):
             return cand_dups - kept
 
         if gn_info:
+            def _gn_pkg_has_external_gn_callers(pkg_d, target_n):
+                try:
+                    hit_files = subprocess.check_output(
+                        ["git", "-C", workdir, "grep", "-Fl", f"//{pkg_d}", "--", "*.gn", "*.gni"],
+                        stderr=subprocess.DEVNULL,
+                        text=True,
+                    ).splitlines()
+                except Exception:
+                    hit_files = []
+                label_pats = [re.compile(r'"//' + re.escape(f"{pkg_d}:{target_n}") + r'(?:"|\()')]
+                if target_n == os.path.basename(pkg_d):
+                    label_pats.append(re.compile(r'"//' + re.escape(pkg_d) + r'(?:"|\()'))
+                for rel_f in hit_files:
+                    rel_f = rel_f.strip()
+                    if not rel_f or rel_f == gn_rel or rel_f.startswith("bundles/assembly/bazel_inputs/"):
+                        continue
+                    try:
+                        with open(os.path.join(workdir, rel_f), encoding="utf-8", errors="replace") as fh:
+                            content = "\n".join(line.split("#", 1)[0] for line in fh.read().splitlines())
+                    except OSError:
+                        continue
+                    if any(p.search(content) for p in label_pats):
+                        return True
+                return False
+
+            try:
+                with open(os.path.join(workdir, "build/BUILD.gn"), encoding="utf-8", errors="replace") as _bf:
+                    _build_gn_text = _bf.read()
+            except OSError:
+                _build_gn_text = ""
+
+            for gname, (gtmpl, gline, gbody) in sorted(gn_info["pre_targets"].items()):
+                if gtmpl != "bazel_fuchsia_package":
+                    continue
+                is_allowlisted_non_hermetic = any(
+                    pat in _build_gn_text
+                    for pat in (
+                        f'"//{pkg_dir}:{gname}.package"',
+                        f'"//{pkg_dir}:*"',
+                        f'"//{pkg_dir}/*"',
+                    )
+                )
+                if not is_allowlisted_non_hermetic:
+                    if _gn_pkg_has_external_gn_callers(pkg_dir, gname):
+                        rem = (
+                            f"Add `\"//{pkg_dir}:{gname}\"` and `\"//{pkg_dir}:{gname}.package\"` "
+                            "(sorted alphabetically) to the `prebuilt_package` `visibility += [ ... ]` "
+                            "allowlist inside `group(\"non_hermetic_deps\")` in 'build/BUILD.gn'."
+                        )
+                    else:
+                        rem = (
+                            f"Delete `bazel_fuchsia_package(\"{gname}\")` from '{gn_rel}' (or `git rm {gn_rel}` if "
+                            f"no GN targets remain), as no GN targets depend on `//{pkg_dir}:{gname}`."
+                        )
+                    findings.append({
+                        "source": "migration_sanity",
+                        "category": "non_hermetic_bazel_fuchsia_package",
+                        "severity": "error",
+                        "file": gn_rel,
+                        "line": gline,
+                        "message": (
+                            f"GN target `bazel_fuchsia_package(\"{gname}\")` in '{gn_rel}' expands "
+                            "`prebuilt_package`, which adds an implicit dependency on `//build:non_hermetic_deps` "
+                            f"and fails GN visibility checks on CQ because `//{pkg_dir}:{gname}.package` is not in "
+                            "`//build:non_hermetic_deps`'s visibility list."
+                        ),
+                        "remediation": rem,
+                    })
+
             gn_pkg_TMPLS = ("fuchsia_package", "fuchsia_package_with_single_component", "fuchsia_component")
             cand_dup_gn_pkg_names = set()
             for gname, (gtmpl, gline, gbody) in gn_info["pre_targets"].items():
@@ -4214,15 +4312,26 @@ for pkg_dir in sorted(candidate_dirs):
                     )
                 )
                 if (is_dup_pkg or is_dup_bin) and not has_uncollected_dylib_fx_pkg:
-                    rem = (
-                        f"Delete '{gn_rel}' (`git rm {gn_rel}`) now that all targets in '//{pkg_dir}' are migrated to '{bazel_rel}'."
-                        if not remaining_non_pkg and not gn_info["has_sentinel"]
-                        else (
+                    if gtmpl in ("fuchsia_package", "fuchsia_package_with_single_component") and _gn_pkg_has_external_gn_callers(pkg_dir, gname):
+                        rem = (
+                            f"Replace `{gtmpl}(\"{gname}\")` in '{gn_rel}' with "
+                            f"`bazel_fuchsia_package(\"{gname}\")` (`import(\"//build/bazel/bazel_fuchsia_package.gni\")`, "
+                            "setting `bazel_config = \"fuchsia_platform\"` and preserving `package_name` and `testonly`), "
+                            f"and add `\"//{pkg_dir}:{gname}\"` and `\"//{pkg_dir}:{gname}.package\"` to the "
+                            "`prebuilt_package` `visibility += [ ... ]` list in `group(\"non_hermetic_deps\")` "
+                            "in 'build/BUILD.gn'."
+                        )
+                    elif not remaining_non_pkg and not gn_info["has_sentinel"]:
+                        rem = (
+                            f"Delete '{gn_rel}' (`git rm {gn_rel}`) now that all targets in "
+                            f"'//{pkg_dir}' are migrated to '{bazel_rel}'."
+                        )
+                    else:
+                        rem = (
                             f"Delete `{gtmpl}(\"{gname}\")` (and any dedicated package component/binary/resource targets "
                             f"not used by remaining GN test targets) from '{gn_rel}', keeping only the GN-only test or "
                             f"library targets in '{gn_rel}'."
                         )
-                    )
                     findings.append({
                         "source": "migration_sanity",
                         "category": "duplicate_gn_fuchsia_package",
