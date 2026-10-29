@@ -558,15 +558,15 @@ mod tests {
         suffix: &'static str,
     }
 
-    impl PartialEq<TestVariation> for VariantExpectation {
-        fn eq(&self, other: &TestVariation) -> bool {
+    impl PartialEq<VariantExpectation> for TestVariation {
+        fn eq(&self, other: &VariantExpectation) -> bool {
             self.suffix == other.suffix
-                && self
-                    .params
-                    .iter()
-                    .map(|p| syn::parse_str::<syn::Path>(p).unwrap())
-                    .collect::<Vec<_>>()
-                    == other.params
+                && self.params
+                    == other
+                        .params
+                        .iter()
+                        .map(|p| syn::parse_str::<syn::Path>(p).unwrap())
+                        .collect::<Vec<_>>()
         }
     }
 

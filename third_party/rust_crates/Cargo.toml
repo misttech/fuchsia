@@ -251,7 +251,7 @@ strum_macros = "0.28.0"
 tempfile = "3.2"
 termcolor = "1.4.1"
 termion = "4.0.6"
-test-case = "3.3.1"
+test-case = "3.4.0"
 textwrap = { version = "0.16.4", default-features = false }
 thiserror = "2.0.21"
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging", "tls12"] }

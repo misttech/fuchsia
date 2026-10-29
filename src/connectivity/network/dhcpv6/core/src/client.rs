@@ -11260,70 +11260,35 @@ mod tests {
         });
     }
 
+    fn finite_non_zero_time_value(n: u32) -> v6::NonZeroTimeValue {
+        v6::NonZeroTimeValue::Finite(
+            v6::NonZeroOrMaxU32::new(n).expect("should succeed for non-zero or u32::MAX values"),
+        )
+    }
+
+    fn finite_time_value(n: u32) -> v6::TimeValue {
+        v6::TimeValue::NonZero(finite_non_zero_time_value(n))
+    }
+
     #[test_case(v6::TimeValue::Zero, v6::TimeValue::Zero, v6::TimeValue::Zero)]
-    #[test_case(
-        v6::TimeValue::Zero,
-        v6::TimeValue::NonZero(v6::NonZeroTimeValue::Finite(
-            v6::NonZeroOrMaxU32::new(120)
-                .expect("should succeed for non-zero or u32::MAX values")
-        )),
-        v6::TimeValue::NonZero(v6::NonZeroTimeValue::Finite(
-            v6::NonZeroOrMaxU32::new(120)
-                .expect("should succeed for non-zero or u32::MAX values")
-        ))
-     )]
+    #[test_case(v6::TimeValue::Zero, finite_time_value(120), finite_time_value(120))]
     #[test_case(
         v6::TimeValue::Zero,
         v6::TimeValue::NonZero(v6::NonZeroTimeValue::Infinity),
         v6::TimeValue::NonZero(v6::NonZeroTimeValue::Infinity)
     )]
+    #[test_case(finite_time_value(120), v6::TimeValue::Zero, finite_time_value(120))]
+    #[test_case(finite_time_value(120), finite_time_value(60), finite_time_value(60))]
     #[test_case(
-        v6::TimeValue::NonZero(v6::NonZeroTimeValue::Finite(
-            v6::NonZeroOrMaxU32::new(120)
-                .expect("should succeed for non-zero or u32::MAX values")
-        )),
-        v6::TimeValue::Zero,
-        v6::TimeValue::NonZero(v6::NonZeroTimeValue::Finite(
-            v6::NonZeroOrMaxU32::new(120)
-                .expect("should succeed for non-zero or u32::MAX values")
-        ))
-     )]
-    #[test_case(
-        v6::TimeValue::NonZero(v6::NonZeroTimeValue::Finite(
-            v6::NonZeroOrMaxU32::new(120)
-                .expect("should succeed for non-zero or u32::MAX values")
-        )),
-        v6::TimeValue::NonZero(v6::NonZeroTimeValue::Finite(
-            v6::NonZeroOrMaxU32::new(60)
-                .expect("should succeed for non-zero or u32::MAX values")
-        )),
-        v6::TimeValue::NonZero(v6::NonZeroTimeValue::Finite(
-            v6::NonZeroOrMaxU32::new(60)
-                .expect("should succeed for non-zero or u32::MAX values")
-        ))
-     )]
-    #[test_case(
-        v6::TimeValue::NonZero(v6::NonZeroTimeValue::Finite(
-            v6::NonZeroOrMaxU32::new(120)
-                .expect("should succeed for non-zero or u32::MAX values")
-        )),
+        finite_time_value(120),
         v6::TimeValue::NonZero(v6::NonZeroTimeValue::Infinity),
-        v6::TimeValue::NonZero(v6::NonZeroTimeValue::Finite(
-            v6::NonZeroOrMaxU32::new(120)
-                .expect("should succeed for non-zero or u32::MAX values")
-        ))
-     )]
+        finite_time_value(120)
+    )]
     #[test_case(
         v6::TimeValue::NonZero(v6::NonZeroTimeValue::Infinity),
-        v6::TimeValue::NonZero(v6::NonZeroTimeValue::Finite(
-            v6::NonZeroOrMaxU32::new(120)
-                .expect("should succeed for non-zero or u32::MAX values")
-        )),
-        v6::TimeValue::NonZero(v6::NonZeroTimeValue::Finite(
-            v6::NonZeroOrMaxU32::new(120)
-                .expect("should succeed for non-zero or u32::MAX values")
-        ))
-     )]
+        finite_time_value(120),
+        finite_time_value(120)
+    )]
     #[test_case(
         v6::TimeValue::NonZero(v6::NonZeroTimeValue::Infinity),
         v6::TimeValue::NonZero(v6::NonZeroTimeValue::Infinity),
@@ -11338,51 +11303,24 @@ mod tests {
     }
 
     #[test_case(
-        v6::NonZeroTimeValue::Finite(
-            v6::NonZeroOrMaxU32::new(120)
-                .expect("should succeed for non-zero or u32::MAX values")
-        ),
+        finite_non_zero_time_value(120),
         v6::TimeValue::Zero,
-        v6::NonZeroTimeValue::Finite(
-            v6::NonZeroOrMaxU32::new(120)
-                .expect("should succeed for non-zero or u32::MAX values")
-        )
+        finite_non_zero_time_value(120)
     )]
     #[test_case(
-        v6::NonZeroTimeValue::Finite(
-            v6::NonZeroOrMaxU32::new(120)
-                .expect("should succeed for non-zero or u32::MAX values")
-        ),
-        v6::TimeValue::NonZero(v6::NonZeroTimeValue::Finite(
-            v6::NonZeroOrMaxU32::new(60)
-                .expect("should succeed for non-zero or u32::MAX values")
-        )),
-        v6::NonZeroTimeValue::Finite(
-            v6::NonZeroOrMaxU32::new(60)
-                .expect("should succeed for non-zero or u32::MAX values")
-        )
+        finite_non_zero_time_value(120),
+        finite_time_value(60),
+        finite_non_zero_time_value(60)
     )]
     #[test_case(
-        v6::NonZeroTimeValue::Finite(
-            v6::NonZeroOrMaxU32::new(120)
-                .expect("should succeed for non-zero or u32::MAX values")
-        ),
+        finite_non_zero_time_value(120),
         v6::TimeValue::NonZero(v6::NonZeroTimeValue::Infinity),
-        v6::NonZeroTimeValue::Finite(
-            v6::NonZeroOrMaxU32::new(120)
-                .expect("should succeed for non-zero or u32::MAX values")
-        )
+        finite_non_zero_time_value(120)
     )]
     #[test_case(
         v6::NonZeroTimeValue::Infinity,
-        v6::TimeValue::NonZero(v6::NonZeroTimeValue::Finite(
-            v6::NonZeroOrMaxU32::new(120)
-                .expect("should succeed for non-zero or u32::MAX values"))
-        ),
-        v6::NonZeroTimeValue::Finite(
-            v6::NonZeroOrMaxU32::new(120)
-                .expect("should succeed for non-zero or u32::MAX values")
-        )
+        finite_time_value(120),
+        finite_non_zero_time_value(120)
     )]
     #[test_case(
         v6::NonZeroTimeValue::Infinity,
@@ -11408,16 +11346,13 @@ mod tests {
         v6::NonZeroTimeValue::Infinity
     )]
     #[test_case(
-        v6::NonZeroTimeValue::Finite(v6::NonZeroOrMaxU32::new(100).expect("should succeed")),
+        finite_non_zero_time_value(100),
         T1_MIN_LIFETIME_RATIO,
-        v6::NonZeroTimeValue::Finite(v6::NonZeroOrMaxU32::new(50).expect("should succeed"))
+        finite_non_zero_time_value(50)
     )]
     #[test_case(v6::NonZeroTimeValue::Infinity, T2_T1_RATIO, v6::NonZeroTimeValue::Infinity)]
     #[test_case(
-        v6::NonZeroTimeValue::Finite(
-            v6::NonZeroOrMaxU32::new(INFINITY - 1)
-                .expect("should succeed")
-        ),
+        finite_non_zero_time_value(INFINITY - 1),
         T2_T1_RATIO,
         v6::NonZeroTimeValue::Infinity
     )]

@@ -507,7 +507,7 @@ _NORMAL_DEPENDENCIES = {
             "tempfile": Label("//third_party/rust_crates/vendor/tempfile-3.27.0:tempfile"),
             "termcolor": Label("//third_party/rust_crates/vendor/termcolor-1.4.1:termcolor"),
             "termion": Label("//third_party/rust_crates/vendor/termion-4.0.6:termion"),
-            "test-case": Label("//third_party/rust_crates/vendor/test-case-3.3.1:test_case"),
+            "test-case": Label("//third_party/rust_crates/vendor/test-case-3.4.0:test_case"),
             "textwrap": Label("//third_party/rust_crates/vendor/textwrap-0.16.4:textwrap"),
             "thiserror": Label("//third_party/rust_crates/vendor/thiserror-2.0.21:thiserror"),
             "tokio-rustls": Label("//third_party/rust_crates/vendor/tokio-rustls-0.26.6:tokio_rustls"),
