@@ -118,7 +118,7 @@ zr::static_assert!(offset_of!(Arm64ContextSwitchFrame, lr) == 88);
 zr::static_assert!(size_of::<Arm64ContextSwitchFrame>().is_multiple_of(16));
 
 pub(super) const TPIDR_EL0: SysReg<spec::TPIDR_EL0, u64> = SysReg::new();
-const TPIDRRO_EL0: SysReg<spec::TPIDRRO_EL0, u64> = SysReg::new();
+pub(super) const TPIDRRO_EL0: SysReg<spec::TPIDRRO_EL0, u64> = SysReg::new();
 const TPIDR_EL1: SysReg<spec::TPIDR_EL1, u64> = SysReg::new();
 
 unsafe extern "C" {

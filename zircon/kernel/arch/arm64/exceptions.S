@@ -319,20 +319,20 @@
   // or the invalid exception is coming from EL0.
   iframe.exc.save.el1 1
 
-  // Call into the C++ code with the iframe and vector number as arguments.
+  // Call the handler with the iframe and vector number as arguments.
   mov x0, sp
   mov x1, #\which
   bl arm64_invalid_exception
 
   // Spin rather than cascade exceptions if that ever returns.
   // Definitely don't restore state from the iframe after this!
-  // The C++ code should have done a panic and not returned at all.
+  // The handler should have panicked and not returned at all.
   b .
 .endm
 
-// Asynchronous exceptions (IRQ, SError).  Call into C++ with the iframe
+// Asynchronous exceptions (IRQ, SError).  Call the handler with the iframe
 // and a flag indicating user (EL0) vs kernel (EL1), and then restore from
-// the iframe when C++ returns.
+// the iframe when the handler returns.
 .macro iframe.async_exception.el1 name, call
   .vbar_function \name
 
@@ -340,7 +340,7 @@
     // Don't touch shadow_call_sp, keep using the interrupted kernel value.
     iframe.exc.save.el1 0
 
-    // Call into the C++ code with the iframe and flags as arguments.
+    // Call the handler with the iframe and flags as arguments.
     mov x0, sp
     mov x1, xzr
     bl \call
@@ -358,7 +358,7 @@
     // Save state in the iframe and restore kernel invariants.
     iframe.exc.save.el0
 
-    // Call into the C++ code with the iframe and flags as arguments.
+    // Call the handler with the iframe and flags as arguments.
     mov x0, sp
     mov x1, #ARM64_EXCEPTION_FLAG_LOWER_EL
     bl \call
@@ -381,7 +381,7 @@
     ldr w12, [percpu_ptr, #PERCPU_IN_RESTRICTED_MODE]
     cbz w12, arm64_disallowed_arm32_exception
 
-    // Call into the C++ code with the iframe and flags as arguments.
+    // Call the handler with the iframe and flags as arguments.
     mov x0, sp
     mov x1, #ARM64_EXCEPTION_FLAG_LOWER_EL
     bl \call
@@ -427,7 +427,7 @@
     // (x18) as well.
     add x29, sp, #(ARM64_IFRAME_OFFSET_ELR - 8)
 
-    // Call into the C++ code with iframe, flags, and ESR as arguments.
+    // Call the handler with iframe, flags, and ESR as arguments.
     mov x0, sp
     mov x1, xzr
     mrs x2, esr_el1
@@ -642,7 +642,7 @@ iframe.smccc10_workaround.el0 serror_lower_a32, 0
   bl arm64_unrestricted_arm32_exception
   // Spin rather than cascade exceptions if that ever returns.
   // Definitely don't restore state from the iframe after this!
-  // The C++ code should have done a panic and not returned at all.
+  // The handler should have panicked and not returned at all.
   b .
 .end_function
 
@@ -672,7 +672,7 @@ iframe.smccc10_workaround.el0 serror_lower_a32, 0
 // the vector.  x9 contains ESR_EL1.
 .iframe.function.el0 arm64_sync_exception_el0_nonsyscall
 
-  // Call into C++ with the iframe, flags, and ESR as arguments.
+  // Call the handler with the iframe, flags, and ESR as arguments.
   mov x0, sp
   mov x1, #ARM64_EXCEPTION_FLAG_LOWER_EL
   mov x2, x9
@@ -680,9 +680,9 @@ iframe.smccc10_workaround.el0 serror_lower_a32, 0
 
   // This is the common path for returns to EL0.  The syscall path jumps here.
   //
-  // The kernel C++ code is done and ready to return to user mode.  The iframe
+  // The kernel code is done and ready to return to user mode.  The iframe
   // is still on the stack as set up in iframe.exc.save.el0, modified in place
-  // by C++.  Other registers have been clobbered following the normal C
+  // by the kernel.  Other registers have been clobbered following the normal C
   // calling conventions.
   //
   // Reverse iframe.exc.save.el0 above, restoring state from the iframe.
@@ -730,10 +730,10 @@ iframe.smccc10_workaround.el0 serror_lower_a32, 0
 .end_function
 
 
-// The kernel C++ code is done and ready to return to interrupted kernel code.
+// The handler is done and ready to return to interrupted kernel code.
 // The iframe is still on the stack as set up in iframe.exc.save, modified in
-// place by C++.  Other registers have been clobbered following the normal C
-// conventions.
+// place by the handler.  Other registers have been clobbered following the
+// normal C conventions.
 .iframe.function.el1 arm64_exc_shared_restore
 
   // First, reload LR (x30).  The USP slot is not used.  The interrupted SP
@@ -902,7 +902,7 @@ iframe.smccc10_workaround.el0 serror_lower_a32, 0
   // Check for pending signals. If none, just return.
   cbz x1, arm64_exc_shared_restore_lower_el
 
-  // Call into C++ with the iframe as argument.
+  // Process pending signals, with the iframe as argument.
   mov x0, sp
   bl arch_iframe_process_pending_signals
 

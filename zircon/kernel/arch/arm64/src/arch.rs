@@ -136,9 +136,9 @@ fn arm64_select_vbar_via_smccc11(function: ArmSmcccFunction) -> usize {
     let no_workaround = || -> usize {
         // No mitigation is needed on this CPU.
         // SAFETY: x20 points at the calling CPU's `arm64_percpu`, as it has since
-        // `arm64_cpu_early_init`. C++ reads `should_invalidate_bp_on_el0_exception` as a `bool`
-        // (READ_PERCPU_FIELD in exceptions_c.cc), and the value is a `bool`. Rust forms no
-        // reference to the field.
+        // `arm64_cpu_early_init`. The exception handlers read
+        // `should_invalidate_bp_on_el0_exception` as a `bool` through `read_percpu_field!`, and
+        // the value is a `bool`. Rust forms no reference to the field.
         unsafe { write_percpu_field!(should_invalidate_bp_on_el0_exception, false) };
         // SAFETY: x20 as above. The context switch reads `should_invalidate_bp_on_context_switch`
         // as a `bool` through `read_percpu_field!`, and the value is a `bool`. Rust forms no
@@ -149,8 +149,8 @@ fn arm64_select_vbar_via_smccc11(function: ArmSmcccFunction) -> usize {
 
     let use_workaround = || -> usize {
         // The workaround replaces the other EL0 entry mitigations.
-        // SAFETY: x20 points at the calling CPU's `arm64_percpu`. C++ reads this field as a
-        // `bool` (READ_PERCPU_FIELD in exceptions_c.cc), and the value is a `bool`.
+        // SAFETY: x20 points at the calling CPU's `arm64_percpu`. The exception handlers read
+        // this field as a `bool` through `read_percpu_field!`, and the value is a `bool`.
         unsafe { write_percpu_field!(should_invalidate_bp_on_el0_exception, false) };
 
         // The EL0->EL1 entry mitigation is sufficient without the context-switch
@@ -480,8 +480,8 @@ pub extern "C" fn arch_late_init_percpu() {
     unsafe {
         write_percpu_field!(should_invalidate_bp_on_context_switch, need_spectre_v2_mitigation)
     };
-    // SAFETY: x20 as above. C++ reads `should_invalidate_bp_on_el0_exception` as a `bool`
-    // (READ_PERCPU_FIELD in exceptions_c.cc), and the value is a `bool`. Rust forms no reference
+    // SAFETY: x20 as above. The exception handlers read `should_invalidate_bp_on_el0_exception`
+    // as a `bool` through `read_percpu_field!`, and the value is a `bool`. Rust forms no reference
     // to the field.
     unsafe {
         write_percpu_field!(should_invalidate_bp_on_el0_exception, need_spectre_v2_mitigation)

@@ -4,7 +4,9 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <arch.h>
 #include <lib/arch/intrin.h>
+#include <lib/crashlog.h>
 
 #include <arch/arm64/arm64_ffi.h>
 #include <arch/debugger.h>
@@ -49,6 +51,21 @@ FFI_ALWAYS_INLINE zx_status_t cpp_arm64_get_general_regs(zx_thread_state_general
 FFI_ALWAYS_INLINE zx_status_t
 cpp_arm64_set_general_regs(const zx_thread_state_general_regs_t* regs) {
   return arch_set_general_regs(Thread::Current::Get(), regs);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_arm64_print_frame(const iframe_t* frame) { PrintFrame(*frame); }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_arm64_set_crashlog_regs(iframe_t* iframe, uint32_t esr, uint64_t far,
+                                                   uint64_t tpidr_el0, uint64_t tpidr_el1,
+                                                   uint64_t tpidrro_el0) {
+  g_crashlog.regs.iframe = iframe;
+  g_crashlog.regs.esr = esr;
+  g_crashlog.regs.far = far;
+  g_crashlog.regs.tpidr_el0 = tpidr_el0;
+  g_crashlog.regs.tpidr_el1 = tpidr_el1;
+  g_crashlog.regs.tpidrro_el0 = tpidrro_el0;
 }
 
 }  // extern "C"

@@ -11,6 +11,8 @@
 #include <zircon/syscalls/debug.h>
 #include <zircon/types.h>
 
+struct iframe_t;
+
 extern "C" {
 
 // Implemented in Rust (arch.rs); backs ArchIdlePowerThread::EnterIdleState().
@@ -22,6 +24,9 @@ void cpp_arm64_enter_restricted_tpidr(uint64_t tpidr_el0, bool is_arm32);
 uint64_t cpp_arm64_get_tpidr_el0();
 zx_status_t cpp_arm64_get_general_regs(zx_thread_state_general_regs_t* regs);
 zx_status_t cpp_arm64_set_general_regs(const zx_thread_state_general_regs_t* regs);
+void cpp_arm64_print_frame(const iframe_t* frame);
+void cpp_arm64_set_crashlog_regs(iframe_t* iframe, uint32_t esr, uint64_t far, uint64_t tpidr_el0,
+                                 uint64_t tpidr_el1, uint64_t tpidrro_el0);
 
 }  // extern "C"
 

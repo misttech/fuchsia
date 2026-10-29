@@ -96,7 +96,6 @@ if (toolchain_environment == "kernel.phys" ||
       "dap.cc",
       "debugger.cc",
       "exceptions.S",
-      "exceptions_c.cc",
       "fpu_asm.S",
       "perf_mon.cc",
       "registers.cc",
@@ -271,8 +270,15 @@ if (toolchain_environment == "kernel.phys" ||
     notice_year = 2026
     raw_lines = [ "#![no_std]" ]
     explicit_padding = false
-    type_allowlist = [ "arm64_percpu" ]
+
+    # arch_exception_context and ARM64_EXCEPTION_FLAG_LOWER_EL come from
+    # arch/arm64.h, which mp.h includes.
+    type_allowlist = [
+      "arch_exception_context",
+      "arm64_percpu",
+    ]
     var_allowlist = [
+      "ARM64_EXCEPTION_FLAG_LOWER_EL",
       "ARM64_MPIDR_MASK",
       "PERCPU_IN_RESTRICTED_MODE",
     ]
@@ -351,6 +357,7 @@ if (toolchain_environment == "kernel.phys" ||
       "src/asid_allocator.rs",
       "src/cache.rs",
       "src/crashlog.rs",
+      "src/exceptions.rs",
       "src/feature.rs",
       "src/fpu.rs",
       "src/mmu.rs",
@@ -391,12 +398,14 @@ if (toolchain_environment == "kernel.phys" ||
       "//zircon/kernel/lib/debug",
       "//zircon/kernel/lib/id_allocator:id-allocator-rs",
       "//zircon/kernel/lib/init:init_rust",
+      "//zircon/kernel/lib/ktrace:ktrace-rs",
       "//zircon/kernel/lib/libc:rust",
       "//zircon/kernel/lib/page:page-rs",
       "//zircon/kernel/lib/user_copy",
       "//zircon/kernel/phys/handoff:handoff-rs",
       "//zircon/system/ulib/fbl/rust:fbl",
       "//zircon/system/ulib/mmio-ptr:mmio-ptr-rs",
+      "//zircon/system/ulib/pretty/rust:pretty",
     ]
     test_deps = [
       "//src/lib/kalloc",

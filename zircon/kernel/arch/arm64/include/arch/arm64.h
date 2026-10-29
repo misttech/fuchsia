@@ -70,7 +70,7 @@ extern "C" zx_status_t arm64_free_secondary_stack(cpu_num_t cpu_num);
 // Used in above exception_flags arguments.
 #define ARM64_EXCEPTION_FLAG_LOWER_EL (1 << 0)
 
-// Used in the exceptions_c which argument.
+// Used in the which argument of arm64_unrestricted_arm32_exception.
 #define ARM64_DISALLOWED_ARM32_SYSCALL (1 << 0)
 #define ARM64_DISALLOWED_ARM32_SYNC_EXCEPTION (1 << 1)
 #define ARM64_DISALLOWED_ARM32_ASYNC_EXCEPTION (1 << 2)
