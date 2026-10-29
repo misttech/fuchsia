@@ -4,13 +4,14 @@
 
 #include <dirent.h>
 #include <fcntl.h>
-#include <lib/fit/defer.h>
+#include <grp.h>
 #include <stdio.h>
 #include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <filesystem>
 #include <fstream>
 
 #include <gtest/gtest.h>
@@ -755,6 +756,19 @@ class OverlayFsAccessTest : public OverlayFsTest {
     ASSERT_THAT(chmod((overlay_ + "/upper_writable").c_str(), 0666), SyscallSucceeds());
   }
 
+  static void StageExecutable(const std::string& src, const std::string& dst, mode_t mode) {
+    std::error_code ec;
+    ASSERT_TRUE(std::filesystem::copy_file(src, dst, ec)) << ec.message();
+    ASSERT_THAT(chown(dst.c_str(), 0, 0), SyscallSucceeds());
+    ASSERT_THAT(chmod(dst.c_str(), mode), SyscallSucceeds());
+  }
+
+  static void DropToOtherUser() {
+    ASSERT_THAT(setgroups(0, nullptr), SyscallSucceeds());
+    ASSERT_THAT(setresgid(kOtherGid, kOtherGid, kOtherGid), SyscallSucceeds());
+    ASSERT_THAT(setresuid(kOtherUid, kOtherUid, kOtherUid), SyscallSucceeds());
+  }
+
   static constexpr unsigned int kOtherUid = 65534;
   static constexpr unsigned int kOtherGid = 65534;
 };
@@ -831,6 +845,151 @@ TEST_F(OverlayFsAccessTest, LockedDownLowerAndWorkdirPermissions) {
     EXPECT_THAT(access((overlay_ + "/lower_writable").c_str(), W_OK),
                 SyscallFailsWithErrno(EACCES));
     EXPECT_THAT(access((overlay_ + "/upper_writable").c_str(), W_OK), SyscallSucceeds());
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+// Verify that `access(X_OK)` and `execve()` evaluate caller execute permissions against the
+// active overlay node (upper if copied up, otherwise lower) while using mounter credentials
+// to access the underlying lower/upper filesystems.
+TEST_F(OverlayFsAccessTest, ExecutableAccessChecks) {
+  const std::string exit_zero_path = test_helper::GetTestResourcePath("exit_zero");
+  // Use `print_uid_gid_exec_child` (which exits `EXIT_FAILURE` when `kOutputFd` is closed) for
+  // files whose execution must fail, so an unexpected `execve()` success fails `WaitForChildren()`.
+  const std::string fail_if_execed_path =
+      test_helper::GetTestResourcePath("print_uid_gid_exec_child");
+
+  ASSERT_NO_FATAL_FAILURE(StageExecutable(exit_zero_path, lower_ + "/executable", 0755));
+  ASSERT_NO_FATAL_FAILURE(StageExecutable(fail_if_execed_path, lower_ + "/lower_executable", 0755));
+  ASSERT_NO_FATAL_FAILURE(StageExecutable(exit_zero_path, lower_ + "/upper_executable", 0600));
+  ASSERT_NO_FATAL_FAILURE(StageExecutable(fail_if_execed_path, lower_ + "/non_executable", 0644));
+
+  ASSERT_NO_FATAL_FAILURE(Mount());
+  ASSERT_THAT(chmod(overlay_.c_str(), 0777), SyscallSucceeds());
+
+  // Revoke non-owner execute permission in upper for `lower_executable` (keeping owner execute so
+  // the root mounter check still passes), and grant execute in upper for `upper_executable`.
+  ASSERT_THAT(chmod((overlay_ + "/lower_executable").c_str(), 0700), SyscallSucceeds());
+  ASSERT_THAT(chmod((overlay_ + "/upper_executable").c_str(), 0755), SyscallSucceeds());
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    ASSERT_NO_FATAL_FAILURE(DropToOtherUser());
+
+    // Direct access to `lower_` fails because `lower_` has mode 0700 owned by root.
+    EXPECT_THAT(access((lower_ + "/executable").c_str(), X_OK), SyscallFailsWithErrno(EACCES));
+
+    EXPECT_THAT(access((overlay_ + "/executable").c_str(), X_OK), SyscallSucceeds());
+    EXPECT_THAT(access((overlay_ + "/lower_executable").c_str(), X_OK),
+                SyscallFailsWithErrno(EACCES));
+    EXPECT_THAT(access((overlay_ + "/upper_executable").c_str(), X_OK), SyscallSucceeds());
+    EXPECT_THAT(access((overlay_ + "/non_executable").c_str(), X_OK),
+                SyscallFailsWithErrno(EACCES));
+
+    std::string lower_exec_overlay = overlay_ + "/lower_executable";
+    char* const lower_argv[] = {const_cast<char*>(lower_exec_overlay.c_str()), nullptr};
+    EXPECT_THAT(execve(lower_exec_overlay.c_str(), lower_argv, nullptr),
+                SyscallFailsWithErrno(EACCES));
+
+    std::string non_exec_overlay = overlay_ + "/non_executable";
+    char* const non_exec_argv[] = {const_cast<char*>(non_exec_overlay.c_str()), nullptr};
+    EXPECT_THAT(execve(non_exec_overlay.c_str(), non_exec_argv, nullptr),
+                SyscallFailsWithErrno(EACCES));
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+
+  for (const char* name : {"/executable", "/upper_executable"}) {
+    std::string target = overlay_ + name;
+    helper.RunInForkedProcess([&] {
+      ASSERT_NO_FATAL_FAILURE(DropToOtherUser());
+
+      char* const argv[] = {const_cast<char*>(target.c_str()), nullptr};
+      ASSERT_THAT(execve(target.c_str(), argv, nullptr), SyscallSucceeds());
+    });
+    ASSERT_TRUE(helper.WaitForChildren());
+  }
+}
+
+// Verify SUID/SGID credential elevation and execute permission checks across lower and upper
+// overlay layers.
+// Regression test for https://fxbug.dev/508531124.
+TEST_F(OverlayFsAccessTest, SuidAndSgidExecOnOverlay) {
+  constexpr int kOutputFd = 100;
+  const std::string creds_binary = test_helper::GetTestResourcePath("print_uid_gid_exec_child");
+
+  // 1. SUID/SGID binary residing only in `lower_` (which is 0700, inaccessible directly to
+  // `kOtherUid`).
+  ASSERT_NO_FATAL_FAILURE(
+      StageExecutable(creds_binary, lower_ + "/lower_suid", S_ISUID | S_ISGID | 0755));
+
+  // 2. Binary that is 0600 in `lower_`, promoted to `S_ISUID | S_ISGID | 0755` in `upper_`.
+  ASSERT_NO_FATAL_FAILURE(StageExecutable(creds_binary, lower_ + "/upper_suid", 0600));
+
+  // 3. Binary that is `S_ISUID | S_ISGID | 0755` in `lower_`, but has non-owner execute permission
+  // revoked in `upper_` (`S_ISUID | S_ISGID | 0700`).
+  ASSERT_NO_FATAL_FAILURE(
+      StageExecutable(creds_binary, lower_ + "/revoked_exec_suid", S_ISUID | S_ISGID | 0755));
+
+  // 4. Binary that is `S_ISUID | S_ISGID | 0755` in `lower_`, but has SUID/SGID cleared in
+  // `upper_` (`0755`).
+  ASSERT_NO_FATAL_FAILURE(
+      StageExecutable(creds_binary, lower_ + "/revoked_suid", S_ISUID | S_ISGID | 0755));
+
+  ASSERT_NO_FATAL_FAILURE(Mount());
+  ASSERT_THAT(chmod(overlay_.c_str(), 0777), SyscallSucceeds());
+
+  ASSERT_THAT(chmod((overlay_ + "/upper_suid").c_str(), S_ISUID | S_ISGID | 0755),
+              SyscallSucceeds());
+  ASSERT_THAT(chmod((overlay_ + "/revoked_exec_suid").c_str(), S_ISUID | S_ISGID | 0700),
+              SyscallSucceeds());
+  ASSERT_THAT(chmod((overlay_ + "/revoked_suid").c_str(), 0755), SyscallSucceeds());
+
+  auto run_and_expect_creds = [&](const std::string& rel_path, uid_t expected_euid,
+                                  gid_t expected_egid) {
+    SCOPED_TRACE(rel_path);
+    fbl::unique_fd fd(SAFE_SYSCALL(test_helper::MemFdCreate("creds", O_RDWR)));
+    ASSERT_TRUE(fd.is_valid());
+
+    std::string target = overlay_ + rel_path;
+    test_helper::ForkHelper helper;
+    helper.RunInForkedProcess([&] {
+      ASSERT_THAT(dup2(fd.get(), kOutputFd), SyscallSucceeds());
+      ASSERT_NO_FATAL_FAILURE(DropToOtherUser());
+
+      char* const argv[] = {const_cast<char*>(target.c_str()), nullptr};
+      ASSERT_THAT(execve(target.c_str(), argv, nullptr), SyscallSucceeds());
+    });
+    ASSERT_TRUE(helper.WaitForChildren());
+
+    ASSERT_THAT(lseek(fd.get(), 0, SEEK_SET), SyscallSucceeds());
+    std::string content;
+    ASSERT_TRUE(files::ReadFileDescriptorToString(fd.get(), &content));
+
+    uid_t ruid = 0, euid = 0, suid = 0;
+    gid_t rgid = 0, egid = 0, sgid = 0;
+    ASSERT_EQ(sscanf(content.c_str(), "ruid: %u euid: %u suid: %u\nrgid: %u egid: %u sgid: %u\n",
+                     &ruid, &euid, &suid, &rgid, &egid, &sgid),
+              6)
+        << "Unexpected credentials output: " << content;
+    EXPECT_EQ(ruid, kOtherUid);
+    EXPECT_EQ(euid, expected_euid);
+    EXPECT_EQ(suid, expected_euid);
+    EXPECT_EQ(rgid, kOtherGid);
+    EXPECT_EQ(egid, expected_egid);
+    EXPECT_EQ(sgid, expected_egid);
+  };
+
+  ASSERT_NO_FATAL_FAILURE(run_and_expect_creds("/lower_suid", 0, 0));
+  ASSERT_NO_FATAL_FAILURE(run_and_expect_creds("/upper_suid", 0, 0));
+  ASSERT_NO_FATAL_FAILURE(run_and_expect_creds("/revoked_suid", kOtherUid, kOtherGid));
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    ASSERT_NO_FATAL_FAILURE(DropToOtherUser());
+
+    std::string revoked_exec = overlay_ + "/revoked_exec_suid";
+    char* const argv[] = {const_cast<char*>(revoked_exec.c_str()), nullptr};
+    EXPECT_THAT(execve(revoked_exec.c_str(), argv, nullptr), SyscallFailsWithErrno(EACCES));
   });
   ASSERT_TRUE(helper.WaitForChildren());
 }

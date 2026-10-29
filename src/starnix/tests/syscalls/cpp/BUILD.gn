@@ -191,7 +191,10 @@ syscall_tests_etc = [
   },
   {
     name = "overlayfs_test"
-    executables = [ "test_programs:exit_zero" ]
+    executables = [
+      ":print_uid_gid_exec_child",
+      "test_programs:exit_zero",
+    ]
   },
   {
     name = "task_test"

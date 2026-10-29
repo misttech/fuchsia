@@ -4,7 +4,6 @@
 
 #include <fcntl.h>
 #include <grp.h>
-#include <lib/fit/defer.h>
 #include <sched.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,11 +41,88 @@ bool change_ids(uid_t user, gid_t group) {
   return (setresgid(group, group, group) == 0) && (setresuid(user, user, user) == 0);
 }
 
+struct ExecCreds {
+  uid_t ruid = 0;
+  uid_t euid = 0;
+  uid_t suid = 0;
+  gid_t rgid = 0;
+  gid_t egid = 0;
+  gid_t sgid = 0;
+};
+
+void ReadExecCreds(int fd, ExecCreds *out) {
+  ASSERT_THAT(lseek(fd, 0, SEEK_SET), SyscallSucceeds());
+  std::string content;
+  ASSERT_TRUE(files::ReadFileDescriptorToString(fd, &content));
+  ASSERT_EQ(sscanf(content.c_str(), "ruid: %u euid: %u suid: %u\nrgid: %u egid: %u sgid: %u\n",
+                   &out->ruid, &out->euid, &out->suid, &out->rgid, &out->egid, &out->sgid),
+            6)
+      << "Unexpected credentials output: " << content;
+}
+
+void ExecAsUser1AndReadCreds(const std::string &path, ExecCreds *creds) {
+  fbl::unique_fd fd(SAFE_SYSCALL(test_helper::MemFdCreate("creds", O_RDWR)));
+  ASSERT_TRUE(fd.is_valid());
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&]() {
+    EXPECT_THAT(fcntl(kOutputFd, F_GETFD), SyscallFailsWithErrno(EBADF));
+    ASSERT_THAT(dup2(fd.get(), kOutputFd), SyscallSucceeds());
+
+    ASSERT_THAT(setgroups(0, nullptr), SyscallSucceeds());
+    ASSERT_TRUE(change_ids(kUser1Uid, kUser1Gid));
+
+    char *const argv[] = {const_cast<char *>(path.c_str()), nullptr};
+    ASSERT_THAT(execve(path.c_str(), argv, nullptr), SyscallSucceeds());
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+
+  ASSERT_NO_FATAL_FAILURE(ReadExecCreds(fd.get(), creds));
+}
+
 }  // namespace
 
-class SuidTest : public ::testing::Test, public ::testing::WithParamInterface<unsigned long> {
+class SuidTestBase : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    if (!test_helper::HasSysAdmin()) {
+      GTEST_SKIP() << "Not running with sysadmin capabilities, skipping.";
+    }
+    mounted_ = ASSERT_RESULT_SUCCESS_AND_RETURN(
+        test_helper::ScopedMount::Mount("", temp_dir_.path(), "tmpfs", mount_flags(), nullptr));
+
+    constexpr int kDirPerms = S_IRWXU | S_IXGRP | S_IXOTH;
+    ASSERT_THAT(chmod(temp_dir_.path().c_str(), kDirPerms), SyscallSucceeds());
+  }
+
+  virtual unsigned long mount_flags() const { return 0; }
+
+  std::string StageCredsBinary(const std::string &name, mode_t mode, uid_t uid = kRootUid,
+                               gid_t gid = kRootGid) {
+    std::string path = files::JoinPath(temp_dir_.path(), name);
+    std::error_code ec;
+    EXPECT_TRUE(std::filesystem::copy_file(GetCredsBinaryPath(), path, ec)) << ec.message();
+    EXPECT_THAT(chown(path.c_str(), uid, gid), SyscallSucceeds());
+    EXPECT_THAT(chmod(path.c_str(), mode), SyscallSucceeds());
+    return path;
+  }
+
+  std::string StageScript(const std::string &name, const std::string &interpreter_path, mode_t mode,
+                          uid_t uid = kRootUid, gid_t gid = kRootGid) {
+    std::string path = files::JoinPath(temp_dir_.path(), name);
+    EXPECT_TRUE(files::WriteFile(path, "#!" + interpreter_path + "\n"));
+    EXPECT_THAT(chown(path.c_str(), uid, gid), SyscallSucceeds());
+    EXPECT_THAT(chmod(path.c_str(), mode), SyscallSucceeds());
+    return path;
+  }
+
+  test_helper::ScopedTempDir temp_dir_;
+  test_helper::ScopedMount mounted_;
+};
+
+class SuidTest : public SuidTestBase, public ::testing::WithParamInterface<unsigned long> {
  public:
-  static unsigned long mount_flags() { return GetParam(); }
+  unsigned long mount_flags() const override { return GetParam(); }
 
   std::optional<std::string> MountTmpFs(const std::string &temp_dir) {
     std::string temp = temp_dir + "/tmp";
@@ -136,24 +212,8 @@ TEST_P(SuidTest, SuidBinaryBecomesRoot) {
 }
 
 TEST_P(SuidTest, CloneFsSuppressesSuidAndSgid) {
-  if (!test_helper::HasSysAdmin()) {
-    GTEST_SKIP() << "Not running with sysadmin capabilities, skipping.";
-  }
-  std::string creds_binary = GetCredsBinaryPath();
-
-  test_helper::ScopedTempDir temp_dir;
-  auto mounted = ASSERT_RESULT_SUCCESS_AND_RETURN(
-      test_helper::ScopedMount::Mount("", temp_dir.path(), "tmpfs", mount_flags(), nullptr));
-
-  constexpr int kDirPerms = S_IRWXU | S_IXGRP | S_IXOTH;
-  ASSERT_THAT(chmod(temp_dir.path().c_str(), kDirPerms), SyscallSucceeds());
-
-  std::string suid_binary_path = files::JoinPath(temp_dir.path(), "suid_sgid_binary");
-  std::filesystem::copy_file(creds_binary, suid_binary_path);
-
-  constexpr int kBinaryPerms = S_ISUID | S_ISGID | S_IXGRP | S_IXOTH;
-  ASSERT_THAT(chown(suid_binary_path.c_str(), kRootUid, kRootGid), SyscallSucceeds());
-  ASSERT_THAT(chmod(suid_binary_path.c_str(), kBinaryPerms), SyscallSucceeds());
+  std::string suid_binary_path =
+      StageCredsBinary("suid_sgid_binary", S_ISUID | S_ISGID | S_IXGRP | S_IXOTH);
 
   fbl::unique_fd fd(SAFE_SYSCALL(test_helper::MemFdCreate("creds", O_RDWR)));
   ASSERT_TRUE(fd.is_valid());
@@ -190,22 +250,14 @@ TEST_P(SuidTest, CloneFsSuppressesSuidAndSgid) {
   });
   ASSERT_TRUE(helper.WaitForChildren());
 
-  ASSERT_THAT(lseek(fd.get(), 0, SEEK_SET), SyscallSucceeds());
-  FILE *fp = fdopen(fd.release(), "r");
-  ASSERT_NE(fp, nullptr);
-  auto cleanup = fit::defer([fp]() { fclose(fp); });
-
-  uid_t ruid = 0, euid = 0, suid = 0;
-  EXPECT_EQ(fscanf(fp, "ruid: %u euid: %u suid: %u\n", &ruid, &euid, &suid), 3);
-  EXPECT_EQ(ruid, kUser1Uid);
-  EXPECT_EQ(euid, kUser1Uid);
-  EXPECT_EQ(suid, kUser1Uid);
-
-  gid_t rgid = 0, egid = 0, sgid = 0;
-  EXPECT_EQ(fscanf(fp, "rgid: %u egid: %u sgid: %u\n", &rgid, &egid, &sgid), 3);
-  EXPECT_EQ(rgid, kUser1Gid);
-  EXPECT_EQ(egid, kUser1Gid);
-  EXPECT_EQ(sgid, kUser1Gid);
+  ExecCreds creds;
+  ASSERT_NO_FATAL_FAILURE(ReadExecCreds(fd.get(), &creds));
+  EXPECT_EQ(creds.ruid, kUser1Uid);
+  EXPECT_EQ(creds.euid, kUser1Uid);
+  EXPECT_EQ(creds.suid, kUser1Uid);
+  EXPECT_EQ(creds.rgid, kUser1Gid);
+  EXPECT_EQ(creds.egid, kUser1Gid);
+  EXPECT_EQ(creds.sgid, kUser1Gid);
 }
 
 TEST_P(SuidTest, FileModificationsRemoveSuid) {
@@ -281,6 +333,126 @@ TEST_P(SuidTest, OwnershipChangesRemoveSuid) {
   EXPECT_EQ((file_stat.st_mode & S_ISUID), 0U);
   close(fd);
   SAFE_SYSCALL(unlink(test_suid_file.c_str()));
+}
+
+// Per execve(2): "Linux ignores the set-user-ID and set-group-ID bits on scripts."
+TEST_F(SuidTestBase, SuidAndSgidOnScriptAreIgnored) {
+  std::string interpreter_path =
+      StageCredsBinary("interpreter", S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
+  std::string script_path =
+      StageScript("suid_sgid_script", interpreter_path,
+                  S_ISUID | S_ISGID | S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
+
+  ExecCreds creds;
+  ASSERT_NO_FATAL_FAILURE(ExecAsUser1AndReadCreds(script_path, &creds));
+  EXPECT_EQ(creds.ruid, kUser1Uid);
+  EXPECT_EQ(creds.euid, kUser1Uid);
+  EXPECT_EQ(creds.suid, kUser1Uid);
+  EXPECT_EQ(creds.rgid, kUser1Gid);
+  EXPECT_EQ(creds.egid, kUser1Gid);
+  EXPECT_EQ(creds.sgid, kUser1Gid);
+}
+
+// Executing a non-SUID/SGID `#!` script whose interpreter has S_ISUID and
+// S_ISGID set elevates effective and saved-set IDs to the interpreter's owner
+// and group (unless the interpreter's mount has MS_NOSUID).
+TEST_P(SuidTest, SuidAndSgidOnScriptInterpreterAreHonored) {
+  // Make the interpreter execute-only (no read bits for group/other) with SUID and SGID set.
+  std::string interpreter_path =
+      StageCredsBinary("suid_sgid_interpreter", S_ISUID | S_ISGID | S_IXGRP | S_IXOTH);
+  std::string script_path =
+      StageScript("script", interpreter_path, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH,
+                  kUser1Uid, kUser1Gid);
+
+  ExecCreds creds;
+  ASSERT_NO_FATAL_FAILURE(ExecAsUser1AndReadCreds(script_path, &creds));
+  EXPECT_EQ(creds.ruid, kUser1Uid);
+  EXPECT_EQ(creds.rgid, kUser1Gid);
+  if (mount_flags() & MS_NOSUID) {
+    EXPECT_EQ(creds.euid, kUser1Uid);
+    EXPECT_EQ(creds.suid, kUser1Uid);
+    EXPECT_EQ(creds.egid, kUser1Gid);
+    EXPECT_EQ(creds.sgid, kUser1Gid);
+  } else {
+    EXPECT_EQ(creds.euid, kRootUid);
+    EXPECT_EQ(creds.suid, kRootUid);
+    EXPECT_EQ(creds.egid, kRootGid);
+    EXPECT_EQ(creds.sgid, kRootGid);
+  }
+}
+
+TEST_F(SuidTestBase, SuidBinaryWithoutExecPermissionFails) {
+  // SUID/SGID binary with no execute bits at all.
+  std::string no_exec_binary =
+      StageCredsBinary("no_exec_suid_binary", S_ISUID | S_ISGID | S_IRUSR | S_IRGRP | S_IROTH);
+
+  // SUID/SGID binary executable only by root (owner).
+  std::string owner_only_binary =
+      StageCredsBinary("owner_only_suid_binary", S_ISUID | S_ISGID | S_IRWXU | S_IRGRP | S_IROTH);
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&]() {
+    ASSERT_THAT(setgroups(0, nullptr), SyscallSucceeds());
+    ASSERT_TRUE(change_ids(kUser1Uid, kUser1Gid));
+
+    char *const argv_no_exec[] = {const_cast<char *>(no_exec_binary.c_str()), nullptr};
+    EXPECT_THAT(execve(no_exec_binary.c_str(), argv_no_exec, nullptr),
+                SyscallFailsWithErrno(EACCES));
+
+    char *const argv_owner_only[] = {const_cast<char *>(owner_only_binary.c_str()), nullptr};
+    EXPECT_THAT(execve(owner_only_binary.c_str(), argv_owner_only, nullptr),
+                SyscallFailsWithErrno(EACCES));
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+TEST_F(SuidTestBase, SuidScriptWithoutExecPermissionFails) {
+  std::string interpreter_path = StageCredsBinary(
+      "suid_interpreter", S_ISUID | S_ISGID | S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
+
+  // Script has SUID/SGID and points to an executable SUID/SGID interpreter, but the script itself
+  // is not executable by kUser1Uid.
+  std::string script_path = StageScript("non_exec_suid_script", interpreter_path,
+                                        S_ISUID | S_ISGID | S_IRWXU | S_IRGRP | S_IROTH);
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&]() {
+    ASSERT_THAT(setgroups(0, nullptr), SyscallSucceeds());
+    ASSERT_TRUE(change_ids(kUser1Uid, kUser1Gid));
+
+    char *const argv[] = {const_cast<char *>(script_path.c_str()), nullptr};
+    EXPECT_THAT(execve(script_path.c_str(), argv, nullptr), SyscallFailsWithErrno(EACCES));
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+// Because S_ISUID and S_ISGID on a `#!` script are ignored, executing a SUID-root
+// script as an unprivileged user does not grant permission to execute a root-only
+// (0700) or non-executable (0444) interpreter.
+TEST_F(SuidTestBase, SuidScriptCannotExecInaccessibleInterpreter) {
+  std::string non_exec_interp =
+      StageCredsBinary("non_exec_interp", S_ISUID | S_ISGID | S_IRUSR | S_IRGRP | S_IROTH);
+  std::string root_only_interp = StageCredsBinary("root_only_interp", S_ISUID | S_ISGID | S_IRWXU);
+
+  std::string script_non_exec =
+      StageScript("script_non_exec_interp", non_exec_interp,
+                  S_ISUID | S_ISGID | S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
+  std::string script_root_only =
+      StageScript("script_root_only_interp", root_only_interp,
+                  S_ISUID | S_ISGID | S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&]() {
+    ASSERT_THAT(setgroups(0, nullptr), SyscallSucceeds());
+    ASSERT_TRUE(change_ids(kUser1Uid, kUser1Gid));
+
+    char *const argv1[] = {const_cast<char *>(script_non_exec.c_str()), nullptr};
+    EXPECT_THAT(execve(script_non_exec.c_str(), argv1, nullptr), SyscallFailsWithErrno(EACCES));
+
+    char *const argv2[] = {const_cast<char *>(script_root_only.c_str()), nullptr};
+    EXPECT_THAT(execve(script_root_only.c_str(), argv2, nullptr), SyscallFailsWithErrno(EACCES));
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
 }
 
 INSTANTIATE_TEST_SUITE_P(SuidTest, SuidTest, ::testing::Values(0, MS_NOSUID));
