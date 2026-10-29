@@ -618,11 +618,6 @@
 	url = https://fuchsia.googlesource.com/third_party/mesa
 	name = third_party/mesa
 	ignore = all
-[submodule "third_party/acpica-migrating/src"]
-	path = third_party/acpica-migrating/src
-	url = https://fuchsia.googlesource.com/third_party/acpica
-	name = third_party/acpica
-	ignore = all
 [submodule "third_party/ogg-migrating/src"]
 	path = third_party/ogg-migrating/src
 	url = https://fuchsia.googlesource.com/third_party/ogg
@@ -722,4 +717,9 @@
 	path = third_party/markupsafe/markupsafe
 	url = https://fuchsia.googlesource.com/third_party/markupsafe
 	name = third_party/markupsafe
+	ignore = all
+[submodule "third_party/acpica/src"]
+	path = third_party/acpica/src
+	url = https://fuchsia.googlesource.com/third_party/acpica
+	name = third_party/acpica
 	ignore = all
