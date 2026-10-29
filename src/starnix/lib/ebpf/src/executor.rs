@@ -19,7 +19,7 @@ pub fn execute<C: EbpfProgramContext>(
     run_context: &mut C::RunContext<'_>,
     arguments: &[BpfValue],
 ) -> u64 {
-    assert!(arguments.len() < 5);
+    assert!(arguments.len() <= 5);
     let mut context = ComputationContext {
         code,
         helpers,

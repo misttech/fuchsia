@@ -642,6 +642,28 @@ where
     }
 }
 
+impl<C: StaticHelperSet, T: ArgumentTypeChecker<C>> EbpfProgram<C, T> {
+    pub fn run_with_5_arguments<'a>(
+        &self,
+        run_context: &mut C::RunContext<'a>,
+        arg1: C::Arg1<'a>,
+        arg2: C::Arg2<'a>,
+        arg3: C::Arg3<'a>,
+        arg4: C::Arg4<'a>,
+        arg5: C::Arg5<'a>,
+    ) -> u64 {
+        self.type_checker
+            .run_time_check(&arg1, &arg2, &arg3, &arg4, &arg5)
+            .expect("Failed argument type check");
+        execute(
+            &self.code[..],
+            C::helpers(),
+            run_context,
+            &[arg1.into(), arg2.into(), arg3.into(), arg4.into(), arg5.into()],
+        )
+    }
+}
+
 impl<C: BpfProgramContext, T: ArgumentTypeChecker<C>> EbpfProgram<C, T>
 where
     C: BpfProgramContext + StaticHelperSet,
@@ -1361,5 +1383,42 @@ mod test {
                 pc: Some(4),
             })
         );
+    }
+    #[test]
+    fn test_five_argument_program_execution() {
+        struct FiveArgContext {}
+
+        impl EbpfProgramContext for FiveArgContext {
+            type RunContext<'a> = ();
+            type Packet<'a> = ();
+            type Arg1<'a> = usize;
+            type Arg2<'a> = usize;
+            type Arg3<'a> = usize;
+            type Arg4<'a> = usize;
+            type Arg5<'a> = usize;
+            type Map = NoMap;
+        }
+
+        empty_static_helper_set!(FiveArgContext);
+
+        let code = parse_asm(
+            r#"
+            mov %r0, %r1
+            add %r0, %r2
+            add %r0, %r3
+            add %r0, %r4
+            add %r0, %r5
+            exit
+            "#,
+        );
+        let verified = verify_program(
+            code,
+            CallingContext { args: vec![Type::UNKNOWN_SCALAR; 5], ..Default::default() },
+            &mut NullVerifierLogger,
+        )
+        .expect("5-argument program should verify");
+        let linked = link_program::<FiveArgContext>(&verified, vec![])
+            .expect("5-argument program should link");
+        assert_eq!(linked.run_with_5_arguments(&mut (), 10, 20, 30, 40, 50), 150);
     }
 }

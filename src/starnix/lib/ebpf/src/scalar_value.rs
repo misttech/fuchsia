@@ -77,7 +77,7 @@ impl [< $t:upper Range>] {
         result.as_mut_bytes()[offset..(offset + byte_count)]
             .copy_from_slice(&v2.as_bytes()[..byte_count]);
         result.as_mut_bytes()[(offset + byte_count)..]
-            .copy_from_slice(&v3.as_bytes()[..(8 - offset - byte_count)]);
+            .copy_from_slice(&v3.as_bytes()[..(std::mem::size_of::<[< $t >]>() - offset - byte_count)]);
         result
     }
 
@@ -909,5 +909,15 @@ mod tests {
         assert_eq!(and_known_low_ored.unknown_mask, !0x0f);
         assert_eq!(and_known_low_ored.unwritten_mask, !0x0f0f);
         assert_eq!(and_known_low_ored.min(), 0x0f);
+    }
+
+    #[test]
+    fn test_u32_compute_range_for_bytes_swap() {
+        let target = U32Range::new(0x1122_3344, 0x1122_3344);
+        let source = U32Range::new(0x0000_aabb, 0x0000_aacc);
+        let swapped = U32Range::compute_range_for_bytes_swap(target, source, 1, 0, 2);
+        if cfg!(target_endian = "little") {
+            assert_eq!(swapped, U32Range::new(0x11aa_bb44, 0x11aa_cc44));
+        }
     }
 }
