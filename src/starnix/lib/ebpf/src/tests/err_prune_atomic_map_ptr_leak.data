@@ -1,0 +1,22 @@
+# Verify non-fetching atomic operations on writable map memory mark the source
+# register live during state pruning so raw pointers cannot be leaked into maps.
+-- asm
+stw [%r10-4], 0
+lddw %r1, map[2]
+mov %r2, %r10
+add %r2, -4
+call 109
+jne %r0, 0, +2
+mov %r0, 0
+exit
+mov %r6, %r0
+call 2
+jne %r0, 0, +2
+mov %r3, 0
+ja +1
+mov %r3, %r10
+lock add [%r6], %r3
+mov %r0, 0
+exit
+-- error
+cannot store a pointer or an uninitialized value to memory

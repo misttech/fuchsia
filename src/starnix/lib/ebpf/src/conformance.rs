@@ -1248,6 +1248,8 @@ pub mod test {
     #[test_case(local_test_data!("err_packet_load_r0_dep.data"))]
     #[test_case(local_test_data!("err_packet_load_scalar_src.data"))]
     #[test_case(local_test_data!("err_packet_oob.data"))]
+    #[test_case(local_test_data!("err_prune_atomic_map_ptr_leak.data"))]
+    #[test_case(local_test_data!("err_prune_dead_stack_atomic.data"))]
     #[test_case(local_test_data!("err_prune_point_dependency_chain.data"))]
     #[test_case(local_test_data!("err_read_only_helper.data"))]
     #[test_case(local_test_data!("err_write_r10.data"))]

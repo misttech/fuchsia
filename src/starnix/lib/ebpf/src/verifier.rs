@@ -2574,11 +2574,6 @@ impl DataDependencies {
     }
 
     #[inline]
-    fn has_stack(&self, slot: usize) -> bool {
-        (self.stack & (1_u64 << slot)) != 0
-    }
-
-    #[inline]
     fn add_stack(&mut self, slot: usize) {
         self.stack |= 1_u64 << slot;
     }
@@ -2625,34 +2620,23 @@ impl DataDependencies {
     fn atomic(
         &mut self,
         context: &ComputationContext,
-        fetch: bool,
         dst: Register,
         offset: i16,
         src: Register,
-        width: DataWidth,
         is_cmpxchg: bool,
     ) -> Result<(), VerifierErrorKind> {
-        let mut is_read = false;
-        if is_cmpxchg && self.has_reg(0) {
-            is_read = true;
-        }
-        if fetch && self.has_reg(src) {
-            is_read = true;
-        }
-        let addr = context.reg(dst)?;
-        if let Type::PtrToStack { offset: stack_offset } = addr {
+        let reg = context.reg(dst)?;
+        let addr = reg.inner(context)?;
+        if let Type::PtrToStack { offset: stack_offset } = *addr {
             let stack_offset = stack_offset.add(offset);
             stack_offset.check_valid_offset()?;
             let slot = stack_offset.array_index();
-            if is_read || self.has_stack(slot) {
-                is_read = true;
-                self.add_stack(slot);
-            }
+            self.add_stack(slot);
         }
-        if is_read {
+        if is_cmpxchg {
             self.add_reg(0);
-            self.add_reg(src);
         }
+        self.add_reg(src);
         self.add_reg(dst);
         Ok(())
     }
@@ -3155,111 +3139,111 @@ impl BpfVisitor for DataDependencies {
     fn atomic_add<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
-        fetch: bool,
+        _fetch: bool,
         dst: Register,
         offset: i16,
         src: Register,
     ) -> Result<(), VerifierErrorKind> {
-        self.atomic(&context.computation_context, fetch, dst, offset, src, DataWidth::U32, false)
+        self.atomic(&context.computation_context, dst, offset, src, false)
     }
 
     fn atomic_add64<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
-        fetch: bool,
+        _fetch: bool,
         dst: Register,
         offset: i16,
         src: Register,
     ) -> Result<(), VerifierErrorKind> {
-        self.atomic(&context.computation_context, fetch, dst, offset, src, DataWidth::U64, false)
+        self.atomic(&context.computation_context, dst, offset, src, false)
     }
 
     fn atomic_and<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
-        fetch: bool,
+        _fetch: bool,
         dst: Register,
         offset: i16,
         src: Register,
     ) -> Result<(), VerifierErrorKind> {
-        self.atomic(&context.computation_context, fetch, dst, offset, src, DataWidth::U32, false)
+        self.atomic(&context.computation_context, dst, offset, src, false)
     }
 
     fn atomic_and64<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
-        fetch: bool,
+        _fetch: bool,
         dst: Register,
         offset: i16,
         src: Register,
     ) -> Result<(), VerifierErrorKind> {
-        self.atomic(&context.computation_context, fetch, dst, offset, src, DataWidth::U64, false)
+        self.atomic(&context.computation_context, dst, offset, src, false)
     }
 
     fn atomic_or<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
-        fetch: bool,
+        _fetch: bool,
         dst: Register,
         offset: i16,
         src: Register,
     ) -> Result<(), VerifierErrorKind> {
-        self.atomic(&context.computation_context, fetch, dst, offset, src, DataWidth::U32, false)
+        self.atomic(&context.computation_context, dst, offset, src, false)
     }
 
     fn atomic_or64<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
-        fetch: bool,
+        _fetch: bool,
         dst: Register,
         offset: i16,
         src: Register,
     ) -> Result<(), VerifierErrorKind> {
-        self.atomic(&context.computation_context, fetch, dst, offset, src, DataWidth::U64, false)
+        self.atomic(&context.computation_context, dst, offset, src, false)
     }
 
     fn atomic_xor<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
-        fetch: bool,
+        _fetch: bool,
         dst: Register,
         offset: i16,
         src: Register,
     ) -> Result<(), VerifierErrorKind> {
-        self.atomic(&context.computation_context, fetch, dst, offset, src, DataWidth::U32, false)
+        self.atomic(&context.computation_context, dst, offset, src, false)
     }
 
     fn atomic_xor64<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
-        fetch: bool,
+        _fetch: bool,
         dst: Register,
         offset: i16,
         src: Register,
     ) -> Result<(), VerifierErrorKind> {
-        self.atomic(&context.computation_context, fetch, dst, offset, src, DataWidth::U64, false)
+        self.atomic(&context.computation_context, dst, offset, src, false)
     }
 
     fn atomic_xchg<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
-        fetch: bool,
+        _fetch: bool,
         dst: Register,
         offset: i16,
         src: Register,
     ) -> Result<(), VerifierErrorKind> {
-        self.atomic(&context.computation_context, fetch, dst, offset, src, DataWidth::U32, false)
+        self.atomic(&context.computation_context, dst, offset, src, false)
     }
 
     fn atomic_xchg64<'a>(
         &mut self,
         context: &mut Self::Context<'a>,
-        fetch: bool,
+        _fetch: bool,
         dst: Register,
         offset: i16,
         src: Register,
     ) -> Result<(), VerifierErrorKind> {
-        self.atomic(&context.computation_context, fetch, dst, offset, src, DataWidth::U64, false)
+        self.atomic(&context.computation_context, dst, offset, src, false)
     }
 
     fn atomic_cmpxchg<'a>(
@@ -3269,7 +3253,7 @@ impl BpfVisitor for DataDependencies {
         offset: i16,
         src: Register,
     ) -> Result<(), VerifierErrorKind> {
-        self.atomic(&context.computation_context, true, dst, offset, src, DataWidth::U32, true)
+        self.atomic(&context.computation_context, dst, offset, src, true)
     }
 
     fn atomic_cmpxchg64<'a>(
@@ -3279,7 +3263,7 @@ impl BpfVisitor for DataDependencies {
         offset: i16,
         src: Register,
     ) -> Result<(), VerifierErrorKind> {
-        self.atomic(&context.computation_context, true, dst, offset, src, DataWidth::U64, true)
+        self.atomic(&context.computation_context, dst, offset, src, true)
     }
 
     fn load<'a>(

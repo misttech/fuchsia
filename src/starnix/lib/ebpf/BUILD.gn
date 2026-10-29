@@ -103,6 +103,8 @@ rustc_library("ebpf") {
     "src/tests/err_packet_load_r0_dep.data",
     "src/tests/err_packet_load_scalar_src.data",
     "src/tests/err_packet_oob.data",
+    "src/tests/err_prune_atomic_map_ptr_leak.data",
+    "src/tests/err_prune_dead_stack_atomic.data",
     "src/tests/err_prune_point_dependency_chain.data",
     "src/tests/err_read_only_helper.data",
     "src/tests/err_write_r10.data",

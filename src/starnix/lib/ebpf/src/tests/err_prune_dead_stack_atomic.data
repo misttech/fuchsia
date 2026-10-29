@@ -1,0 +1,12 @@
+# Verify non-fetching atomic operations on stack slots whose value is never
+# subsequently read still mark the stack slot live during state pruning.
+-- asm
+call 2
+mov %r2, 1
+jne %r0, 0, +1
+stdw [%r10-8], 0
+lock add [%r10-8], %r2
+mov %r0, 0
+exit
+-- error
+reading unwritten value from the stack
