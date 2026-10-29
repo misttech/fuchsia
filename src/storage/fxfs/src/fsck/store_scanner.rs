@@ -12,10 +12,10 @@ use crate::object_store::directory::decrypt_filename;
 use crate::object_store::graveyard::Graveyard;
 use crate::object_store::object_record::EncryptedCasefoldChild;
 use crate::object_store::{
-    AttributeId, AttributeKey, ChildValue, DirType, ExtendedAttributeValue, Extent, ExtentMode,
-    ExtentValue, FSCRYPT_KEY_ID, FsverityMetadata, MAX_INLINE_SYMLINK_SIZE, ObjectAttributes,
-    ObjectDescriptor, ObjectKey, ObjectKeyData, ObjectKind, ObjectStore, ObjectValue, ProjectId,
-    ProjectProperty, RootDigest, VOLUME_DATA_KEY_ID,
+    AttributeId, AttributeKey, BytesAndNodes, ChildValue, DirType, ExtendedAttributeValue, Extent,
+    ExtentMode, ExtentValue, FSCRYPT_KEY_ID, FsverityMetadata, MAX_INLINE_SYMLINK_SIZE,
+    ObjectAttributes, ObjectDescriptor, ObjectKey, ObjectKeyData, ObjectKind, ObjectStore,
+    ObjectValue, ProjectId, ProjectProperty, RootDigest, VOLUME_DATA_KEY_ID,
 };
 use crate::range::RangeExt;
 use anyhow::{Error, bail};
@@ -684,7 +684,7 @@ impl<'a> ScannedStore<'a> {
                     ))?;
                 }
                 match value {
-                    ObjectValue::None | ObjectValue::BytesAndNodes { .. } => {}
+                    ObjectValue::None | ObjectValue::BytesAndNodes(..) => {}
                     _ => {
                         self.fsck.error(FsckError::MalformedObjectRecord(
                             self.store_id,
@@ -707,7 +707,7 @@ impl<'a> ScannedStore<'a> {
                     ObjectValue::None => {
                         self.stored_project_usages.remove(&project_id);
                     }
-                    ObjectValue::BytesAndNodes { bytes, nodes } => {
+                    ObjectValue::BytesAndNodes(BytesAndNodes { bytes, nodes }) => {
                         self.stored_project_usages.insert(project_id, (*bytes, *nodes));
                     }
                     _ => {

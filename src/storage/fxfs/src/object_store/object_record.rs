@@ -1080,7 +1080,7 @@ pub enum ObjectValueV62 {
     /// the bounds of a single transaction.
     Trim,
     /// Added to support tracking Project ID usage and limits.
-    BytesAndNodes { bytes: i64, nodes: i64 },
+    BytesAndNodes(BytesAndNodes),
     /// A value for an extended attribute. Either inline or a redirection to an attribute with
     /// extents.
     ExtendedAttribute(ExtendedAttributeValueV32),
@@ -1090,7 +1090,8 @@ pub enum ObjectValueV62 {
 }
 
 /// Storage for a pair of related byte and node values.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, TypeFingerprint)]
+#[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub struct BytesAndNodes {
     pub bytes: i64,
     pub nodes: i64,
@@ -1118,19 +1119,7 @@ impl std::ops::AddAssign for BytesAndNodes {
 
 impl From<BytesAndNodes> for ObjectValue {
     fn from(value: BytesAndNodes) -> Self {
-        ObjectValue::BytesAndNodes { bytes: value.bytes, nodes: value.nodes }
-    }
-}
-
-impl From<(i64, i64)> for BytesAndNodes {
-    fn from((bytes, nodes): (i64, i64)) -> Self {
-        Self { bytes, nodes }
-    }
-}
-
-impl From<BytesAndNodes> for (i64, i64) {
-    fn from(value: BytesAndNodes) -> Self {
-        (value.bytes, value.nodes)
+        ObjectValue::BytesAndNodes(value)
     }
 }
 

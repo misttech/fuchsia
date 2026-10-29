@@ -3629,7 +3629,7 @@ async fn test_project_accounting() {
             store_id,
             Mutation::insert_object(
                 ObjectKey::project_limit(root_directory.object_id(), ProjectId::new(4).unwrap()),
-                ObjectValue::BytesAndNodes { bytes: 0, nodes: 0 },
+                ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 0, nodes: 0 }),
             ),
         );
         let object_id = root_directory
@@ -3675,7 +3675,7 @@ async fn test_project_accounting() {
             store_id,
             Mutation::insert_object(
                 ObjectKey::project_limit(root_directory.object_id(), ProjectId::new(5).unwrap()),
-                ObjectValue::BytesAndNodes { bytes: 0, nodes: 0 },
+                ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 0, nodes: 0 }),
             ),
         );
         let object_id = root_directory

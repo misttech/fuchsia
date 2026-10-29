@@ -215,22 +215,21 @@ pub fn merge(
                         property: ProjectProperty::Usage,
                     },
             },
-            ObjectValue::BytesAndNodes { bytes: left_bytes, nodes: left_nodes },
-            ObjectValue::BytesAndNodes { bytes: right_bytes, nodes: right_nodes },
+            ObjectValue::BytesAndNodes(left_usage),
+            ObjectValue::BytesAndNodes(right_usage),
         ) if left_project_id == right_project_id => {
-            let bytes = left_bytes + right_bytes;
-            let nodes = left_nodes + right_nodes;
+            let result = *left_usage + *right_usage;
             // Tombstone the tracking when it goes to zero.
-            match (bytes, nodes) {
-                (0, 0) => MergeResult::Other { emit: None, left: Discard, right: Discard },
-                _ => MergeResult::Other {
+            if result.is_zero() {
+                MergeResult::Other { emit: None, left: Discard, right: Discard }
+            } else {
+                MergeResult::Other {
                     emit: None,
                     left: Discard,
                     right: Replace(
-                        Item::new(right.key().clone(), ObjectValue::BytesAndNodes { bytes, nodes })
-                            .boxed(),
+                        Item::new(right.key().clone(), ObjectValue::BytesAndNodes(result)).boxed(),
                     ),
-                },
+                }
             }
         }
         // Tombstones (ObjectKeyData::Object) compare before others, so always appear on left.
@@ -259,7 +258,9 @@ mod tests {
     use crate::lsm_tree::{LSMTree, Query};
     use crate::object_store::extent::MIN_BLOCK_SIZE;
     use crate::object_store::extent_record::ExtentValue;
-    use crate::object_store::object_record::{AttributeKey, ObjectKey, ObjectValue, Timestamp};
+    use crate::object_store::object_record::{
+        AttributeKey, BytesAndNodes, ObjectKey, ObjectValue, Timestamp,
+    };
     use crate::object_store::{AttributeId, ProjectId, VOLUME_DATA_KEY_ID};
     use anyhow::Error;
 
@@ -1339,22 +1340,34 @@ mod tests {
         let tree = LSMTree::new(merge, None);
         let key = ObjectKey::project_usage(5, ProjectId::new(6).unwrap());
 
-        tree.insert(Item::new(key.clone(), ObjectValue::BytesAndNodes { bytes: 100, nodes: 1000 }))
-            .expect("insert error");
+        tree.insert(Item::new(
+            key.clone(),
+            ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 100, nodes: 1000 }),
+        ))
+        .expect("insert error");
         tree.merge_into(
-            Item::new(key.clone(), ObjectValue::BytesAndNodes { bytes: 4, nodes: 8 }),
+            Item::new(
+                key.clone(),
+                ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 4, nodes: 8 }),
+            ),
             &key,
         );
         tree.seal();
 
         tree.merge_into(
-            Item::new(key.clone(), ObjectValue::BytesAndNodes { bytes: -1, nodes: -2 }),
+            Item::new(
+                key.clone(),
+                ObjectValue::BytesAndNodes(BytesAndNodes { bytes: -1, nodes: -2 }),
+            ),
             &key,
         );
         tree.seal();
 
         tree.merge_into(
-            Item::new(key.clone(), ObjectValue::BytesAndNodes { bytes: 16, nodes: 32 }),
+            Item::new(
+                key.clone(),
+                ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 16, nodes: 32 }),
+            ),
             &key,
         );
 
@@ -1364,7 +1377,7 @@ mod tests {
         assert_eq!(iter.get().unwrap().key, &key);
         assert_eq!(
             iter.get().unwrap().value,
-            &ObjectValue::BytesAndNodes { bytes: 119, nodes: 1038 }
+            &ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 119, nodes: 1038 })
         );
         iter.advance().await.unwrap();
         assert!(iter.get().is_none());
@@ -1376,32 +1389,44 @@ mod tests {
         let key = ObjectKey::project_usage(5, ProjectId::new(6).unwrap());
         let key2 = ObjectKey::project_usage(5, ProjectId::new(7).unwrap());
 
-        tree.insert(Item::new(key.clone(), ObjectValue::BytesAndNodes { bytes: 100, nodes: 1000 }))
-            .expect("insert error");
+        tree.insert(Item::new(
+            key.clone(),
+            ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 100, nodes: 1000 }),
+        ))
+        .expect("insert error");
         tree.merge_into(
-            Item::new(key.clone(), ObjectValue::BytesAndNodes { bytes: 4, nodes: 8 }),
+            Item::new(
+                key.clone(),
+                ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 4, nodes: 8 }),
+            ),
             &key,
         );
         tree.seal();
 
         assert_eq!(
             tree.find_value(&key).await.expect("Find").unwrap(),
-            ObjectValue::BytesAndNodes { bytes: 104, nodes: 1008 }
+            ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 104, nodes: 1008 })
         );
 
         tree.merge_into(
-            Item::new(key2.clone(), ObjectValue::BytesAndNodes { bytes: 13, nodes: 17 }),
+            Item::new(
+                key2.clone(),
+                ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 13, nodes: 17 }),
+            ),
             &key,
         );
         tree.seal();
 
         assert_eq!(
             tree.find_value(&key).await.expect("Find").unwrap(),
-            ObjectValue::BytesAndNodes { bytes: 104, nodes: 1008 }
+            ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 104, nodes: 1008 })
         );
 
         tree.merge_into(
-            Item::new(key.clone(), ObjectValue::BytesAndNodes { bytes: 16, nodes: 32 }),
+            Item::new(
+                key.clone(),
+                ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 16, nodes: 32 }),
+            ),
             &key,
         );
 
@@ -1411,17 +1436,20 @@ mod tests {
         assert_eq!(iter.get().unwrap().key, &key);
         assert_eq!(
             iter.get().unwrap().value,
-            &ObjectValue::BytesAndNodes { bytes: 120, nodes: 1040 }
+            &ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 120, nodes: 1040 })
         );
         iter.advance().await.unwrap();
         assert_eq!(iter.get().unwrap().key, &key2);
-        assert_eq!(iter.get().unwrap().value, &ObjectValue::BytesAndNodes { bytes: 13, nodes: 17 });
+        assert_eq!(
+            iter.get().unwrap().value,
+            &ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 13, nodes: 17 })
+        );
         iter.advance().await.unwrap();
         assert!(iter.get().is_none());
 
         assert_eq!(
             tree.find_value(&key).await.expect("Find").unwrap(),
-            ObjectValue::BytesAndNodes { bytes: 120, nodes: 1040 }
+            ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 120, nodes: 1040 })
         );
     }
 
@@ -1430,12 +1458,18 @@ mod tests {
         let tree = LSMTree::new(merge, None);
         let key = ObjectKey::project_usage(5, ProjectId::new(6).unwrap());
 
-        tree.insert(Item::new(key.clone(), ObjectValue::BytesAndNodes { bytes: 4, nodes: 8 }))
-            .expect("insert error");
+        tree.insert(Item::new(
+            key.clone(),
+            ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 4, nodes: 8 }),
+        ))
+        .expect("insert error");
         tree.seal();
 
         tree.merge_into(
-            Item::new(key.clone(), ObjectValue::BytesAndNodes { bytes: -4, nodes: -8 }),
+            Item::new(
+                key.clone(),
+                ObjectValue::BytesAndNodes(BytesAndNodes { bytes: -4, nodes: -8 }),
+            ),
             &key,
         );
         tree.seal();
@@ -1451,18 +1485,27 @@ mod tests {
         let tree = LSMTree::new(merge, None);
         let key = ObjectKey::project_usage(5, ProjectId::new(6).unwrap());
 
-        tree.insert(Item::new(key.clone(), ObjectValue::BytesAndNodes { bytes: 4, nodes: 8 }))
-            .expect("insert error");
+        tree.insert(Item::new(
+            key.clone(),
+            ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 4, nodes: 8 }),
+        ))
+        .expect("insert error");
         tree.seal();
 
         tree.merge_into(
-            Item::new(key.clone(), ObjectValue::BytesAndNodes { bytes: -4, nodes: -8 }),
+            Item::new(
+                key.clone(),
+                ObjectValue::BytesAndNodes(BytesAndNodes { bytes: -4, nodes: -8 }),
+            ),
             &key,
         );
         tree.seal();
 
         tree.merge_into(
-            Item::new(key.clone(), ObjectValue::BytesAndNodes { bytes: 20, nodes: 40 }),
+            Item::new(
+                key.clone(),
+                ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 20, nodes: 40 }),
+            ),
             &key,
         );
         tree.seal();
@@ -1471,7 +1514,10 @@ mod tests {
         let mut merger = layer_set.merger();
         let mut iter = merger.query(Query::FullScan).await.unwrap();
         assert_eq!(iter.get().unwrap().key, &key);
-        assert_eq!(iter.get().unwrap().value, &ObjectValue::BytesAndNodes { bytes: 20, nodes: 40 });
+        assert_eq!(
+            iter.get().unwrap().value,
+            &ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 20, nodes: 40 })
+        );
         iter.advance().await.unwrap();
         assert!(iter.get().is_none());
     }
@@ -1481,12 +1527,18 @@ mod tests {
         let tree = LSMTree::new(merge, None);
         let key = ObjectKey::project_usage(5, ProjectId::new(6).unwrap());
 
-        tree.insert(Item::new(key.clone(), ObjectValue::BytesAndNodes { bytes: 4, nodes: 8 }))
-            .expect("insert error");
+        tree.insert(Item::new(
+            key.clone(),
+            ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 4, nodes: 8 }),
+        ))
+        .expect("insert error");
         tree.seal();
 
         tree.merge_into(
-            Item::new(key.clone(), ObjectValue::BytesAndNodes { bytes: 16, nodes: 32 }),
+            Item::new(
+                key.clone(),
+                ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 16, nodes: 32 }),
+            ),
             &key,
         );
         tree.seal();
@@ -1494,7 +1546,10 @@ mod tests {
         // As we merge from the newest layer down this will drop bytes below zero and nodes to
         // exactly zero during the merge process.
         tree.merge_into(
-            Item::new(key.clone(), ObjectValue::BytesAndNodes { bytes: -18, nodes: -32 }),
+            Item::new(
+                key.clone(),
+                ObjectValue::BytesAndNodes(BytesAndNodes { bytes: -18, nodes: -32 }),
+            ),
             &key,
         );
         tree.seal();
@@ -1503,7 +1558,10 @@ mod tests {
         let mut merger = layer_set.merger();
         let mut iter = merger.query(Query::FullScan).await.unwrap();
         assert_eq!(iter.get().unwrap().key, &key);
-        assert_eq!(iter.get().unwrap().value, &ObjectValue::BytesAndNodes { bytes: 2, nodes: 8 });
+        assert_eq!(
+            iter.get().unwrap().value,
+            &ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 2, nodes: 8 })
+        );
         iter.advance().await.unwrap();
         assert!(iter.get().is_none());
     }

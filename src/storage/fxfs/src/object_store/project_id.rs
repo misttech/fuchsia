@@ -38,10 +38,10 @@ impl ObjectStore {
             self.store_object_id,
             Mutation::replace_or_insert_object(
                 ObjectKey::project_limit(root_id, project_id),
-                ObjectValue::BytesAndNodes {
+                ObjectValue::BytesAndNodes(BytesAndNodes {
                     bytes: bytes.try_into().map_err(|_| FxfsError::TooBig)?,
                     nodes: nodes.try_into().map_err(|_| FxfsError::TooBig)?,
-                },
+                }),
             ),
         );
         transaction.commit().await?;
@@ -274,7 +274,7 @@ impl ObjectStore {
             }
             if let (
                 ObjectKeyData::Project { project_id: found_project_id, property },
-                ObjectValue::BytesAndNodes { bytes, nodes },
+                ObjectValue::BytesAndNodes(BytesAndNodes { bytes, nodes }),
             ) = (key_data, value)
             {
                 // Outside the range for target project information.

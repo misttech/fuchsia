@@ -6,9 +6,9 @@
 //! implementations should be placed in this module.
 
 use super::{
-    ChildValue, DirTypeV59, EncryptionKeyV59, EncryptionKeysV59, ExtendedAttributeValueV32,
-    ExtentValueV38, FsverityMetadataV50, Item, ObjectAttributesV49, ObjectKeyV54, ObjectKindV62,
-    ObjectValueV62,
+    BytesAndNodes, ChildValue, DirTypeV59, EncryptionKeyV59, EncryptionKeysV59,
+    ExtendedAttributeValueV32, ExtentValueV38, FsverityMetadataV50, Item, ObjectAttributesV49,
+    ObjectKeyV54, ObjectKindV62, ObjectValueV62,
 };
 use crate::serialized_types::{Migrate, Versioned, migrate_to_version};
 use fprint::TypeFingerprint;
@@ -138,7 +138,7 @@ pub enum ObjectValueV59 {
     Extent(ExtentValueV38),
     Child(ChildValue),
     Trim,
-    BytesAndNodes { bytes: i64, nodes: i64 },
+    BytesAndNodes(BytesAndNodes),
     ExtendedAttribute(ExtendedAttributeValueV32),
     VerifiedAttribute { size: u64, fsverity_metadata: FsverityMetadataV50 },
 }
@@ -163,7 +163,7 @@ pub enum ObjectValueV56 {
     Extent(ExtentValueV38),
     Child(ChildValue),
     Trim,
-    BytesAndNodes { bytes: i64, nodes: i64 },
+    BytesAndNodes(BytesAndNodes),
     ExtendedAttribute(ExtendedAttributeValueV32),
     VerifiedAttribute { size: u64, fsverity_metadata: FsverityMetadataV50 },
 }

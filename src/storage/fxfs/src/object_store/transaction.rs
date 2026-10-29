@@ -1063,9 +1063,9 @@ impl<'a> Transaction<'a> {
     ) {
         let delta = match self.get_object_mutation(store_object_id, key.clone()) {
             Some(ObjectStoreMutation {
-                item: Item { value: ObjectValue::BytesAndNodes { bytes, nodes }, .. },
+                item: Item { value: ObjectValue::BytesAndNodes(existing), .. },
                 ..
-            }) => delta + BytesAndNodes { bytes: *bytes, nodes: *nodes },
+            }) => delta + *existing,
             _ => delta,
         };
         if delta.is_zero() {
@@ -2043,7 +2043,7 @@ mod tests {
     };
     use crate::filesystem::FxFilesystem;
     use crate::object_store::allocator::{Reservation, ReservationOwner};
-    use crate::object_store::{BytesAndNodes, ObjectKey};
+    use crate::object_store::{BytesAndNodes, ObjectKey, ObjectValue};
     use anyhow::Error;
     use async_trait::async_trait;
     use fuchsia_async as fasync;
@@ -2639,7 +2639,7 @@ mod tests {
         assert_eq!(mutation.op, super::Operation::Merge);
         assert_eq!(
             mutation.item.value,
-            crate::object_store::object_record::ObjectValue::BytesAndNodes { bytes: 100, nodes: 2 }
+            ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 100, nodes: 2 })
         );
 
         // Second delta for the same key folds into the first rather than replacing it.
@@ -2648,7 +2648,7 @@ mod tests {
         assert_eq!(mutation.op, super::Operation::Merge);
         assert_eq!(
             mutation.item.value,
-            crate::object_store::object_record::ObjectValue::BytesAndNodes { bytes: 150, nodes: 3 }
+            ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 150, nodes: 3 })
         );
 
         // Negative delta brings it back down.
@@ -2657,7 +2657,7 @@ mod tests {
         assert_eq!(mutation.op, super::Operation::Merge);
         assert_eq!(
             mutation.item.value,
-            crate::object_store::object_record::ObjectValue::BytesAndNodes { bytes: 100, nodes: 2 }
+            ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 100, nodes: 2 })
         );
 
         // Folding to zero removes the mutation completely.
