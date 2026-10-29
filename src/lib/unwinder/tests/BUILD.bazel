@@ -1,0 +1,88 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# LINT.IfChange(no_unwind_tables)
+# @bazel2gn:skip
+build_flags(
+    name = "no_unwind_tables",
+    cflags = [
+        "-fno-unwind-tables",
+        "-fno-asynchronous-unwind-tables",
+    ],
+)
+# LINT.ThenChange(BUILD.gn:no_unwind_tables)
+
+fx_cc_library(
+    name = "tests",
+    testonly = True,
+    srcs = ["test_unwinding.cc"],
+    implementation_deps = [
+        ":cfi_only",
+        ":fp_only",
+        ":scs_only",
+        "//src/developer/debug/shared:test_support",
+        "//src/lib/fxl",
+        "//src/lib/unwinder",
+        "@com_google_googletest//:gtest",
+    ],
+    visibility = ["//src/lib/unwinder:__pkg__"],
+    alwayslink = True,
+)
+
+# Some build variants explicitly require frame pointers. E.g., ASan build
+# requires frame pointer and/or shadow call stack for fast unwinding. See
+# //sdk/lib/c/sanitizers/backtrace.h.  We generally don't want to mess it up
+# so don't touch the config in these cases.
+#
+# Only default_frame_pointers is in the config list, the unwind tables and
+# shadow call stacks are enabled implicitly in the compiler on appropriate
+# platforms.
+# GN conditionally swaps default_frame_pointers for no_frame_pointers.
+# @bazel2gn:raw_attribute:if (configs + [ "//build/config:default_frame_pointers" ] - [ "//build/config:default_frame_pointers" ] != configs) { configs -= [ "//build/config:default_frame_pointers" ] configs += [ "//build/config:no_frame_pointers" ] }
+fx_cc_library(
+    name = "cfi_only",
+    testonly = True,
+    srcs = ["cfi_only.cc"],
+    # GN uses the //build/config:no-shadow-call-stack config (not yet migrated
+    # to Bazel build_flags); Bazel passes the compiler flags directly via copts.
+    copts = [
+        "-fno-sanitize=shadow-call-stack",
+        "-fomit-frame-pointer",
+    ],  # @bazel2gn:raw_overwrite:[ "//build/config:no-shadow-call-stack" ]
+    alwayslink = True,
+)
+
+# GN conditionally swaps default_frame_pointers for no_frame_pointers.
+# @bazel2gn:raw_attribute:if (configs + [ "//build/config:default_frame_pointers" ] - [ "//build/config:default_frame_pointers" ] != configs) { configs -= [ "//build/config:default_frame_pointers" ] configs += [ "//build/config:no_frame_pointers" ] }
+fx_cc_library(
+    name = "scs_only",
+    testonly = True,
+    srcs = ["scs_only.cc"],
+    build_flags = [":no_unwind_tables"],
+    # @bazel2gn:skip
+    copts = ["-fomit-frame-pointer"],
+    alwayslink = True,
+)
+
+# GN conditionally swaps default_frame_pointers for frame_pointers.
+# @bazel2gn:raw_attribute:if (configs + [ "//build/config:default_frame_pointers" ] - [ "//build/config:default_frame_pointers" ] != configs) { configs -= [ "//build/config:default_frame_pointers" ] configs += [ "//build/config:frame_pointers" ] }
+fx_cc_library(
+    name = "fp_only",
+    testonly = True,
+    srcs = ["fp_only.cc"],
+    build_flags = [":no_unwind_tables"],
+    # GN also uses the //build/config:no-shadow-call-stack config (not yet
+    # migrated to Bazel build_flags); Bazel passes its flag via copts.
+    copts = [
+        "-fno-sanitize=shadow-call-stack",
+        "-fno-omit-frame-pointer",
+        "-momit-leaf-frame-pointer",
+    ],  # @bazel2gn:raw_overwrite:[ "//build/config:no-shadow-call-stack" ]
+    alwayslink = True,
+)
