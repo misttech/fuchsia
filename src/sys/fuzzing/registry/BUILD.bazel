@@ -1,0 +1,118 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "bin",
+    srcs = [
+        "src/main.rs",
+        "src/registry.rs",
+    ],
+    crate_name = "fuzz_registry",
+    edition = "2024",
+    tags = ["manual"],
+    visibility = ["//visibility:private"],
+    deps = [
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/sys/fuzzing/fidl:fuchsia.fuzzer_rust",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:url",
+    ],
+)
+
+fx_packaged_binary(
+    name = "bin_packaged_bin",
+    binary = ":bin",
+    binary_name = "fuzz_registry",
+)
+
+fx_component_manifest(
+    name = "manifest",
+    testonly = True,
+    component_name = "fuzz-registry",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/fuzz-registry.cml",
+)
+
+fx_component(
+    name = "registry",
+    testonly = True,
+    compiled_manifest = ":manifest",
+    component_name = "fuzz-registry",
+    visibility = [
+        "//src/sys/fuzzing:__pkg__",
+        "//src/sys/fuzzing/registry/tests:__pkg__",
+        "//src/sys/test_runners/fuzz/tests:__pkg__",
+    ],
+    deps = [":bin_packaged_bin"],
+)
+
+rustc_test(
+    name = "bin_test",
+    crate = ":bin",
+    # Needed for bazel2gn output_name to match meta/unittests.cml program.binary.
+    crate_name = "fuzz_registry_bin_test",
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+)
+
+fx_packaged_binary(
+    name = "bin_test_packaged_bin",
+    testonly = True,
+    binary = ":bin_test",
+    binary_name = "fuzz_registry_bin_test",
+)
+
+fx_component_manifest(
+    name = "unittests-manifest",
+    testonly = True,
+    component_name = "unittests",
+    includes = [
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/unittests.cml",
+)
+
+fx_test_component(
+    name = "unittests-component",
+    compiled_manifest = ":unittests-manifest",
+    component_name = "unittests",
+    visibility = ["//visibility:private"],
+    deps = [":bin_test_packaged_bin"],
+)
+
+fx_package(
+    name = "unittests-pkg",
+    package_name = "fuzz-registry-unittests",
+    test_components = [":unittests-component"],
+)
+
+fx_test(
+    name = "fuzz-registry-unittests",
+    package = ":unittests-pkg",
+    visibility = ["//src/sys:__pkg__"],
+)
