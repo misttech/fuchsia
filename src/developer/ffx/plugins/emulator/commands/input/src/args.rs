@@ -14,6 +14,9 @@ use ffx_core::ffx_command;
     example = "Press and release the 'a' key:
   $ ffx emu input key a
 
+Type text:
+  $ ffx emu input text 'Hello, world!'
+
 Send raw QMP input events:
   $ ffx emu input raw '[{{\"type\":\"rel\",\"data\":{{\"axis\":\"x\",\"value\":7}}}}]'
 
@@ -34,7 +37,7 @@ pub struct InputCommand {
     #[argh(option)]
     pub name: Option<String>,
 
-    /// time in milliseconds between consecutive key combos. Defaults to 20.
+    /// time in milliseconds between consecutive key combos and characters. Defaults to 20.
     #[argh(option, default = "20")]
     pub interval: u64,
 
@@ -46,6 +49,7 @@ pub struct InputCommand {
 #[argh(subcommand)]
 pub enum InputSubCommand {
     Key(KeyCommand),
+    Text(TextCommand),
     Raw(RawCommand),
 }
 
@@ -87,6 +91,25 @@ pub struct KeyCommand {
 
     /// time in milliseconds between the last press and the first release of a combo.
     /// Defaults to 20.
+    #[argh(option, default = "20")]
+    pub key_duration: u64,
+}
+
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
+#[argh(
+    subcommand,
+    name = "text",
+    description = "Type printable ASCII text using a US QWERTY layout.",
+    example = "  $ ffx emu input text 'Hello, world!'",
+    note = "Only printable ASCII (0x20-0x7E) is accepted. Shift is added where needed.
+Use `ffx emu input key` for keys such as ret or tab."
+)]
+pub struct TextCommand {
+    /// the text to type.
+    #[argh(positional)]
+    pub text: String,
+
+    /// time in milliseconds each key is held down. Defaults to 20.
     #[argh(option, default = "20")]
     pub key_duration: u64,
 }
@@ -185,5 +208,20 @@ mod tests {
         let cmd = parse(&["key", "--up", "ctrl+alt"]).unwrap();
         let InputSubCommand::Key(key) = cmd.subcommand else { panic!() };
         assert_eq!(key.up, Some("ctrl+alt".into()));
+    }
+
+    #[test]
+    fn test_text() {
+        let cmd = parse(&["text", "hi"]).unwrap();
+        assert_eq!(
+            cmd.subcommand,
+            InputSubCommand::Text(TextCommand { text: "hi".into(), key_duration: 20 })
+        );
+        let cmd = parse(&["text", "hi", "--key-duration", "5"]).unwrap();
+        assert_eq!(
+            cmd.subcommand,
+            InputSubCommand::Text(TextCommand { text: "hi".into(), key_duration: 5 })
+        );
+        assert!(parse(&["text"]).is_err());
     }
 }

@@ -12,6 +12,9 @@ ffx emu input key ctrl+alt+delete
 ffx emu input key --down shift
 ffx emu input key --up shift
 
+# Text: printable ASCII, US QWERTY layout
+ffx emu input text 'Hello, world!'
+
 # Raw: QMP InputEvent objects, sent unchanged in one input-send-event command
 ffx emu input raw '[{"type":"rel","data":{"axis":"x","value":7}}]'
 

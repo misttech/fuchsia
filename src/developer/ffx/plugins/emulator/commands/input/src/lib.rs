@@ -9,7 +9,7 @@ use ffx_config::EnvironmentContext;
 use ffx_config::keys::EMU_INSTANCE_ROOT_DIR;
 use ffx_emulator_config::{EmulatorEngine, InputEvent, InputStep, PressState};
 use ffx_emulator_engines::EngineBuilder;
-use ffx_emulator_input_args::{InputCommand, InputSubCommand, KeyCommand, RawCommand};
+use ffx_emulator_input_args::{InputCommand, InputSubCommand, KeyCommand, RawCommand, TextCommand};
 use ffx_writer::VerifiedMachineWriter;
 use fho::{FfxMain, FfxTool, Result as FhoResult, bug, return_user_error, user_error};
 use schemars::JsonSchema;
@@ -108,6 +108,7 @@ fn build_steps(cmd: &InputCommand) -> FhoResult<Vec<InputStep>> {
     let interval = Duration::from_millis(cmd.interval);
     match &cmd.subcommand {
         InputSubCommand::Key(key) => key_steps(key, interval),
+        InputSubCommand::Text(text) => text_steps(text, interval),
         InputSubCommand::Raw(raw) => raw_steps(raw),
     }
 }
@@ -160,6 +161,33 @@ fn key_steps(cmd: &KeyCommand, interval: Duration) -> FhoResult<Vec<InputStep>> 
     }
 }
 
+fn text_steps(cmd: &TextCommand, interval: Duration) -> FhoResult<Vec<InputStep>> {
+    if cmd.text.is_empty() {
+        return_user_error!("The text to type is empty.");
+    }
+    // Validate all characters before generating any steps.
+    let mut keys = Vec::new();
+    for (position, character) in cmd.text.chars().enumerate() {
+        let Some(key) = keymap::ascii_to_key(character) else {
+            return_user_error!(
+                "Character {character:?} at position {position} can't be typed. `text` accepts \
+                only printable ASCII (0x20-0x7E). Use `ffx emu input key` for keys such as ret or \
+                tab."
+            );
+        };
+        keys.push(key);
+    }
+
+    let key_duration = Duration::from_millis(cmd.key_duration);
+    let mut steps = Vec::new();
+    for key in keys {
+        let keys = if key.needs_shift { vec!["shift", key.qcode] } else { vec![key.qcode] };
+        steps.extend(press_steps(&keys, key_duration));
+        steps.extend(release_steps(&keys, interval));
+    }
+    Ok(steps)
+}
+
 fn raw_steps(cmd: &RawCommand) -> FhoResult<Vec<InputStep>> {
     let value: serde_json::Value =
         serde_json::from_str(&cmd.json).map_err(|e| user_error!("Invalid JSON for `raw`: {e}"))?;
@@ -203,6 +231,10 @@ mod tests {
             up: None,
             key_duration: 20,
         }))
+    }
+
+    fn text_cmd(text: &str, key_duration: u64) -> InputCommand {
+        cmd(InputSubCommand::Text(TextCommand { text: text.into(), key_duration }))
     }
 
     fn key(qcode: &'static str, state: PressState, delay_after: Duration) -> InputStep {
@@ -329,6 +361,43 @@ mod tests {
         // The first combo is valid, but the second isn't. No steps are generated.
         let err = err_string(build_steps(&key_cmd(&["a", "ctrl+enter"])));
         assert!(err.contains("unknown key name 'enter'"), "{err}");
+    }
+
+    #[test]
+    fn test_text() {
+        let hold = Duration::from_millis(30);
+        assert_eq!(
+            build_steps(&text_cmd("Hi!", 30)).unwrap(),
+            vec![
+                key("shift", PressState::Down, ZERO),
+                key("h", PressState::Down, hold),
+                key("h", PressState::Up, ZERO),
+                key("shift", PressState::Up, INTERVAL),
+                key("i", PressState::Down, hold),
+                key("i", PressState::Up, INTERVAL),
+                key("shift", PressState::Down, ZERO),
+                key("1", PressState::Down, hold),
+                key("1", PressState::Up, ZERO),
+                key("shift", PressState::Up, INTERVAL),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_text_space() {
+        assert_eq!(
+            build_steps(&text_cmd(" ", 20)).unwrap(),
+            vec![key("spc", PressState::Down, INTERVAL), key("spc", PressState::Up, INTERVAL)]
+        );
+    }
+
+    #[test]
+    fn test_text_errors() {
+        assert!(err_string(build_steps(&text_cmd("", 20))).contains("empty"));
+        for text in ["ab\n", "tab\there", "caf\u{e9}", "\u{1F600}"] {
+            let err = err_string(build_steps(&text_cmd(text, 20)));
+            assert!(err.contains("printable ASCII"), "{text:?}: {err}");
+        }
     }
 
     struct StubEngine {

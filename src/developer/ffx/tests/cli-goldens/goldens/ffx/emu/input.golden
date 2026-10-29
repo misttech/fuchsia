@@ -2,7 +2,7 @@
   "name": "input",
   "description": "Send input events to a running emulator.",
   "examples": [
-    "Press and release the 'a' key:\n  $ ffx emu input key a\n\nSend raw QMP input events:\n  $ ffx emu input raw '[{{\"type\":\"rel\",\"data\":{{\"axis\":\"x\",\"value\":7}}}}]'\n\nTarget a specific emulator and slow down the steps:\n  $ ffx emu input --name fuchsia-emulator --interval 100 key a b c"
+    "Press and release the 'a' key:\n  $ ffx emu input key a\n\nType text:\n  $ ffx emu input text 'Hello, world!'\n\nSend raw QMP input events:\n  $ ffx emu input raw '[{{\"type\":\"rel\",\"data\":{{\"axis\":\"x\",\"value\":7}}}}]'\n\nTarget a specific emulator and slow down the steps:\n  $ ffx emu input --name fuchsia-emulator --interval 100 key a b c"
   ],
   "flags": [
     {
@@ -34,7 +34,7 @@
       "optionality": "optional",
       "long": "--interval",
       "short": null,
-      "description": "time in milliseconds between consecutive key combos. Defaults to 20.",
+      "description": "time in milliseconds between consecutive key combos and characters. Defaults to 20.",
       "hidden": false
     }
   ],

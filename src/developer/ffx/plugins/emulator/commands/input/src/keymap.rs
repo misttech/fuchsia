@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-//! QEMU key names.
+//! QEMU key names and the US QWERTY mapping used by `text`.
 
 /// The QMP `QKeyCode` names that can be sent, as listed in
 /// <https://www.qemu.org/docs/master/interop/qemu-qmp-ref.html#enum-QMP-ui.QKeyCode>.
@@ -197,6 +197,60 @@ pub fn parse_combo(combo: &str) -> Result<Vec<&'static str>, String> {
     Ok(keys)
 }
 
+/// A key that types a character.
+#[derive(Debug, PartialEq)]
+pub struct TypedKey {
+    pub qcode: &'static str,
+    /// True if shift must be held while the key is pressed.
+    pub needs_shift: bool,
+}
+
+/// Maps a printable ASCII character to the key that types it on a US QWERTY keyboard.
+///
+/// Returns [`None`] for any other character.
+pub fn ascii_to_key(c: char) -> Option<TypedKey> {
+    let unshifted = |qcode| Some(TypedKey { qcode, needs_shift: false });
+    let shifted = |qcode| Some(TypedKey { qcode, needs_shift: true });
+    match c {
+        'a'..='z' | '0'..='9' => unshifted(find_key_code(c.encode_utf8(&mut [0; 4]))?),
+        'A'..='Z' => shifted(find_key_code(c.to_ascii_lowercase().encode_utf8(&mut [0; 4]))?),
+        ' ' => unshifted("spc"),
+        '!' => shifted("1"),
+        '@' => shifted("2"),
+        '#' => shifted("3"),
+        '$' => shifted("4"),
+        '%' => shifted("5"),
+        '^' => shifted("6"),
+        '&' => shifted("7"),
+        '*' => shifted("8"),
+        '(' => shifted("9"),
+        ')' => shifted("0"),
+        '-' => unshifted("minus"),
+        '_' => shifted("minus"),
+        '=' => unshifted("equal"),
+        '+' => shifted("equal"),
+        '[' => unshifted("bracket_left"),
+        '{' => shifted("bracket_left"),
+        ']' => unshifted("bracket_right"),
+        '}' => shifted("bracket_right"),
+        '\\' => unshifted("backslash"),
+        '|' => shifted("backslash"),
+        ';' => unshifted("semicolon"),
+        ':' => shifted("semicolon"),
+        '\'' => unshifted("apostrophe"),
+        '"' => shifted("apostrophe"),
+        '`' => unshifted("grave_accent"),
+        '~' => shifted("grave_accent"),
+        ',' => unshifted("comma"),
+        '<' => shifted("comma"),
+        '.' => unshifted("dot"),
+        '>' => shifted("dot"),
+        '/' => unshifted("slash"),
+        '?' => shifted("slash"),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -234,6 +288,34 @@ mod tests {
     fn test_no_aliases() {
         for alias in ["enter", "return", "space", "control", "del", "escape", "KEYCODE_A", "A"] {
             assert!(parse_combo(alias).is_err(), "{alias} should be rejected");
+        }
+    }
+
+    #[test]
+    fn test_ascii_to_key_all_printable() {
+        for c in (0x20u8..=0x7e).map(char::from) {
+            let key = ascii_to_key(c).unwrap_or_else(|| panic!("no mapping for {c:?}"));
+            assert_eq!(find_key_code(key.qcode), Some(key.qcode), "{c:?}");
+        }
+    }
+
+    #[test]
+    fn test_ascii_to_key_examples() {
+        let key = |qcode, needs_shift| Some(TypedKey { qcode, needs_shift });
+        assert_eq!(ascii_to_key('a'), key("a", false));
+        assert_eq!(ascii_to_key('H'), key("h", true));
+        assert_eq!(ascii_to_key('7'), key("7", false));
+        assert_eq!(ascii_to_key('!'), key("1", true));
+        assert_eq!(ascii_to_key(' '), key("spc", false));
+        assert_eq!(ascii_to_key('?'), key("slash", true));
+        assert_eq!(ascii_to_key('"'), key("apostrophe", true));
+        assert_eq!(ascii_to_key('~'), key("grave_accent", true));
+    }
+
+    #[test]
+    fn test_ascii_to_key_rejects() {
+        for c in ['\n', '\t', '\r', '\x7f', '\0', 'é', '€', '日'] {
+            assert_eq!(ascii_to_key(c), None, "{c:?}");
         }
     }
 }

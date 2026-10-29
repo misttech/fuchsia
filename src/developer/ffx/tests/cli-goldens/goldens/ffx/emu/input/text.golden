@@ -1,0 +1,42 @@
+{
+  "name": "text",
+  "description": "Type printable ASCII text using a US QWERTY layout.",
+  "examples": [
+    "  $ ffx emu input text 'Hello, world!'"
+  ],
+  "flags": [
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--help",
+      "short": null,
+      "description": "display usage information",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "key-duration"
+        }
+      },
+      "optionality": "optional",
+      "long": "--key-duration",
+      "short": null,
+      "description": "time in milliseconds each key is held down. Defaults to 20.",
+      "hidden": false
+    }
+  ],
+  "notes": [
+    "Only printable ASCII (0x20-0x7E) is accepted. Shift is added where needed.\nUse `ffx emu input key` for keys such as ret or tab."
+  ],
+  "commands": [],
+  "positionals": [
+    {
+      "name": "text",
+      "description": "the text to type.",
+      "optionality": "required",
+      "hidden": false
+    }
+  ],
+  "error_codes": []
+}
