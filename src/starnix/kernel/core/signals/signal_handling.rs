@@ -92,6 +92,9 @@ pub fn send_signal(task: &Task, signal_info: SignalInfo) -> Result<(), Errno> {
 
 pub fn send_freeze_signal(task: &Task, waiter: Waiter) -> Result<(), Errno> {
     let state = task.write();
+    if !task.is_running() || task.flags().contains(TaskFlags::EXITED) {
+        return Ok(());
+    }
     send_signal_prio(
         task,
         state,

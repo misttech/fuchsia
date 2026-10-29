@@ -8,7 +8,7 @@
 //! to a control group (for the duration of their lifetime).
 
 use crate::signals::{SignalInfo, send_freeze_signal};
-use crate::task::{Kernel, Pid, Task, ThreadGroup, WaitQueue, Waiter};
+use crate::task::{Kernel, Pid, Task, TaskFlags, ThreadGroup, WaitQueue, Waiter};
 use crate::vfs::{FsStr, FsString, PathBuilder};
 use starnix_logging::{CATEGORY_STARNIX, log_warn, track_stub};
 use starnix_sync::{
@@ -712,7 +712,10 @@ impl CgroupState {
 
     fn freeze_thread_group(&self, thread_group: &ThreadGroup) {
         let tasks = thread_group.read().tasks();
-        for task in tasks {
+        for task in tasks
+            .into_iter()
+            .filter(|task| task.is_running() && !task.flags().contains(TaskFlags::EXITED))
+        {
             send_freeze_signal(&task, self.create_freeze_waiter())
                 .expect("sending freeze signal should not fail");
         }
@@ -720,7 +723,10 @@ impl CgroupState {
 
     fn thaw_thread_group(&self, thread_group: &ThreadGroup) {
         let tasks = thread_group.read().tasks();
-        for task in tasks {
+        for task in tasks
+            .into_iter()
+            .filter(|task| task.is_running() && !task.flags().contains(TaskFlags::EXITED))
+        {
             task.write().thaw();
             task.interrupt();
         }
@@ -1254,6 +1260,36 @@ mod test {
             // Deleting an empty cgroup makes `add_task` fail with ENOENT even for non-leader TIDs.
             v1_root.remove_child("background".into()).expect("remove background cgroup");
             assert_eq!(background.add_task(&worker), error!(ENOENT));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn cgroup_freeze_and_thaw_skip_exited_tasks() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            let root = &kernel.cgroups.cgroup2;
+            let cgroup = root.new_child("test".into()).expect("new_child on root cgroup succeeds");
+
+            let leader = current_task.clone_task_for_test(0, Some(SIGCHLD));
+            let exited_worker = leader.clone_task_for_test(
+                (CLONE_THREAD | CLONE_SIGHAND | CLONE_VM) as u64,
+                Some(SIGCHLD),
+            );
+            cgroup.add_process(leader.thread_group()).expect("add process to cgroup");
+
+            // Simulate a sibling thread that has already entered teardown (marked EXITED) while
+            // still registered in the ThreadGroup prior to final removal.
+            exited_worker.write().set_flags(TaskFlags::EXITED, true);
+
+            cgroup.freeze();
+            assert_matches!(
+                leader.read().kernel_signals_for_test().front(),
+                Some(KernelSignal::Freeze(_))
+            );
+            assert!(exited_worker.read().kernel_signals_for_test().is_empty());
+
+            cgroup.thaw();
         })
         .await;
     }

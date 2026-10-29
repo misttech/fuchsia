@@ -21,7 +21,7 @@ use crate::vfs::{FdTable, FsContext, FsString, SharedFdTable, SharedFsContext};
 use atomic_bitflags::atomic_bitflags;
 use fuchsia_rcu::{RcuArc, RcuDroppable, RcuDroppableArc, RcuReadGuard, RcuReadScope};
 use macro_rules_attribute::apply;
-use starnix_logging::{log_warn, set_zx_name};
+use starnix_logging::{log_debug, log_warn, set_zx_name};
 use starnix_registers::HeapRegs;
 use starnix_sync::{
     LockDepGuard, LockDepMutex, LockDepReadGuard, LockDepRwLock, LockDepWriteGuard,
@@ -1450,7 +1450,11 @@ impl Task {
     /// The signal_state of the task must not be locked.
     pub fn interrupt(&self) {
         let Ok(running_state) = self.running_state() else {
-            log_warn!("Cannot interrupt dead task {}", self.get_tid());
+            // Task::interrupt() is invoked without holding the ThreadGroup or Task locks (for
+            // example after releasing locks in terminate_tasks or send_signal_prio), so a concurrently
+            // exiting task may finish dropping its running_state before we reach here, just as the
+            // underlying Zircon thread may already be DYING or DEAD for zx_restricted_kick below.
+            log_debug!("Skipping interrupt of dead task {}", self.get_tid());
             return;
         };
 
