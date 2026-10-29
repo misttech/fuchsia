@@ -156,6 +156,9 @@ pub enum VerifierErrorKind {
     #[error("inconsistent struct field access")]
     InconsistentStructFieldAccess,
 
+    #[error("instruction mixes struct and non-struct memory access")]
+    InconsistentMemoryAccess,
+
     // Stack access.
     #[error("variable stack offset")]
     VariableStackOffset,
@@ -232,6 +235,7 @@ impl VerifierErrorKind {
             | Self::EmptyArrayMap
             | Self::InvalidMapTypeForHelper(_)
             | Self::ResourceLeak
+            | Self::InconsistentMemoryAccess
             | Self::RegisterNotPacket(_)
             | Self::PointerOffsetOverflow => EINVAL,
 
@@ -324,6 +328,7 @@ mod tests {
         assert_eq!(VerifierErrorKind::EmptyArrayMap.errno(), EINVAL);
         assert_eq!(VerifierErrorKind::InvalidMapTypeForHelper(1).errno(), EINVAL);
         assert_eq!(VerifierErrorKind::ResourceLeak.errno(), EINVAL);
+        assert_eq!(VerifierErrorKind::InconsistentMemoryAccess.errno(), EINVAL);
         assert_eq!(VerifierErrorKind::RegisterNotPacket(6).errno(), EINVAL);
         assert_eq!(VerifierErrorKind::PointerOffsetOverflow.errno(), EINVAL);
 

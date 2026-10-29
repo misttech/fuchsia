@@ -1243,10 +1243,23 @@ pub fn verify_program(
         verification_context.iteration += 1;
     }
 
-    let struct_access_instructions =
-        verification_context.struct_access_instructions.into_values().collect::<Vec<_>>();
+    let struct_access_instructions = verification_context
+        .memory_access_instructions
+        .into_iter()
+        .filter_map(|access| match access {
+            MemoryAccess::Struct(s) => Some(s),
+            MemoryAccess::Unaccessed | MemoryAccess::NonStruct => None,
+        })
+        .collect::<Vec<_>>();
     let CallingContext { maps, args, .. } = verification_context.calling_context;
     Ok(VerifiedEbpfProgram { code, struct_access_instructions, maps, args })
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum MemoryAccess {
+    Unaccessed,
+    NonStruct,
+    Struct(StructAccess),
 }
 
 struct VerificationContext<'a> {
@@ -1268,10 +1281,11 @@ struct VerificationContext<'a> {
     /// the list. Indexed directly by `ProgramCounter` (`0..code.len()`) for O(1) lookup, and
     /// `None` if the pc is not a prune point.
     terminating_contexts: Vec<Option<TerminatingContexts>>,
-    /// The current set of struct access instructions that will need to be updated when the
-    /// program is linked. This is also used to ensure that a given instruction always loads the
-    /// same field. If this is not the case, the verifier will reject the program.
-    struct_access_instructions: HashMap<ProgramCounter, StructAccess>,
+    /// Per-PC record of whether a memory instruction accesses a `PtrToStruct` (`Struct`) or a
+    /// non-struct pointer (`NonStruct`). Indexed directly by `ProgramCounter` (`0..code.len()`) to
+    /// ensure a single instruction PC never mixes `PtrToStruct` rewriting with raw stack, buffer,
+    /// or packet accesses, or accesses inconsistent struct fields.
+    memory_access_instructions: Vec<MemoryAccess>,
 }
 
 impl<'a> VerificationContext<'a> {
@@ -1283,6 +1297,7 @@ impl<'a> VerificationContext<'a> {
         terminating_contexts: Vec<Option<TerminatingContexts>>,
     ) -> Self {
         debug_assert_eq!(code.len(), terminating_contexts.len());
+        let memory_access_instructions = vec![MemoryAccess::Unaccessed; code.len()];
         Self {
             calling_context,
             logger,
@@ -1291,7 +1306,7 @@ impl<'a> VerificationContext<'a> {
             counter: 0,
             iteration: 0,
             terminating_contexts,
-            struct_access_instructions: Default::default(),
+            memory_access_instructions,
         }
     }
 
@@ -1301,20 +1316,28 @@ impl<'a> VerificationContext<'a> {
         MemoryId { namespace: Namespace::Verification, id, parent: None }
     }
 
-    /// Register an instruction that loads or stores a struct field. These instructions will need
-    /// to updated later when the program is linked.
-    fn register_struct_access(
+    /// Register an instruction that loads or stores memory, recording `Some(struct_access)` for
+    /// struct field accesses and `None` for non-struct accesses.
+    fn register_memory_access(
         &mut self,
-        struct_access: StructAccess,
+        pc: ProgramCounter,
+        struct_access: Option<StructAccess>,
     ) -> Result<(), VerifierErrorKind> {
-        match self.struct_access_instructions.entry(struct_access.pc) {
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(struct_access);
+        match (&mut self.memory_access_instructions[pc], struct_access) {
+            (slot @ MemoryAccess::Unaccessed, Some(access)) => {
+                *slot = MemoryAccess::Struct(access);
             }
-            std::collections::hash_map::Entry::Occupied(entry) => {
-                if *entry.get() != struct_access {
+            (slot @ MemoryAccess::Unaccessed, None) => {
+                *slot = MemoryAccess::NonStruct;
+            }
+            (MemoryAccess::NonStruct, None) => {}
+            (MemoryAccess::Struct(existing), Some(access)) => {
+                if *existing != access {
                     return Err(VerifierErrorKind::InconsistentStructFieldAccess);
                 }
+            }
+            (MemoryAccess::Struct(_), None) | (MemoryAccess::NonStruct, Some(_)) => {
+                return Err(VerifierErrorKind::InconsistentMemoryAccess);
             }
         }
         Ok(())
@@ -1894,13 +1917,17 @@ impl ComputationContext {
         value: Type,
     ) -> Result<(), VerifierErrorKind> {
         let addr = addr.inner(self)?;
-        match *addr {
+        let is_initialized_scalar =
+            matches!(value, Type::ScalarValue(data) if data.is_fully_initialized());
+        let struct_access = match *addr {
             Type::PtrToStack { offset } => {
                 let offset_sum = offset.add(field.offset);
-                return self.stack.store(offset_sum, value, field.width);
+                self.stack.store(offset_sum, value, field.width)?;
+                None
             }
             Type::PtrToMemory { offset, buffer_size, origin, .. } if origin.is_writable() => {
                 self.check_memory_access(offset, buffer_size, field.offset, field.width.bytes())?;
+                None
             }
             Type::PtrToMemory { .. } => {
                 return Err(VerifierErrorKind::WriteToReadOnlyMemory);
@@ -1914,12 +1941,12 @@ impl ComputationContext {
                     return Err(VerifierErrorKind::WriteToReadOnlyField);
                 }
 
-                context.register_struct_access(StructAccess {
+                Some(StructAccess {
                     pc,
                     memory_id: id.clone(),
                     field_offset: field_desc.offset,
                     is_32_bit_ptr_load: false,
-                })?;
+                })
             }
             Type::PtrToArray { ref id, offset } => {
                 self.check_memory_access(
@@ -1928,15 +1955,16 @@ impl ComputationContext {
                     field.offset,
                     field.width.bytes(),
                 )?;
+                None
             }
             _ => return Err(VerifierErrorKind::StoreToNonPointer),
-        }
+        };
 
-        match value {
-            Type::ScalarValue(data) if data.is_fully_initialized() => {}
-            // Private data should not be leaked.
-            _ => return Err(VerifierErrorKind::InvalidStoredValue),
+        // Private data should not be leaked outside the stack.
+        if !matches!(*addr, Type::PtrToStack { .. }) && !is_initialized_scalar {
+            return Err(VerifierErrorKind::InvalidStoredValue);
         }
+        context.register_memory_access(pc, struct_access)?;
         Ok(())
     }
 
@@ -1947,14 +1975,14 @@ impl ComputationContext {
         field: Field,
     ) -> Result<Type, VerifierErrorKind> {
         let addr = addr.inner(self)?;
-        match *addr {
+        let (loaded_type, struct_access) = match *addr {
             Type::PtrToStack { offset } => {
                 let offset_sum = offset.add(field.offset);
-                self.stack.load(offset_sum, field.width)
+                (self.stack.load(offset_sum, field.width)?, None)
             }
-            Type::PtrToMemory { ref id, offset, buffer_size, .. } => {
+            Type::PtrToMemory { offset, buffer_size, .. } => {
                 self.check_memory_access(offset, buffer_size, field.offset, field.width.bytes())?;
-                Ok(Type::UNKNOWN_SCALAR)
+                (Type::UNKNOWN_SCALAR, None)
             }
             Type::PtrToStruct { ref id, offset, ref descriptor, .. } => {
                 let field_desc = descriptor
@@ -1998,14 +2026,15 @@ impl ComputationContext {
                     }
                 };
 
-                context.register_struct_access(StructAccess {
-                    pc: self.pc,
-                    memory_id: id.clone(),
-                    field_offset: field_desc.offset,
-                    is_32_bit_ptr_load,
-                })?;
-
-                Ok(return_type)
+                (
+                    return_type,
+                    Some(StructAccess {
+                        pc: self.pc,
+                        memory_id: id.clone(),
+                        field_offset: field_desc.offset,
+                        is_32_bit_ptr_load,
+                    }),
+                )
             }
             Type::PtrToArray { ref id, offset } => {
                 self.check_memory_access(
@@ -2014,10 +2043,12 @@ impl ComputationContext {
                     field.offset,
                     field.width.bytes(),
                 )?;
-                Ok(Type::UNKNOWN_SCALAR)
+                (Type::UNKNOWN_SCALAR, None)
             }
-            _ => Err(VerifierErrorKind::LoadFromNonPointer),
-        }
+            _ => return Err(VerifierErrorKind::LoadFromNonPointer),
+        };
+        context.register_memory_access(self.pc, struct_access)?;
+        Ok(loaded_type)
     }
 
     /**
@@ -5095,7 +5126,10 @@ fn associate_orderings(o1: Ordering, o2: Ordering) -> Option<Ordering> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{BPF_ADD, BPF_ALU64, BPF_K, BPF_LDX, BPF_MEM, BPF_MOV, BPF_ST, BPF_SUB};
+    use crate::{
+        BPF_ADD, BPF_ALU64, BPF_JEQ, BPF_K, BPF_LDX, BPF_MEM, BPF_MOV, BPF_ST, BPF_SUB, BPF_X,
+    };
+    use linux_uapi::{EACCES, EINVAL};
     use test_util::{assert_geq, assert_leq};
 
     #[test]
@@ -5560,7 +5594,15 @@ mod tests {
     fn make_verification_context<'a>(
         logger: &'a mut dyn VerifierLogger,
     ) -> VerificationContext<'a> {
-        VerificationContext::new(CallingContext::default(), logger, &[], vec![], vec![])
+        static DUMMY_CODE: std::sync::LazyLock<[EbpfInstruction; 1]> =
+            std::sync::LazyLock::new(|| [EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0)]);
+        VerificationContext::new(
+            CallingContext::default(),
+            logger,
+            &*DUMMY_CODE,
+            vec![],
+            vec![None],
+        )
     }
 
     /// Verifies that multiple invocations returning PtrToMemory receive
@@ -5963,12 +6005,9 @@ mod tests {
         let program = verify_program(code, calling_context, &mut NullVerifierLogger)
             .expect("verification failed");
 
-        let mut accesses = program.struct_access_instructions().to_vec();
-        accesses.sort_by_key(|a| a.pc);
-
         assert_eq!(
-            accesses,
-            vec![
+            program.struct_access_instructions(),
+            &[
                 StructAccess {
                     pc: 2,
                     memory_id: memory_id.clone(),
@@ -5995,6 +6034,79 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn test_mixed_struct_and_non_struct_memory_access() {
+        let make_context = || {
+            let descriptor = Arc::new(StructDescriptor {
+                fields: vec![
+                    FieldDescriptor { offset: 0, field_type: FieldType::MutableScalar { size: 4 } },
+                    FieldDescriptor { offset: 4, field_type: FieldType::MutableScalar { size: 4 } },
+                ],
+            });
+            CallingContext {
+                args: vec![
+                    Type::PtrToStruct { id: MemoryId::from_raw(1), offset: 0.into(), descriptor },
+                    Type::PtrToMemory {
+                        id: MemoryId::from_raw(2),
+                        offset: 0.into(),
+                        buffer_size: 8,
+                        origin: PointerOrigin::KernelWritable,
+                    },
+                    Type::UNKNOWN_SCALAR,
+                ],
+                ..CallingContext::default()
+            }
+        };
+
+        // Mixing `PtrToStruct` (`r1`) and `PtrToMemory` (`r2`) at a single load PC fails with
+        // `InconsistentMemoryAccess` (`EINVAL`).
+        let mixed_load = vec![
+            EbpfInstruction::new(BPF_JMP | BPF_JEQ | BPF_K, 3, 0, 1, 0),
+            EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_X, 1, 2, 0, 0),
+            EbpfInstruction::new(BPF_LDX | BPF_MEM | BPF_W, 0, 1, 0, 0),
+            EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0),
+        ];
+        let err = verify_program(mixed_load, make_context(), &mut NullVerifierLogger).unwrap_err();
+        assert_eq!(
+            err,
+            VerifierError { kind: VerifierErrorKind::InconsistentMemoryAccess, pc: Some(2) }
+        );
+        assert_eq!(err.errno(), EINVAL);
+
+        // Mixing `PtrToStruct` (`r1`) and `PtrToMemory` (`r2`) at a single store PC fails with
+        // `InconsistentMemoryAccess` (`EINVAL`).
+        let mixed_store = vec![
+            EbpfInstruction::new(BPF_JMP | BPF_JEQ | BPF_K, 3, 0, 1, 0),
+            EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_X, 1, 2, 0, 0),
+            EbpfInstruction::new(BPF_ST | BPF_MEM | BPF_W, 1, 0, 0, 7),
+            EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_K, 0, 0, 0, 0),
+            EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0),
+        ];
+        let err = verify_program(mixed_store, make_context(), &mut NullVerifierLogger).unwrap_err();
+        assert_eq!(
+            err,
+            VerifierError { kind: VerifierErrorKind::InconsistentMemoryAccess, pc: Some(2) }
+        );
+        assert_eq!(err.errno(), EINVAL);
+
+        // Accessing two different `PtrToStruct` field offsets at the same PC fails with
+        // `InconsistentStructFieldAccess` (`EACCES`).
+        let inconsistent_struct_field = vec![
+            EbpfInstruction::new(BPF_JMP | BPF_JEQ | BPF_K, 3, 0, 1, 0),
+            EbpfInstruction::new(BPF_ALU64 | BPF_ADD | BPF_K, 1, 0, 0, 4),
+            EbpfInstruction::new(BPF_LDX | BPF_MEM | BPF_W, 0, 1, 0, 0),
+            EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0),
+        ];
+        let err =
+            verify_program(inconsistent_struct_field, make_context(), &mut NullVerifierLogger)
+                .unwrap_err();
+        assert_eq!(
+            err,
+            VerifierError { kind: VerifierErrorKind::InconsistentStructFieldAccess, pc: Some(2) }
+        );
+        assert_eq!(err.errno(), EACCES);
     }
 
     #[test]

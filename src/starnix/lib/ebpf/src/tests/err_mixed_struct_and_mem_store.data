@@ -1,0 +1,17 @@
+# Verify a single store instruction PC cannot mix PtrToStruct field stores
+# with raw memory pointer stores across branches.
+-- mem
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+-- asm
+mov %r7, %r1
+call 2
+mov %r6, %r0
+call 202
+mov %r1, %r0
+jeq %r6, 0, +1
+mov %r1, %r7
+stw [%r1+16], 42
+mov %r0, 0
+exit
+-- error
+instruction mixes struct and non-struct memory access

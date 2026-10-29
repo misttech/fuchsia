@@ -58,6 +58,8 @@ rustc_library(
         "src/tests/err_lddw_punning.data",
         "src/tests/err_map_ptr_jeq_zero_dce.data",
         "src/tests/err_memory_id_collision.data",
+        "src/tests/err_mixed_struct_and_mem_store.data",
+        "src/tests/err_mixed_struct_and_stack_load.data",
         "src/tests/err_offset_overflow.data",
         "src/tests/err_packet_load_exit_path_prune.data",
         "src/tests/err_packet_load_ind_offset.data",

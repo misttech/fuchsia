@@ -1,0 +1,16 @@
+# Verify a single load instruction PC cannot mix PtrToStruct field accesses
+# with raw stack pointer accesses across branches.
+-- asm
+stdw [%r10-16], 0
+call 2
+mov %r6, %r0
+call 202
+mov %r1, %r0
+jeq %r6, 0, +2
+mov %r1, %r10
+add %r1, -32
+ldxw %r3, [%r1+16]
+mov %r0, 0
+exit
+-- error
+instruction mixes struct and non-struct memory access
