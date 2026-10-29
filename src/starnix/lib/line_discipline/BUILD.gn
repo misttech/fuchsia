@@ -75,12 +75,16 @@ import("//build/tools/bazel2gn/bazel_migration.gni")
 
 rustc_library("line_discipline") {
   sources = [
+    "endpoint.rs",
+    "input.rs",
     "lib.rs",
+    "output.rs",
+    "queue.rs",
+    "termios.rs",
     "testing/mod.rs",
   ]
   source_root = "lib.rs"
   edition = "2024"
-  proc_macro_deps = [ "//third_party/rust_crates:derivative" ]
   test_deps = [ "//src/lib/fuchsia" ]
   visibility = [
     ":*",

@@ -17,13 +17,21 @@ While the `LineDiscipline` struct maintains `IXON` and `IXOFF` flags, automatic 
 
 ## Architecture
 
-This logic was extracted from `starnix_core` to decouple it from the kernel structures and allow for easier testing and potential reusability.
+This logic was extracted from `starnix_core` to decouple it from kernel data structures and allow standalone testing. The crate is organized into layered modules with strictly downward dependencies (earlier layers never depend on later ones):
 
-Key components:
-*   `LineDiscipline`: The main state struct holding the termios configuration, queues, and cursor state.
-*   `Queue`: Manages the flow of data, handling wait buffers (raw data) and read buffers (processed data).
-*   `InputBuffer` / `OutputBuffer` traits: Abstractions for the data sources/sinks to avoid direct dependencies on Starnix kernel buffer types.
+1.  **Configuration & Endpoint Leaf Layers (`termios.rs`, `endpoint.rs`)**:
+    *   `termios.rs`: Default `termios2` configuration (`get_default_termios`), control-character definitions, PTY `c_cflag` normalization, UTF-8 continuation checks, and `TermiosExt` flag/character queries.
+    *   `endpoint.rs`: `TerminalSide` (`Main` / `Replica`), open reference counting (`EndpointRefs`), and `TIOCPKT` packet mode event state (`PacketMode`).
+2.  **Unidirectional Buffering (`queue.rs`)**:
+    *   `InputBuffer` / `OutputBuffer` traits: Abstractions for data sources and sinks to avoid direct dependencies on Starnix kernel buffer types.
+    *   `Queue`: Three-stage unidirectional byte pipeline (`wait_buffers` -> `line_buffer` -> `read_queue`), `VEOF` delimiter preservation, capacity accounting, and mode-switch packet coalescing.
+3.  **Output & Echo Discipline (`output.rs`)**:
+    *   `OutputDiscipline`: Replica-to-main output processing (`OPOST`, `ONLCR`, `OCRNL`, `ONOCR`, `ONLRET`, `OLCUC`, `XTABS`), cursor column tracking, `IXON` stopped flow-control state, and deferred echo staging/commitment (`ECHO*`, `ECHOPRT`, `ECHOCTL`, tab rubout).
+4.  **Input & Canonical Editing Discipline (`input.rs`)**:
+    *   `InputDiscipline` and `PendingSignals`: Main-to-replica input flag translations, `EXTPROC`, `IXON`/`IXANY` triggers, `ISIG` signal generation and queue flushing (`!NOFLSH`), and canonical line editing (`VERASE`, `VWERASE`, `VKILL`, `VLNEXT`, `VREPRINT`, `VEOF`, `VEOL`, `VEOL2`).
+5.  **Coordinator (`lib.rs`)**:
+    *   `LineDiscipline`: Top-level state machine uniting both endpoints, packet mode, `termios2` transitions, `TC*FLUSH` routing, and main/replica read, write, open, close, and poll operations.
 
 ## Testing
 
-Unit tests are defined in `lib.rs` (`line_discipline_tests`), and Linux cross-tested trace scenarios are defined in `testing/` (`line_discipline_scenarios_tests`).
+Each layer defines unit tests in its module (`line_discipline_tests`), and Linux cross-tested trace scenarios are replayed via `testing/mod.rs` (`line_discipline_scenarios_tests`).

@@ -9,12 +9,16 @@ package(default_applicable_licenses = ["//:license"])
 rustc_library(
     name = "line_discipline",
     srcs = [
+        "endpoint.rs",
+        "input.rs",
         "lib.rs",
+        "output.rs",
+        "queue.rs",
+        "termios.rs",
         "testing/mod.rs",
     ],
     crate_root = "lib.rs",
     edition = "2024",
-    proc_macro_deps = ["//third_party/rust_crates/vendor:derivative"],
     test_deps = ["//src/lib/fuchsia"],
     visibility = ["//src/starnix/kernel/core:__pkg__"],
     with_unit_tests = True,
