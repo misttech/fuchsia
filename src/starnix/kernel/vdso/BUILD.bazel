@@ -164,5 +164,5 @@ linux_resource(
 alias(
     name = "vdso",
     actual = ":vdso_data",
-    visibility = ["//src/starnix/kernel/core:__subpackages__"],
+    visibility = ["//src/starnix:__subpackages__"],
 )

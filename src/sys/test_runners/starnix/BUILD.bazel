@@ -6,8 +6,5 @@ package(default_applicable_licenses = ["//:license"])
 
 exports_files(
     ["unit_test.shard.cml"],
-    visibility = [
-        "//src/starnix/kernel/core:__subpackages__",
-        "//src/starnix/lib/page_buf:__pkg__",
-    ],
+    visibility = ["//src/starnix:__subpackages__"],
 )
