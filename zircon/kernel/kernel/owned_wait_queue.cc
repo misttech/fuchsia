@@ -59,14 +59,6 @@ void OwnedWaitQueue::SetThreadBaseProfileAndPropagate(
   rust_owned_wait_queue_set_thread_base_profile_and_propagate(&thread, &profile);
 }
 
-zx_status_t OwnedWaitQueue::AssignOwner(Thread* new_owner) TA_NO_THREAD_SAFETY_ANALYSIS {
-  return rust_owned_wait_queue_assign_owner(this, new_owner);
-}
-
-zx_status_t OwnedWaitQueue::AssignOwnerLocked(Thread* new_owner) TA_NO_THREAD_SAFETY_ANALYSIS {
-  return rust_owned_wait_queue_assign_owner_locked(this, new_owner);
-}
-
 void OwnedWaitQueue::ResetOwnerIfNoWaiters() TA_NO_THREAD_SAFETY_ANALYSIS {
   rust_owned_wait_queue_reset_owner_if_no_waiters(this);
 }
@@ -98,16 +90,5 @@ OwnedWaitQueue::WakeThreadsResult OwnedWaitQueue::WakeThreadAndAssignOwner(
     IWakeRequeueHook& wake_hooks) TA_NO_THREAD_SAFETY_ANALYSIS {
   WakeThreadsResult result;
   rust_owned_wait_queue_wake_thread_and_assign_owner(this, &wake_hooks, &result);
-  return result;
-}
-
-OwnedWaitQueue::WakeThreadsResult OwnedWaitQueue::WakeAndRequeue(
-    OwnedWaitQueue& requeue_target, Thread* new_requeue_owner, uint32_t wake_count,
-    uint32_t requeue_count, IWakeRequeueHook& wake_hooks, IWakeRequeueHook& requeue_hooks,
-    WakeOption wake_option) TA_NO_THREAD_SAFETY_ANALYSIS {
-  WakeThreadsResult result;
-  rust_owned_wait_queue_wake_and_requeue(this, &requeue_target, new_requeue_owner, wake_count,
-                                         requeue_count, &wake_hooks, &requeue_hooks, wake_option,
-                                         &result);
   return result;
 }

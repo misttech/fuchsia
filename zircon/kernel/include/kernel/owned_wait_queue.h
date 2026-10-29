@@ -18,8 +18,6 @@
 #include <kernel/wait.h>
 #include <ktl/optional.h>
 
-// fwd decl so we can be friends with our tests.
-struct OwnedWaitQueueTopologyTests;
 class OwnedWaitQueue;
 
 // The `ChainLock::Result` values returned by the Rust implementation cross the FFI boundary as
@@ -34,7 +32,6 @@ int32_t rust_owned_wait_queue_lock_pi_chain_thread(Thread* start);
 int32_t rust_owned_wait_queue_lock_pi_chain_wait_queue(WaitQueueBase* start);
 void rust_owned_wait_queue_assert_not_owned(const OwnedWaitQueue* wait_queue);
 void rust_owned_wait_queue_assert_safe_for_pooling(const OwnedWaitQueue* wait_queue);
-OwnedWaitQueue* rust_owned_wait_queue_downcast_to_owq(WaitQueueBase* wq);
 }  // extern "C"
 
 // Owned wait queues are an extension of wait queues which adds the concept of
@@ -172,23 +169,6 @@ class OwnedWaitQueue : public WaitQueueBase, public fbl::DoublyLinkedListable<Ow
     rust_owned_wait_queue_assert_not_owned(this);
   }
 
-  // Assign ownership of this wait queue to |new_owner|, or explicitly release
-  // ownership if |new_owner| is nullptr.  No change is made to ownership if it
-  // would result in a cycle in the inheritance graph.
-  //
-  // Note, if the new owner exists, but is dead or dying, it will not be
-  // permitted to become the new owner of the wait_queue.  Any existing owner
-  // will be replaced with no owner in this situation.
-  //
-  // Returns ZX_ERR_BAD_STATE if a cycle would have been produced, and ZX_OK
-  // otherwise.
-  zx_status_t AssignOwner(Thread* new_owner) TA_EXCL(chainlock_transaction_token, get_lock());
-
-  // Returns ZX_ERR_SHOULD_WAIT if a back-off is required, and ZX_OK otherwise.
-  zx_status_t AssignOwnerLocked(Thread* new_owner)
-      TA_REQ(chainlock_transaction_token, new_owner->get_lock(), preempt_disabled_token)
-          TA_EXCL(get_lock());
-
   void ResetOwnerIfNoWaiters() TA_EXCL(chainlock_transaction_token, get_lock());
 
   // Check invariants before returning to the pool.
@@ -251,12 +231,6 @@ class OwnedWaitQueue : public WaitQueueBase, public fbl::DoublyLinkedListable<Ow
                                                                 IWakeRequeueHook& wake_hooks)
       TA_REQ(chainlock_transaction_token, get_lock());
 
-  WakeThreadsResult WakeAndRequeue(OwnedWaitQueue& requeue_target, Thread* new_requeue_owner,
-                                   uint32_t wake_count, uint32_t requeue_count,
-                                   IWakeRequeueHook& wake_hooks, IWakeRequeueHook& requeue_hooks,
-                                   WakeOption wake_option)
-      TA_EXCL(chainlock_transaction_token, get_lock(), requeue_target.get_lock());
-
   // Accessor used only by the scheduler's PiNodeAdapter to handle bookkeeping
   // during profile inheritance situations.
   SchedulerState::WaitQueueInheritedSchedulerState* inherited_scheduler_state_storage()
@@ -275,17 +249,8 @@ class OwnedWaitQueue : public WaitQueueBase, public fbl::DoublyLinkedListable<Ow
   }
 
  private:
-  friend struct OwnedWaitQueueTopologyTests;
-
   struct DefaultWakeHooks : public IWakeRequeueHook {};
   static inline DefaultWakeHooks default_wake_hooks_;
-
-  // Upcast from a WaitQueue to an OwnedWaitQueue if possible, using the magic
-  // number to detect the underlying nature of the object.  Returns nullptr if
-  // the pointer passed is nullptr, or if the object is not an OwnedWaitQueue.
-  static OwnedWaitQueue* DowncastToOwq(WaitQueueBase* wq) {
-    return rust_owned_wait_queue_downcast_to_owq(wq);
-  }
 
   TA_GUARDED(get_lock()) Thread* owner_ = nullptr;
 
@@ -334,9 +299,6 @@ void rust_owned_wait_queue_get_effective_profile(const OwnedWaitQueue* wait_queu
                                                  SchedulerState::EffectiveProfile* out_profile);
 void rust_owned_wait_queue_set_thread_base_profile_and_propagate(
     Thread* thread, const SchedulerState::BaseProfile* profile);
-zx_status_t rust_owned_wait_queue_assign_owner(OwnedWaitQueue* wait_queue, Thread* new_owner);
-zx_status_t rust_owned_wait_queue_assign_owner_locked(OwnedWaitQueue* wait_queue,
-                                                      Thread* new_owner);
 void rust_owned_wait_queue_reset_owner_if_no_waiters(OwnedWaitQueue* wait_queue);
 zx_status_t rust_owned_wait_queue_block_and_assign_owner(OwnedWaitQueue* wait_queue,
                                                          const Deadline* deadline,
@@ -368,11 +330,6 @@ bool rust_owned_wait_queue_lock_for_wake_operation_or_backoff(
 bool rust_owned_wait_queue_lock_for_wake_operation_locked(
     OwnedWaitQueue* wait_queue, uint32_t max_wake, OwnedWaitQueue::IWakeRequeueHook* wake_hooks,
     Thread::UnblockList* unblock_list_out);
-void rust_owned_wait_queue_wake_and_requeue(
-    OwnedWaitQueue* wait_queue, OwnedWaitQueue* requeue_target, Thread* new_requeue_owner,
-    uint32_t wake_count, uint32_t requeue_count, OwnedWaitQueue::IWakeRequeueHook* wake_hooks,
-    OwnedWaitQueue::IWakeRequeueHook* requeue_hooks, OwnedWaitQueue::WakeOption wake_option,
-    OwnedWaitQueue::WakeThreadsResult* out_result);
 }  // extern "C"
 
 #endif  // ZIRCON_KERNEL_INCLUDE_KERNEL_OWNED_WAIT_QUEUE_H_
