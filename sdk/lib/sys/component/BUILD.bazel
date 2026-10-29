@@ -12,6 +12,12 @@ cml_shard(
 )
 
 cml_shard(
+    name = "realm_builder_base.shard",
+    includes = [":realm_builder_base_no_diagnostics.shard"],
+    shard = "realm_builder_base.shard.cml",
+)
+
+cml_shard(
     name = "realm_builder_no_diagnostics.shard",
     includes = [":realm_builder_base_no_diagnostics.shard"],
     shard = "realm_builder_no_diagnostics.shard.cml",
@@ -26,4 +32,11 @@ cml_shard(
         "//src/lib/fuchsia-rseq:__pkg__",
         "//src/sys/run_test_suite/tests/test_data:__pkg__",
     ],
+)
+
+cml_shard(
+    name = "realm_builder_subpackage.shard",
+    includes = [":realm_builder_base.shard"],
+    shard = "realm_builder_subpackage.shard.cml",
+    visibility = ["//examples/components:__subpackages__"],
 )

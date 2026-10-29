@@ -10,6 +10,8 @@ test_suite(
     name = "target_tests",
     target_compatible_with = ["@platforms//os:fuchsia"],
     tests = [
+        "//examples/components/dictionaries:dictionary-examples_test",
+        "//examples/components/dynamic:tests_test",
         "//examples/diagnostics/inspect/rust-ergonomic:ergonomic-inspect-tests",
         "//examples/rust/rust_static_linking:static_linking_tests",
     ],

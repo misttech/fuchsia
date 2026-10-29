@@ -1,0 +1,108 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/components:fx_component.bzl", "fx_component", "fx_component_manifest", "fx_test_component")
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "bin",
+    srcs = ["src/child.rs"],
+    crate_name = "dynamic_create_child_child",
+    crate_root = "src/child.rs",
+    edition = "2024",
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//examples/components/routing/fidl:echo_rust",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+fx_packaged_binary(
+    name = "bin_packaged",
+    binary = ":bin",
+    binary_name = "dynamic_create_child_child",
+)
+
+fx_component_manifest(
+    name = "dynamic-create-child-child-manifest",
+    component_name = "dynamic-create-child-child",
+    includes = [
+        "//sdk/lib/syslog:client.shard",
+    ],
+    manifest = "meta/dynamic_create_child_child.cml",
+)
+
+fx_component(
+    name = "dynamic-create-child-child",
+    compiled_manifest = ":dynamic-create-child-child-manifest",
+    component_name = "dynamic-create-child-child",
+    deps = [":bin_packaged"],
+)
+
+rustc_test(
+    name = "test_bin",
+    srcs = ["src/test.rs"],
+    crate_name = "dynamic_create_child_test",
+    crate_root = "src/test.rs",
+    edition = "2024",
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//examples/components/routing/fidl:echo_rust",
+        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+        "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+fx_packaged_binary(
+    name = "test_bin_packaged",
+    testonly = True,
+    binary = ":test_bin",
+    binary_name = "dynamic_create_child_test",
+)
+
+fx_component_manifest(
+    name = "dynamic-create-child-test-manifest",
+    component_name = "dynamic-create-child-test",
+    includes = [
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/dynamic_create_child_test.cml",
+)
+
+fx_test_component(
+    name = "dynamic-create-child-test",
+    compiled_manifest = ":dynamic-create-child-test-manifest",
+    component_name = "dynamic-create-child-test",
+    deps = [":test_bin_packaged"],
+)
+
+# Run with `fx test dynamic-create-child-example`
+fx_package(
+    name = "tests",
+    package_name = "dynamic-create-child-example",
+    components = [":dynamic-create-child-child"],
+    test_components = [":dynamic-create-child-test"],
+)
+
+fx_test(
+    name = "tests_test",
+    package = ":tests",
+    visibility = ["//examples:__pkg__"],
+)

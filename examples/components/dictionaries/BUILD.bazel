@@ -1,0 +1,110 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/components:fx_component.bzl", "fx_component", "fx_component_manifest", "fx_test_component")
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "provider_bin",
+    srcs = ["provider/src/main.rs"],
+    crate_name = "dynamic_dictionary_provider",
+    crate_root = "provider/src/main.rs",
+    edition = "2024",
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//examples/components/routing/fidl:echo_rust",
+        "//sdk/fidl/fuchsia.component.runtime:fuchsia.component.runtime_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+fx_packaged_binary(
+    name = "provider_bin_packaged",
+    binary = ":provider_bin",
+    binary_name = "dynamic_dictionary_provider",
+)
+
+fx_component_manifest(
+    name = "dynamic-dictionary-provider-manifest",
+    component_name = "dynamic-dictionary-provider",
+    includes = [
+        "//sdk/lib/syslog:client.shard",
+    ],
+    manifest = "meta/dynamic_dictionary_provider.cml",
+    restricted_features = ["dynamic_dictionaries"],
+)
+
+fx_component(
+    name = "dynamic-dictionary-provider",
+    compiled_manifest = ":dynamic-dictionary-provider-manifest",
+    component_name = "dynamic-dictionary-provider",
+    deps = [":provider_bin_packaged"],
+)
+
+rustc_test(
+    name = "bin",
+    srcs = ["src/lib.rs"],
+    crate_name = "dynamic_dictionary",
+    edition = "2024",
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//examples/components/routing/fidl:echo_rust",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+fx_packaged_binary(
+    name = "bin_packaged",
+    testonly = True,
+    binary = ":bin",
+    binary_name = "dynamic_dictionary",
+)
+
+fx_component_manifest(
+    name = "dynamic-dictionary-example-manifest",
+    component_name = "dynamic-dictionary-example",
+    includes = [
+        "//sdk/lib/sys/component:realm_builder_subpackage.shard",
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/dynamic_dictionary.cml",
+)
+
+fx_test_component(
+    name = "dynamic-dictionary-example",
+    compiled_manifest = ":dynamic-dictionary-example-manifest",
+    component_name = "dynamic-dictionary-example",
+    deps = [":bin_packaged"],
+)
+
+# Run with `fx test dictionary-examples`
+fx_package(
+    name = "dictionary-examples",
+    package_name = "dictionary-examples",
+    components = [":dynamic-dictionary-provider"],
+    test_components = [":dynamic-dictionary-example"],
+)
+
+fx_test(
+    name = "dictionary-examples_test",
+    package = ":dictionary-examples",
+    visibility = ["//examples:__pkg__"],
+)
