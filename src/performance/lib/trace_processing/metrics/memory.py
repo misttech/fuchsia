@@ -36,6 +36,7 @@ _KERNEL_EVENT_NAMES = (
     "kmem_stats_b",
     "kmem_stats_compression",
     "memory_stall",
+    "page_request_wait",
 )
 # Names of some of the metrics that are cumulative, monotonic counters,
 # as opposed to gauges.
@@ -83,6 +84,16 @@ _STRUCTURED_METRIC_NAMES = {
     "page_faults": _StructuredMetricName(
         "Memory/System/PageFaults/Major",
         metrics.Unit.count,
+        metrics.Direction.smallerIsBetter,
+    ),
+    "page_request_wait_read": _StructuredMetricName(
+        "Memory/System/PageRequestTime/Read",
+        metrics.Unit.nanoseconds,
+        metrics.Direction.smallerIsBetter,
+    ),
+    "page_request_wait_dirty": _StructuredMetricName(
+        "Memory/System/PageRequestTime/Dirty",
+        metrics.Unit.nanoseconds,
         metrics.Direction.smallerIsBetter,
     ),
     "total_heap_bytes": _StructuredMetricName(
@@ -247,5 +258,35 @@ class MemoryMetricsProcessor(trace_metrics.MetricsProcessor):
                 direction=metrics.Direction.smallerIsBetter,
             )
         )
+
+        page_request_wait_events = [
+            event
+            for event in trace_utils.filter_events(
+                model.all_events(),
+                name="page_request_wait",
+                type=trace_model.DurationEvent,
+            )
+            if event.duration is not None and event.args.get("pager_name")
+        ]
+        for req_type, metric_key in (
+            ("Read", "page_request_wait_read"),
+            ("Dirty", "page_request_wait_dirty"),
+        ):
+            durations: list[int | float] = [
+                event.duration.to_nanoseconds()
+                for event in page_request_wait_events
+                if event.duration is not None
+                and event.args.get("type") == req_type
+            ]
+            metric_info = _STRUCTURED_METRIC_NAMES[metric_key]
+            if durations:
+                results.append(
+                    metrics.TestCaseResult(
+                        label=metric_info.structured_name,
+                        values=durations,
+                        unit=metric_info.unit,
+                        direction=metric_info.direction,
+                    )
+                )
 
         return results

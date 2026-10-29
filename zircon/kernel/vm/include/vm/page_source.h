@@ -174,6 +174,9 @@ class PageProvider : public fbl::RefCounted<PageProvider> {
   // Retrieves the koid for this page provider, if it has one.
   virtual ktl::optional<uint64_t> GetKoid() const { return ktl::nullopt; }
 
+  // Retrieves the debug name for this page provider, if it has one.
+  virtual void GetDebugName(char (&name)[ZX_MAX_NAME_LEN]) const { name[0] = '\0'; }
+
   friend PageSource;
 };
 
@@ -196,6 +199,8 @@ class PageRequestInterface : public fbl::RefCounted<PageRequestInterface> {
   // tolerant of having already been detached/closed. The waiting thread can return early from
   // the wait due to a suspend signal only if |suspendable| is true.
   virtual zx_status_t WaitOnRequest(PageRequest* request, bool suspendable) = 0;
+  // Retrieves the debug name of the backing page provider, if any.
+  virtual void GetProviderDebugName(char (&name)[ZX_MAX_NAME_LEN]) const = 0;
 };
 
 // A page source is responsible for fulfilling page requests from a VMO with backing pages.
@@ -390,6 +395,10 @@ class PageSource final : public PageRequestInterface {
   // PageProvider instance that will provide pages asynchronously (e.g. a userspace pager, see
   // PagerProxy for details).
   const fbl::RefPtr<PageProvider> page_provider_;
+
+  void GetProviderDebugName(char (&name)[ZX_MAX_NAME_LEN]) const override {
+    page_provider_->GetDebugName(name);
+  }
 
   // Helper that adds the span of |len| pages at |offset| to |request| and forwards it to the
   // provider. |request| must already be initialized, and its page_request_type must be set to

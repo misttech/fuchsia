@@ -447,6 +447,15 @@ void PagerProxy::PrintOvertime(uint64_t waited_seconds) {
   }
 }
 
+void PagerProxy::GetDebugName(char (&name)[ZX_MAX_NAME_LEN]) const {
+  Guard<Mutex> guard{&mtx_};
+  if (pager_) {
+    pager_->get_debug_name(name, sizeof(name));
+  } else {
+    name[0] = '\0';
+  }
+}
+
 void PagerProxy::Dump(uint depth, uint32_t max_items) {
   Guard<Mutex> guard{&mtx_};
   dump::DepthPrinter printer(depth);

@@ -65,6 +65,7 @@ class PagerProxy : public PageProvider,
   zx_status_t WaitOnEvent(Event* event, bool suspendable) final;
   void Dump(uint depth, uint32_t max_items) final;
   ktl::optional<zx_koid_t> GetKoid() const override;
+  void GetDebugName(char (&name)[ZX_MAX_NAME_LEN]) const override;
 
   // Called by the pager dispatcher when it is about to go away. Handles cleaning up port's
   // reference to any in flight packets.

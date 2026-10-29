@@ -593,9 +593,14 @@ ktl::pair<uint64_t, uint64_t> PageRequest::TrimRangeToRequestSpace(uint64_t star
 
 zx_status_t PageRequest::Wait(bool suspendable) {
   lockdep::AssertNoLocksHeld();
-  VM_KTRACE_DURATION(1, "page_request_wait", ("vmo_id", vmo_debug_info_.vmo_id),
-                     ("offset", offset_), ("length", len_),
-                     ("type", type_ == ZX_PAGER_VMO_READ ? "Read" : "Dirty"));
+  char pager_name[ZX_MAX_NAME_LEN];
+  OOM_KTRACE_DURATION(1, "page_request_wait", ("vmo_id", vmo_debug_info_.vmo_id),
+                      ("offset", offset_), ("length", len_),
+                      ("type", type_ == ZX_PAGER_VMO_READ ? "Read" : "Dirty"),
+                      ("pager_name", [&]() {
+                        src_->GetProviderDebugName(pager_name);
+                        return fxt::StringRef{pager_name};
+                      }()));
   zx_status_t status = src_->WaitOnRequest(this, suspendable);
   VM_KTRACE_FLOW_END(1, "page_request_signal", reinterpret_cast<uintptr_t>(this));
   if (status != ZX_OK && !PageSource::IsValidInternalFailureCode(status)) {
