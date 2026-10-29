@@ -2,7 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_py_test.bzl", "host_py_test")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -26,10 +28,12 @@ py_binary(
     deps = [":fidl_api_compatibility_test_lib"],
 )
 
-py_test(
+host_py_test(
     name = "fidl_api_compatibility_test_test",
     srcs = ["fidl_api_compatibility_test_test.py"],
     imports = ["."],
     main = "fidl_api_compatibility_test_test.py",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//sdk:__pkg__"],
     deps = [":fidl_api_compatibility_test_lib"],
 )

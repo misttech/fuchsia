@@ -257,6 +257,7 @@ test_suite(
     name = "host_tests",
     target_compatible_with = HOST_CONSTRAINTS,
     tests = [
+        "//sdk/ctf/build/scripts:fidl_api_compatibility_test_test",
         "//sdk/ctf/plasa/clang_doc_filter:clang_doc_filter_test",
         "//sdk/ctf/plasa/model:model_test",
         "//sdk/ctf/plasa/plasa_test_coverage_report:plasa_test_coverage_report_test",
