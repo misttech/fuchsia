@@ -35,6 +35,7 @@ basic_source_set("public") {
     "zircon/syscalls/iob.h",
     "zircon/syscalls/object.h",
     "zircon/syscalls/port.h",
+    "zircon/syscalls/resource.h",
     "zircon/time.h",
     "zircon/types.h",
   ]

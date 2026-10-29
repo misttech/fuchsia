@@ -81,7 +81,10 @@ fx_cc_library_headers(
         ],
         "//conditions:default": [],
     }),
-    visibility = ["//src/lib/elf-search:__pkg__"],
+    visibility = [
+        "//src/lib/elf-search:__pkg__",
+        "//src/lib/zxdump:__pkg__",
+    ],
     deps = [
         "//sdk/lib/fit",
         "//sdk/lib/stdcompat",

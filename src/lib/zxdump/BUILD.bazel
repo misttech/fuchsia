@@ -1,0 +1,179 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load(
+    "//build/bazel/rules/cc:fx_cc_library.bzl",
+    "fx_cc_library",
+    cc_source_library_zx = "fx_cc_library",
+)
+
+package(default_applicable_licenses = ["//:license"])
+
+# Test code can use private headers from sources.
+# @bazel2gn:raw_attribute:friend = [ ":*" ]
+cc_source_library_zx(
+    name = "zxdump",
+    srcs = [
+        "buffer-impl.cc",
+        "buffer-impl.h",
+        "core.h",
+        "dump.cc",
+        "dump-file.cc",
+        "dump-file.h",
+        "dump-file-mmap.cc",
+        "dump-file-mmap.h",
+        "dump-file-stdio.cc",
+        "dump-file-stdio.h",
+        "dump-file-zstd.cc",
+        "dump-file-zstd.h",
+        "elf-search.cc",
+        "error.cc",
+        "fd-writer.cc",
+        "job-archive.h",
+        "live-memory-cache.h",
+        "read.cc",
+        "read-memory.cc",
+        "read-memory-string.cc",
+        "rights.h",
+        "task.cc",
+        "zstd-writer.cc",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "live-memory-cache.cc",
+            "root.cc",
+        ],
+        "//conditions:default": [
+            "not-fuchsia.cc",
+        ],
+    }),
+    hdrs = [
+        "include/lib/zxdump/buffer.h",
+        "include/lib/zxdump/dump.h",
+        "include/lib/zxdump/elf-search.h",
+        "include/lib/zxdump/fd-writer.h",
+        "include/lib/zxdump/task.h",
+        "include/lib/zxdump/types.h",
+        "include/lib/zxdump/zstd-writer.h",
+    ],
+    defines = ["ZSTD_STATIC_LINKING_ONLY"],
+    implementation_deps = [
+        "//src/lib/elfldltl:headers",  # @bazel2gn:path_overwrite://src/lib/elfldltl
+        "//third_party/zstd",
+        "//zircon/system/ulib/fbl",
+        "@rapidjson",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
+            "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+            "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
+            "//sdk/lib/component/incoming/cpp",
+            "//sdk/lib/fdio",
+            "//src/zircon/lib/zircon",
+            "//zircon/system/ulib/zx",
+        ],
+        "//conditions:default": [],
+    }),
+    includes = ["include"],
+    visibility = ["//src/performance/cpu_profiler:__pkg__"],
+    deps = [
+        # <lib/zxdump/dump.h> has #include <lib/fit/function.h>.
+        "//sdk/lib/fit",
+        # <lib/zxdump/elf-search.h> has #include <lib/elfldltl/layout.h>.
+        "//src/lib/elfldltl:headers",  # @bazel2gn:path_overwrite://src/lib/elfldltl
+        # <lib/zxdump/types.h> has #include <zircon/types.h>.
+        # On Fuchsia, //zircon/system/public would shadow the sysroot's
+        # <zircon/syscalls.h> without the generated syscalls/gen/*.inc files.
+        "//src/zircon/lib/zircon:headers",  # @bazel2gn:path_overwrite://zircon/system/public
+        # <lib/zxdump/fd-writer.h> has #include <fbl/unique_fd.h>.
+        "//zircon/system/ulib/fbl",
+        # <lib/zxdump/fd-writer.h> has #include <lib/fit/result.h>.
+        # <lib/zxdump/dump.h> has #include <lib/zx/process.h>.
+        "//zircon/system/ulib/zx",
+    ],
+)
+
+fx_cc_library(
+    name = "piped-command",
+    srcs = ["piped-command.cc"] + select({
+        "@platforms//os:fuchsia": ["piped-command-fuchsia.cc"],
+        "//conditions:default": ["piped-command-posix.cc"],
+    }),
+    hdrs = ["piped-command.h"],
+    visibility = ["//visibility:private"],
+    deps = [
+        "//zircon/system/ulib/fbl",
+        "//zircon/system/ulib/zx",
+    ] + select({
+        "@platforms//os:fuchsia": ["//sdk/lib/fdio"],
+        "//conditions:default": [],
+    }),
+    alwayslink = True,
+)
+
+fx_cc_library(
+    name = "test-data-holder",
+    testonly = True,
+    srcs = ["test-data-holder.cc"],
+    hdrs = ["test-data-holder.h"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":zxdump",
+        "@com_google_googletest//:gtest",
+    ],
+    alwayslink = True,
+)
+
+# GN test-tool-process carries data_deps on the GN-only :zstd-for-test target.
+# @bazel2gn:raw_attribute:data_deps = [ ":zstd-for-test" ]
+fx_cc_library(
+    name = "test-tool-process",
+    testonly = True,
+    srcs = ["test-tool-process.cc"],
+    hdrs = ["test-tool-process.h"],
+    implementation_deps = [
+        ":piped-command",
+        ":zxdump",
+        "@com_google_googletest//:gtest",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
+            "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
+            "//sdk/lib/async-loop:async-loop-cpp",
+            "//sdk/lib/async-loop:async-loop-default",
+            "//sdk/lib/component/outgoing/cpp",
+            "//src/storage/lib/vfs/cpp",
+        ],
+        "//conditions:default": [],
+    }),
+    visibility = ["//visibility:private"],
+    deps = ["//zircon/system/ulib/fbl"] + select({
+        "@platforms//os:fuchsia": ["//zircon/system/ulib/zx"],
+        "//conditions:default": [],
+    }),
+    alwayslink = True,
+)
+
+# This is not part of the library, but it's shared by the tools.
+fx_cc_library(
+    name = "cli",
+    srcs = ["cli.cc"],
+    hdrs = ["cli.h"],
+    visibility = ["//visibility:private"],
+    deps = [":zxdump"],
+    alwayslink = True,
+)
+
+fx_cc_binary(
+    name = "gcore",
+    srcs = ["gcore.cc"],
+    # @bazel2gn:skip
+    visibility = ["//visibility:private"],
+    deps = [
+        ":cli",
+        "//sdk/lib/fit",
+        "//zircon/system/ulib/fbl",
+        "@rapidjson",
+    ],
+)

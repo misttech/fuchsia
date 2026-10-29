@@ -9,163 +9,6 @@ import("//build/testing/cc_test_executable.gni")
 import("//build/zircon/c_utils.gni")
 import("//build/zircon/migrated_targets.gni")
 
-zx_library("zxdump") {
-  sdk = "source"
-  sdk_headers = [
-    "lib/zxdump/buffer.h",
-    "lib/zxdump/dump.h",
-    "lib/zxdump/elf-search.h",
-    "lib/zxdump/fd-writer.h",
-    "lib/zxdump/task.h",
-    "lib/zxdump/types.h",
-    "lib/zxdump/zstd-writer.h",
-  ]
-
-  public_deps = [
-    # <lib/zxdump/types.h> has #include <zircon/types.h>.
-    "//zircon/system/public",
-
-    # <lib/zxdump/fd-writer.h> has #include <lib/fit/result.h>.
-    "//zircon/system/ulib/zx",
-
-    # <lib/zxdump/dump.h> has #include <lib/fit/function.h>.
-    "//sdk/lib/fit",
-
-    # <lib/zxdump/fd-writer.h> has #include <fbl/unique_fd.h>.
-    "//zircon/system/ulib/fbl",
-
-    # <lib/zxdump/elf-search.h> has #include <lib/elfldltl/layout.h>.
-    "//src/lib/elfldltl",
-  ]
-
-  if (is_fuchsia) {
-    public_deps += [
-      # <lib/zxdump/dump.h> has #include <lib/zx/process.h>.
-      "//zircon/system/ulib/zx",
-    ]
-  }
-
-  sources = [
-    "buffer-impl.cc",
-    "buffer-impl.h",
-    "core.h",
-    "dump-file-mmap.cc",
-    "dump-file-mmap.h",
-    "dump-file-stdio.cc",
-    "dump-file-stdio.h",
-    "dump-file-zstd.cc",
-    "dump-file-zstd.h",
-    "dump-file.cc",
-    "dump-file.h",
-    "dump.cc",
-    "elf-search.cc",
-    "error.cc",
-    "fd-writer.cc",
-    "job-archive.h",
-    "live-memory-cache.h",
-    "read-memory-string.cc",
-    "read-memory.cc",
-    "read.cc",
-    "rights.h",
-    "task.cc",
-    "zstd-writer.cc",
-  ]
-
-  # Test code can use private headers from sources.
-  friend = [ ":*" ]
-
-  defines = [ "ZSTD_STATIC_LINKING_ONLY" ]
-
-  deps = [
-    "//src/lib/elfldltl",
-    "//third_party/rapidjson",
-    "//third_party/zstd",
-    "//zircon/system/ulib/fbl",
-  ]
-
-  if (is_fuchsia) {
-    sources += [
-      "live-memory-cache.cc",
-      "root.cc",
-    ]
-    deps += [
-      "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
-      "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
-      "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
-      "//sdk/lib/component/incoming/cpp",
-      "//sdk/lib/fdio",
-      "//src/zircon/lib/zircon",
-      "//zircon/system/ulib/zx",
-    ]
-  } else {
-    sources += [ "not-fuchsia.cc" ]
-  }
-}
-
-source_set("piped-command") {
-  visibility = [ ":*" ]
-
-  public = [ "piped-command.h" ]
-  public_deps = [
-    "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/zx",
-  ]
-
-  sources = [ "piped-command.cc" ]
-  if (is_fuchsia) {
-    sources += [ "piped-command-fuchsia.cc" ]
-    public_deps += [ "//sdk/lib/fdio" ]
-    deps = [
-      "//sdk/lib/fdio",
-      "//zircon/system/ulib/zx",
-    ]
-  } else {
-    sources += [ "piped-command-posix.cc" ]
-  }
-}
-
-source_set("test-data-holder") {
-  visibility = [ ":*" ]
-  testonly = true
-
-  public = [ "test-data-holder.h" ]
-  public_deps = [
-    ":zxdump",
-    "//third_party/googletest:gtest",
-  ]
-
-  sources = [ "test-data-holder.cc" ]
-}
-
-source_set("test-tool-process") {
-  visibility = [ ":*" ]
-  testonly = true
-
-  public = [ "test-tool-process.h" ]
-  public_deps = [ "//zircon/system/ulib/fbl" ]
-
-  sources = [ "test-tool-process.cc" ]
-  deps = [
-    ":piped-command",
-    ":zxdump",
-    "//third_party/googletest:gtest",
-  ]
-
-  if (is_fuchsia) {
-    public_deps += [ "//zircon/system/ulib/zx" ]
-    deps += [
-      "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
-      "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
-      "//sdk/lib/async-loop:async-loop-cpp",
-      "//sdk/lib/async-loop:async-loop-default",
-      "//sdk/lib/component/outgoing/cpp",
-      "//src/storage/lib/vfs/cpp",
-    ]
-  }
-
-  data_deps = [ ":zstd-for-test" ]
-}
-
 template("test_children_data") {
   # Depend on the base toolchain in case both the child and this target use
   # the same variant, so that the copy under the expected name can be found
@@ -359,25 +202,6 @@ install_host_tools("host-tools") {
   deps = [ ":gcore" ]
 }
 
-# This is not part of the library, but it's shared by the tools.
-source_set("cli") {
-  visibility = [ ":*" ]
-
-  sources = [ "cli.cc" ]
-  public = [ "cli.h" ]
-  public_deps = [ ":zxdump" ]
-}
-
-executable("gcore") {
-  sources = [ "gcore.cc" ]
-  deps = [
-    ":cli",
-    "//sdk/lib/fit",
-    "//third_party/rapidjson",
-    "//zircon/system/ulib/fbl",
-  ]
-}
-
 # To use this tool with a product, use developer overrides for assembly
 # to register it as a shell command and add the package to product image.
 #
@@ -386,4 +210,180 @@ executable("gcore") {
 #
 fuchsia_package("zxdump-tools") {
   deps = [ ":tools" ]
+}
+
+## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
+#
+#  ________  _________  ________  ________
+# |\   ____\|\___   ___\\   __  \|\   __  \
+# \ \  \___|\|___ \  \_\ \  \|\  \ \  \|\  \
+#  \ \_____  \   \ \  \ \ \  \\\  \ \   ____\
+#   \|____|\  \   \ \  \ \ \  \\\  \ \  \___|
+#     ____\_\  \   \ \__\ \ \_______\ \__\
+#    |\_________\   \|__|  \|_______|\|__|
+#    \|_________|
+#
+#
+# AUTO-GENERATED - DO NOT EDIT
+#
+# The targets below are auto-generated based on the targets defined in the
+# BUILD.bazel file from the same directory. If you made changes to targets in
+# Bazel, instead of editing this file manually, run:
+#
+#   > fx bazel2gn
+#
+# Please do NOT edit this file directly. Instead, edit the BUILD.bazel file and
+# rerun bazel2gn.
+
+import("//build/tools/bazel2gn/bazel_migration.gni")
+
+zx_library("zxdump") {
+  sources = []
+  sources += [
+    "buffer-impl.cc",
+    "buffer-impl.h",
+    "core.h",
+    "dump-file-mmap.cc",
+    "dump-file-mmap.h",
+    "dump-file-stdio.cc",
+    "dump-file-stdio.h",
+    "dump-file-zstd.cc",
+    "dump-file-zstd.h",
+    "dump-file.cc",
+    "dump-file.h",
+    "dump.cc",
+    "elf-search.cc",
+    "error.cc",
+    "fd-writer.cc",
+    "job-archive.h",
+    "live-memory-cache.h",
+    "read-memory-string.cc",
+    "read-memory.cc",
+    "read.cc",
+    "rights.h",
+    "task.cc",
+    "zstd-writer.cc",
+  ]
+  if (is_fuchsia) {
+    sources += [
+      "live-memory-cache.cc",
+      "root.cc",
+    ]
+  } else {
+    sources += [ "not-fuchsia.cc" ]
+  }
+  public = [
+    "include/lib/zxdump/buffer.h",
+    "include/lib/zxdump/dump.h",
+    "include/lib/zxdump/elf-search.h",
+    "include/lib/zxdump/fd-writer.h",
+    "include/lib/zxdump/task.h",
+    "include/lib/zxdump/types.h",
+    "include/lib/zxdump/zstd-writer.h",
+  ]
+  defines = [ "ZSTD_STATIC_LINKING_ONLY" ]
+  deps = []
+  deps += [
+    "//src/lib/elfldltl",
+    "//third_party/rapidjson",
+    "//third_party/zstd",
+    "//zircon/system/ulib/fbl",
+  ]
+  if (is_fuchsia) {
+    deps += [
+      "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
+      "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+      "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
+      "//sdk/lib/component/incoming/cpp",
+      "//sdk/lib/fdio",
+      "//src/zircon/lib/zircon",
+      "//zircon/system/ulib/zx",
+    ]
+  }
+  includes = [ "include" ]
+  visibility = [
+    ":*",
+    "//src/performance/cpu_profiler:*",
+  ]
+  public_deps = [
+    "//sdk/lib/fit",
+    "//src/lib/elfldltl",
+    "//zircon/system/public",
+    "//zircon/system/ulib/fbl",
+    "//zircon/system/ulib/zx",
+  ]
+  sdk = "source"
+  friend = [ ":*" ]
+}
+source_set("piped-command") {
+  sources = []
+  sources += [ "piped-command.cc" ]
+  if (is_fuchsia) {
+    sources += [ "piped-command-fuchsia.cc" ]
+  } else {
+    sources += [ "piped-command-posix.cc" ]
+  }
+  public = [ "piped-command.h" ]
+  visibility = [ ":*" ]
+  public_deps = []
+  public_deps += [
+    "//zircon/system/ulib/fbl",
+    "//zircon/system/ulib/zx",
+  ]
+  if (is_fuchsia) {
+    public_deps += [ "//sdk/lib/fdio" ]
+  }
+}
+source_set("test-data-holder") {
+  testonly = true
+  sources = [ "test-data-holder.cc" ]
+  public = [ "test-data-holder.h" ]
+  visibility = [ ":*" ]
+  public_deps = [
+    ":zxdump",
+    "//third_party/googletest:gtest",
+  ]
+}
+source_set("test-tool-process") {
+  testonly = true
+  sources = [ "test-tool-process.cc" ]
+  public = [ "test-tool-process.h" ]
+  deps = []
+  deps += [
+    ":piped-command",
+    ":zxdump",
+    "//third_party/googletest:gtest",
+  ]
+  if (is_fuchsia) {
+    deps += [
+      "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
+      "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
+      "//sdk/lib/async-loop:async-loop-cpp",
+      "//sdk/lib/async-loop:async-loop-default",
+      "//sdk/lib/component/outgoing/cpp",
+      "//src/storage/lib/vfs/cpp",
+    ]
+  }
+  visibility = [ ":*" ]
+  public_deps = []
+  public_deps += [ "//zircon/system/ulib/fbl" ]
+  if (is_fuchsia) {
+    public_deps += [ "//zircon/system/ulib/zx" ]
+  }
+  data_deps = [ ":zstd-for-test" ]
+}
+source_set("cli") {
+  sources = [ "cli.cc" ]
+  public = [ "cli.h" ]
+  visibility = [ ":*" ]
+  public_deps = [ ":zxdump" ]
+}
+executable("gcore") {
+  sources = [ "gcore.cc" ]
+  deps = [
+    ":cli",
+    "//sdk/lib/fit",
+    "//third_party/rapidjson",
+    "//zircon/system/ulib/fbl",
+  ]
 }

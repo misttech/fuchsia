@@ -33,6 +33,32 @@ fidl_library(
     ],
 )
 
+# In-tree platform C++ bindings for non-SDK targets (e.g. //src/lib/zxdump).
+# @bazel2gn:skip
+fidl_library(
+    name = "fuchsia.boot_in_tree",
+    srcs = [
+        "arguments.fidl",
+        "factory-items.fidl",
+        "items.fidl",
+        "log.fidl",
+        "overview.fidl",
+        "svc-stash.fidl",
+        "userboot.fidl",
+    ],
+    api_area = "Kernel",
+    enable_cpp = True,
+    enable_hlcpp = False,
+    enable_rust = False,
+    enable_rust_next = False,
+    library_name = "fuchsia.boot",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//sdk/fidl/fuchsia.io",
+        "//zircon/vdso/zx",
+    ],
+)
+
 # @bazel2gn:skip
 fuchsia_fidl_library(
     name = "fuchsia.boot_sdk",
@@ -60,5 +86,8 @@ fuchsia_fidl_library(
 fuchsia_cc_library(
     name = "fuchsia.boot_cpp",
     visibility = ["//visibility:public"],
-    deps = [":fuchsia.boot_sdk_cpp"],
+    deps = select({
+        "//build/bazel/platforms:is_fuchsia_with_sdk_rules": [":fuchsia.boot_sdk_cpp"],
+        "//conditions:default": [":fuchsia.boot_in_tree_cpp"],
+    }),
 )
