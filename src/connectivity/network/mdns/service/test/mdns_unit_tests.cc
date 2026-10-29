@@ -9,6 +9,7 @@
 #include "src/connectivity/network/mdns/service/encoding/dns_formatting.h"
 #include "src/connectivity/network/mdns/service/mdns.h"
 #include "src/connectivity/network/mdns/service/services/host_name_resolver_service_impl.h"
+#include "src/connectivity/network/mdns/service/services/mdns_deprecated_service_impl.h"
 #include "src/connectivity/network/mdns/service/services/proxy_host_publisher_service_impl.h"
 #include "src/lib/testing/loop_fixture/real_loop_fixture.h"
 
@@ -144,14 +145,17 @@ class MdnsUnitTests : public gtest::RealLoopFixture, public Mdns::Transceiver {
   }
 
   // Simulates the receipt of a typical query response (with PTR, SRC and A resources).
-  void ReceivePtrQueryResponse() {
+  void ReceivePtrQueryResponse() { ReceivePtrQueryResponseForInstance(kInstanceFullName); }
+
+  // Simulates the receipt of a query response for |instance_full_name|.
+  void ReceivePtrQueryResponseForInstance(const DnsName& instance_full_name) {
     auto message = std::make_unique<DnsMessage>();
     auto ptr_resource = std::make_shared<DnsResource>(kServiceFullName, DnsType::kPtr);
     ptr_resource->time_to_live_ = DnsResource::kShortTimeToLive;
-    ptr_resource->ptr_.pointer_domain_name_ = kInstanceFullName;
+    ptr_resource->ptr_.pointer_domain_name_ = instance_full_name;
     message->answers_.push_back(ptr_resource);
 
-    auto srv_resource = std::make_shared<DnsResource>(kInstanceFullName, DnsType::kSrv);
+    auto srv_resource = std::make_shared<DnsResource>(instance_full_name, DnsType::kSrv);
     srv_resource->time_to_live_ = DnsResource::kShortTimeToLive;
     srv_resource->srv_.priority_ = 0;
     srv_resource->srv_.weight_ = 0;
@@ -1019,6 +1023,102 @@ TEST_F(MdnsUnitTests, ResolveHostNameInvalidHostName) {
   EXPECT_TRUE(deleter_called);
   EXPECT_FALSE(callback_called);
   ExpectSendMessageNotCalled();
+
+  under_test().Stop();
+  RunLoopUntilIdle();
+}
+
+// Creates an |InterfaceHandle<T>| whose channel lacks |ZX_RIGHT_WRITE| so the first outgoing proxy
+// message fails synchronously with |ZX_ERR_ACCESS_DENIED| inside |ProxyController::Send| and
+// invokes the proxy error handler synchronously (even when sent across a real FIDL channel).
+template <typename T>
+fidl::InterfaceHandle<T> MakeUnwritableHandle(zx::channel* peer_out) {
+  zx::channel client_end;
+  zx::channel server_end;
+  FX_CHECK(zx::channel::create(0, &client_end, &server_end) == ZX_OK);
+  zx::channel unwritable_client_end;
+  FX_CHECK(client_end.replace(ZX_RIGHT_READ | ZX_RIGHT_WAIT | ZX_RIGHT_TRANSFER,
+                              &unwritable_client_end) == ZX_OK);
+  *peer_out = std::move(server_end);
+  return fidl::InterfaceHandle<T>(std::move(unwritable_client_end));
+}
+
+// Subscribing via the deprecated |Subscriber| protocol with a client handle that
+// synchronously fails outgoing writes must cleanly delete and unsubscribe the
+// subscriber during |ReportAllDiscoveries| (and initial |SendQuery|) without
+// dereferencing an unbound proxy.
+TEST_F(MdnsUnitTests, DeprecatedSubscribeToServiceSynchronousError) {
+  SetHasInterfaces(true);
+  Start(false);
+  RunLoopUntilIdle();
+
+  sys::ComponentContext context(sys::ServiceDirectory::CreateFromNamespace());
+  MdnsDeprecatedServiceImpl service_impl(under_test(), &context);
+  service_impl.OnReady();
+
+  // Establish an active |InstanceRequestor| with two discovered instances so |ReportAllDiscoveries|
+  // has multiple entries to iterate over.
+  fuchsia::net::mdns::ServiceSubscriberHandle open_handle;
+  auto open_request = open_handle.NewRequest();
+  service_impl.SubscribeToService(kServiceName.to_string(), std::move(open_handle));
+  RunLoopUntilIdle();
+
+  ReceivePtrQueryResponseForInstance(DnsName("my1._yardapult._tcp.local."));
+  ReceivePtrQueryResponseForInstance(DnsName("my2._yardapult._tcp.local."));
+  RunLoopUntilIdle();
+
+  // Subscribe with an unwritable handle while >= 2 instances are cached so |OnInstanceDiscovered|
+  // synchronously triggers |MaybeDelete| on the first iteration of |ReportAllDiscoveries|.
+  zx::channel peer1;
+  service_impl.SubscribeToService(
+      kServiceName.to_string(),
+      MakeUnwritableHandle<fuchsia::net::mdns::ServiceSubscriber>(&peer1));
+  RunLoopUntilIdle();
+
+  // Also subscribe when no |InstanceRequestor| exists yet so |SendQuery| -> |OnQuery| synchronously
+  // triggers |MaybeDelete| during |AddAgent|, then inject a response to ensure the deleted
+  // subscriber is no longer registered.
+  zx::channel peer2;
+  service_impl.SubscribeToService(
+      "_other._tcp.", MakeUnwritableHandle<fuchsia::net::mdns::ServiceSubscriber>(&peer2));
+  RunLoopUntilIdle();
+
+  under_test().Stop();
+  RunLoopUntilIdle();
+}
+
+// Tests that publishing via the deprecated |Publisher| protocol with an unwritable responder
+// handle cleanly unpublishes and destroys the publisher without crashing or leaking registration.
+TEST_F(MdnsUnitTests, DeprecatedPublishServiceInstanceSynchronousError) {
+  SetHasInterfaces(true);
+  Start(false);
+  RunLoopUntilIdle();
+
+  sys::ComponentContext context(sys::ServiceDirectory::CreateFromNamespace());
+  MdnsDeprecatedServiceImpl service_impl(under_test(), &context);
+  service_impl.OnReady();
+
+  zx::channel peer;
+  bool callback_called = false;
+  service_impl.PublishServiceInstance(
+      kServiceName.to_string(), kInstanceName,
+      fuchsia::net::mdns::Media::WIRED | fuchsia::net::mdns::Media::WIRELESS,
+      /*perform_probe=*/false,
+      MakeUnwritableHandle<fuchsia::net::mdns::PublicationResponder>(&peer),
+      [&callback_called](fuchsia::net::mdns::Publisher_PublishServiceInstance_Result result) {
+        callback_called = true;
+      });
+  RunLoopUntilIdle();
+  EXPECT_TRUE(callback_called);
+
+  // Inbound queries must not hit a dangling responder, and re-publishing the same instance must
+  // succeed immediately because the failed responder unpublished itself synchronously.
+  ReceiveQuery(kServiceFullName, DnsType::kPtr, kReplyAddress);
+  RunLoopUntilIdle();
+
+  Publisher publisher;
+  EXPECT_TRUE(under_test().PublishServiceInstance(kServiceName, kInstanceName, Media::kBoth,
+                                                  IpVersions::kBoth, false, &publisher));
 
   under_test().Stop();
   RunLoopUntilIdle();

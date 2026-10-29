@@ -93,13 +93,13 @@ void MdnsDeprecatedServiceImpl::SubscribeToService(
   size_t id = next_subscriber_id_++;
   auto subscriber = std::make_unique<Subscriber>(std::move(subscriber_handle),
                                                  [this, id]() { subscribers_by_id_.erase(id); });
+  auto* subscriber_ptr = subscriber.get();
+  subscribers_by_id_.emplace(id, std::move(subscriber));
 
   mdns_.SubscribeToService(service_name, Media::kBoth, IpVersions::kBoth,
                            false,  // include_local
                            true,   // include_local_proxies
-                           subscriber.get());
-
-  subscribers_by_id_.emplace(id, std::move(subscriber));
+                           subscriber_ptr);
 }
 
 void MdnsDeprecatedServiceImpl::PublishServiceInstance(
@@ -149,13 +149,13 @@ void MdnsDeprecatedServiceImpl::PublishServiceInstance(
       std::move(responder_ptr), std::move(callback), [this, instance_full_name]() {
         publishers_by_instance_full_name_.erase(instance_full_name);
       });
+  auto* publisher_ptr = publisher.get();
+  publishers_by_instance_full_name_.emplace(instance_full_name, std::move(publisher));
 
   bool result = mdns_.PublishServiceInstance(service_name, instance, fidl::To<Media>(media),
-                                             IpVersions::kBoth, perform_probe, publisher.get());
+                                             IpVersions::kBoth, perform_probe, publisher_ptr);
   // Because of the erase call above, |PublishServiceInstance| should always succeed.
   FX_DCHECK(result);
-
-  publishers_by_instance_full_name_.emplace(instance_full_name, std::move(publisher));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
