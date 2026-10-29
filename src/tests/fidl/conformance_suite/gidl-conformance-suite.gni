@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# LINT.IfChange
 conformance_suite_gidl_files = [
   "//src/tests/fidl/conformance_suite/aliases.gidl",
   "//src/tests/fidl/conformance_suite/alignment.gidl",
@@ -39,4 +38,3 @@ conformance_suite_fidl_target =
 
 conformance_suite_golden_gidl_files =
     [ "//src/tests/fidl/conformance_suite/golden.gidl" ]
-# LINT.ThenChange(//src/tests/fidl/conformance_suite/gidl_conformance_suite.bzl)
