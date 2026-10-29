@@ -838,8 +838,9 @@ void VsockUsb::ReadComplete(fendpoint::Completion completion) {
   FDF_LOG(TRACE, "ReadComplete (status: %d, size: %zu)", *completion.status(),
           *completion.transfer_size());
 
+  const zx_status_t status = *completion.status();
   auto request = usb::FidlRequest(std::move(completion.request().value()));
-  if (*completion.status() == ZX_ERR_IO_NOT_PRESENT) {
+  if (status == ZX_ERR_IO_NOT_PRESENT) {
     FDF_LOG(
         INFO,
         "Device disconnected from host or requires reconfiguration. Unconfiguring endpoints and returning request to pool");
@@ -858,10 +859,11 @@ void VsockUsb::ReadComplete(fendpoint::Completion completion) {
     return;
   }
 
-  if (*completion.status() == ZX_OK) {
-    if (zx_status_t status = request.CacheFlushInvalidate(bulk_out_ep_.GetMapped());
-        status != ZX_OK) {
-      FDF_SLOG(ERROR, "Cache flush invalidate failed", KV("status", zx_status_get_string(status)));
+  if (status == ZX_OK) {
+    if (zx_status_t flush_status = request.CacheFlushInvalidate(bulk_out_ep_.GetMapped());
+        flush_status != ZX_OK) {
+      FDF_SLOG(ERROR, "Cache flush invalidate failed",
+               KV("status", zx_status_get_string(flush_status)));
     } else {
       // This should always be true because when we registered VMOs, we only registered one per
       // request.
@@ -886,12 +888,12 @@ void VsockUsb::ReadComplete(fendpoint::Completion completion) {
         }
       }
     }
-  } else if (*completion.status() != ZX_ERR_CANCELED) {
-    FDF_SLOG(ERROR, "Read failed", KV("status", zx_status_get_string(*completion.status())));
+  } else if (status != ZX_ERR_CANCELED && status != ZX_ERR_BAD_STATE) {
+    FDF_SLOG(ERROR, "Read failed", KV("status", zx_status_get_string(status)));
     bulk_out_inspect_.AddFailedRxBytes(request.length());
   }
 
-  if (Online() && *completion.status() != ZX_ERR_CANCELED) {
+  if (Online() && status != ZX_ERR_CANCELED && status != ZX_ERR_BAD_STATE) {
     request.reset_buffers(bulk_out_ep_.GetMapped());
 
     // Only extract the underlying FIDL request when we are actively online and

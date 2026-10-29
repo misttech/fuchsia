@@ -59,6 +59,10 @@ class VsockUsbTestHelper {
 
   static size_t RxInFlightCount(VsockUsb& driver) { return driver.bulk_out_ep_.GetInFlightCount(); }
 
+  static uint64_t FailedRxBytes(VsockUsb& driver) {
+    return driver.bulk_out_inspect_.failed_bytes_rx_val();
+  }
+
   static bool CancelAllCompleted(VsockUsb& driver) {
     return driver.bulk_out_cancelled_ && driver.bulk_in_cancelled_ && !driver.HasPendingRequests();
   }
@@ -171,6 +175,11 @@ class FakeEndpoint : public fake_usb_endpoint::FakeEndpoint {
     ZX_ASSERT_MSG(!status.has_value() || *status != ZX_OK,
                   "cancel_all_status cannot be set to ZX_OK");
     cancel_all_status_ = status;
+  }
+
+  size_t pending_request_count() {
+    fbl::AutoLock _(&lock_);
+    return requests_.size();
   }
 
   // Non-blocking atomic request poll for assertions.
@@ -587,7 +596,9 @@ class VsockUsbTest : public ::testing::Test {
         out_ep.SendRequestComplete(std::move(request), ZX_ERR_INTERNAL, 0);
         return;
       }
-      data->front().size(size);
+      if (status == ZX_OK) {
+        data->front().size(size);
+      }
       out_ep.SendRequestComplete(std::move(request), status, size);
     });
     return ok;
@@ -1295,7 +1306,7 @@ TEST_F(VsockUsbTest, UnconfigureEndpointsCancelAllExpectedDisconnectSucceeds) {
   });
 }
 
-TEST_F(VsockUsbTest, DISABLED_ReadErrorUnconfiguresEndpoints) {
+TEST_F(VsockUsbTest, ReadErrorRecordsFailedRxBytesAndRequeuesWhileOnline) {
   ConfigureDevice();
   auto callback = SetupCallback(1);
   zx::socket socket = WaitForSocket(*callback);
@@ -1304,19 +1315,31 @@ TEST_F(VsockUsbTest, DISABLED_ReadErrorUnconfiguresEndpoints) {
   auto request = WaitForRequestOn(kBulkOutEndpoint);
   ASSERT_TRUE(request.has_value());
 
-  ExpectDisableEndpoints();
+  size_t remaining_before = 0;
+  driver_test().RunInEnvironmentTypeContext([&](VsockUsbEnvironment& env) {
+    remaining_before = env.fake_usb_->fake_endpoint(kBulkOutEndpoint).pending_request_count();
+  });
+
   ASSERT_TRUE(CompleteMockUsbOutRequest(std::move(*request), kBulkOutEndpoint, nullptr, 0,
                                         ZX_ERR_INTERNAL));
 
   driver_test().runtime().RunUntil([&]() {
-    bool offline = false;
-    driver_test().RunInDriverContext(
-        [&](VsockUsb& driver) { offline = !VsockUsbTestHelper::Online(driver); });
-    return offline;
+    size_t pending = 0;
+    driver_test().RunInEnvironmentTypeContext([&](VsockUsbEnvironment& env) {
+      pending = env.fake_usb_->fake_endpoint(kBulkOutEndpoint).pending_request_count();
+    });
+    return pending == remaining_before + 1;
   });
+
+  driver_test().RunInDriverContext([&](VsockUsb& driver) {
+    EXPECT_TRUE(VsockUsbTestHelper::Online(driver));
+    EXPECT_EQ(VsockUsbTestHelper::FailedRxBytes(driver), kMtu);
+  });
+
+  UnconfigureDevice();
 }
 
-TEST_F(VsockUsbTest, DISABLED_ReadErrorDisconnectLoopRegression) {
+TEST_F(VsockUsbTest, ReadErrorDisconnectLoopRegression) {
   ConfigureDevice();
   auto callback = SetupCallback(1);
   zx::socket socket = WaitForSocket(*callback);
@@ -1324,6 +1347,14 @@ TEST_F(VsockUsbTest, DISABLED_ReadErrorDisconnectLoopRegression) {
 
   auto request = WaitForRequestOn(kBulkOutEndpoint);
   ASSERT_TRUE(request.has_value());
+
+  size_t remaining_before = 0;
+  driver_test().RunInEnvironmentTypeContext([&](VsockUsbEnvironment& env) {
+    remaining_before = env.fake_usb_->fake_endpoint(kBulkOutEndpoint).pending_request_count();
+  });
+  size_t in_flight_before = 0;
+  driver_test().RunInDriverContext(
+      [&](VsockUsb& driver) { in_flight_before = VsockUsbTestHelper::RxInFlightCount(driver); });
 
   ASSERT_TRUE(CompleteMockUsbOutRequest(std::move(*request), kBulkOutEndpoint, nullptr, 0,
                                         ZX_ERR_IO_NOT_PRESENT));
@@ -1334,6 +1365,18 @@ TEST_F(VsockUsbTest, DISABLED_ReadErrorDisconnectLoopRegression) {
         [&](VsockUsb& driver) { offline = !VsockUsbTestHelper::Online(driver); });
     return offline;
   });
+
+  driver_test().RunInEnvironmentTypeContext([&](VsockUsbEnvironment& env) {
+    EXPECT_EQ(env.fake_usb_->fake_endpoint(kBulkOutEndpoint).pending_request_count(),
+              remaining_before);
+  });
+  driver_test().RunInDriverContext([&](VsockUsb& driver) {
+    EXPECT_FALSE(VsockUsbTestHelper::Online(driver));
+    EXPECT_EQ(VsockUsbTestHelper::RxInFlightCount(driver), in_flight_before - 1);
+    EXPECT_EQ(VsockUsbTestHelper::FailedRxBytes(driver), 0u);
+  });
+
+  UnconfigureDevice();
 }
 
 TEST_F(VsockUsbTest, CleanShutdownWithCanceledRequestsInFlight) {
@@ -1784,6 +1827,46 @@ TEST_F(VsockUsbTest, CanceledRxCompletionWhileOnlineReturnsToPoolWithoutRequeue)
   driver_test().RunInEnvironmentTypeContext([&](VsockUsbEnvironment& env) {
     EXPECT_EQ(env.fake_usb_->fake_endpoint(kBulkOutEndpoint).pending_request_count(),
               remaining_before);
+  });
+
+  UnconfigureDevice();
+}
+
+TEST_F(VsockUsbTest, BadStateRxCompletionWhileOnlineReturnsToPoolWithoutRequeue) {
+  ConfigureDevice();
+  auto callback = SetupCallback(1);
+  zx::socket socket = WaitForSocket(*callback);
+  ASSERT_TRUE(socket.is_valid());
+
+  auto req = WaitForRequestOn(kBulkOutEndpoint);
+  ASSERT_TRUE(req.has_value());
+
+  size_t remaining_before = 0;
+  driver_test().RunInEnvironmentTypeContext([&](VsockUsbEnvironment& env) {
+    remaining_before = env.fake_usb_->fake_endpoint(kBulkOutEndpoint).pending_request_count();
+  });
+  size_t in_flight_before = 0;
+  driver_test().RunInDriverContext(
+      [&](VsockUsb& driver) { in_flight_before = VsockUsbTestHelper::RxInFlightCount(driver); });
+
+  // Completing an OUT request with ZX_ERR_BAD_STATE while Online() is true must return it to
+  // bulk_out_ep_ rather than re-queuing it onto the hardware endpoint.
+  ASSERT_TRUE(
+      CompleteMockUsbOutRequest(std::move(*req), kBulkOutEndpoint, nullptr, 0, ZX_ERR_BAD_STATE));
+  driver_test().runtime().RunUntil([&]() {
+    size_t in_flight = 0;
+    driver_test().RunInDriverContext(
+        [&](VsockUsb& driver) { in_flight = VsockUsbTestHelper::RxInFlightCount(driver); });
+    return in_flight == in_flight_before - 1;
+  });
+
+  driver_test().RunInEnvironmentTypeContext([&](VsockUsbEnvironment& env) {
+    EXPECT_EQ(env.fake_usb_->fake_endpoint(kBulkOutEndpoint).pending_request_count(),
+              remaining_before);
+  });
+  driver_test().RunInDriverContext([&](VsockUsb& driver) {
+    EXPECT_EQ(VsockUsbTestHelper::RxInFlightCount(driver), in_flight_before - 1);
+    EXPECT_EQ(VsockUsbTestHelper::FailedRxBytes(driver), 0u);
   });
 
   UnconfigureDevice();
