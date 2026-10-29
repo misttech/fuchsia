@@ -501,6 +501,12 @@ class LocalDriverTest(unittest.TestCase):
                 [c.get("name") or c.get("ip") for c in controllers],
                 ["dut_1", "192.168.1.1"],
             )
+            self.assertEqual(controllers[1].get("model"), "OpenWrtOne")
+            self.assertTrue(
+                controllers[1]
+                .get("ssh_key", "")
+                .endswith("openwrt_testing_rsa")
+            )
             self.assertEqual(ret, "yaml_str")
 
     @patch("builtins.print")
@@ -548,6 +554,7 @@ class LocalDriverTest(unittest.TestCase):
         self.assertEqual(ap_config["ip"], "192.168.1.1")
         self.assertEqual(ap_config["port"], 2222)
         self.assertEqual(ap_config["ssh_key"], "/path/to/key")
+        self.assertEqual(ap_config["model"], "OpenWrtOne")
 
     @patch("builtins.print")
     @patch("yaml.dump", return_value="yaml_str")

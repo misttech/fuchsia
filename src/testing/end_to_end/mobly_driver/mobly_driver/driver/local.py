@@ -220,6 +220,7 @@ class LocalDriver(base.BaseDriver):
         if self._ap_ip:
             ap_config = {
                 "type": api_infra.ACCESS_POINT,
+                "model": "OpenWrtOne",
                 "ip": self._ap_ip,
                 # Default SSH port 22 if not provided
                 "port": self._ap_ssh_port or 22,
@@ -234,7 +235,7 @@ class LocalDriver(base.BaseDriver):
                 # Try to find key in default locations
                 home = os.path.expanduser("~")
                 default_keys = [
-                    os.path.join(home, ".ssh", "onhub_testing_rsa"),
+                    os.path.join(home, ".ssh", "openwrt_testing_rsa"),
                     os.path.join(home, ".ssh", "testing_rsa"),
                 ]
                 found_key = None
