@@ -8,9 +8,13 @@ Use when nothing GN-only has to stay in the package (e.g. a pure `fuchsia_packag
 - Tests never force Case 2: every test (C++ or Rust, device or host) migrates to Bazel per
   "Migrating Tests" in the coder prompt, using `fx_unittest_package` / `fx_unittest_component`
   (for unit tests without custom manifests) or explicit `meta/<component>.cml` and
-  `fx_test`. They still need a GN `bazel_test_suite` listed by `group("tests")` to reach
-  `tests.json`, so such a package keeps a BUILD.gn holding only those two targets (no sentinel,
-  no bazel2gn run).
+  `fx_test`. Export them per "Export" in the coder prompt: wire into the nearest existing ancestor
+  area's Bazel `test_suite()` (the one a GN `bazel_test_suite()` already exports) and delete this
+  `BUILD.gn`; when no ancestor `bazel_test_suite()` exists yet above the package, move
+  `bazel_test_suite("bazel_tests")` into the non-umbrella ancestor `BUILD.gn` that listed this
+  directory's `tests` group and delete this `BUILD.gn` (only keeping a `BUILD.gn` holding
+  `bazel_test_suite` + `group("tests")` when this package itself owns the `group("tests")` boundary
+  with no ancestor suite or referrer; `test_suite_layout` enforces both).
 - For assembly packages bridged via `//bundles/assembly/bazel_inputs/<dir>`, switch
   `//bundles/assembly/BUILD.bazel` to `//<dir>:<pkg>`, remove the entry from
   `//bundles/assembly/bazel_inputs/BUILD.gn`, and delete

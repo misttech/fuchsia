@@ -184,8 +184,10 @@ the Bazel test keeps the label).
      BUILD.bazel: `idk_cc_shared_library`, `idk_cc_static_library` and their `_zx` variants);
      those stay dual-tested. Put the comment
      `# Needs reviewer attention (bazel2gn skip): <why the cost outweighs the risk>` directly above
-     `# @bazel2gn:skip`, and add a `Needs reviewer attention: <target>: <reason>` line to the commit
-     message body and `summary`. Checks report it as INFO; never treat that INFO as something to fix.
+     `# @bazel2gn:skip`, add a `Needs reviewer attention: <target>: <reason>` line to the commit
+     message body and `summary`, and include `Skipped-Dual-Tests: //<dir>:<target>` plus a numeric
+     `Bug: <id>` in the commit footers (requiring human `Test-Drop-Verified +1` on Gerrit). Planter
+     checks report the marked skip as INFO; never treat that INFO as something to fix.
   Never add `# @bazel2gn:skip` to a translatable test for any other reason (preserve any
   pre-existing `# @bazel2gn:skip` annotations added by human code owners). When
   the library's last GN user migrates, delete the GN library and its GN test copies.
@@ -254,26 +256,47 @@ the Bazel test keeps the label).
   C++ `host_test(binary = ":<cc_test>")`; `host_py_test`, `host_go_test`
   (`//build/bazel/rules/host_tests:<rule>.bzl`; for Go targets, move `*_test.go` files from GN
   `go_library.sources` into `host_go_test`/`go_test` `srcs` with `embed = [":<lib>"]`).
-- **Export (Prefer Ancestor test_suite and Case 1 BUILD.gn Removal)**:
-  Fuchsia prefers flat, aggregated test suites at the area or subsystem level (e.g.
-  `//src/connectivity/wlan:target_tests`, `//tools:host_tests`, `//src/sys:target_tests`,
-  `//sdk/lib:target_tests`, `//src/storage:target_tests`).
-  1. **Ancestor test_suite discovery**: Check ancestor directories (`//src/<subsystem>`,
-     `//tools`, `//sdk/lib`, `//src`) for an existing `test_suite(name = "target_tests")`
-     (device tests) or `test_suite(name = "host_tests")` (host tests).
-  2. **Wire to ancestor suite**: When an ancestor `test_suite` exists, add the migrated test
-     target label (`"//<dir>:<test>"`) to that ancestor's `tests = [...]` list, and set
-     `visibility = ["//<ancestor_dir>:__pkg__"]` on the test target in `BUILD.bazel`.
-  3. **Delete BUILD.gn (Case 1)**: If all non-test targets in the package have migrated to Bazel
-     (or have no remaining GN consumers), and the tests are wired into an ancestor suite,
-     **DELETE `BUILD.gn` entirely** (`git rm <dir>/BUILD.gn`, Case 1 migration). Do NOT keep an
-     empty `BUILD.gn` just to declare a single-target `bazel_test_suite`.
-  4. **Fallback local bridge**: Only when no ancestor test suite exists in the hierarchy,
-     declare `bazel_test_suite("bazel_tests")` in `BUILD.gn` above the sentinel (never reuse
-     the name of a generated GN test target), with absolute Bazel labels: `target_tests` only
-     `fx_unittest_package`s / `fx_test`s, `host_tests` only host tests (`:<crate>_host_test`,
-     never `($host_toolchain)`); list it in `group("tests")`. A package whose remaining GN
-     content is only `bazel_test_suite`/`group("tests")` gets no sentinel and no bazel2gn run.
+- **Export (Existing Ancestor `test_suite` First, Otherwise Nearest `group("tests")` Boundary)**:
+  Fuchsia hooks Bazel tests into GN once per area where possible (`docs/development/build/bazel_concepts/tests.md`):
+  1. **Ancestor `test_suite` discovery**: Check strict ancestor directories (`//src/<subsystem>`,
+     `//tools`, `//sdk/lib`, etc.) for an existing `test_suite()` already exported by an ancestor
+     GN `bazel_test_suite()` (`target_tests` for device tests, `host_tests` for host tests).
+  2. **Wire into existing ancestor suite**: When an ancestor `test_suite()` exists, add
+     `"//<dir>:<test>"` as an individual entry to its explicit `tests = [...]` list (never nest a
+     cross-package `test_suite()`), set `visibility = ["//<ancestor_dir>:__pkg__"]` on the test
+     target in `BUILD.bazel`, and do NOT add a per-package `bazel_test_suite` in `<dir>/BUILD.gn`.
+     If nothing else remains in `<dir>/BUILD.gn`, delete `<dir>/BUILD.gn` (`git rm <dir>/BUILD.gn`,
+     Case 1) and remove any dangling `<dir>:tests` entry from parent `BUILD.gn` groups.
+  3. **When NO ancestor `bazel_test_suite` exists yet above the package**: Do NOT invent a new
+     top-level area `BUILD.bazel` suite unless asked; place `bazel_test_suite("bazel_tests")` at
+     the nearest `group("tests")` boundary:
+     - **Case 1 (nothing else stays in `<dir>/BUILD.gn`)**: if a non-umbrella ancestor `BUILD.gn`
+       lists `<dir>:tests` in its `group("tests")`, move `bazel_test_suite("bazel_tests")` (or add
+       the tests to its existing `bazel_test_suite`) in that ancestor `BUILD.gn`, remove its
+       `<dir>:tests` entry, and delete `<dir>/BUILD.gn`. Only when `<dir>` itself owns the
+       `group("tests")` boundary (no ancestor area suite and no non-umbrella ancestor `BUILD.gn`
+       referrer) keep `<dir>/BUILD.gn` holding `bazel_test_suite("bazel_tests")` and `group("tests")`
+       (no sentinel, no `bazel2gn` run).
+     - **Case 2 (`<dir>/BUILD.gn` stays for dual-build targets or GN test copies)**: declare
+       `bazel_test_suite("bazel_tests")` in `<dir>/BUILD.gn` above `## BAZEL2GN SENTINEL` (never
+       reuse a generated test target name) with absolute Bazel labels (`target_tests` only
+       `fx_unittest_package`s / `fx_test`s, `host_tests` only host tests without `($host_toolchain)`),
+       and list `":bazel_tests"` in `group("tests")`.
+     The `test_suite_layout` check rejects a new per-package `bazel_test_suite()` below an existing
+     area suite, a leaf `BUILD.gn` left holding only the suite when an ancestor suite or enclosing
+     `group("tests")` boundary exists, newly added `test_suite()`s without an explicit non-empty
+     `tests = [...]` list, and cross-package `test_suite()` nesting.
+- **Test-Parity Commit Footers & Zero Tolerance for Silent Drops**:
+  - Coding agents MUST NEVER delete tests, emit `Deleted-Tests:` footers, or waive
+    `tests_json_parity` / test-drop errors in `disputed_findings`. If a test truly cannot be
+    migrated, keep it in `BUILD.gn` above `## BAZEL2GN SENTINEL` (Case 2) or halt and escalate to a
+    human owner.
+  - If a test target or package URL legitimately changed name 1:1, declare
+    `Renamed-Tests: <old> -> <new>` (strict 1:1 bijection).
+  - `Build-Only: true` is permitted ONLY on pure non-test library `BUILD.gn`/`BUILD.bazel`
+    migrations where zero test rules, `with_unit_tests`, `bazel_test_suite`, `test_suite`, or
+    `:tests` group edges are touched. Never emit `Build-Only: true` on any CL that adds, removes,
+    or modifies tests or `:tests` group dependencies.
 - Only when Bazel cannot express the test yet (test spec fields other than `environments`,
   `build_only`, `log_settings` and `test_type`, e.g. timeouts; custom realms; e2e tests;
   `bootfs_test`; Ninja-generated inputs) keep that one test GN-only,
@@ -565,13 +588,16 @@ From `$PLANTER_WORKDIR`:
    `fx bazel build --config=fuchsia_platform //<dir>:all` (`fx test <package_name>` needs a
    device/emulator). `build_verification` runs exported host tests.
 3. As your last step, run `run_checks.sh` without flags once after your final edit; it must exit
-   0 (unless a blocking finding is STILL failing in that final run as a true check false positive
-   or rule conflict, in which case keep the intended code and list it in `disputed_findings`). When
-   `run_checks.sh` exits 0 with 0 blocking findings, `disputed_findings` MUST ALWAYS be `[]`.
-   Never list findings that await `outside_changes` in a parallel migration (e.g.
-   `unexported_bazel_test` or `false_positive_rdep_visibility` awaiting ancestor `test_suite`
-   wiring or visibility edits in `outside_changes`), resolved findings, prior `machinery_conflict`
-   echoes, `remediation_validation`, or `build_verification` in `disputed_findings`: any entry in
+   0 (unless a non-test-drop blocking finding is STILL failing in that final run as a true check
+   false positive or rule conflict, in which case keep the intended code and list it in
+   `disputed_findings`; NEVER waive `tests_json_parity` or dropped-test findings in
+   `disputed_findings` -- halt and escalate to a human instead). When `run_checks.sh` exits 0 with
+   0 blocking findings, `disputed_findings` MUST ALWAYS be `[]`. Never list findings that await
+   `outside_changes` in a parallel migration (e.g. `unexported_bazel_test` or
+   `false_positive_rdep_visibility` awaiting ancestor `test_suite` wiring or visibility edits in
+   `outside_changes`), resolved findings, prior `machinery_conflict` echoes,
+   `remediation_validation`, or `build_verification` (even when a rebase onto an updated parent
+   commit resolved a CQ failure so only `/COMMIT_MSG` changed) in `disputed_findings`: any entry in
    `disputed_findings` blocks the integration coder from applying `outside_changes` and fails the
    turn. Do not edit anything after `run_checks.sh` passes so planter reuses the result.
 4. Record in `test_footers` (and any commit `Test:` footer) at most 3 lines: either

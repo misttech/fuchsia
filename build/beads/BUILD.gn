@@ -5,6 +5,7 @@
 group("tests") {
   testonly = true
   deps = [
+    "planter/machinery/checks:tests($host_toolchain)",
     "scripts:tests($host_toolchain)",
     "verifications:tests($host_toolchain)",
   ]

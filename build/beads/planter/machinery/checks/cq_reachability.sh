@@ -682,8 +682,10 @@ def nearest_ancestor_test_suite(td, param):
     return discovered[-1]
 
 
-# Find the canonical ancestor area directory where a flat BUILD.bazel test_suite and BUILD.gn
-# bazel_test_suite should be created when no ancestor suite for `param` exists yet.
+# Find the nearest ancestor directory that already defines a wired bazel_test_suite
+# or BUILD.bazel test_suite (when no suite for `param` exists yet, e.g. adding
+# `target_tests` to an area that already exports `host_tests`). Never invents a
+# brand-new ancestor area BUILD.bazel when no ancestor suite exists yet.
 def preferred_ancestor_area_suite(td, param):
     if has_sibling_local_bazel_test_suite(td):
         return None
@@ -2911,11 +2913,12 @@ for td in target_dirs:
                     "does not change that."
                 )
                 rem_text = (
-                    f"In '{gn_rel}' (above any BAZEL2GN SENTINEL), add "
-                    "`import(\"//build/bazel/bazel_test_suite.gni\")` and "
-                    f"`bazel_test_suite(\"<name>\") {{ {param} = [ \"//{td}:{t_name}\" ] }}` (absolute Bazel "
-                    "labels; a Bazel `test_suite` label also works), named after the GN test package it "
-                    "replaces, and list `\":<name>\"` in `group(\"tests\")`."
+                    f"Export `\"//{td}:{t_name}\"` through `bazel_test_suite(\"<name>\") {{ {param} = "
+                    f"[ \"//{td}:{t_name}\" ] }}` at the nearest `group(\"tests\")` boundary: in "
+                    f"'{gn_rel}' (above any BAZEL2GN SENTINEL) when '{gn_rel}' is kept or itself "
+                    f"owns the `group(\"tests\")` boundary, or in the parent/ancestor `BUILD.gn` "
+                    f"that lists `{td}:tests` when nothing else remains in '{gn_rel}' (deleting "
+                    f"'{gn_rel}' in Case 1)."
                 )
             findings.append({
                 "source": "cq_reachability",

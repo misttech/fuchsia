@@ -1,6 +1,6 @@
 # Playbook: Case 2 Dual-Build (bazel2gn)
 
-Use when the package keeps a BUILD.gn (it has GN-only constructs such as `bazel_test_suite`,
+Use when the package keeps a BUILD.gn (it has GN-only constructs such as GN test copies in
 `group("tests")`, a test package Bazel cannot express yet, or GN dependents that must keep
 working).
 - For `bazel2gn`-convertible non-test targets (libraries, standalone binaries, FIDL),
@@ -29,7 +29,8 @@ working).
   holds (target under test is itself skipped in BUILD.bazel, `fx_unittest_package` has `resources`,
   host test uses `data`/`test_data`/`test_label`, the test binary rule is unsupported by
   bazel2gn, or the dual-testing cost exception marked
-  `# Needs reviewer attention (bazel2gn skip): ...` for a human to confirm).
+  `# Needs reviewer attention (bazel2gn skip): ...` alongside `Skipped-Dual-Tests: //<dir>:<target>`
+  and `Bug: <id>` for a human to confirm with `Test-Drop-Verified +1`).
   Explicit `fx_package(test_components = ...)` chains (used for custom `.cml`
   tests) are translated by bazel2gn into
   `fuchsia_test_package("<fx_package name>")` (package `<package_name>-gn`)
@@ -38,13 +39,12 @@ working).
   `resources`, or a test `fx_package` with `resources`/`tools`/custom
   `fx_test_environment`s) get `# @bazel2gn:skip` on the package and a
   hand-written GN package above the sentinel (`<pkg>-gn`) wrapping the
-  generated test binary. Export Bazel tests via an existing ancestor
-  `test_suite` in BUILD.bazel when one exists (and grant `visibility` on the
-  test target to both the ancestor `test_suite` package and any parent BUILD.gn
-  package that depends directly on the generated test target, omitting local
-  `bazel_test_suite` and unreachable `group("tests")` targets above the
-  sentinel); otherwise wire `bazel_test_suite("bazel_tests")` and the generated
-  GN test copies into a reachable `group("tests")` above the sentinel (host ones
-  as `:<name>($host_toolchain)`). This applies to Rust unit tests as well as C++
+  generated test binary. `group("tests")` lists every GN copy (host ones as
+  `:<name>($host_toolchain)`). Export the Bazel tests per "Export" in the coder
+  prompt: through the existing ancestor area's `test_suite()` in BUILD.bazel
+  when one exists (setting `visibility = ["//<ancestor>:__pkg__"]` on the test
+  target and omitting a per-package `bazel_test_suite`), otherwise through a
+  hand-written `bazel_test_suite("bazel_tests")` above the sentinel listed in
+  `group("tests")`. This applies to Rust unit tests as well as C++
   and Go tests (for Go, move `*_test.go` files from GN `go_library.sources` into
   `host_go_test`/`go_test` `srcs` with `embed = [":<lib>"]`).

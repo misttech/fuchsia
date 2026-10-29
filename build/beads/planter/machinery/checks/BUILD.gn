@@ -1,0 +1,31 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/python/python_host_test.gni")
+import("//build/testing/host_test_data.gni")
+
+if (is_host) {
+  host_test_data("check_scripts_test_data") {
+    sources = [
+      "commit_message_format.sh",
+      "test_suite_layout.sh",
+    ]
+    outputs = [ "$target_out_dir/check_scripts/{{source_file_part}}" ]
+  }
+
+  python_host_test("verify_tests_json_parity_test") {
+    main_source = "verify_tests_json_parity_test.py"
+    main_callable = "main"
+    sources = [ "verify_tests_json_parity.py" ]
+    extra_args =
+        [ "--checks-dir=" +
+          rebase_path("$target_out_dir/check_scripts", root_build_dir) ]
+    test_data_deps = [ ":check_scripts_test_data" ]
+  }
+}
+
+group("tests") {
+  testonly = true
+  deps = [ ":verify_tests_json_parity_test($host_toolchain)" ]
+}

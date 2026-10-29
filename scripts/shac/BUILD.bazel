@@ -14,6 +14,7 @@ filegroup(
         "bazel.star",
         "bazel_migration.star",
         "bazel_migration_fidl.star",
+        "bazel_test_parity.star",
         "bug_urls.star",
         "check_licenses.star",
         "cml.star",
