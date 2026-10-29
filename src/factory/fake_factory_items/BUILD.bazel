@@ -1,0 +1,162 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "@fuchsia_rules_common//packages:resources.bzl",
+    "resource",
+)
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "bin",
+    srcs = [
+        "src/config.rs",
+        "src/fake_factory_items_server.rs",
+        "src/main.rs",
+    ],
+    crate_name = "fake_factory_items",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+    ],
+)
+
+fx_packaged_binary(
+    name = "fake_factory_items_packaged_bin",
+    binary = ":bin",
+    binary_name = "fake_factory_items",
+)
+
+fx_component_manifest(
+    name = "fake_factory_items_manifest",
+    component_name = "fake_factory_items",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/fake_factory_items.cml",
+)
+
+fx_component(
+    name = "fake_factory_items_comp",
+    compiled_manifest = ":fake_factory_items_manifest",
+    component_name = "fake_factory_items",
+    deps = [":fake_factory_items_packaged_bin"],
+)
+
+fx_package(
+    name = "fake_factory_items",
+    package_name = "fake_factory_items",
+    components = [":fake_factory_items_comp"],
+)
+
+rustc_test(
+    name = "fake_factory_items_test",
+    srcs = ["tests/fake_factory_items_test.rs"],
+    crate_root = "tests/fake_factory_items_test.rs",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:anyhow",
+    ],
+)
+
+# @bazel2gn:skip
+resource(
+    name = "testdata_empty",
+    src = "testdata/empty",
+    dest = "data/empty",
+)
+
+# @bazel2gn:skip
+resource(
+    name = "testdata_fake_factory_items_json",
+    src = "testdata/fake_factory_items.json",
+    dest = "data/fake_factory_items.json",
+)
+
+# @bazel2gn:skip
+resource(
+    name = "testdata_random1",
+    src = "testdata/random1",
+    dest = "data/random1",
+)
+
+# @bazel2gn:skip
+resource(
+    name = "testdata_random2",
+    src = "testdata/random2",
+    dest = "data/random2",
+)
+
+fx_packaged_binary(
+    name = "fake_factory_items_test_packaged_bin",
+    testonly = True,
+    binary = ":fake_factory_items_test",
+    binary_name = "fake_factory_items_test",
+)
+
+fx_component_manifest(
+    name = "fake_factory_items_test_manifest",
+    testonly = True,
+    component_name = "fake_factory_items_test",
+    includes = [
+        "//sdk/lib/inspect:offer.shard.cml",
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/fake_factory_items_test.cml",
+)
+
+fx_test_component(
+    name = "fake_factory_items_test_comp",
+    compiled_manifest = ":fake_factory_items_test_manifest",
+    component_name = "fake_factory_items_test",
+    deps = [":fake_factory_items_test_packaged_bin"],
+)
+
+# GN copy is hand-written in BUILD.gn because bazel2gn doesn't translate
+# `resources` on an fx_package with test_components.
+# @bazel2gn:skip
+fx_package(
+    name = "fake_factory_items_tests_package",
+    package_name = "fake_factory_items_tests",
+    components = [":fake_factory_items_comp"],
+    resources = [
+        ":testdata_empty",
+        ":testdata_fake_factory_items_json",
+        ":testdata_random1",
+        ":testdata_random2",
+    ],
+    test_components = [":fake_factory_items_test_comp"],
+)
+
+fx_test(
+    name = "fake_factory_items_tests",
+    package = ":fake_factory_items_tests_package",
+)
