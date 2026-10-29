@@ -279,6 +279,31 @@ type CapabilitiesError = flexible enum {
     INVALID_ARGS = 9;
 };
 
+@available(added=HEAD)
+type AggregateSource = resource table {
+    /// A reference to the source `DirConnector`.
+    1: dir_connector zx.Handle:EVENTPAIR;
+
+    /// (Optional) The list of allowlisted instances to be offered. Instances
+    /// of the service not in this list will not be accessible by the target
+    /// component. If this is not set that means all instances from the source
+    /// service are offered.
+    2: source_instance_filter vector<fuchsia.component.decl.name>:MAX;
+
+    /// (Optional) The list of allowlisted instances to be offered, with
+    /// renames.
+    ///
+    /// If this is set and nonempty, the set of instances in the target service
+    /// will be restricted to the instances in this list, renaming `source_name`
+    /// to `target_name`.
+    ///
+    /// If it is set and nonempty, `source_instance_filter` will further
+    /// restrict the set of instances to those whose `target_name` appears in
+    /// that list. There is generally no reason to set both, but we support it
+    /// for compatibility.
+    3: renamed_instances vector<fuchsia.component.decl.NameMapping>:MAX;
+};
+
 /// An API for creating and manipulating references to runtime capabilities in
 /// the component framework. These capabilities are all reference counted by
 /// component manager, and when accessed with this protocol the references are
@@ -306,6 +331,16 @@ open protocol Capabilities {
     flexible DirConnectorCreate(resource struct {
         dir_connector zx.Handle:EVENTPAIR;
         receiver_client_end client_end:DirReceiver;
+    }) -> () error CapabilitiesError;
+
+    /// Creates a reference to a new directory connector capability that
+    /// forwards open requests to a set of sources.
+    ///
+    /// Make sure this method returns before passing the handle's peer to other
+    /// methods in this API. The creation may not be complete before then.
+    flexible ServiceAggregateCreate(resource struct {
+        dir_connector zx.Handle:EVENTPAIR;
+        sources vector<AggregateSource>:MAX;
     }) -> () error CapabilitiesError;
 
     /// Creates a reference to a new dictionary capability.

@@ -10,6 +10,7 @@ use capability_source::{CapabilitySource, RemotedAtSource};
 use cm_rust::CapabilityTypeName;
 use cm_types::{Name, RelativePath};
 use fidl::endpoints::ServerEnd;
+use fidl_fuchsia_component_decl as fdecl;
 use fidl_fuchsia_component_runtime as fruntime;
 use fidl_fuchsia_io as fio;
 use fuchsia_async as fasync;
@@ -18,6 +19,7 @@ use futures::channel::mpsc;
 use futures::future::BoxFuture;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt, select};
+use log::warn;
 use moniker::Moniker;
 use router_error::{Explain, RouterError};
 use routing::error::RoutingError;
@@ -29,6 +31,11 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
 use vfs::WeakExecutionScope;
+use vfs::directory::entry::SubNode;
+use vfs::directory::helper::DirectlyMutable;
+use vfs::directory::immutable::Simple;
+use vfs::execution_scope::ExecutionScope;
+use vfs::path::Path;
 use zx::sys::ZX_CHANNEL_MAX_MSG_BYTES;
 
 /// These two constants are needed for computing how many strings we can fit into a FIDL message.
@@ -201,6 +208,15 @@ impl Capabilities {
                     remote_receiver: receiver_client_end.into_proxy(),
                 });
                 let res = self.remote_capabilities.store(dir_connector, cap);
+                let _ = responder.send(res);
+            }
+            fruntime::CapabilitiesRequest::ServiceAggregateCreate {
+                dir_connector,
+                sources,
+                responder,
+                ..
+            } => {
+                let res = self.service_aggregate_create(dir_connector, sources);
                 let _ = responder.send(res);
             }
             fruntime::CapabilitiesRequest::DictionaryCreate { dictionary, responder, .. } => {
@@ -469,6 +485,80 @@ impl Capabilities {
             request => return Err(format_err!("unknown request type: {request:?}")),
         }
         Ok(())
+    }
+
+    fn service_aggregate_create(
+        &self,
+        dir_connector: zx::EventPair,
+        sources: Vec<fruntime::AggregateSource>,
+    ) -> Result<(), fruntime::CapabilitiesError> {
+        fn is_set<T>(val: &Option<Vec<T>>) -> bool {
+            val.as_ref().map(|v| !v.is_empty()).unwrap_or(false)
+        }
+        if !sources
+            .iter()
+            .any(|s| is_set(&s.source_instance_filter) || is_set(&s.renamed_instances))
+        {
+            // Anonymous aggregates are currently unsupported.
+            warn!(
+                "fuchsia.component.runtime.Capabilities unable to create service aggregate: anonymous aggregates are currently unsupported"
+            );
+            return Err(fruntime::CapabilitiesError::InvalidArgs);
+        }
+        let dir_connectors_and_renames = sources
+            .into_iter()
+            .map(|s| {
+                let renames = process_renames(&s);
+                let handle = s.dir_connector.ok_or(fruntime::CapabilitiesError::InvalidArgs)?;
+                let source_dir_connector = self.remote_capabilities.get::<DirConnector>(handle)?;
+                Ok((source_dir_connector, renames))
+            })
+            .collect::<Result<Vec<_>, fruntime::CapabilitiesError>>()?;
+        let target_directory = Simple::new();
+        for (source_dir_connector, renames) in dir_connectors_and_renames.into_iter() {
+            for mapping in renames.into_iter() {
+                let source_path = Path::validate_and_split(mapping.source_name)
+                    .map_err(|_| fruntime::CapabilitiesError::InvalidArgs)?;
+                let target_path = Path::validate_and_split(mapping.target_name)
+                    .map_err(|_| fruntime::CapabilitiesError::InvalidArgs)?;
+                let dir_connector_as_dir_entry = source_dir_connector
+                    .clone()
+                    .try_into_directory_entry(ExecutionScope::new(), self.default_target.clone())
+                    .expect("this is infallible");
+                let sub_node = Arc::new(SubNode::new(
+                    dir_connector_as_dir_entry,
+                    source_path,
+                    fio::DirentType::Directory,
+                ));
+                let sub_dir_connector =
+                    DirConnector::from_directory_entry(sub_node, fio::PERM_READABLE);
+                let sub_dir_entry = sub_dir_connector
+                    .try_into_directory_entry(ExecutionScope::new(), self.default_target.clone())
+                    .expect("this is infallible");
+                target_directory
+                    .add_entry(target_path.as_str(), sub_dir_entry)
+                    .map_err(|_| fruntime::CapabilitiesError::InvalidArgs)?;
+            }
+        }
+        let aggregate_dir_connector =
+            DirConnector::from_directory_entry(target_directory, fio::PERM_READABLE);
+        self.remote_capabilities.store(dir_connector, aggregate_dir_connector)
+    }
+}
+
+fn process_renames(source: &fruntime::AggregateSource) -> Vec<fdecl::NameMapping> {
+    match (&source.source_instance_filter, &source.renamed_instances) {
+        (Some(filter), Some(renames)) if !renames.is_empty() && !filter.is_empty() => renames
+            .iter()
+            .filter(|mapping| filter.contains(&mapping.target_name))
+            .cloned()
+            .collect(),
+        (Some(filter), _) if !filter.is_empty() => filter
+            .iter()
+            .map(|name| fdecl::NameMapping { source_name: name.clone(), target_name: name.clone() })
+            .collect(),
+        (_, Some(renames)) if !renames.is_empty() => renames.clone(),
+        _ => vec![],
     }
 }
 
@@ -870,6 +960,72 @@ mod tests {
 
         test_dir_connector_is_connected(&proxy, &dir_connector, &mut dir_receiver_stream).await;
         assert_matches!(remote_capabilities.get::<DirConnector>(dir_connector), Ok(_));
+        assert_no_remote_capabilities(&remote_capabilities).await;
+    }
+
+    #[fuchsia::test]
+    async fn create_service_aggregate_test() {
+        let (proxy, remote_capabilities, _scope) = new_connection();
+        let (source_dir_connector_1, mut dir_receiver_stream_1) =
+            create_dir_connector(&proxy).await;
+        let (source_dir_connector_2, mut dir_receiver_stream_2) =
+            create_dir_connector(&proxy).await;
+
+        let sources = vec![
+            fruntime::AggregateSource {
+                dir_connector: Some(source_dir_connector_1),
+                renamed_instances: Some(vec![fdecl::NameMapping {
+                    source_name: "foo".to_string(),
+                    target_name: "bar".to_string(),
+                }]),
+                ..Default::default()
+            },
+            fruntime::AggregateSource {
+                dir_connector: Some(source_dir_connector_2),
+                source_instance_filter: Some(vec!["baz".to_string()]),
+                ..Default::default()
+            },
+        ];
+
+        let (aggregate_dir_connector, aggregate_dir_connector_other_end) = zx::EventPair::create();
+        proxy
+            .service_aggregate_create(aggregate_dir_connector_other_end, sources)
+            .await
+            .unwrap()
+            .unwrap();
+
+        for (dir_receiver_stream, target_name, expected_source_path) in
+            [(&mut dir_receiver_stream_1, "bar", "foo"), (&mut dir_receiver_stream_2, "baz", "baz")]
+        {
+            let (client_end, server_end) =
+                fidl::endpoints::create_endpoints::<fio::DirectoryMarker>();
+            proxy
+                .dir_connector_open(fruntime::CapabilitiesDirConnectorOpenRequest {
+                    dir_connector: Some(
+                        aggregate_dir_connector.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+                    ),
+                    channel: Some(server_end),
+                    path: Some(target_name.to_string()),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+                .unwrap();
+            let (received_server_end, path, rights) = match dir_receiver_stream.next().await {
+                Some(Ok(fruntime::DirReceiverRequest::Receive {
+                    channel, path, rights, ..
+                })) => (channel, path, rights),
+                other_message => panic!("unexpected message: {other_message:?}"),
+            };
+            assert_eq!(
+                client_end.as_handle_ref().basic_info().unwrap().koid,
+                received_server_end.as_handle_ref().basic_info().unwrap().related_koid
+            );
+            assert_eq!(path, expected_source_path);
+            assert_eq!(rights, fio::PERM_READABLE);
+        }
+
+        assert_matches!(remote_capabilities.get::<DirConnector>(aggregate_dir_connector), Ok(_));
         assert_no_remote_capabilities(&remote_capabilities).await;
     }
 
