@@ -344,6 +344,7 @@ if (host_os == "linux" && !is_asan) {
     "memcpy.cc",
     "null.cc",
     "prctl.cc",
+    "pthreads.cc",
     "random_memcpy.cc",
     "starnix_filesystem.cc",
     "starnix_mm.cc",
