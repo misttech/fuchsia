@@ -19,6 +19,9 @@
 # Planter itself adds the `Test:` footers, TAG: and Change-Id.
 # Planter replaces any TAG: line in --desc with its own
 # `TAG: planter planter-<freshness>` footer, so never write one in --desc.
+#
+# Before adding the task, scripts/planter_freshness.sh checks that Planter is
+# not too far out of date; if it is, no new migration is started.
 
 set -euo pipefail
 
@@ -50,9 +53,21 @@ Optional:
 The task is added with \`planter add-task --check-gerrit\`, so it fails if an
 open Gerrit CL already claims one of the target directories.
 
+Before adding the task, scripts/planter_freshness.sh checks how out of date
+Planter is. If the Planter binary (with a newer binary available) or non-clean
+shared machinery is out of date by more than PLANTER_MAX_STALE_HOURS, the
+script refuses to start the new migration.
+
 Environment:
   FUCHSIA_DIR          Fuchsia checkout (default: \$HOME/fuchsia).
   DRY_RUN              If set, print the planter command instead of running it.
+  PLANTER_MAX_STALE_HOURS
+                       How many hours Planter may be out of date before new
+                       migrations are refused (default: 24).
+  PLANTER_ALLOW_STALE  If set to 1, start the migration even if Planter is
+                       out of date. Only for a user who explicitly asks to
+                       migrate with an out-of-date Planter; agents must not
+                       set it on their own.
 EOF
 }
 
@@ -154,6 +169,28 @@ if [[ -n "${DRY_RUN:-}" ]]; then
   echo
   exit 0
 fi
+
+# Refuse to start a new migration with a Planter that is too far out of date:
+# it would migrate without the latest checks and lessons. The freshness script
+# prints Planter's warnings; relay them to the user.
+freshness_status=0
+FUCHSIA_DIR="$FUCHSIA_DIR" "$(dirname "${BASH_SOURCE[0]}")/planter_freshness.sh" \
+  || freshness_status=$?
+case "$freshness_status" in
+  0) ;;
+  2)
+    if [[ "${PLANTER_ALLOW_STALE:-}" == 1 ]]; then
+      echo "warning: PLANTER_ALLOW_STALE=1; starting the migration with an" \
+           "out-of-date Planter." >&2
+    else
+      die "Planter is too far out of date to start a new migration;" \
+          "update Planter and its shared machinery (see the warnings above)," \
+          "then try again"
+    fi
+    ;;
+  *) die "failed to check whether Planter is up to date" ;;
+esac
+echo
 
 if [[ -n "$ADD_ONLY" ]]; then
   "${add_cmd[@]}"

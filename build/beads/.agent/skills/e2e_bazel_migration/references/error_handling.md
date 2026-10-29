@@ -6,6 +6,7 @@ This document handles error conditions (e.g., STOP). For non-error conditions, r
 * Use "gmail" skill: refer to the "Interrupted Notification Template" in the [Notification Templates](../assets/notification_templates.md) to draft the "Interrupted" notification and send it to the user.
 * Use the "gsheets" skill: in the **control table**, for each **migration package**, change "Migration Status" to "blocked", write the reason of the failed step to "Failure Reason", and set "Last Status Update" to the **status timestamp**.
   * If no **migration package** has been selected yet, skip this step.
+  * If the failed step stopped because Planter is out of date before any migration task ran, revert each claimed **migration package** instead of marking it "blocked": change "Migration Status" back to "ready_for_migration", clear "Owner", and set "Last Status Update" to the **status timestamp**.
   * A package dropped or blocked during [Migration Package Selection](migration_package_selection.md) is not a **migration package**; do not update its row.
   * Skip the packages already set to "blocked" by [Migration Group Failure](#migration-group-failure), so their "Failure Reason" keeps the reason of their **migration group**.
 

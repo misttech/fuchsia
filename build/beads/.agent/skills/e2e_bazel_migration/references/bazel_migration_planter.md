@@ -6,7 +6,9 @@ Each **migration group** is migrated by one Planter task and uploaded as one CL.
 
 The `<planter>` below is the `planter` binary resolved with `"$(command -v planter || echo "$HOME/.local/bin/planter")"`, because `~/.local/bin` may not be on `PATH`.
 
-Follow the [Planter Rules](../SKILL.md#planter-rules) in every step below: keep the **Planter tag** verbatim and never invent one, and relay the **Planter warnings** that Planter prints (including the ones `planter fleet` prints while it runs).
+Follow the [Planter Rules](../SKILL.md#planter-rules) in every step below: keep the **Planter tag** verbatim and never invent one, relay the **Planter warnings** that Planter prints (including the ones `planter fleet` prints while it runs), and do not start new migrations with an out-of-date Planter.
+
+`scripts/planter_task_add_run.sh` checks the Planter freshness with `scripts/planter_freshness.sh` before it adds a task. If it refuses because Planter is out of date by more than the **Planter freshness limit** (its output has a `STALE:` line), fail the Bazel Migration and CL Creation step with the reason: "Planter is out of date by `<age>`, more than the `<limit>` limit for new migrations", and relay the **Planter warnings**. This is a **STOP** condition, not a **PLANTER ERROR** condition: no task was added.
 
 ## Planter Task Parameters
 
@@ -30,7 +32,8 @@ For a **migration group**, the `<package_names>` are the GN labels of the packag
 
 2. From the root of the Fuchsia checkout, run `FUCHSIA_DIR="$(git rev-parse --show-toplevel)" build/beads/.agent/skills/e2e_bazel_migration/scripts/planter_task_add_run.sh` with the [Planter task parameters](#planter-task-parameters) of the **migration group** to migrate it.
    * `FUCHSIA_DIR`: The root of the Fuchsia checkout on the **migration branch**. Always set it, because the script otherwise defaults to `$HOME/fuchsia`, which may be a different checkout.
-   * If the script returns error, fail the Bazel Migration and CL Creation step with the reason: "Planter failed to migrate `<package_names>`."
+   * If the script refuses because Planter is out of date (its output has a `STALE:` line), fail the Bazel Migration and CL Creation step with the reason given above for an out-of-date Planter, and relay the **Planter warnings**. This is a **STOP** condition.
+   * Otherwise, if the script returns error, fail the Bazel Migration and CL Creation step with the reason: "Planter failed to migrate `<package_names>`."
 
 3. Run `git log -1 --format=%B` to get the commit message of the commit Planter just made, and then use "fuchsia-gerrit-cli" skill to get the CL number with the `Change-Id` in the retrieved commit message.
    * If it fails to get the CL number, fail the Bazel Migration and CL Creation step with the reason: "Fail to get the generated CL for `<package_names>` migration."
@@ -58,6 +61,7 @@ A **migration group** fails when its Planter task cannot be queued, or the task 
    * If no slot is registered, refer to [Allocate Worktree Slots](#allocate-worktree-slots) to allocate the slots with the "fx-worktree" skill.
 
 3. For each **migration group**, from the root of the Fuchsia checkout, run `FUCHSIA_DIR="$(git rev-parse --show-toplevel)" build/beads/.agent/skills/e2e_bazel_migration/scripts/planter_task_add_run.sh --add-only` with the [Planter task parameters](#planter-task-parameters) of the **migration group** to queue its Planter task without running it.
+   * If the script refuses because Planter is out of date (its output has a `STALE:` line), do not queue the remaining **migration groups**: delete the tasks already queued in this step with `<planter> delete-task <task-id>`, release the worktree slots allocated in step 2 as described in [Release Worktree Slots](#release-worktree-slots), and fail the Bazel Migration and CL Creation step with the reason given above for an out-of-date Planter. This is a **STOP** condition.
    * If the script returns error, the **migration group** fails with the reason: "Planter failed to queue the migration of `<package_names>`."
    * If every **migration group** fails, fail the Bazel Migration and CL Creation step with the reason: "Planter failed to queue the migration groups."
 

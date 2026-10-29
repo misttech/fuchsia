@@ -120,7 +120,21 @@ description: >
   line that follows them, and `[machinery] warning:` lines. Exclude per-task
   retry or halt progress lines (such as `Attempt ... failed (will retry)` or
   `Task ... failed`). `planter version`, `planter run`, `planter status`, and
-  `planter fleet` print them.
+  `planter fleet` print them, and so does
+  `build/beads/.agent/skills/e2e_bazel_migration/scripts/planter_freshness.sh`.
+
+* **Planter freshness limit** : How long Planter may be out of date before this
+  skill refuses to start new migrations. It is 24 hours, unless the user
+  specifies a different limit in the prompt.
+  `build/beads/.agent/skills/e2e_bazel_migration/scripts/planter_freshness.sh`
+  evaluates the Planter binary and its shared machinery separately: new
+  migrations are refused when a newer Planter binary is available and the
+  installed binary's build baseline is older than this limit (or is a legacy
+  unstamped release), or when the shared machinery checkout is behind
+  `origin/main` by more than this limit and has uncommitted edits or local
+  commits that prevent a clean fast-forward sync. If no newer binary exists and
+  the shared machinery is up to date (or clean so `planter run` will auto-sync
+  it), new migrations may start.
 
 ## Planter Rules
 
@@ -145,15 +159,38 @@ or re-uploading).
      uploaded by Planter.
 
 2. **Relay the Planter warnings to the user.**
-   * Whenever Planter prints **Planter warnings**, relay them to the user
-     verbatim, with the command Planter suggests (if any), in your next message
-     to the user. Also list them in the "Planter Warnings" section of the
-     notifications (see the [Notification
-     Templates](assets/notification_templates.md)). Relay each distinct warning
-     once; do not drop a warning because it looks unimportant.
+   * Whenever Planter or
+     `build/beads/.agent/skills/e2e_bazel_migration/scripts/planter_freshness.sh`
+     prints **Planter warnings**, relay them to the user verbatim, with the
+     command Planter suggests (if any), in your next message to the user. Also
+     list them in the "Planter Warnings" section of the notifications (see the
+     [Notification Templates](assets/notification_templates.md)). Relay each
+     distinct warning once; do not drop a warning because it looks unimportant.
    * Do not run the suggested commands yourself unless this skill or the user
      tells you to: they rewrite the user's checkouts (e.g., `jiri update`,
      `git rebase`) or upload machinery for review (`planter upload-machinery`).
+
+3. **Do not start new migrations with an out-of-date Planter.**
+   * Before starting a new migration (adding a new Planter task), run
+     `build/beads/.agent/skills/e2e_bazel_migration/scripts/planter_freshness.sh`
+     from the root of the Fuchsia checkout. If the user specified a different
+     **Planter freshness limit**, pass it in hours as `PLANTER_MAX_STALE_HOURS`
+     to this script and to
+     `build/beads/.agent/skills/e2e_bazel_migration/scripts/planter_task_add_run.sh`.
+     If it exits with `2`, Planter or its shared machinery is out of date by
+     more than the **Planter freshness limit**: do not start the migration.
+     Tell the user how out of date Planter is and relay the **Planter
+     warnings**, which say how to update it.
+     `build/beads/.agent/skills/e2e_bazel_migration/scripts/planter_task_add_run.sh`
+     runs this check itself and refuses to add the task.
+   * Never bypass the check on your own: do not set `PLANTER_ALLOW_STALE`, or
+     raise `PLANTER_MAX_STALE_HOURS` above the **Planter freshness limit**, and
+     do not run `planter add-task` directly to get around it. Do so only if the
+     user explicitly asks to start new migrations with an out-of-date Planter.
+   * The check does not apply to existing migrations: you may still amend
+     existing migration CLs (e.g., address review comments, fix CQ failures,
+     fix the commit message, rebase and re-upload) with an out-of-date Planter.
+     Relay the **Planter warnings** while doing so.
 
 ## End-to-End Bazel Migration
 
@@ -186,9 +223,10 @@ packages** and split them into **migration groups**.
 Refer to `references/bazel_migration_planter.md` to migrate the targets within
 the **migration packages**, one CL for each **migration group**.
 
-  * If this step fails because it failed to get the generated CL number, or
-    because no CL is created for any of several **migration groups**, it's a
-    **STOP** condition.
+  * If this step fails because it failed to get the generated CL number,
+    because no CL is created for any of several **migration groups**, or
+    because Planter is out of date by more than the **Planter freshness
+    limit**, it's a **STOP** condition.
   * If this step fails because of other reasons, it's a **PLANTER ERROR**
     condition.
 

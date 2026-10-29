@@ -81,7 +81,7 @@ Planter changes often. Use the **Planter check script** to check whether the ins
    * If the link cannot be resolved, the document cannot be read, or it has no script, tell the user, skip this check, and continue.
 2. Save the script to a file outside the Fuchsia checkout (e.g., `"$(mktemp)"`), and run it with `bash`. It updates Planter if it is out of date; the update can take 10 minutes or more, so allow a long timeout or run it in the background and wait for it to finish.
    * If it exits with `0`, Planter is up to date or was updated. Continue.
-   * Otherwise, if `<planter> version` still works, keep using the installed Planter: tell the user that Planter could not be updated, with the output of the script, and continue. Do not fail the Pre-Migration Checks step.
+   * Otherwise, if `<planter> version` still works, keep using the installed Planter: tell the user that Planter could not be updated, with the output of the script, and continue. Do not fail the Pre-Migration Checks step. [Check the Planter Freshness](#5-check-the-planter-freshness) stops the migration if this Planter is too far out of date.
    * Otherwise, fail the Pre-Migration Checks step with the reason: "Failed to update Planter".
 
 
@@ -92,7 +92,18 @@ Planter changes often. Use the **Planter check script** to check whether the ins
    * If `<planter> init-project` fails, fail the Pre-Migration Checks step with the reason: "Failed to initialize the Planter shared machinery".
 
 
-### 5. Check the Antigravity Environment
+### 5. Check the Planter Freshness
+
+New migrations must not be started when the Planter binary (with a newer binary available) or its shared machinery (with local changes blocking automatic sync) is out of date by more than the **Planter freshness limit** (see the [Planter Rules](../SKILL.md#planter-rules)): it would migrate without the latest checks and lessons. (A clean shared machinery checkout auto-syncs when Planter runs, and [Workspace Branching](workspace_branching.md) updates the Fuchsia checkout in the next step.)
+
+1. From the root of the Fuchsia checkout, run `FUCHSIA_DIR="$(git rev-parse --show-toplevel)" build/beads/.agent/skills/e2e_bazel_migration/scripts/planter_freshness.sh`. If the user specified a different **Planter freshness limit**, also set `PLANTER_MAX_STALE_HOURS` to it in hours.
+   * The script prints how out of date the Planter binary and its shared machinery are, followed by the **Planter warnings**. Relay the **Planter warnings** to the user verbatim, and keep them for the "Planter Warnings" section of the notifications.
+   * If it exits with `0`, Planter is within the **Planter freshness limit**; continue.
+   * If it exits with `2`, fail the Pre-Migration Checks step with the reason: "Planter is out of date by `<age>`, more than the `<limit>` limit for new migrations", where `<age>` and `<limit>` are from the `STALE:` line of its output. Include the **Planter warnings**, which say how to update Planter, in the message to the user. Do not try to get around the check (see the [Planter Rules](../SKILL.md#planter-rules)).
+   * Otherwise, fail the Pre-Migration Checks step with the reason: "Failed to check whether Planter is up to date", with the output of the script.
+
+
+### 6. Check the Antigravity Environment
 
 Planter drives its coding and reviewer agents through the Antigravity language server. It reads the server address from `ANTIGRAVITY_LS_ADDRESS` (default `localhost:5387`) and the CSRF token from `ANTIGRAVITY_CSRF_TOKEN`, which are set in Antigravity terminals.
 
@@ -100,7 +111,7 @@ Planter drives its coding and reviewer agents through the Antigravity language s
    * If it fails, fail the Pre-Migration Checks step with the reason: "Planter must run from an Antigravity terminal".
 
 
-### 6. Check the Reviewer Assignment Support
+### 7. Check the Reviewer Assignment Support
 
 Run this check only if **assign reviewer** is enabled.
 
