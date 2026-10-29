@@ -1,0 +1,41 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_test(
+    name = "netstack3_filter_integration_test",
+    srcs = ["src/lib.rs"],
+    build_flags = [
+        "//build/config/rust/lints:deny_unused_results",
+        "//src/connectivity/network/netstack3:netstack3_configs",
+    ],
+    edition = "2024",
+    proc_macro_deps = [
+        "//src/connectivity/lib/ip-test-macro",
+    ],
+    deps = [
+        "//src/connectivity/lib/net-types",
+        "//src/connectivity/lib/packet-formats",
+        "//src/connectivity/network/netstack3/core:netstack3-core-testutils",
+        "//src/connectivity/network/netstack3/core/base:netstack3-base-testutils",
+        "//src/lib/network/packet",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+wrap_host_rust_test(
+    name = "netstack3_filter_integration_test_host_test",
+    binary_name = "netstack3_filter_integration_test",
+)
+
+fx_unittest_package(
+    name = "netstack3-core-filter-integration-test",
+    unit_tests = [":netstack3_filter_integration_test"],
+)
