@@ -86,11 +86,22 @@ struct OutputQueue {
     ended: bool,
 }
 
+/// Large upper bound on unread output packets allowed in `OutputQueue` before rejecting new packets.
+/// This prevents unbounded memory growth if the consumer stalls or stops polling.
+const MAX_OUTPUT_QUEUE_PACKETS: usize = 4096;
+
 impl OutputQueue {
     /// Adds a packet to the queue and wakes the listener if necessary.
-    fn enqueue(&mut self, packet: Packet) {
+    /// Returns an error if the queue has reached `MAX_OUTPUT_QUEUE_PACKETS`.
+    fn enqueue(&mut self, packet: Packet) -> Result<(), Error> {
+        if self.queue.len() >= MAX_OUTPUT_QUEUE_PACKETS {
+            return Err(format_err!(
+                "OutputQueue exceeded max capacity of {MAX_OUTPUT_QUEUE_PACKETS} packets"
+            ));
+        }
         self.queue.push_back(packet);
         self.listener.wake();
+        Ok(())
     }
 
     /// Signals the end of the stream has happened.
@@ -240,7 +251,7 @@ impl StreamProcessorInner {
             }
             StreamProcessorEvent::OnOutputPacket { output_packet, .. } => {
                 let mut lock = self.output_queue.lock();
-                lock.enqueue(output_packet);
+                lock.enqueue(output_packet)?;
             }
             StreamProcessorEvent::OnFreeInputPacket {
                 free_input_packet: PacketHeader { packet_index: Some(idx), .. },
@@ -1145,46 +1156,53 @@ mod tests {
         let (waker, write_fut_wake_count) = new_count_waker();
         let mut counting_ctx = Context::from_waker(&waker);
 
-        let mut wake_count_before_stall = 0;
-        for frame in chunks {
-            wake_count_before_stall = write_fut_wake_count.get();
+        const MAX_FRAMES_BEFORE_STALL: usize = 50;
+        let mut stalled = false;
+        for frame in chunks.by_ref().take(MAX_FRAMES_BEFORE_STALL) {
             let mut written_fut = decoder.write(&frame);
             if written_fut.poll_unpin(&mut counting_ctx).is_pending() {
-                // The poll_unpin can wake the input waker if an event arrived for it, meaning we should
-                // continue filling.
-                if write_fut_wake_count.get() != wake_count_before_stall {
-                    continue;
-                }
-                // We should have never been woken until now, because we always were ready before,
-                // and the output waker is not registered (so can't progress)
+                // Break out of filling as soon as the write is pending (even if an incoming event
+                // already woke the input waker during polling) to avoid unbounded looping and OOM
+                // when the codec frees buffers as fast as we fill them.
+                stalled = true;
                 break;
             }
             // Flush the packet, to make input buffers get spent faster.
             let mut flush_fut = pin!(decoder.flush());
             exec.run_singlethreaded(&mut flush_fut).expect("to flush the decoder");
         }
+        assert!(
+            stalled,
+            "Expected input write to become pending within {MAX_FRAMES_BEFORE_STALL} frames"
+        );
 
         // We should be able to get a decoded output, once the codec does it's thing.
         let decoded_frame = exec.run_singlethreaded(&mut decoded_fut);
         assert_eq!(512, decoded_frame.unwrap().unwrap().len(), "Decoded frame size wrong");
 
         // Fill the input buffer again so the input waker is registered.
-        let chunks = sbc_data.as_slice().chunks(SBC_FRAME_SIZE).cycle();
-        for frame in chunks {
+        // Bound the chunks to avoid unbounded looping and OOM if the codec frees buffers as fast as
+        // we fill them.
+        let mut wake_count_before_stall = 0;
+        let mut stalled = false;
+        for frame in chunks.by_ref().take(MAX_FRAMES_BEFORE_STALL) {
             wake_count_before_stall = write_fut_wake_count.get();
             let mut written_fut = decoder.write(&frame);
             if written_fut.poll_unpin(&mut counting_ctx).is_pending() {
-                // The poll_unpin can wake the input waker if an event arrived for it, meaning we should
-                // continue filling.
-                if write_fut_wake_count.get() != wake_count_before_stall {
-                    continue;
-                }
+                // Break out of filling as soon as the write is pending (even if an incoming event
+                // already woke the input waker during polling) to avoid unbounded looping and OOM
+                // when the codec frees buffers as fast as we fill them.
+                stalled = true;
                 break;
             }
             // Flush the packet, to make input buffers get spent faster.
             let mut flush_fut = pin!(decoder.flush());
             exec.run_singlethreaded(&mut flush_fut).expect("to flush the decoder");
         }
+        assert!(
+            stalled,
+            "Expected input write to become pending within {MAX_FRAMES_BEFORE_STALL} frames"
+        );
 
         // The input waker should be the one waiting on events from the codec and get woken up,
         // even if an output event happens.
@@ -1192,9 +1210,23 @@ mod tests {
         // should wake the input waker, which is waiting to be woken up.
         while write_fut_wake_count.get() == wake_count_before_stall {
             let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
+            if write_fut_wake_count.get() == wake_count_before_stall {
+                exec.run_singlethreaded(fasync::Timer::new(
+                    fasync::MonotonicDuration::from_millis(1),
+                ));
+            }
         }
 
         // Note: at this point, we may not be able to write another frame, but the waiter should
         // repoll, and set the waker again.
+    }
+
+    #[fuchsia::test]
+    fn output_queue_max_capacity() {
+        let mut queue = OutputQueue::default();
+        for _ in 0..MAX_OUTPUT_QUEUE_PACKETS {
+            assert!(queue.enqueue(Packet::default()).is_ok());
+        }
+        assert!(queue.enqueue(Packet::default()).is_err());
     }
 }
