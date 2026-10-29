@@ -38,6 +38,7 @@ struct thread_local_regs {
 void general_regs_fill_test_values(zx_thread_state_general_regs_t* regs);
 void fp_regs_fill_test_values(zx_thread_state_fp_regs_t* regs);
 void vector_regs_fill_test_values(zx_thread_state_vector_regs_t* regs);
+void arm64_sve_regs_fill_test_values(zx_arm64_thread_state_sve_regs_t* regs);
 void debug_regs_fill_test_values(zx_thread_state_debug_regs_t* to_write,
                                  zx_thread_state_debug_regs_t* expected);
 
@@ -48,6 +49,8 @@ void fp_regs_expect_eq(const zx_thread_state_fp_regs_t& regs1,
                        const zx_thread_state_fp_regs_t& regs2);
 void vector_regs_expect_eq(const zx_thread_state_vector_regs_t& regs1,
                            const zx_thread_state_vector_regs_t& regs2);
+void arm64_sve_regs_expect_eq(const zx_arm64_thread_state_sve_regs_t& regs1,
+                              const zx_arm64_thread_state_sve_regs_t& regs2);
 void debug_regs_expect_eq(const char* file, int line, const zx_thread_state_debug_regs_t& regs1,
                           const zx_thread_state_debug_regs_t& regs2);
 
@@ -71,6 +74,11 @@ void save_general_regs_and_exit_thread();
 void save_fp_regs_and_exit_thread();
 void save_vector_regs_and_exit_thread();
 void save_thread_local_regs_and_exit_thread();
+
+#ifdef __aarch64__
+void spin_with_arm64_sve_regs(zx_arm64_thread_state_sve_regs_t* regs);
+void save_arm64_sve_regs_and_exit_thread();
+#endif
 
 __END_CDECLS
 

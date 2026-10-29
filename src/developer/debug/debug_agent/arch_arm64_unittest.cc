@@ -2,6 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/fit/defer.h>
+#include <lib/zx/event.h>
+#include <lib/zx/suspend_token.h>
+#include <lib/zx/thread.h>
+#include <zircon/assert.h>
+#include <zircon/features.h>
+#include <zircon/syscalls.h>
+
+#include <thread>
+
 #include <gtest/gtest.h>
 
 #include "src/developer/debug/debug_agent/arch.h"
@@ -89,9 +99,6 @@ TEST(ArchArm64, WriteVectorRegs) {
 
   regs.emplace_back(debug::RegisterID::kARMv8_fpcr, std::vector<uint8_t>{5, 6, 7, 8});
   regs.emplace_back(debug::RegisterID::kARMv8_fpsr, std::vector<uint8_t>{9, 0, 1, 2});
-  regs.emplace_back(debug::RegisterID::kARMv8_ffr, std::vector<uint8_t>{0xff, 0x00});
-  regs.emplace_back(debug::RegisterID::kARMv8_p0, std::vector<uint8_t>{0x34, 0x12});
-  regs.emplace_back(debug::RegisterID::kARMv8_p15, std::vector<uint8_t>{0x78, 0x56});
 
   zx_thread_state_vector_regs_t out = {};
   zx_status_t res = WriteVectorRegisters(regs, &out);
@@ -108,26 +115,187 @@ TEST(ArchArm64, WriteVectorRegs) {
 
   EXPECT_EQ(out.fpcr, 0x08070605u);
   EXPECT_EQ(out.fpsr, 0x02010009u);
-  EXPECT_EQ(out.ffr, 0x00ffu);
-  EXPECT_EQ(out.p[0], 0x1234u);
-  EXPECT_EQ(out.p[15], 0x5678u);
 
-  // VG is a read-only pseudo-register and cannot be written.
-  std::vector<debug::RegisterValue> vg_regs;
-  vg_regs.emplace_back(debug::RegisterID::kARMv8_vg, uint64_t{2});
-  EXPECT_EQ(WriteVectorRegisters(vg_regs, &out), ZX_ERR_INVALID_ARGS);
+  // VG is a read-only pseudo-register and SVE predicate/FFR registers belong to
+  // ZX_THREAD_STATE_ARM64_SVE rather than ZX_THREAD_STATE_VECTOR_REGS.
+  EXPECT_EQ(WriteVectorRegisters({{debug::RegisterID::kARMv8_vg, uint64_t{2}}}, &out),
+            ZX_ERR_INVALID_ARGS);
+  EXPECT_EQ(WriteVectorRegisters(
+                {{debug::RegisterID::kARMv8_ffr, std::vector<uint8_t>{0xff, 0x00}}}, &out),
+            ZX_ERR_INVALID_ARGS);
+  EXPECT_EQ(WriteVectorRegisters({{debug::RegisterID::kARMv8_p0, std::vector<uint8_t>{0x34, 0x12}}},
+                                 &out),
+            ZX_ERR_INVALID_ARGS);
 
-  // Invalid byte lengths for SVE registers must be rejected.
-  EXPECT_EQ(
-      WriteVectorRegisters({{debug::RegisterID::kARMv8_ffr, std::vector<uint8_t>(4, 0)}}, &out),
-      ZX_ERR_INVALID_ARGS);
-  EXPECT_EQ(
-      WriteVectorRegisters({{debug::RegisterID::kARMv8_p0, std::vector<uint8_t>(4, 0)}}, &out),
-      ZX_ERR_INVALID_ARGS);
+  // Invalid byte lengths (including 0-byte boundary) must be rejected.
+  EXPECT_EQ(WriteVectorRegisters({{debug::RegisterID::kARMv8_z0, std::vector<uint8_t>{}}}, &out),
+            ZX_ERR_INVALID_ARGS);
   EXPECT_EQ(
       WriteVectorRegisters({{debug::RegisterID::kARMv8_z0, std::vector<uint8_t>(8, 0)}}, &out),
       ZX_ERR_INVALID_ARGS);
 }
+
+namespace {
+
+TEST(ArchArm64, WriteArm64SveRegs) {
+  zx_arm64_thread_state_sve_regs_t out = {};
+  out.p[7] = 0xabcd;
+
+  std::vector<debug::RegisterValue> regs;
+  regs.emplace_back(debug::RegisterID::kARMv8_ffr, std::vector<uint8_t>{0xff, 0x00});
+  regs.emplace_back(debug::RegisterID::kARMv8_p0, std::vector<uint8_t>{0x34, 0x12});
+  regs.emplace_back(debug::RegisterID::kARMv8_p15, std::vector<uint8_t>{0x78, 0x56});
+
+  ASSERT_EQ(WriteArm64SveRegisters(regs, &out), ZX_OK);
+  EXPECT_EQ(out.ffr, 0x00ffu);
+  EXPECT_EQ(out.p[0], 0x1234u);
+  EXPECT_EQ(out.p[7], 0xabcdu);
+  EXPECT_EQ(out.p[15], 0x5678u);
+
+  // Non-SVE-predicate registers and read-only VG must be rejected.
+  EXPECT_EQ(WriteArm64SveRegisters({{debug::RegisterID::kARMv8_vg, uint64_t{2}}}, &out),
+            ZX_ERR_INVALID_ARGS);
+  EXPECT_EQ(
+      WriteArm64SveRegisters({{debug::RegisterID::kARMv8_v0, std::vector<uint8_t>(16, 0)}}, &out),
+      ZX_ERR_INVALID_ARGS);
+  EXPECT_EQ(
+      WriteArm64SveRegisters({{debug::RegisterID::kARMv8_z0, std::vector<uint8_t>(16, 0)}}, &out),
+      ZX_ERR_INVALID_ARGS);
+
+  // Invalid byte lengths (including 0-byte boundary) must be rejected.
+  EXPECT_EQ(WriteArm64SveRegisters({{debug::RegisterID::kARMv8_p0, std::vector<uint8_t>{}}}, &out),
+            ZX_ERR_INVALID_ARGS);
+  EXPECT_EQ(
+      WriteArm64SveRegisters({{debug::RegisterID::kARMv8_ffr, std::vector<uint8_t>(4, 0)}}, &out),
+      ZX_ERR_INVALID_ARGS);
+  EXPECT_EQ(
+      WriteArm64SveRegisters({{debug::RegisterID::kARMv8_p15, std::vector<uint8_t>(4, 0)}}, &out),
+      ZX_ERR_INVALID_ARGS);
+}
+
+TEST(ArchArm64, ReadAndWriteVectorCategoryRegistersLiveThread) {
+  zx::event ready_event;
+  zx::event exit_event;
+  ASSERT_EQ(zx::event::create(0, &ready_event), ZX_OK);
+  ASSERT_EQ(zx::event::create(0, &exit_event), ZX_OK);
+
+  zx::thread worker_thread;
+  std::thread worker([&ready_event, &exit_event, &worker_thread] {
+    zx_status_t status = zx::thread::self()->duplicate(ZX_RIGHT_SAME_RIGHTS, &worker_thread);
+    ZX_ASSERT(status == ZX_OK);
+    status = ready_event.signal(0, ZX_USER_SIGNAL_0);
+    ZX_ASSERT(status == ZX_OK);
+    exit_event.wait_one(ZX_USER_SIGNAL_0, zx::time::infinite(), nullptr);
+  });
+
+  zx::suspend_token suspend_token;
+  auto cleanup = fit::defer([&] {
+    suspend_token.reset();
+    exit_event.signal(0, ZX_USER_SIGNAL_0);
+    if (worker.joinable()) {
+      worker.join();
+    }
+  });
+
+  ASSERT_EQ(ready_event.wait_one(ZX_USER_SIGNAL_0, zx::time::infinite(), nullptr), ZX_OK);
+  ASSERT_EQ(worker_thread.suspend(&suspend_token), ZX_OK);
+  ASSERT_EQ(worker_thread.wait_one(ZX_THREAD_SUSPENDED, zx::time::infinite(), nullptr), ZX_OK);
+
+  uint32_t features = 0;
+  ASSERT_EQ(zx_system_get_features(ZX_FEATURE_KIND_CPU, &features), ZX_OK);
+  const bool has_sve = (features & ZX_ARM64_FEATURE_ISA_SVE) != 0;
+
+  // Empty updates succeed as a no-op and read-only VG is rejected at the category level.
+  ASSERT_EQ(WriteRegisters(worker_thread, debug::RegisterCategory::kVector, {}), ZX_OK);
+  EXPECT_EQ(WriteRegisters(worker_thread, debug::RegisterCategory::kVector,
+                           {{debug::RegisterID::kARMv8_vg, uint64_t{2}}}),
+            ZX_ERR_INVALID_ARGS);
+
+  std::vector<debug::RegisterValue> initial_regs;
+  ASSERT_EQ(ReadRegisters(worker_thread, debug::RegisterCategory::kVector, initial_regs), ZX_OK);
+
+  auto find_reg = [](const std::vector<debug::RegisterValue>& list,
+                     debug::RegisterID id) -> const debug::RegisterValue* {
+    for (const auto& r : list) {
+      if (r.id == id)
+        return &r;
+    }
+    return nullptr;
+  };
+
+  EXPECT_NE(find_reg(initial_regs, debug::RegisterID::kARMv8_v0), nullptr);
+  if (!has_sve) {
+    EXPECT_EQ(find_reg(initial_regs, debug::RegisterID::kARMv8_vg), nullptr);
+    EXPECT_EQ(find_reg(initial_regs, debug::RegisterID::kARMv8_ffr), nullptr);
+    EXPECT_EQ(find_reg(initial_regs, debug::RegisterID::kARMv8_p0), nullptr);
+    EXPECT_EQ(WriteRegisters(worker_thread, debug::RegisterCategory::kVector,
+                             {{debug::RegisterID::kARMv8_p0, std::vector<uint8_t>{0x34, 0x12}}}),
+              ZX_ERR_NOT_SUPPORTED);
+    EXPECT_EQ(WriteRegisters(worker_thread, debug::RegisterCategory::kVector,
+                             {{debug::RegisterID::kARMv8_z0, std::vector<uint8_t>(16, 0)}}),
+              ZX_ERR_NOT_SUPPORTED);
+    return;
+  }
+
+  const debug::RegisterValue* vg = find_reg(initial_regs, debug::RegisterID::kARMv8_vg);
+  ASSERT_NE(vg, nullptr);
+  ASSERT_EQ(vg->data.size(), sizeof(uint64_t));
+  uint64_t vg_val = 0;
+  memcpy(&vg_val, vg->data.data(), sizeof(vg_val));
+  EXPECT_EQ(vg_val, 2u);
+
+  // Seed v0 with a known pattern first; when v0 and z0 overlap in one request, the later entry
+  // wins because they share the low 128 bits.
+  std::vector<uint8_t> seed_v0(16, 0x11);
+  ASSERT_EQ(WriteRegisters(worker_thread, debug::RegisterCategory::kVector,
+                           {{debug::RegisterID::kARMv8_v0, std::vector<uint8_t>(16, 0x22)},
+                            {debug::RegisterID::kARMv8_z0, seed_v0}}),
+            ZX_OK);
+
+  // A combined z0 + non-monotonic ffr write must fail with ZX_ERR_INVALID_ARGS without mutating
+  // v0/z0 in ZX_THREAD_STATE_VECTOR_REGS.
+  std::vector<uint8_t> new_z0(16, 0x99);
+  EXPECT_EQ(WriteRegisters(worker_thread, debug::RegisterCategory::kVector,
+                           {{debug::RegisterID::kARMv8_z0, new_z0},
+                            {debug::RegisterID::kARMv8_ffr, std::vector<uint8_t>{0x02, 0x00}}}),
+            ZX_ERR_INVALID_ARGS);
+
+  std::vector<debug::RegisterValue> after_failed_write;
+  ASSERT_EQ(ReadRegisters(worker_thread, debug::RegisterCategory::kVector, after_failed_write),
+            ZX_OK);
+  const debug::RegisterValue* v0_after_fail =
+      find_reg(after_failed_write, debug::RegisterID::kARMv8_v0);
+  ASSERT_NE(v0_after_fail, nullptr);
+  EXPECT_EQ(v0_after_fail->data, seed_v0);
+
+  // A valid combined z0 + p0 + p15 + ffr write must update both topics.
+  ASSERT_EQ(WriteRegisters(worker_thread, debug::RegisterCategory::kVector,
+                           {{debug::RegisterID::kARMv8_z0, new_z0},
+                            {debug::RegisterID::kARMv8_p0, std::vector<uint8_t>{0x34, 0x12}},
+                            {debug::RegisterID::kARMv8_p15, std::vector<uint8_t>{0x78, 0x56}},
+                            {debug::RegisterID::kARMv8_ffr, std::vector<uint8_t>{0x7f, 0x00}}}),
+            ZX_OK);
+
+  std::vector<debug::RegisterValue> after_valid_write;
+  ASSERT_EQ(ReadRegisters(worker_thread, debug::RegisterCategory::kVector, after_valid_write),
+            ZX_OK);
+  const debug::RegisterValue* v0_after = find_reg(after_valid_write, debug::RegisterID::kARMv8_v0);
+  const debug::RegisterValue* p0_after = find_reg(after_valid_write, debug::RegisterID::kARMv8_p0);
+  const debug::RegisterValue* p15_after =
+      find_reg(after_valid_write, debug::RegisterID::kARMv8_p15);
+  const debug::RegisterValue* ffr_after =
+      find_reg(after_valid_write, debug::RegisterID::kARMv8_ffr);
+  ASSERT_NE(v0_after, nullptr);
+  ASSERT_NE(p0_after, nullptr);
+  ASSERT_NE(p15_after, nullptr);
+  ASSERT_NE(ffr_after, nullptr);
+  EXPECT_EQ(v0_after->data, new_z0);
+  EXPECT_EQ(p0_after->data, (std::vector<uint8_t>{0x34, 0x12}));
+  EXPECT_EQ(p15_after->data, (std::vector<uint8_t>{0x78, 0x56}));
+  EXPECT_EQ(ffr_after->data, (std::vector<uint8_t>{0x7f, 0x00}));
+}
+
+}  // namespace
 
 TEST(ArchArm64, WriteDebugRegs) {
   std::vector<debug::RegisterValue> regs;

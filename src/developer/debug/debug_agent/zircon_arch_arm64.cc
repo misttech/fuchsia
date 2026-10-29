@@ -10,6 +10,7 @@
 #include <zircon/syscalls/exception.h>
 
 #include <optional>
+#include <utility>
 
 #include "src/developer/debug/debug_agent/arch.h"
 #include "src/developer/debug/debug_agent/arch_types.h"
@@ -56,30 +57,105 @@ bool HasSve() {
   return kHasSve;
 }
 
+bool IsArm64SvePredicateRegister(RegisterID id) {
+  if (id == RegisterID::kARMv8_ffr)
+    return true;
+  uint32_t raw_id = std::to_underlying(id);
+  return raw_id >= std::to_underlying(RegisterID::kARMv8_p0) &&
+         raw_id <= std::to_underlying(RegisterID::kARMv8_p15);
+}
+
+bool IsArm64SveZRegister(RegisterID id) {
+  uint32_t raw_id = std::to_underlying(id);
+  return raw_id >= std::to_underlying(RegisterID::kARMv8_z0) &&
+         raw_id <= std::to_underlying(RegisterID::kARMv8_z31);
+}
+
 zx_status_t ReadVectorRegs(const zx::thread& thread, std::vector<debug::RegisterValue>& out) {
   zx_thread_state_vector_regs_t vec_regs;
   zx_status_t status = thread.read_state(ZX_THREAD_STATE_VECTOR_REGS, &vec_regs, sizeof(vec_regs));
   if (status != ZX_OK)
     return status;
 
-  out.emplace_back(RegisterID::kARMv8_fpcr, vec_regs.fpcr);
-  out.emplace_back(RegisterID::kARMv8_fpsr, vec_regs.fpsr);
+  zx_arm64_thread_state_sve_regs_t sve_regs;
+  bool have_sve_regs = false;
   if (HasSve()) {
-    // VG is the number of 64-bit granules per Z register, which is 2 for 128-bit SVE.
-    constexpr uint64_t kSve128VectorGranule = sizeof(vec_regs.v[0]) / sizeof(uint64_t);
-    out.emplace_back(RegisterID::kARMv8_vg, kSve128VectorGranule);
-    out.emplace_back(RegisterID::kARMv8_ffr, vec_regs.ffr);
-
-    auto p_base = static_cast<uint32_t>(RegisterID::kARMv8_p0);
-    for (size_t i = 0; i < 16; i++) {
-      out.emplace_back(static_cast<RegisterID>(p_base + i), vec_regs.p[i]);
+    status = thread.read_state(ZX_THREAD_STATE_ARM64_SVE, &sve_regs, sizeof(sve_regs));
+    if (status == ZX_OK) {
+      have_sve_regs = true;
+    } else if (status != ZX_ERR_NOT_SUPPORTED && status != ZX_ERR_INVALID_ARGS) {
+      return status;
     }
   }
 
-  auto base = static_cast<uint32_t>(RegisterID::kARMv8_v0);
+  out.emplace_back(RegisterID::kARMv8_fpcr, vec_regs.fpcr);
+  out.emplace_back(RegisterID::kARMv8_fpsr, vec_regs.fpsr);
+  if (have_sve_regs) {
+    // VG is the number of 64-bit granules per Z register, which is 2 for 128-bit SVE.
+    constexpr uint64_t kSve128VectorGranule = sizeof(vec_regs.v[0]) / sizeof(uint64_t);
+    out.emplace_back(RegisterID::kARMv8_vg, kSve128VectorGranule);
+    out.emplace_back(RegisterID::kARMv8_ffr, sve_regs.ffr);
+
+    uint32_t p_base = std::to_underlying(RegisterID::kARMv8_p0);
+    for (size_t i = 0; i < 16; i++) {
+      out.emplace_back(static_cast<RegisterID>(p_base + i), sve_regs.p[i]);
+    }
+  }
+
+  uint32_t base = std::to_underlying(RegisterID::kARMv8_v0);
   for (size_t i = 0; i < 32; i++)
     out.emplace_back(static_cast<RegisterID>(base + i), 16u, &vec_regs.v[i]);
 
+  return ZX_OK;
+}
+
+zx_status_t WriteVectorCategoryRegisters(zx::thread& thread,
+                                         const std::vector<debug::RegisterValue>& registers) {
+  std::vector<debug::RegisterValue> vec_updates;
+  std::vector<debug::RegisterValue> sve_updates;
+  for (const auto& reg : registers) {
+    if ((IsArm64SveZRegister(reg.id) || IsArm64SvePredicateRegister(reg.id)) && !HasSve()) {
+      return ZX_ERR_NOT_SUPPORTED;
+    }
+    if (IsArm64SvePredicateRegister(reg.id)) {
+      sve_updates.push_back(reg);
+    } else {
+      vec_updates.push_back(reg);
+    }
+  }
+
+  const bool write_vec = !vec_updates.empty() || sve_updates.empty();
+  zx_thread_state_vector_regs_t vec_regs = {};
+  if (write_vec) {
+    zx_status_t res = thread.read_state(ZX_THREAD_STATE_VECTOR_REGS, &vec_regs, sizeof(vec_regs));
+    if (res != ZX_OK)
+      return res;
+    res = WriteVectorRegisters(vec_updates, &vec_regs);
+    if (res != ZX_OK)
+      return res;
+  }
+
+  zx_arm64_thread_state_sve_regs_t sve_regs = {};
+  if (!sve_updates.empty()) {
+    zx_status_t res = thread.read_state(ZX_THREAD_STATE_ARM64_SVE, &sve_regs, sizeof(sve_regs));
+    if (res != ZX_OK)
+      return res;
+    res = WriteArm64SveRegisters(sve_updates, &sve_regs);
+    if (res != ZX_OK)
+      return res;
+  }
+
+  // Write SVE state before vector state because the kernel validates FFR monotonicity on
+  // ZX_THREAD_STATE_ARM64_SVE writes, whereas ZX_THREAD_STATE_VECTOR_REGS writes do not fail
+  // value validation on ARM64.
+  if (!sve_updates.empty()) {
+    zx_status_t res = thread.write_state(ZX_THREAD_STATE_ARM64_SVE, &sve_regs, sizeof(sve_regs));
+    if (res != ZX_OK)
+      return res;
+  }
+  if (write_vec) {
+    return thread.write_state(ZX_THREAD_STATE_VECTOR_REGS, &vec_regs, sizeof(vec_regs));
+  }
   return ZX_OK;
 }
 
@@ -184,17 +260,7 @@ zx_status_t WriteRegisters(zx::thread& thread, const debug::RegisterCategory& ca
       return ZX_ERR_INVALID_ARGS;  // No floating point registers.
     }
     case debug::RegisterCategory::kVector: {
-      zx_thread_state_vector_regs_t regs;
-      zx_status_t res = thread.read_state(ZX_THREAD_STATE_VECTOR_REGS, &regs, sizeof(regs));
-      if (res != ZX_OK)
-        return res;
-
-      // Overwrite the values.
-      res = WriteVectorRegisters(registers, &regs);
-      if (res != ZX_OK)
-        return res;
-
-      return thread.write_state(ZX_THREAD_STATE_VECTOR_REGS, &regs, sizeof(regs));
+      return WriteVectorCategoryRegisters(thread, registers);
     }
     case debug::RegisterCategory::kDebug: {
       zx_thread_state_debug_regs_t regs;
@@ -251,32 +317,50 @@ zx_status_t WriteGeneralRegisters(const std::vector<debug::RegisterValue>& updat
 
 zx_status_t WriteVectorRegisters(const std::vector<debug::RegisterValue>& updates,
                                  zx_thread_state_vector_regs_t* regs) {
-  uint32_t begin_vector = static_cast<uint32_t>(RegisterID::kARMv8_v0);
-  uint32_t last_vector = static_cast<uint32_t>(RegisterID::kARMv8_v31);
-  uint32_t begin_sve_z = static_cast<uint32_t>(RegisterID::kARMv8_z0);
-  uint32_t last_sve_z = static_cast<uint32_t>(RegisterID::kARMv8_z31);
-  uint32_t begin_sve_p = static_cast<uint32_t>(RegisterID::kARMv8_p0);
-  uint32_t last_sve_p = static_cast<uint32_t>(RegisterID::kARMv8_p15);
+  uint32_t begin_vector = std::to_underlying(RegisterID::kARMv8_v0);
+  uint32_t last_vector = std::to_underlying(RegisterID::kARMv8_v31);
+  uint32_t begin_sve_z = std::to_underlying(RegisterID::kARMv8_z0);
+  uint32_t last_sve_z = std::to_underlying(RegisterID::kARMv8_z31);
 
   for (const auto& reg : updates) {
     zx_status_t status = ZX_OK;
-    uint32_t id = static_cast<uint32_t>(reg.id);
+    uint32_t id = std::to_underlying(reg.id);
 
     if (id >= begin_vector && id <= last_vector) {
       status = WriteRegisterValue(reg, &regs->v[id - begin_vector]);
     } else if (id >= begin_sve_z && id <= last_sve_z) {
       status = WriteRegisterValue(reg, &regs->v[id - begin_sve_z]);
-    } else if (id >= begin_sve_p && id <= last_sve_p) {
-      status = WriteRegisterValue(reg, &regs->p[id - begin_sve_p]);
     } else {
       switch (reg.id) {
         IMPLEMENT_CASE_WRITE_REGISTER_VALUE(fpcr);
         IMPLEMENT_CASE_WRITE_REGISTER_VALUE(fpsr);
-        IMPLEMENT_CASE_WRITE_REGISTER_VALUE(ffr);
         default:
           status = ZX_ERR_INVALID_ARGS;
           break;
       }
+    }
+
+    if (status != ZX_OK)
+      return status;
+  }
+  return ZX_OK;
+}
+
+zx_status_t WriteArm64SveRegisters(const std::vector<debug::RegisterValue>& updates,
+                                   zx_arm64_thread_state_sve_regs_t* regs) {
+  uint32_t begin_sve_p = std::to_underlying(RegisterID::kARMv8_p0);
+  uint32_t last_sve_p = std::to_underlying(RegisterID::kARMv8_p15);
+
+  for (const auto& reg : updates) {
+    zx_status_t status = ZX_OK;
+    uint32_t id = std::to_underlying(reg.id);
+
+    if (id >= begin_sve_p && id <= last_sve_p) {
+      status = WriteRegisterValue(reg, &regs->p[id - begin_sve_p]);
+    } else if (reg.id == RegisterID::kARMv8_ffr) {
+      status = WriteRegisterValue(reg, &regs->ffr);
+    } else {
+      status = ZX_ERR_INVALID_ARGS;
     }
 
     if (status != ZX_OK)

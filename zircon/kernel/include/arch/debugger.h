@@ -34,6 +34,12 @@ zx_status_t arch_set_debug_regs(Thread* thread, const zx_thread_state_debug_regs
 zx_status_t arch_get_single_step(Thread* thread, zx_thread_state_single_step_t* out);
 zx_status_t arch_set_single_step(Thread* thread, const zx_thread_state_single_step_t* in);
 
+#ifdef __aarch64__
+bool arch_arm64_sve_supported();
+zx_status_t arch_get_arm64_sve(Thread* thread, zx_arm64_thread_state_sve_regs_t* out);
+zx_status_t arch_set_arm64_sve(Thread* thread, const zx_arm64_thread_state_sve_regs_t* in);
+#endif
+
 vaddr_t arch_get_instruction_pointer(GeneralRegsSource source, void* gregs);
 zx_status_t arch_set_return_instruction_pointer(GeneralRegsSource source, void* gregs, vaddr_t ip);
 }

@@ -148,8 +148,6 @@ zx_status_t arch_set_fp_regs(Thread* thread, const zx_thread_state_fp_regs_t* in
 }
 
 zx_status_t arch_get_vector_regs(Thread* thread, zx_thread_state_vector_regs_t* out) {
-  *out = {};
-
   SingleChainLockGuard thread_guard{IrqSaveOption, thread->get_lock(),
                                     CLT_TAG("arch_get_vector_regs")};
 
@@ -162,28 +160,11 @@ zx_status_t arch_get_vector_regs(Thread* thread, zx_thread_state_vector_regs_t* 
     out->v[i].low = in->regs[i * 2];
     out->v[i].high = in->regs[i * 2 + 1];
   }
-  if (arm64_feature_test(ZX_ARM64_FEATURE_ISA_SVE)) {
-    static_assert(sizeof(out->p) == sizeof(in->p_regs));
-    memcpy(out->p, in->p_regs, sizeof(out->p));
-    // Canonicalize FFR to its contiguous prefix of 1s from bit 0 so that even if a user thread
-    // executed WRFFR with a non-monotonic predicate (producing an UNKNOWN architectural FFR
-    // value), reading state and writing it back unchanged never fails with ZX_ERR_INVALID_ARGS.
-    uint32_t ones = ktl::countr_one(in->ffr);
-    out->ffr = static_cast<uint16_t>((1u << ones) - 1u);
-  }
 
   return ZX_OK;
 }
 
 zx_status_t arch_set_vector_regs(Thread* thread, const zx_thread_state_vector_regs_t* in) {
-  if (arm64_feature_test(ZX_ARM64_FEATURE_ISA_SVE)) {
-    // Per the Arm ARM for WRFFR, the source predicate bits must be a monotonically
-    // decreasing sequence of 1s starting from bit 0 (i.e. 2^k - 1 for 0 <= k <= 16).
-    if (((static_cast<uint32_t>(in->ffr) + 1) & in->ffr) != 0) {
-      return ZX_ERR_INVALID_ARGS;
-    }
-  }
-
   SingleChainLockGuard thread_guard{IrqSaveOption, thread->get_lock(),
                                     CLT_TAG("arch_set_vector_regs")};
 
@@ -196,11 +177,55 @@ zx_status_t arch_set_vector_regs(Thread* thread, const zx_thread_state_vector_re
     out->regs[i * 2] = in->v[i].low;
     out->regs[i * 2 + 1] = in->v[i].high;
   }
-  if (arm64_feature_test(ZX_ARM64_FEATURE_ISA_SVE)) {
-    static_assert(sizeof(out->p_regs) == sizeof(in->p));
-    memcpy(out->p_regs, in->p, sizeof(out->p_regs));
-    out->ffr = in->ffr;
+
+  return ZX_OK;
+}
+
+bool arch_arm64_sve_supported() { return arm64_feature_test(ZX_ARM64_FEATURE_ISA_SVE); }
+
+zx_status_t arch_get_arm64_sve(Thread* thread, zx_arm64_thread_state_sve_regs_t* out) {
+  if (!arch_arm64_sve_supported()) {
+    return ZX_ERR_NOT_SUPPORTED;
   }
+
+  SingleChainLockGuard thread_guard{IrqSaveOption, thread->get_lock(),
+                                    CLT_TAG("arch_get_arm64_sve")};
+
+  DEBUG_ASSERT(thread->IsUserStateSavedLocked());
+
+  const fpstate* in = &thread->arch().fpstate;
+  static_assert(sizeof(out->p) == sizeof(in->p_regs));
+  memcpy(out->p, in->p_regs, sizeof(out->p));
+  // Canonicalize FFR to its contiguous prefix of 1s from bit 0 so that even if a user thread
+  // executed WRFFR with a non-monotonic predicate (producing an UNKNOWN architectural FFR
+  // value), reading state and writing it back unchanged never fails with ZX_ERR_INVALID_ARGS.
+  uint32_t ones = ktl::countr_one(in->ffr);
+  out->ffr = static_cast<uint16_t>((1u << ones) - 1u);
+
+  return ZX_OK;
+}
+
+zx_status_t arch_set_arm64_sve(Thread* thread, const zx_arm64_thread_state_sve_regs_t* in) {
+  if (!arch_arm64_sve_supported()) {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+
+  // Per the Arm ARM for WRFFR, the source predicate bits must be a monotonically
+  // decreasing sequence of 1s starting from bit 0 (i.e. 2^k - 1 for 0 <= k <= 16).
+  const uint32_t ffr = in->ffr;
+  if (((ffr + 1u) & ffr) != 0u) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+
+  SingleChainLockGuard thread_guard{IrqSaveOption, thread->get_lock(),
+                                    CLT_TAG("arch_set_arm64_sve")};
+
+  DEBUG_ASSERT(thread->IsUserStateSavedLocked());
+
+  fpstate* out = &thread->arch().fpstate;
+  static_assert(sizeof(out->p_regs) == sizeof(in->p));
+  memcpy(out->p_regs, in->p, sizeof(out->p_regs));
+  out->ffr = in->ffr;
 
   return ZX_OK;
 }

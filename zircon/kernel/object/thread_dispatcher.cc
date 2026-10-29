@@ -24,8 +24,6 @@
 #include <fbl/algorithm.h>
 #include <fbl/alloc_checker.h>
 #include <kernel/thread.h>
-#include <ktl/optional.h>
-#include <ktl/type_traits.h>
 #include <object/handle.h>
 #include <object/job_dispatcher.h>
 #include <object/process_dispatcher.h>
@@ -139,34 +137,13 @@ int ThreadDispatcher::StartRoutine(void* arg) {
   __UNREACHABLE;
 }
 
-namespace {
-
-// Prior to API level NEXT, zx_arm64_thread_state_vector_regs_t did not include the SVE `p` and
-// `ffr` fields and was 520 bytes (`offsetof(zx_arm64_thread_state_vector_regs_t, p)`). Maintain
-// support for that exact 520-byte size for callers compiled against earlier API levels.
-template <typename T>
-constexpr ktl::optional<size_t> kStateCompatSize = ktl::nullopt;
-
-#if defined(__aarch64__)
-template <>
-constexpr ktl::optional<size_t> kStateCompatSize<zx_arm64_thread_state_vector_regs_t> =
-    offsetof(zx_arm64_thread_state_vector_regs_t, p);
-#endif
-
-}  // namespace
-
 // T is the state type to read.
 // F is a function that gets state T and has signature |zx_status_t (F)(Thread*, T*)|.
 template <typename T, typename F>
 zx_status_t ThreadDispatcher::ReadStateGeneric(F get_state_func, user_out_ptr<void> buffer,
                                                size_t buffer_size) {
-  size_t copy_size = sizeof(T);
-  if (buffer_size < copy_size) {
-    if (kStateCompatSize<T> && buffer_size == *kStateCompatSize<T>) {
-      copy_size = *kStateCompatSize<T>;
-    } else {
-      return ZX_ERR_BUFFER_TOO_SMALL;
-    }
+  if (buffer_size < sizeof(T)) {
+    return ZX_ERR_BUFFER_TOO_SMALL;
   }
 
   T state{};
@@ -184,8 +161,7 @@ zx_status_t ThreadDispatcher::ReadStateGeneric(F get_state_func, user_out_ptr<vo
   }
 
   // Since copy may fault, copy only after releasing the lock.
-  return buffer.reinterpret<uint8_t>().copy_array_to_user(reinterpret_cast<const uint8_t*>(&state),
-                                                          copy_size);
+  return buffer.reinterpret<T>().copy_to_user(state);
 }
 
 zx_status_t ThreadDispatcher::ReadState(zx_thread_state_topic_t state_kind,
@@ -209,6 +185,16 @@ zx_status_t ThreadDispatcher::ReadState(zx_thread_state_topic_t state_kind,
     case ZX_THREAD_STATE_SINGLE_STEP:
       return ReadStateGeneric<zx_thread_state_single_step_t>(arch_get_single_step, buffer,
                                                              buffer_size);
+    case ZX_THREAD_STATE_ARM64_SVE:
+#ifdef __aarch64__
+      if (!arch_arm64_sve_supported()) {
+        return ZX_ERR_NOT_SUPPORTED;
+      }
+      return ReadStateGeneric<zx_arm64_thread_state_sve_regs_t>(arch_get_arm64_sve, buffer,
+                                                                buffer_size);
+#else
+      return ZX_ERR_NOT_SUPPORTED;
+#endif
     default:
       return ZX_ERR_INVALID_ARGS;
   }
@@ -219,18 +205,12 @@ zx_status_t ThreadDispatcher::ReadState(zx_thread_state_topic_t state_kind,
 template <typename T, typename F>
 zx_status_t ThreadDispatcher::WriteStateGeneric(F set_state_func, user_in_ptr<const void> buffer,
                                                 size_t buffer_size) {
-  size_t copy_size = sizeof(T);
-  if (buffer_size < copy_size) {
-    if (kStateCompatSize<T> && buffer_size == *kStateCompatSize<T>) {
-      copy_size = *kStateCompatSize<T>;
-    } else {
-      return ZX_ERR_BUFFER_TOO_SMALL;
-    }
+  if (buffer_size < sizeof(T)) {
+    return ZX_ERR_BUFFER_TOO_SMALL;
   }
 
   T state{};
-  zx_status_t status = buffer.reinterpret<const uint8_t>().copy_array_from_user(
-      reinterpret_cast<uint8_t*>(&state), copy_size);
+  zx_status_t status = buffer.reinterpret<const T>().copy_from_user(&state);
   if (status != ZX_OK) {
     return status;
   }
@@ -240,18 +220,6 @@ zx_status_t ThreadDispatcher::WriteStateGeneric(F set_state_func, user_in_ptr<co
   // We can't be writing regs while the thread transitions from SUSPENDED to RUNNING.
   if (!SuspendedOrInExceptionLocked()) {
     return ZX_ERR_BAD_STATE;
-  }
-
-  if constexpr (ktl::is_same_v<T, zx_thread_state_vector_regs_t>) {
-    if (copy_size < sizeof(T)) {
-      T current{};
-      zx_status_t get_status = arch_get_vector_regs(core_thread_, &current);
-      if (get_status != ZX_OK) {
-        return get_status;
-      }
-      memcpy(reinterpret_cast<uint8_t*>(&state) + copy_size,
-             reinterpret_cast<const uint8_t*>(&current) + copy_size, sizeof(T) - copy_size);
-    }
   }
 
   return set_state_func(core_thread_, &state);
@@ -278,6 +246,16 @@ zx_status_t ThreadDispatcher::WriteState(zx_thread_state_topic_t state_kind,
     case ZX_THREAD_STATE_SINGLE_STEP:
       return WriteStateGeneric<zx_thread_state_single_step_t>(arch_set_single_step, buffer,
                                                               buffer_size);
+    case ZX_THREAD_STATE_ARM64_SVE:
+#ifdef __aarch64__
+      if (!arch_arm64_sve_supported()) {
+        return ZX_ERR_NOT_SUPPORTED;
+      }
+      return WriteStateGeneric<zx_arm64_thread_state_sve_regs_t>(arch_set_arm64_sve, buffer,
+                                                                 buffer_size);
+#else
+      return ZX_ERR_NOT_SUPPORTED;
+#endif
     default:
       return ZX_ERR_INVALID_ARGS;
   }

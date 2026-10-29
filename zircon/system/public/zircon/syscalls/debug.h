@@ -6,7 +6,6 @@
 #define ZIRCON_SYSCALLS_DEBUG_H_
 
 #include <stdint.h>
-#include <zircon/availability.h>
 #include <zircon/compiler.h>
 
 __BEGIN_CDECLS
@@ -114,16 +113,20 @@ typedef struct zx_arm64_thread_state_vector_regs {
     uint64_t low;
     uint64_t high;
   } v[32];
-#if !defined(__Fuchsia__) || FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
-  // SVE predicate registers P0-P15 and First Fault Register (FFR) for 128-bit SVE (available at
-  // API level NEXT). On hardware without SVE, these fields are 0 on read and ignored on write.
-  // When SVE is supported, `ffr` bits must form a contiguous sequence of 1s starting from bit 0
-  // (`(1 << k) - 1` for `0 <= k <= 16`) or `zx_thread_write_state` returns `ZX_ERR_INVALID_ARGS`.
+} zx_arm64_thread_state_vector_regs_t;
+
+// Value for ZX_THREAD_STATE_ARM64_SVE on ARM64 platforms.
+// Holds the SVE predicate registers P0-P15 and First Fault Register (FFR) for 128-bit SVE
+// (Z0-Z31 share their low 128 bits with the `v` array in ZX_THREAD_STATE_VECTOR_REGS).
+// Supported only on ARM64 hardware with `ZX_ARM64_FEATURE_ISA_SVE`; reading or writing this
+// topic returns `ZX_ERR_NOT_SUPPORTED` otherwise.
+// On write, `ffr` bits must form a contiguous sequence of 1s starting from bit 0
+// (`(1 << k) - 1` for `0 <= k <= 16`), or `zx_thread_write_state` returns
+// `ZX_ERR_INVALID_ARGS`.
+typedef struct zx_arm64_thread_state_sve_regs {
   uint16_t p[16];
   uint16_t ffr;
-  uint8_t padding1[6];
-#endif
-} zx_arm64_thread_state_vector_regs_t;
+} zx_arm64_thread_state_sve_regs_t;
 
 // ARMv8-A provides 2 to 16 hardware breakpoint registers.
 // The number is obtained by the BRPs field in the EDDFR register.
@@ -286,6 +289,7 @@ typedef uint32_t zx_thread_state_topic_t;
 #define ZX_THREAD_STATE_VECTOR_REGS ((uint32_t)2)   // zx_thread_state_vector_regs_t value.
 #define ZX_THREAD_STATE_DEBUG_REGS ((uint32_t)4)    // zx_thread_state_debug_regs_t value.
 #define ZX_THREAD_STATE_SINGLE_STEP ((uint32_t)5)   // zx_thread_state_single_step_t value.
+#define ZX_THREAD_STATE_ARM64_SVE ((uint32_t)6)     // zx_arm64_thread_state_sve_regs_t value.
 
 __END_CDECLS
 

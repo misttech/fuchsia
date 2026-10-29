@@ -32,6 +32,10 @@ zx_status_t WriteVectorRegisters(const std::vector<debug::RegisterValue>& update
                                  zx_thread_state_vector_regs_t* regs);
 zx_status_t WriteDebugRegisters(const std::vector<debug::RegisterValue>& update,
                                 zx_thread_state_debug_regs_t* regs);
+#ifdef __aarch64__
+zx_status_t WriteArm64SveRegisters(const std::vector<debug::RegisterValue>& update,
+                                   zx_arm64_thread_state_sve_regs_t* regs);
+#endif
 
 // Converts a Zircon exception type to a debug_ipc one. Some exception types require querying the
 // thread's debug registers. If needed, the given thread will be used for that.

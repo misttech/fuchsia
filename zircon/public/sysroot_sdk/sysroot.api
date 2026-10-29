@@ -185,7 +185,7 @@
   "include/zircon/syscalls-next.h": "c6f5f6bc31f516b066af6abd54311630",
   "include/zircon/syscalls.h": "32d732c10890bb5d8163b9cd1b7d5df0",
   "include/zircon/syscalls/clock.h": "5fc22aaa4b66ca59b0b412bf4995dc1b",
-  "include/zircon/syscalls/debug.h": "88b9cbf999d980e15bf58f725d5657fd",
+  "include/zircon/syscalls/debug.h": "f0929efe0fafdad03359f958d24f9602",
   "include/zircon/syscalls/exception.h": "7ea1cc5acbd768ed5f6aa04e26fb0cbf",
   "include/zircon/syscalls/gen/cdecls-next.inc": "81d2af05fc936c76d3a505f118ad885d",
   "include/zircon/syscalls/gen/cdecls.inc": "6b65bcf2a11365267fa6c1ea53c2fe21",
