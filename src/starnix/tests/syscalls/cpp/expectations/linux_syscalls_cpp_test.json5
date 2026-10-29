@@ -96,7 +96,10 @@
                 // permissions. It's possible that this test is incorrect and should be removed.
                 "ProcSysNetTest/ProcSysNetTest.Write/19",
 
-                // TODO(https://fxbug.dev/328629782): Machina guest kernel has a bug.
+                // See https://fxbug.dev/328629782: Machina's Linux 6.6 guest kernel has an LSM hook
+                // bug in security_inode_removexattr() (fixed in Linux 6.9) that skips
+                // cap_inode_removexattr() when a no-op LSM hook (such as bpf) returns 0, allowing
+                // removexattr("security.capability") without CAP_SETFCAP.
                 "FileCapTest.RemoveFileCapabilitiesRequiresCapSetfcap",
                 "XattrTest.SecuritySelinuxRequiresCapSysAdminWhenSelinuxDisabled",
 
