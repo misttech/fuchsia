@@ -1,0 +1,102 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# This enables both the ubsan checking that happens in normal application code,
+# and also some non-default checks that are a good idea for the kind of
+# low-level and highly sensitive code likely to need a custom runtime.
+# @bazel2gn:skip
+_UBSAN_SANITIZERS = [
+    "undefined",
+
+    # Checks whether an implicit truncation caused data loss. It's not
+    # undefined behavior but most of the time it is unintentional.
+    "implicit-integer-truncation",
+
+    # The kernel has some _Nonnull annotations, this would check
+    # them at runtime.
+    "nullability",
+]
+
+# LINT.IfChange(ubsan)
+# @bazel2gn:skip
+build_flags(
+    name = "ubsan",
+    cflags = ["-fsanitize={}".format(sanitizer) for sanitizer in _UBSAN_SANITIZERS],
+    # The ubsan variant adds rtti, but that is not used by the kernel variant.
+    subflags = ["//build/config:no_rtti"],
+    visibility = ["//build/config/sanitizers:__pkg__"],
+)
+# LINT.ThenChange(BUILD.gn:ubsan)
+
+# LINT.IfChange(no-ubsan)
+# This disables all those, and can be appended to a configs list that has the
+# "ubsan" config earlier in its list, or to one that doesn't.
+# @bazel2gn:skip
+build_flags(
+    name = "no-ubsan",
+    cflags = ["-fno-sanitize={}".format(sanitizer) for sanitizer in _UBSAN_SANITIZERS],
+    visibility = [
+        "//sdk/lib/ld:__subpackages__",
+        "//zircon/kernel/lib/instrumentation/ubsan:__pkg__",
+        "//zircon/kernel/phys:__pkg__",
+    ],
+)
+# LINT.ThenChange(BUILD.gn:no-ubsan)
+
+# LINT.IfChange(allow-implicit-integer-truncation)
+# Not all code compiled in sensitive places is as fastidious with explicit
+# casts for intended integer truncattion cases as the Fuchsia codebase.
+# NOTE: This assumes is_gcc=false in Bazel.
+# @bazel2gn:skip
+build_flags(
+    name = "allow-implicit-integer-truncation",
+    cflags = ["-fno-sanitize=implicit-integer-truncation"],
+    visibility = ["//build/config:__pkg__"],
+)
+# LINT.ThenChange(BUILD.gn:allow-implicit-integer-truncation)
+
+# This should only be in the deps of a source_set() for the single source file
+# that does `#include <lib/ubsan-custom/handlers.h>`.
+fx_cc_library(
+    name = "handlers",
+    # This is meant to be read by authors depending on this target, but not
+    # `#include`d in their code; they use only `<lib/ubsan-custom/handlers.h>`.
+    # Since it contains `inline` declarations for functions not defined, it's
+    # meant to generate warnings if it's included in any translation unit other
+    # than the single one that should define those functions.
+    srcs = ["report.h"],
+    hdrs = ["handlers.h"],
+    # The handlers themselves shouldn't be compiled with instrumentation, so
+    # apply a config to the dependent source_set() to disable it.  Disabling it
+    # on the command-line not only saves adding NO_UBSAN annotations to each
+    # function, but covers inline functions from shared header files that
+    # shouldn't all be annotated for their other callers.  The former could be
+    # addressed via `#pragma clang attribute`, but the latter cannot be.
+    # NOTE: public_configs on fx_cc_library is only used by bazel2gn; Bazel
+    # dependents must explicitly set build_flags = ["//src/lib/ubsan-custom:no-ubsan"].
+    public_configs = [":no-ubsan"],
+    visibility = [
+        "//sdk/lib/ld:__subpackages__",
+        "//zircon/kernel/lib/instrumentation/ubsan:__pkg__",
+        "//zircon/kernel/phys:__pkg__",
+    ],
+    deps = [":types"],
+    alwayslink = True,
+)
+
+# This can be used freely, for example if a custom ubsan::Report implementation
+# wants to pass ubsan::SourceLocation to other code outside the single-file
+# source_set() that includes <lib/ubsan-custom/handlers.h>.
+fx_cc_library(
+    name = "types",
+    hdrs = ["types.h"],
+    includes = ["../.."],
+    public_configs = [":includes"],
+    alwayslink = True,
+)
