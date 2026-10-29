@@ -16,8 +16,8 @@ serial TTY lines or UNIX domain sockets, providing a CLI for managing background
   initializes the asynchronous runtime and executes `UartTool`.
 * **src/lib.rs**: The main entry point for the tool's library code. It declares
   submodules, exposes target resolution and metadata helpers, and dispatches CLI
-  subcommands (`connect`, `disconnect`, `list`, `probe`, `status`) to their
-  implementations in `src/subtools/`.
+  subcommands (`connect`, `disconnect`, `doctor`, `list`, `probe`, `status`) to
+  their implementations in `src/subtools/`.
 * **src/args.rs**: Defines the CLI argument parsing definitions using `argh`,
   specifying subcommands and their command-line parameters.
 * **src/subtools/mod.rs**: Declares the subtool implementation modules:
@@ -26,6 +26,8 @@ serial TTY lines or UNIX domain sockets, providing a CLI for managing background
     when `--reconnect` is passed.
   * **src/subtools/disconnect.rs**: Terminates the background driver and cleans
     up companion socket and metadata files.
+  * **src/subtools/doctor.rs**: Executes diagnostic checks across UART
+    connections and applies automated repairs when `--fix` is specified.
   * **src/subtools/list.rs**: Discovers and enumerates active UART connections
     by scanning the metadata directory and verifying daemon liveness.
   * **src/subtools/probe.rs**: Exercises the connection health of a UART target
@@ -34,6 +36,9 @@ serial TTY lines or UNIX domain sockets, providing a CLI for managing background
   * **src/subtools/status.rs**: Queries the running daemon's control socket and
     metadata to report real-time communication metrics, stall detection, and
     target channel errors.
+* **src/doctor.rs**: Defines the `DiagnosticCheck` trait, check implementations
+  (`ConnectionExistsCheck`, `MetadataCheck`, `PortLockCheck`, `ProcessCheck`,
+  `StallCheck`), and `FixType` automated repair actions.
 * **src/driver.rs**: Implements lifecycle management utilities for the background
   driver daemon, including locating the driver binary, polling for connection
   readiness, validating daemon liveness, and terminating stale processes.
@@ -46,8 +51,8 @@ serial TTY lines or UNIX domain sockets, providing a CLI for managing background
   `flock`, custom baud rates, 8N1 raw mode via `termios`), and executing the
   host-side handshake (`run_host_handshake`).
 * **src/sys.rs**: Houses system-level utility functions, including peer PID
-  lookup on UNIX domain sockets and process liveness checks (filtering out
-  zombie processes).
+  lookup on UNIX domain sockets, process liveness checks (filtering out zombie
+  processes), and control socket metrics and liveness probing.
 * **src/tests.rs**: The integration and unit test suite for the tool, using
   **test_data/mock_driver.py** to simulate driver daemon behavior and verify
   connection lifecycles, error boundaries, and socket states.

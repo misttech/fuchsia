@@ -7,8 +7,9 @@ connectivity.
 ## Overview {:#overview}
 
 The UART transport runs the [FDomain][fdomain] protocol over an asynchronous
-serial line (such as `/dev/ttyUSB0` on Linux) connected to a Fuchsia target
-device's serial console port (exposed under `/dev/class/serial/`).
+serial line (such as `/dev/ttyUSB0` on Linux, or a host UNIX domain socket for a
+QEMU emulator) connected to a Fuchsia target device's serial port (exposed under
+`/dev/class/serial/`).
 
 Communication operates at a high line rate (defaulting to **1,000,000 baud**)
 using the **ResendSP** sliding-window framing protocol, which provides
@@ -79,7 +80,10 @@ To establish a UART connection to a physical device:
 ffx -t /dev/ttyUSB0 uart connect
 ```
 
-*(You may also include the `uart:` prefix, e.g., `ffx -t uart:/dev/ttyUSB0 uart connect`).*
+*(You may also include the `uart:` prefix, e.g.,
+`ffx -t uart:/dev/ttyUSB0 uart connect`, or specify a running QEMU emulator
+instance name such as `ffx -t fuchsia-emulator uart connect`; see
+[Using Fuchsia Emulators](#using-emulators)).*
 
 `ffx uart connect` defaults to **1,000,000 baud**. You can specify a custom baud
 rate if your board configuration requires it:
@@ -184,6 +188,45 @@ operational details including:
 * Last read/write activity timestamps, outgoing queue length, stall detection
   warnings, and the most recent channel error reported by the target (`Last Target Error`).
 
+### Diagnosing and Repairing Connection Issues {:#doctor}
+
+To diagnose host-side UART connection problems across all connections or for a
+specific target:
+
+```bash
+ffx uart doctor
+```
+
+```bash
+ffx -t /dev/ttyUSB0 uart doctor
+```
+
+`ffx uart doctor` executes a sequence of diagnostic checks:
+* **Connection Exists**: Verifies that an active connection or metadata record
+  exists for the target.
+* **Metadata and Socket Files**: Inspects `<shared_data>/ffx_uart/` for empty or
+  corrupted JSON metadata files, orphaned `.sock` / `.sock.control` UNIX domain
+  sockets, and metadata referencing dead daemon PIDs.
+* **Daemon Process Liveness**: Verifies that the `ffx-uart-driver` process is
+  running (not a zombie) and responsive on its control socket.
+* **Serial Port Lock**: Probes the TTY character device with a non-blocking
+  exclusive file lock (`flock`) to detect contention from another process or a
+  leaked `ffx-uart-driver` instance.
+* **Session Stall Detection**: Inspects live control socket metrics to detect
+  read-stalled sessions (where outgoing writes have received no target response
+  beyond the 5-second stall threshold) or repeated handshake failures.
+
+To automatically repair detected issues where possible, pass `--fix`:
+
+```bash
+ffx uart doctor --fix
+```
+
+When `--fix` is enabled, the doctor tool removes stale or corrupted metadata and
+socket files (while sparing targets that have an active connection), terminates
+unresponsive or leaked `ffx-uart-driver` daemons, and restarts stalled
+connections using cached target parameters.
+
 ### Disconnecting {:#disconnecting}
 
 To terminate the background driver and release the serial device lock:
@@ -202,6 +245,60 @@ cable disconnect or transient host issue):
 
 ```bash
 ffx -t /dev/ttyUSB0 uart connect --reconnect
+```
+
+## Using Fuchsia Emulators {:#using-emulators}
+
+You can run `ffx` over UART locally using the QEMU emulator (`--engine qemu`)
+without physical hardware. Just like physical targets, emulators do not expose
+a `uart:` address in `ffx target list` until you explicitly run
+`ffx uart connect`.
+
+### Starting the Emulator with UART Enabled {:#emulator-start}
+
+Start the QEMU emulator with `-c "dev.fdomain.uart=true"` and `--console` (or
+`--headless`):
+
+```bash
+ffx emu start -c "dev.fdomain.uart=true" --console --engine qemu
+```
+
+* `-c "dev.fdomain.uart=true"`: Passes the kernel command-line argument that
+  starts `fdomain-uart-driver` on the target and configures QEMU's second
+  emulated 16550 serial port (`uart16550`) as a host UNIX domain socket.
+* `--console` (or `--headless`): Attaches serial port 0 to the interactive
+  console while serial port 1 carries FDomain UART traffic. Use `--headless` for
+  non-interactive runs.
+* `--net none` (optional): Disables emulated networking to test a pure
+  UART-only environment.
+
+### Connecting and Running Commands on the Emulator {:#emulator-connect}
+
+Connect the host UART driver using the emulator's instance name:
+
+```bash
+ffx -t fuchsia-emulator uart connect
+```
+
+`ffx uart connect` resolves `fuchsia-emulator` to the running emulator
+instance's serial socket on the host and spawns `ffx-uart-driver`. Once
+connected, `ffx target list` includes `uart:fuchsia-emulator` in the target's
+address list.
+
+When both network and UART addresses are available on an emulator, `ffx`
+defaults to the network transport. Specify the `uart:` prefix (or set it as your
+default target with `fx set-device uart:fuchsia-emulator`) to route commands
+over the emulated UART link:
+
+```bash
+ffx -t uart:fuchsia-emulator target echo
+```
+
+When finished, disconnect the UART daemon and stop the emulator:
+
+```bash
+ffx -t fuchsia-emulator uart disconnect
+ffx emu stop
 ```
 
 ## Architecture and Framing {:#architecture}
@@ -238,7 +335,7 @@ ffx -t /dev/ttyUSB0 uart connect --reconnect
 
 The UART transport uses the **ResendSP** framing protocol to stream data over
 raw byte-oriented serial links:
-* **Sliding Window Go-Back-N**: Supports pipelined transmission of up to 32
+* **Sliding Window Go-Back-N**: Supports pipelined transmission of up to 64
   in-flight frames to maximize bandwidth utilization across both local serial
   cables and high-latency bridged links.
 * **Flow Control & Backpressure**: Cumulative acknowledgments and per-channel
@@ -252,6 +349,10 @@ raw byte-oriented serial links:
 
 ## Troubleshooting {:#troubleshooting}
 
+* **Stale Metadata, Unresponsive Daemon, or Stalled Session**: Run
+  `ffx uart doctor` to diagnose host-side state, port lock contention, and
+  control socket health, or `ffx uart doctor --fix` to automatically clean up
+  and repair issues.
 * **Permission Denied opening `/dev/ttyUSB0`**: Ensure your user account is in
   the `dialout` group (`id $USER`), and verify device permissions.
 * **Device Busy (`EWOULDBLOCK` / `EAGAIN` during `connect`)**: Another process
