@@ -1,0 +1,24 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "manager-config",
+    srcs = ["src/lib.rs"],
+    crate_name = "fuchsia_tee_manager_config",
+    edition = "2024",
+    visibility = [
+        "//src/lib/assembly/platform_configuration:__pkg__",
+        "//src/microfuchsia/tee/manager:__pkg__",
+        "//src/tee/manager-config:__pkg__",
+    ],
+    deps = [
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+    ],
+)
