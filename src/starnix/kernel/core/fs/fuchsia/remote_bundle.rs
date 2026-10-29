@@ -33,7 +33,7 @@ use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{errno, error, from_status_like_fdio, off_t, statfs};
 use std::io::Read;
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use syncio::{zxio_node_attr_has_t, zxio_node_attributes_t};
 
 const REMOTE_BUNDLE_NODE_LRU_CAPACITY: usize = 1024;
@@ -184,6 +184,11 @@ impl FileSystemOps for RemoteBundle {
 struct File {
     inner: LockDepMutex<Inner, RemoteBundleInnerLock>,
     exec_memory: OnceCell<Arc<MemoryObject>>,
+
+    /// Set once `fetch_and_refresh_info` has filled in the size attributes from the backing memory.
+    /// Files in a remote bundle are immutable blobs, so the cached `FsNodeInfo` stays accurate from
+    /// then on and later calls do not need to refresh it.
+    info_refreshed: AtomicBool,
 }
 
 enum Inner {
@@ -227,7 +232,11 @@ impl FsNodeOps for File {
         info: &'a DynamicLockDepRwLock<FsNodeInfo>,
         flags: StatxFlags,
     ) -> Result<LockDepReadGuard<'a, FsNodeInfo>, Errno> {
-        if flags.contains(StatxFlags::AT_STATX_DONT_SYNC) {
+        // The content of a remote bundle cannot change, so once the size attributes have been
+        // refreshed there is no need to take the lock, query the VMO and rewrite the info again.
+        if flags.contains(StatxFlags::AT_STATX_DONT_SYNC)
+            || self.info_refreshed.load(Ordering::Acquire)
+        {
             return Ok(info.read());
         }
         let memory = self.inner.lock().get_memory()?;
@@ -247,6 +256,9 @@ impl FsNodeOps for File {
         };
         let mut info = info.write();
         update_info_from_attrs(&mut info, &attrs);
+        // Published while the write lock is held so that a thread that observes the flag also
+        // observes the refreshed info when it takes the read lock.
+        self.info_refreshed.store(true, Ordering::Release);
         Ok(LockDepWriteGuard::downgrade(info))
     }
 
@@ -481,7 +493,11 @@ impl FsNodeOps for DirectoryObject {
                     .map_err(|_| errno!(EIO))?;
                 Ok(fs.create_node(
                     ino,
-                    File { inner: Inner::NeedsVmo(file).into(), exec_memory: OnceCell::new() },
+                    File {
+                        inner: Inner::NeedsVmo(file).into(),
+                        exec_memory: OnceCell::new(),
+                        info_refreshed: AtomicBool::new(false),
+                    },
                     info,
                 ))
             }
@@ -564,6 +580,7 @@ fn to_fs_node_info(metadata_node: &ext4_metadata::Node) -> FsNodeInfo {
 
 #[cfg(test)]
 mod test {
+    use super::File;
     use crate::fs::fuchsia::RemoteBundle;
     use crate::mm::ProtectionFlags;
     use crate::testing::spawn_kernel_and_run_with_pkgfs;
@@ -579,6 +596,7 @@ mod test {
     use starnix_uapi::{ino_t, off_t};
     use std::collections::{HashMap, HashSet};
     use std::sync::Arc;
+    use std::sync::atomic::Ordering;
     use zx;
 
     #[::fuchsia::test]
@@ -638,6 +656,20 @@ mod test {
             assert_eq!(test_file.read(&current_task, &mut buffer).expect("read failed"), 6);
             let buffer: Vec<u8> = buffer.into();
             assert_eq!(&buffer[..6], b"hello\n");
+
+            // The size is read from the backing memory on the first refresh, which marks the info
+            // as refreshed, and served from the cached node info afterwards.
+            let file_ops =
+                test_file.node().downcast_ops::<File>().expect("not a remote bundle file");
+            for _ in 0..2 {
+                let info = test_file
+                    .node()
+                    .fetch_and_refresh_info(&current_task)
+                    .expect("fetch_and_refresh_info failed");
+                assert_eq!(info.size, 6);
+                assert_eq!(info.link_count, 1);
+                assert!(file_ops.info_refreshed.load(Ordering::Acquire));
+            }
 
             let file_token =
                 test_file.get_file_token(&current_task).expect("get_file_token failed");
