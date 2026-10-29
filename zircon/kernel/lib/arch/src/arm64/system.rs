@@ -995,6 +995,51 @@ layout!({
     }
 });
 
+/// [arm/sysreg]/zcr_el1: SVE Control Register (EL1)
+pub const ZCR_EL1: SysReg<spec::ZCR_EL1, SveControlRegister> = SysReg::new();
+
+layout!({
+    /// The layout of [`ZCR_EL1`].
+    #[allow(clippy::len_without_is_empty)] // `len` is the LEN field, not a size.
+    pub struct SveControlRegister(u64);
+    {
+        let __ @ 63..9;
+        let impdef @ 8..4;
+        let len @ 3..0; // Requested vector length: (len + 1) * 128 bits
+    }
+});
+
+/// [arm/sysreg]/cpacr_el1: Architectural Feature Access Control Register (EL1)
+pub const CPACR_EL1: SysReg<spec::CPACR_EL1, ArchitecturalFeatureAccessControlRegister> =
+    SysReg::new();
+
+/// Trap controls for the CPACR_EL1.SMEN, CPACR_EL1.FPEN and CPACR_EL1.ZEN fields.
+#[bitfield_repr(u8)]
+#[derive(Clone, Copy)]
+pub enum CpacrTrap {
+    All = 0b00,    // Trap at EL0 and EL1.
+    El0 = 0b01,    // Trap at EL0 only.
+    AllAlt = 0b10, // Trap at EL0 and EL1.
+    None = 0b11,   // No trap.
+}
+
+layout!({
+    /// The layout of [`CPACR_EL1`].
+    pub struct ArchitecturalFeatureAccessControlRegister(u64);
+    {
+        let __ @ 63..30;
+        let e0poe @ 29;
+        let tta @ 28;
+        let __ @ 27..26;
+        let smen @ 25..24: CpacrTrap;
+        let __ @ 23..22;
+        let fpen @ 21..20: CpacrTrap;
+        let __ @ 19..18;
+        let zen @ 17..16: CpacrTrap;
+        let __ @ 15..0;
+    }
+});
+
 #[cfg(test)]
 mod tests {
     use super::*;
