@@ -41,6 +41,10 @@
             "bug": "https://fxbug.dev/567965595"
         },
         {
+            "path": "build/tools/gn2gone/BUILD.bazel",
+            "bug": "https://fxbug.dev/567965595"
+        },
+        {
             "path": "build/tools/json_validator/BUILD.bazel",
             "bug": "https://fxbug.dev/567965595"
         },

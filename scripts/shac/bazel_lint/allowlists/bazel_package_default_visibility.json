@@ -182,6 +182,10 @@
             "bug": "https://fxbug.dev/570203009"
         },
         {
+            "path": "src/connectivity/bluetooth/core/bt-host/BUILD.bazel",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
             "path": "src/connectivity/bluetooth/hci/transport/uart/cpp/BUILD.bazel",
             "bug": "https://fxbug.dev/570203009"
         },
