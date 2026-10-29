@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+mod arch;
 mod asid_allocator;
 pub mod cache;
 mod crashlog;
@@ -125,13 +126,24 @@ zr::static_assert!(
 /// size due to the 40-bit physical address range on Cortex-A53.
 pub const MMU_GUEST_SIZE_SHIFT: usize = aspace_bindings::MMU_GUEST_SIZE_SHIFT as usize;
 
-// Submodule names the rest of the kernel resolves directly under `arch::arm64`: the
-// restricted-mode part of the arch API contract in //zircon/kernel/arch/src/api.rs.
+// Submodule names the rest of the kernel resolves directly under `arch::arm64`: the arch API
+// contract checked by `assert_arch_signatures!` in //zircon/kernel/arch/src/api.rs, and
+// `arch_curr_cpu_num`, as riscv64 has it.
+pub use arch::{
+    arch_early_init, arch_enter_idle_state, arch_enter_uspace, arch_init, arch_late_init_percpu,
+    arch_prepare_uspace, arch_prevm_init,
+};
+pub use mp::arch_curr_cpu_num;
 pub use restricted::{
     ArchSavedNormalState, dump, enter_full, enter_restricted,
     redirect_restricted_exception_to_normal, save_restricted_exception_state,
     save_restricted_iframe_state, save_restricted_syscall_state, save_state_pre_restricted_entry,
     validate_state_pre_restricted_entry,
+};
+pub use thread::{
+    arch_context_switch, arch_dump_thread, arch_reset_suspended_general_regs,
+    arch_restore_user_state, arch_save_user_state, arch_set_suspended_general_regs,
+    arch_thread_construct_first, arch_thread_get_blocked_fp, arch_thread_initialize,
 };
 
 #[cfg(ktest)]

@@ -13,6 +13,9 @@
 
 extern "C" {
 
+// Implemented in Rust (arch.rs); backs ArchIdlePowerThread::EnterIdleState().
+void arch_enter_idle_state();
+
 void cpp_arm64_get_tpidr_regs(uint64_t* tpidr_el0, uint64_t* tpidrro_el0);
 void cpp_arm64_set_tpidr_regs(uint64_t tpidr_el0, uint64_t tpidrro_el0);
 void cpp_arm64_enter_restricted_tpidr(uint64_t tpidr_el0, bool is_arm32);

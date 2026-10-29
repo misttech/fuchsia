@@ -8,6 +8,7 @@
 
 #include <arch/arm64/arm64_ffi.h>
 #include <arch/debugger.h>
+#include <arch/ops.h>
 #include <kernel/ffi.h>
 #include <kernel/thread.h>
 
@@ -51,3 +52,5 @@ cpp_arm64_set_general_regs(const zx_thread_state_general_regs_t* regs) {
 }
 
 }  // extern "C"
+
+void ArchIdlePowerThread::EnterIdleState() { arch_enter_idle_state(); }

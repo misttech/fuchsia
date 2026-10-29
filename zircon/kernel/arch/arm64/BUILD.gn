@@ -88,7 +88,6 @@ if (toolchain_environment == "kernel.phys" ||
     public_deps = [ ":headers" ]
 
     sources = [
-      "arch.cc",
       "arm64_ffi.cc",
       "asm.S",
       "cache-ops.S",
@@ -99,7 +98,6 @@ if (toolchain_environment == "kernel.phys" ||
       "exceptions.S",
       "exceptions_c.cc",
       "fpu_asm.S",
-      "handoff.cc",
       "perf_mon.cc",
       "registers.cc",
       "secondary.S",
@@ -349,6 +347,7 @@ if (toolchain_environment == "kernel.phys" ||
     output_name = "arch_arm64"
     source_root = "src/mod.rs"
     sources = [
+      "src/arch.rs",
       "src/asid_allocator.rs",
       "src/cache.rs",
       "src/crashlog.rs",

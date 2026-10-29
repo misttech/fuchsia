@@ -32,7 +32,7 @@ namespace {
 // the firmware knows about such that per-CPU SMCCC_ARCH_FEATURES queries
 // indicate whether that CPU needs to use it.  Here in physboot we need to
 // determine how to patch the firmware-using alternate vector implementations,
-// and direct the kernel proper's arch.cc code to then decide which
+// and direct the kernel proper's src/arch.rs code to then decide which
 // implementation to use for each CPU.
 //
 // TODO(https://fxbug.dev/322202704): This only detects SMCCC 1.1 firmware with

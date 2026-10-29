@@ -283,7 +283,7 @@ pub(super) use write_percpu_field;
 
 /// Returns the number of the calling CPU.
 #[inline(always)]
-pub(super) fn arch_curr_cpu_num() -> cpu_num_t {
+pub fn arch_curr_cpu_num() -> cpu_num_t {
     read_percpu_field!(cpu_num)
 }
 
@@ -328,7 +328,7 @@ pub static mut arm_num_cpus: u32 = 1;
 
 /// Returns the number of detected cpus.
 #[inline(always)]
-fn arch_max_num_cpus() -> u32 {
+pub(super) fn arch_max_num_cpus() -> u32 {
     // SAFETY: The boot CPU writes `arm_num_cpus` once, through `arch_set_num_cpus()`, before it
     // starts any secondary CPU, and nothing writes it afterwards.
     unsafe { arm_num_cpus }

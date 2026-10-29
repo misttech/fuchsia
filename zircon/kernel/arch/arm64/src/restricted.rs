@@ -6,6 +6,7 @@
 
 //! Restricted execution mode state management, transitions, and register handling for arm64.
 
+use super::arch::arch_enter_uspace;
 use super::{
     ARM32_BIT_MODE, ARM32_BIT_MODE_REGISTER_COUNT, ARM32_BIT_THUMB_MODE,
     ARM32_USER_RESTRICTED_VISIBLE_FLAGS, ARM64_USER_RESTRICTED_VISIBLE_FLAGS, Iframe, SyscallRegs,
@@ -34,7 +35,6 @@ unsafe extern "C" {
     fn cpp_arm64_set_tpidr_regs(tpidr_el0: u64, tpidrro_el0: u64);
     fn cpp_arm64_enter_restricted_tpidr(tpidr_el0: u64, is_arm32: bool);
     fn cpp_arm64_get_tpidr_el0() -> u64;
-    fn arch_enter_uspace(iframe: *const Iframe) -> !;
     fn cpp_arm64_get_general_regs(regs: *mut zx_thread_state_general_regs_t) -> zx_status_t;
     fn cpp_arm64_set_general_regs(regs: *const zx_thread_state_general_regs_t) -> zx_status_t;
 }
@@ -153,11 +153,11 @@ pub fn enter_restricted(state: &zx_restricted_state_t) -> ! {
     // This allows aarch32 userland to read TPIDRURO which is needed
     // by some libc implementations.
     // Load the new state and enter restricted mode.
-    // SAFETY: Sets TPIDR registers and enters user space in restricted mode. Does not return.
-    unsafe {
-        cpp_arm64_enter_restricted_tpidr(state.tpidr_el0, is_arm32);
-        arch_enter_uspace(&iframe);
-    }
+    // SAFETY: Takes plain values and only writes TPIDR_EL0 (and TPIDRRO_EL0).
+    unsafe { cpp_arm64_enter_restricted_tpidr(state.tpidr_el0, is_arm32) };
+    // SAFETY: `iframe` is a local `Iframe` filled in above for the current thread. Interrupts are
+    // disabled, as restricted mode transitions require and the `debug_assert!` above checks.
+    unsafe { arch_enter_uspace(&iframe) }
 }
 
 /// Save restricted mode architectural state upon returning from a syscall (`zx_restricted_enter`).
@@ -290,14 +290,15 @@ pub fn enter_full(
     // mode.
     iframe.elr = vector_table as u64;
     // Load the new state and exit.
-    // SAFETY: Restores normal TPIDR registers and enters user space. Does not return.
-    unsafe {
-        // Restore TPIDR_EL0 from saved normal state.
-        // TODO(https://fxbug.dev/42076040): Eventually the TPIDR register should be
-        // inside the iframe.
-        cpp_arm64_set_tpidr_regs(arch_state.tpidr_el0, arch_state.tpidrro_el0);
-        arch_enter_uspace(&iframe);
-    }
+    // Restore TPIDR_EL0 from saved normal state.
+    // TODO(https://fxbug.dev/42076040): Eventually the TPIDR register should be
+    // inside the iframe.
+    // SAFETY: Takes plain values and only writes the TPIDR registers and the current thread's
+    // saved copies of them.
+    unsafe { cpp_arm64_set_tpidr_regs(arch_state.tpidr_el0, arch_state.tpidrro_el0) };
+    // SAFETY: `iframe` is a local `Iframe` filled in above for the current thread. Interrupts are
+    // disabled, as restricted mode transitions require and the `debug_assert!` above checks.
+    unsafe { arch_enter_uspace(&iframe) }
 }
 
 #[cfg(ktest)]

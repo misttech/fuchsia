@@ -41,6 +41,9 @@ pub use exception::{
 
 pub mod ops;
 
+#[cfg(target_arch = "aarch64")]
+assert_arch_signatures!(arm64);
+
 #[cfg(target_arch = "riscv64")]
 assert_arch_signatures!(riscv64);
 

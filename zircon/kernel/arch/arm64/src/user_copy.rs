@@ -65,11 +65,14 @@ unsafe extern "C" {
 // inlining into their callers.
 
 /// Sets PSTATE.PAN.
+///
+/// # Safety
+///
+/// FEAT_PAN is implemented (`arm64_mmu_features.pan`); the instruction is UNDEFINED without it.
 #[inline(always)]
-fn arm64_enable_pan() {
+pub(super) unsafe fn arm64_enable_pan() {
     // SAFETY: The instruction writes only PSTATE.PAN, which decides whether EL1 accesses to
-    // EL0-accessible memory fault. It is UNDEFINED without FEAT_PAN; the only caller checks
-    // `arm64_mmu_features.pan` first.
+    // EL0-accessible memory fault. The caller guarantees FEAT_PAN.
     unsafe { asm!(".arch_extension pan", "msr pan, #1", options(nostack, preserves_flags)) }
 }
 
@@ -106,7 +109,8 @@ unsafe fn arm64_user_copy_pan_wrapped(
     let ret = unsafe { _arm64_user_copy(dst, src, len, fault_return, fault_return_mask) };
     // SAFETY: As above.
     if unsafe { arm64_mmu_features.pan } {
-        arm64_enable_pan();
+        // SAFETY: `arm64_mmu_features.pan` was just checked.
+        unsafe { arm64_enable_pan() };
     }
     ret
 }

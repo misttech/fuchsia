@@ -42,16 +42,6 @@ struct arch_exception_context {
 
 // Implemented in or called from assembly.
 extern "C" {
-#if __has_feature(shadow_call_stack)
-void arm64_uspace_entry(const iframe_t* iframe, vaddr_t kstack, vaddr_t scsp) __NO_RETURN;
-#else
-void arm64_uspace_entry(const iframe_t* iframe, vaddr_t kstack) __NO_RETURN;
-#endif
-
-extern arch::AsmLabel arm64_el1_exception;
-extern arch::AsmLabel arm64_el1_exception_smccc11_workaround;
-extern arch::AsmLabel arm64_el1_exception_smccc10_workaround;
-
 void arm64_sync_exception(iframe_t* iframe, uint exception_flags, uint32_t esr);
 
 void platform_irq(iframe_t* frame);
@@ -74,10 +64,6 @@ extern "C" zx_status_t arm64_create_secondary_stack(cpu_num_t cpu_num, uintptr_t
 
 // Frees a stack created by |arm64_create_secondary_stack|.
 extern "C" zx_status_t arm64_free_secondary_stack(cpu_num_t cpu_num);
-
-// Shortcuts for setting and clearing PSTATE.PAN.
-inline void arm64_enable_pan() { __arm_wsr64("PAN", 1); }
-inline void arm64_disable_pan() { __arm_wsr64("PAN", 0); }
 
 #endif  // __ASSEMBLER__
 

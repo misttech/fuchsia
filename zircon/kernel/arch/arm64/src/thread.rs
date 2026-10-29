@@ -117,7 +117,7 @@ zr::static_assert!(offset_of!(Arm64ContextSwitchFrame, lr) == 88);
 // stack alignment requirements per ABI
 zr::static_assert!(size_of::<Arm64ContextSwitchFrame>().is_multiple_of(16));
 
-const TPIDR_EL0: SysReg<spec::TPIDR_EL0, u64> = SysReg::new();
+pub(super) const TPIDR_EL0: SysReg<spec::TPIDR_EL0, u64> = SysReg::new();
 const TPIDRRO_EL0: SysReg<spec::TPIDRRO_EL0, u64> = SysReg::new();
 const TPIDR_EL1: SysReg<spec::TPIDR_EL1, u64> = SysReg::new();
 

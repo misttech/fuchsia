@@ -46,7 +46,7 @@ bool ArchPatchCode(code_patching::Patcher& patcher, const ArchPatchInfo& info,
       // ../smccc.h, used in in the alternate vector table in ../exceptions.S.
       // The same SMCCC functions are available on all CPUs and the best one
       // available is determined by ArchPreparePatchInfo.  arm64_select_vbar in
-      // arch.cc will determine whether a specific CPU needs to use the SMCCC
+      // ../src/arch.rs will determine whether a specific CPU needs to use the SMCCC
       // workaround at all.
       ZX_ASSERT(insns.size_bytes() == sizeof(uint32_t));
       uint32_t& insn = *reinterpret_cast<uint32_t*>(insns.data());
