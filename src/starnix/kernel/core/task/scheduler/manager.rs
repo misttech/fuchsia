@@ -19,7 +19,7 @@ use starnix_uapi::{
 use std::collections::HashMap;
 
 /// Maximum Linux utilization clamp value (`SCHED_CAPACITY_SCALE`, 1024 = 100% capacity).
-pub(crate) const SCHED_CAPACITY_SCALE: u32 = 1024;
+pub const SCHED_CAPACITY_SCALE: u32 = 1024;
 
 pub struct SchedulerManager {
     role_manager: Option<RoleManagerSynchronousProxy>,
@@ -115,6 +115,7 @@ impl SchedulerManager {
             cgroup_path,
             is_leader,
             scheduler_state.normal_priority().as_nice(),
+            scheduler_state.uclamp_min,
         ) {
             return name;
         }

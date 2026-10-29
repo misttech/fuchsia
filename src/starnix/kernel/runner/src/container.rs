@@ -35,6 +35,7 @@ use fuchsia_runtime as fruntime;
 use futures::channel::oneshot;
 use futures::{FutureExt, StreamExt, TryStreamExt};
 use serde::Deserialize;
+use serde::de::Error as _;
 use starnix_container_structured_config::Config as ContainerStructuredConfig;
 use starnix_core::device::remote_block_device::remote_block_device_init;
 use starnix_core::execution::{
@@ -45,8 +46,8 @@ use starnix_core::fs::tmpfs::TmpFs;
 use starnix_core::security;
 use starnix_core::task::container_namespace::ContainerNamespace;
 use starnix_core::task::{
-    CurrentTask, ExitStatus, Kernel, OomWatermarksMb, RoleOverrides, SchedulerManager,
-    parse_cmdline,
+    CurrentTask, ExitStatus, Kernel, OomWatermarksMb, RoleOverrides, SCHED_CAPACITY_SCALE,
+    SchedulerManager, parse_cmdline,
 };
 use starnix_core::vfs::{FileSystemOptions, LookupContext, Namespace, WhatToMount};
 use starnix_logging::{
@@ -323,6 +324,74 @@ pub struct ContainerProgram {
     pub stop_last_on_shutdown: Vec<String>,
 }
 
+/// Inclusive `[min, max]` range (`0..=1024`) for matching a task's `uclamp.min` (`sched_util_min`).
+///
+/// Supports `"min..=max"`, `"min-max"`, `"min"` (interpreted as `min..=1024`), or `["min", "max"]`
+/// in `.cml` `fdata::Dictionary`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct UclampRange(u32, u32);
+
+impl UclampRange {
+    fn parse_str(s: &str) -> Result<Self, std::num::ParseIntError> {
+        let s = s.trim();
+        if let Some((min_s, max_s)) = s.split_once("..=").or_else(|| s.split_once('-')) {
+            let min = min_s.trim().parse::<u32>()?;
+            let max = max_s.trim().parse::<u32>()?;
+            Ok(Self(min, max))
+        } else {
+            let min = s.parse::<u32>()?;
+            Ok(Self(min, SCHED_CAPACITY_SCALE))
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for UclampRange {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct UclampRangeVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for UclampRangeVisitor {
+            type Value = UclampRange;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str(
+                    "a uclamp range string (\"min..=max\", \"min-max\", or \"min\") or a 2-element [\"min\", \"max\"] sequence",
+                )
+            }
+
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                UclampRange::parse_str(v).map_err(E::custom)
+            }
+
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                self,
+                mut seq: A,
+            ) -> Result<Self::Value, A::Error> {
+                let min = seq
+                    .next_element::<String>()?
+                    .ok_or_else(|| A::Error::invalid_length(0, &self))?
+                    .trim()
+                    .parse::<u32>()
+                    .map_err(A::Error::custom)?;
+                let max = seq
+                    .next_element::<String>()?
+                    .ok_or_else(|| A::Error::invalid_length(1, &self))?
+                    .trim()
+                    .parse::<u32>()
+                    .map_err(A::Error::custom)?;
+                if seq.next_element::<serde::de::IgnoredAny>()?.is_some() {
+                    return Err(A::Error::invalid_length(3, &self));
+                }
+                Ok(UclampRange(min, max))
+            }
+        }
+
+        deserializer.deserialize_any(UclampRangeVisitor)
+    }
+}
+
 /// Specifies a role override for a class of tasks whose process and thread names match provided
 /// patterns.
 #[derive(Default, Deserialize)]
@@ -341,19 +410,23 @@ struct TaskSchedulerMapping {
     min_nice: Option<runner::serde::StoreAsString<i8>>,
     /// An optional maximum Linux nice value (`-20..=19`, inclusive).
     max_nice: Option<runner::serde::StoreAsString<i8>>,
+    /// An optional inclusive `[min, max]` range (`0..=1024`) matched against the task's
+    /// `uclamp.min` (`sched_util_min`).
+    uclamp_min: Option<UclampRange>,
 }
 
 impl std::fmt::Debug for TaskSchedulerMapping {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "process `{}` thread `{}` cgroup `{:?}` is_leader `{:?}` min_nice `{:?}` max_nice `{:?}` role `{}`",
+            "process `{}` thread `{}` cgroup `{:?}` is_leader `{:?}` min_nice `{:?}` max_nice `{:?}` uclamp_min `{:?}` role `{}`",
             self.process,
             self.thread,
             self.cgroup,
             self.is_leader,
             self.min_nice,
             self.max_nice,
+            self.uclamp_min,
             self.role
         )
     }
@@ -804,6 +877,7 @@ async fn create_container(
             m.is_leader.as_ref().map(|v| **v),
             m.min_nice.as_ref().map(|v| **v),
             m.max_nice.as_ref().map(|v| **v),
+            m.uclamp_min.map(|UclampRange(min, max)| (min, max)),
             m.role.clone(),
         );
     }
@@ -1225,8 +1299,8 @@ async fn serve_task_provider(mut job_requests: TaskProviderRequestStream) -> Res
 
 #[cfg(test)]
 mod test {
-    use super::{parse_rlimits, wait_for_init_file};
-
+    use super::{TaskSchedulerMapping, UclampRange, parse_rlimits, wait_for_init_file};
+    use fidl_fuchsia_data::{Dictionary, DictionaryEntry, DictionaryValue};
     use futures::{SinkExt, StreamExt};
     use starnix_core::testing::spawn_kernel_and_run;
     use starnix_core::vfs::FdNumber;
@@ -1338,5 +1412,98 @@ mod test {
             futures::join!(wait_fut, exit_fut);
         })
         .await;
+    }
+
+    #[fuchsia::test]
+    fn test_uclamp_range_deserialization() {
+        let make_dict = |uclamp_min: DictionaryValue| Dictionary {
+            entries: Some(vec![
+                DictionaryEntry {
+                    key: "role".to_string(),
+                    value: Some(Box::new(DictionaryValue::Str("boosted_role".to_string()))),
+                },
+                DictionaryEntry {
+                    key: "process".to_string(),
+                    value: Some(Box::new(DictionaryValue::Str(".+".to_string()))),
+                },
+                DictionaryEntry {
+                    key: "thread".to_string(),
+                    value: Some(Box::new(DictionaryValue::Str("^RenderThread$".to_string()))),
+                },
+                DictionaryEntry {
+                    key: "uclamp_min".to_string(),
+                    value: Some(Box::new(uclamp_min)),
+                },
+            ]),
+            ..Default::default()
+        };
+
+        // Inclusive range syntax ("min..=max").
+        let mapping: TaskSchedulerMapping = runner::serde::deserialize_program(&make_dict(
+            DictionaryValue::Str("1..=1024".to_string()),
+        ))
+        .expect("deserialize 1..=1024");
+        assert_eq!(mapping.uclamp_min, Some(UclampRange(1, 1024)));
+
+        // Hyphenated range syntax ("min-max").
+        let mapping: TaskSchedulerMapping = runner::serde::deserialize_program(&make_dict(
+            DictionaryValue::Str("128-512".to_string()),
+        ))
+        .expect("deserialize 128-512");
+        assert_eq!(mapping.uclamp_min, Some(UclampRange(128, 512)));
+
+        // Single-integer shorthand ("min" -> min..=1024).
+        let mapping: TaskSchedulerMapping =
+            runner::serde::deserialize_program(&make_dict(DictionaryValue::Str("384".to_string())))
+                .expect("deserialize single-integer shorthand");
+        assert_eq!(mapping.uclamp_min, Some(UclampRange(384, 1024)));
+
+        // 2-element string vector syntax (["min", "max"]).
+        let mapping: TaskSchedulerMapping =
+            runner::serde::deserialize_program(&make_dict(DictionaryValue::StrVec(vec![
+                "256".to_string(),
+                "1024".to_string(),
+            ])))
+            .expect("deserialize StrVec uclamp_min");
+        assert_eq!(mapping.uclamp_min, Some(UclampRange(256, 1024)));
+
+        // Invalid string formats must be rejected.
+        for (invalid_str, expected_err) in [
+            ("", "cannot parse integer from empty string"),
+            ("abc", "invalid digit found in string"),
+            ("100-abc", "invalid digit found in string"),
+            ("abc..=500", "invalid digit found in string"),
+            ("-1..=500", "invalid digit found in string"),
+            ("5-", "cannot parse integer from empty string"),
+            ("100-200-300", "invalid digit found in string"),
+        ] {
+            let err = runner::serde::deserialize_program::<TaskSchedulerMapping>(&make_dict(
+                DictionaryValue::Str(invalid_str.to_string()),
+            ))
+            .expect_err("expected invalid uclamp_min string to fail");
+            let err_msg = format!("{err:#}");
+            assert!(
+                err_msg.contains(expected_err),
+                "for {invalid_str:?}: expected error containing {expected_err:?}, got {err_msg:?}"
+            );
+        }
+
+        // Invalid sequence lengths and non-numeric sequence elements must be rejected.
+        for (invalid_vec, expected_err) in [
+            (vec![], "invalid length 0"),
+            (vec!["256".to_string()], "invalid length 1"),
+            (vec!["1".to_string(), "512".to_string(), "1024".to_string()], "invalid length 3"),
+            (vec!["abc".to_string(), "1024".to_string()], "invalid digit found in string"),
+        ] {
+            let err = runner::serde::deserialize_program::<TaskSchedulerMapping>(&make_dict(
+                DictionaryValue::StrVec(invalid_vec.clone()),
+            ))
+            .expect_err("expected invalid uclamp_min sequence to fail");
+            let err_msg = format!("{err:#}");
+            assert!(
+                err_msg.contains(expected_err),
+                "for {invalid_vec:?}: expected error containing {expected_err:?}, got {err_msg:?}"
+            );
+        }
     }
 }

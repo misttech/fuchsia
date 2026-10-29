@@ -2,8 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::task::SCHED_CAPACITY_SCALE;
+use anyhow::{Error, ensure};
 use bstr::ByteSlice;
-use regex_lite::{Error, Regex};
+use regex_lite::Regex;
 use starnix_task_command::TaskCommand;
 
 /// Per-container overrides for thread roles.
@@ -15,6 +17,7 @@ pub struct RoleOverrides {
     is_leader_filter: Vec<Option<bool>>,
     min_nice_filter: Vec<Option<i8>>,
     max_nice_filter: Vec<Option<i8>>,
+    uclamp_min_ranges: Vec<Option<(u32, u32)>>,
     role_names: Vec<String>,
 }
 
@@ -28,6 +31,7 @@ impl RoleOverrides {
             is_leader_filters: vec![],
             min_nice_filters: vec![],
             max_nice_filters: vec![],
+            uclamp_min_ranges: vec![],
             role_names: vec![],
         }
     }
@@ -39,11 +43,11 @@ impl RoleOverrides {
         thread_name: &TaskCommand,
         cgroup_path: &str,
     ) -> Option<&str> {
-        self.get_role_name_with_filters(process_name, thread_name, cgroup_path, false, 0)
+        self.get_role_name_with_filters(process_name, thread_name, cgroup_path, false, 0, 0)
     }
 
-    /// Get the overridden role name (if any) for provided process, thread, cgroup, leadership, and
-    /// nice attributes.
+    /// Get the overridden role name (if any) for provided process, thread, cgroup, leadership,
+    /// nice, and uclamp_min attributes.
     pub fn get_role_name_with_filters<'a>(
         &self,
         process_name: &TaskCommand,
@@ -51,6 +55,7 @@ impl RoleOverrides {
         cgroup_path: &str,
         is_leader: bool,
         nice: i8,
+        uclamp_min: u32,
     ) -> Option<&str> {
         debug_assert_eq!(self.process_filter.len(), self.role_names.len());
         debug_assert_eq!(self.thread_filter.len(), self.role_names.len());
@@ -58,6 +63,7 @@ impl RoleOverrides {
         debug_assert_eq!(self.is_leader_filter.len(), self.role_names.len());
         debug_assert_eq!(self.min_nice_filter.len(), self.role_names.len());
         debug_assert_eq!(self.max_nice_filter.len(), self.role_names.len());
+        debug_assert_eq!(self.uclamp_min_ranges.len(), self.role_names.len());
 
         // NOTE(https://fxbug.dev/483609435): This used to be more elegantly expressed
         // via use of regex::bytes::RegexSet, but regex_lite doesn't (yet?) offer RegexSet.
@@ -65,6 +71,8 @@ impl RoleOverrides {
         let thread_name = thread_name.as_bytes().to_str().ok()?;
         for index in 0..self.process_filter.len() {
             if self.is_leader_filter[index].is_none_or(|expected| expected == is_leader)
+                && self.uclamp_min_ranges[index]
+                    .is_none_or(|(min, max)| uclamp_min >= min && uclamp_min <= max)
                 && self.min_nice_filter[index].is_none_or(|min| nice >= min)
                 && self.max_nice_filter[index].is_none_or(|max| nice <= max)
                 && self.process_filter[index].is_match(process_name)
@@ -86,6 +94,7 @@ pub struct RoleOverridesBuilder {
     is_leader_filters: Vec<Option<bool>>,
     min_nice_filters: Vec<Option<i8>>,
     max_nice_filters: Vec<Option<i8>>,
+    uclamp_min_ranges: Vec<Option<(u32, u32)>>,
     role_names: Vec<String>,
 }
 
@@ -98,10 +107,11 @@ impl RoleOverridesBuilder {
         cgroup: Option<String>,
         role_name: impl Into<String>,
     ) {
-        self.add_with_filters(process, thread, cgroup, None, None, None, role_name);
+        self.add_with_filters(process, thread, cgroup, None, None, None, None, role_name);
     }
 
-    /// Add a new override with optional thread-group leader and nice range filters.
+    /// Add a new override with optional thread-group leader, nice range, and `uclamp_min` range
+    /// filters.
     pub fn add_with_filters(
         &mut self,
         process: impl Into<String>,
@@ -110,6 +120,7 @@ impl RoleOverridesBuilder {
         is_leader: Option<bool>,
         min_nice: Option<i8>,
         max_nice: Option<i8>,
+        uclamp_min_range: Option<(u32, u32)>,
         role_name: impl Into<String>,
     ) {
         self.process_patterns.push(process.into());
@@ -118,6 +129,7 @@ impl RoleOverridesBuilder {
         self.is_leader_filters.push(is_leader);
         self.min_nice_filters.push(min_nice);
         self.max_nice_filters.push(max_nice);
+        self.uclamp_min_ranges.push(uclamp_min_range);
         self.role_names.push(role_name.into());
     }
 
@@ -127,23 +139,31 @@ impl RoleOverridesBuilder {
             .cgroup_patterns
             .into_iter()
             .map(|opt| opt.map(|p| Regex::new(p.as_str())).transpose())
-            .collect::<Result<Vec<Option<Regex>>, Error>>()?;
+            .collect::<Result<Vec<Option<Regex>>, regex_lite::Error>>()?;
+
+        for &(min, max) in self.uclamp_min_ranges.iter().flatten() {
+            ensure!(
+                min <= max && max <= SCHED_CAPACITY_SCALE,
+                "uclamp_min range [{min}, {max}] must satisfy min <= max <= {SCHED_CAPACITY_SCALE}"
+            );
+        }
 
         Ok(RoleOverrides {
             process_filter: self
                 .process_patterns
                 .into_iter()
                 .map(|pattern| Regex::new(pattern.as_str()))
-                .collect::<Result<Vec<Regex>, Error>>()?,
+                .collect::<Result<Vec<Regex>, regex_lite::Error>>()?,
             thread_filter: self
                 .thread_patterns
                 .into_iter()
                 .map(|pattern| Regex::new(pattern.as_str()))
-                .collect::<Result<Vec<Regex>, Error>>()?,
+                .collect::<Result<Vec<Regex>, regex_lite::Error>>()?,
             cgroup_filter,
             is_leader_filter: self.is_leader_filters,
             min_nice_filter: self.min_nice_filters,
             max_nice_filter: self.max_nice_filters,
+            uclamp_min_ranges: self.uclamp_min_ranges,
             role_names: self.role_names,
         })
     }
@@ -244,6 +264,7 @@ mod tests {
             Some(true),
             None,
             None,
+            None,
             "leader_role",
         );
         builder.add_with_filters(
@@ -252,6 +273,7 @@ mod tests {
             Some("^/active$".to_string()),
             None,
             Some(1),
+            None,
             None,
             "low_prio_worker_role",
         );
@@ -262,6 +284,7 @@ mod tests {
             None,
             None,
             Some(-1),
+            None,
             "boosted_worker_role",
         );
         builder.add(".+", ".+", Some("^/active$".to_string()), "default_worker_role");
@@ -271,20 +294,101 @@ mod tests {
         let worker_cmd = TaskCommand::new(b"worker");
 
         assert_eq!(
-            mappings.get_role_name_with_filters(&proc_cmd, &proc_cmd, "/active", true, 0),
+            mappings.get_role_name_with_filters(&proc_cmd, &proc_cmd, "/active", true, 0, 0),
             Some("leader_role")
         );
         assert_eq!(
-            mappings.get_role_name_with_filters(&proc_cmd, &worker_cmd, "/active", false, 0),
+            mappings.get_role_name_with_filters(&proc_cmd, &worker_cmd, "/active", false, 0, 0),
             Some("default_worker_role")
         );
         assert_eq!(
-            mappings.get_role_name_with_filters(&proc_cmd, &worker_cmd, "/active", false, 10),
+            mappings.get_role_name_with_filters(&proc_cmd, &worker_cmd, "/active", false, 10, 0),
             Some("low_prio_worker_role")
         );
         assert_eq!(
-            mappings.get_role_name_with_filters(&proc_cmd, &worker_cmd, "/active", false, -2),
+            mappings.get_role_name_with_filters(&proc_cmd, &worker_cmd, "/active", false, -2, 0),
             Some("boosted_worker_role")
         );
+    }
+
+    #[fuchsia::test]
+    fn uclamp_min_patterns() {
+        let mut builder = RoleOverrides::new();
+        builder.add_with_filters(
+            ".*",
+            "^RenderThread.*",
+            Some("^/top-app$".to_string()),
+            None,
+            None,
+            None,
+            Some((512, 1024)),
+            "render_thread_high_boost",
+        );
+        builder.add_with_filters(
+            ".*",
+            "^RenderThread.*",
+            Some("^/top-app$".to_string()),
+            None,
+            None,
+            None,
+            Some((1, 511)),
+            "render_thread_low_boost",
+        );
+        builder.add(".*", "^RenderThread.*", None, "render_thread_default");
+        let mappings = builder.build().unwrap();
+
+        let proc = TaskCommand::new(b"com.example.app");
+        let thread = TaskCommand::new(b"RenderThread");
+
+        assert_eq!(
+            mappings.get_role_name_with_filters(&proc, &thread, "/top-app", false, 0, 0),
+            Some("render_thread_default")
+        );
+        assert_eq!(
+            mappings.get_role_name_with_filters(&proc, &thread, "/top-app", false, 0, 1),
+            Some("render_thread_low_boost")
+        );
+        assert_eq!(
+            mappings.get_role_name_with_filters(&proc, &thread, "/top-app", false, 0, 256),
+            Some("render_thread_low_boost")
+        );
+        assert_eq!(
+            mappings.get_role_name_with_filters(&proc, &thread, "/top-app", false, 0, 511),
+            Some("render_thread_low_boost")
+        );
+        assert_eq!(
+            mappings.get_role_name_with_filters(&proc, &thread, "/top-app", false, 0, 512),
+            Some("render_thread_high_boost")
+        );
+        assert_eq!(
+            mappings.get_role_name_with_filters(&proc, &thread, "/top-app", false, 0, 768),
+            Some("render_thread_high_boost")
+        );
+        assert_eq!(
+            mappings.get_role_name_with_filters(&proc, &thread, "/top-app", false, 0, 1024),
+            Some("render_thread_high_boost")
+        );
+        assert_eq!(
+            mappings.get_role_name_with_filters(&proc, &thread, "/background", false, 0, 768),
+            Some("render_thread_default")
+        );
+    }
+
+    #[fuchsia::test]
+    fn invalid_uclamp_range_rejected() {
+        for (range, expected_err) in [
+            ((600, 500), "uclamp_min range [600, 500] must satisfy min <= max <= 1024"),
+            ((0, 1025), "uclamp_min range [0, 1025] must satisfy min <= max <= 1024"),
+            ((1025, 2048), "uclamp_min range [1025, 2048] must satisfy min <= max <= 1024"),
+        ] {
+            let mut builder = RoleOverrides::new();
+            builder.add_with_filters(".*", ".*", None, None, None, None, Some(range), "bad_range");
+            let err = builder.build().expect_err("expected invalid uclamp_min range to fail");
+            let err_msg = format!("{err:#}");
+            assert!(
+                err_msg.contains(expected_err),
+                "expected error containing {expected_err:?}, got {err_msg:?}"
+            );
+        }
     }
 }

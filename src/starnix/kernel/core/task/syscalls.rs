@@ -2228,7 +2228,16 @@ pub use arch32::*;
 mod tests {
     use super::*;
     use crate::mm::syscalls::sys_munmap;
-    use crate::testing::{AutoReleasableTask, map_memory, spawn_kernel_and_run};
+    use crate::task::{RoleOverrides, SchedulerManager};
+    use crate::testing::{
+        AutoReleasableTask, map_memory, spawn_kernel_and_run,
+        spawn_kernel_with_scheduler_and_run_sync,
+    };
+    use fidl_fuchsia_scheduler::{
+        RoleManagerMarker, RoleManagerRequest, RoleManagerSetRoleResponse,
+    };
+    use futures::StreamExt;
+    use starnix_sync::Mutex;
     use starnix_syscalls::SUCCESS;
     use starnix_task_command::TaskCommand;
     use starnix_uapi::auth::Credentials;
@@ -3304,21 +3313,69 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_sched_setattr_and_getattr_uclamp() {
-        spawn_kernel_and_run(async |current_task| {
-            let attr_addr = map_memory(&current_task, UserAddress::default(), *PAGE_SIZE);
+    async fn test_sched_setattr_getattr_uclamp_and_role_override() {
+        let committed_role = Arc::new(Mutex::new(None::<String>));
+        let committed_role_server = committed_role.clone();
+        let (stop_tx, stop_rx) = futures::channel::oneshot::channel::<()>();
+        let (role_manager, server_end) = fidl::endpoints::create_sync_proxy::<RoleManagerMarker>();
+        let server_thread = std::thread::spawn(move || {
+            let mut executor = fuchsia_async::LocalExecutor::default();
+            executor.run_singlethreaded(async move {
+                let mut stream = server_end.into_stream().take_until(stop_rx);
+                while let Some(Ok(request)) = stream.next().await {
+                    match request {
+                        RoleManagerRequest::GetProfileForRole { responder, .. } => {
+                            let _ = responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw()));
+                        }
+                        RoleManagerRequest::SetRole { payload, responder } => {
+                            *committed_role_server.lock() = payload.role.map(|r| r.role);
+                            let _ = responder.send(Ok(RoleManagerSetRoleResponse::default()));
+                        }
+                        _ => panic!("unexpected RoleManagerRequest"),
+                    }
+                }
+            });
+        });
+
+        let mut builder = RoleOverrides::new();
+        builder.add_with_filters(
+            ".*",
+            "^RenderThread$",
+            None,
+            None,
+            None,
+            None,
+            Some((1, 1024)),
+            "render_thread_boosted",
+        );
+        builder.add(".*", "^RenderThread$", None, "render_thread_default");
+        let overrides = builder.build().unwrap();
+        let scheduler_manager = SchedulerManager::new_for_tests(Some(role_manager), overrides);
+
+        spawn_kernel_with_scheduler_and_run_sync(scheduler_manager, move |current_task| {
+            current_task.thread_group().write().did_exec = true;
+            current_task.set_command_name(TaskCommand::new(b"RenderThread"));
+
+            let attr_addr = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
             let attr_ref = UserRef::<sched_attr>::new(attr_addr);
 
+            let current_role = || {
+                let state = current_task.scheduler_state.lock().clone();
+                current_task.kernel().scheduler.role_name(current_task, &state).unwrap()
+            };
+
             // Initial sched_getattr returns default uclamp values (0, 1024).
-            sys_sched_getattr(&current_task, 0, attr_addr, SCHED_ATTR_SIZE_VER1, 0)
+            sys_sched_getattr(current_task, 0, attr_addr, SCHED_ATTR_SIZE_VER1, 0)
                 .expect("sched_getattr");
             let initial: sched_attr = current_task.read_object(attr_ref).unwrap();
             assert_eq!(initial.size, SCHED_ATTR_SIZE_VER1);
             assert_eq!(initial.sched_policy, SCHED_NORMAL);
             assert_eq!(initial.sched_util_min, 0);
             assert_eq!(initial.sched_util_max, 1024);
+            assert_eq!(current_role(), "render_thread_default");
+            assert_eq!(committed_role.lock().as_deref(), Some("render_thread_default"));
 
-            // Apply uclamp boost via SCHED_FLAG_KEEP_ALL | SCHED_FLAG_UTIL_CLAMP.
+            // Apply a uclamp_min boost via SCHED_FLAG_KEEP_ALL | SCHED_FLAG_UTIL_CLAMP.
             let boost_attr = sched_attr {
                 size: SCHED_ATTR_SIZE_VER1,
                 sched_flags: (SCHED_FLAG_KEEP_ALL | SCHED_FLAG_UTIL_CLAMP) as u64,
@@ -3327,15 +3384,17 @@ mod tests {
                 ..Default::default()
             };
             current_task.write_object(attr_ref, &boost_attr).unwrap();
-            sys_sched_setattr(&current_task, 0, attr_addr, 0).expect("sched_setattr boost");
+            sys_sched_setattr(current_task, 0, attr_addr, 0).expect("sched_setattr boost");
 
-            sys_sched_getattr(&current_task, 0, attr_addr, SCHED_ATTR_SIZE_VER1, 0)
+            sys_sched_getattr(current_task, 0, attr_addr, SCHED_ATTR_SIZE_VER1, 0)
                 .expect("sched_getattr after boost");
             let boosted: sched_attr = current_task.read_object(attr_ref).unwrap();
             assert_eq!(boosted.sched_util_min, 384);
             assert_eq!(boosted.sched_util_max, 1024);
+            assert_eq!(current_role(), "render_thread_boosted");
+            assert_eq!(committed_role.lock().as_deref(), Some("render_thread_boosted"));
 
-            // Reset uclamp_min using UINT32_MAX (-1).
+            // Reset uclamp_min using UINT32_MAX (-1) and verify role reverts to default.
             let reset_attr = sched_attr {
                 size: SCHED_ATTR_SIZE_VER1,
                 sched_flags: (SCHED_FLAG_KEEP_ALL | SCHED_FLAG_UTIL_CLAMP_MIN) as u64,
@@ -3343,8 +3402,10 @@ mod tests {
                 ..Default::default()
             };
             current_task.write_object(attr_ref, &reset_attr).unwrap();
-            sys_sched_setattr(&current_task, 0, attr_addr, 0).expect("sched_setattr reset");
+            sys_sched_setattr(current_task, 0, attr_addr, 0).expect("sched_setattr reset");
             assert_eq!(current_task.scheduler_state.lock().uclamp_min, 0);
+            assert_eq!(current_role(), "render_thread_default");
+            assert_eq!(committed_role.lock().as_deref(), Some("render_thread_default"));
 
             // SCHED_FLAG_KEEP_PARAMS (without SCHED_FLAG_KEEP_POLICY) updates reset_on_fork while
             // preserving the existing policy and nice value;
@@ -3357,7 +3418,7 @@ mod tests {
                 ..Default::default()
             };
             current_task.write_object(attr_ref, &initial_batch).unwrap();
-            sys_sched_setattr(&current_task, 0, attr_addr, 0).expect("sched_setattr initial_batch");
+            sys_sched_setattr(current_task, 0, attr_addr, 0).expect("sched_setattr initial_batch");
 
             let keep_params_attr = sched_attr {
                 size: SCHED_ATTR_SIZE_VER1,
@@ -3367,8 +3428,8 @@ mod tests {
                 ..Default::default()
             };
             current_task.write_object(attr_ref, &keep_params_attr).unwrap();
-            sys_sched_setattr(&current_task, 0, attr_addr, 0).expect("sched_setattr keep_params");
-            sys_sched_getattr(&current_task, 0, attr_addr, SCHED_ATTR_SIZE_VER1, 0)
+            sys_sched_setattr(current_task, 0, attr_addr, 0).expect("sched_setattr keep_params");
+            sys_sched_getattr(current_task, 0, attr_addr, SCHED_ATTR_SIZE_VER1, 0)
                 .expect("sched_getattr after keep_params");
             let after_keep_params: sched_attr = current_task.read_object(attr_ref).unwrap();
             assert_eq!(after_keep_params.sched_policy, SCHED_BATCH);
@@ -3383,8 +3444,8 @@ mod tests {
                 ..Default::default()
             };
             current_task.write_object(attr_ref, &keep_policy_attr).unwrap();
-            sys_sched_setattr(&current_task, 0, attr_addr, 0).expect("sched_setattr keep_policy");
-            sys_sched_getattr(&current_task, 0, attr_addr, SCHED_ATTR_SIZE_VER1, 0)
+            sys_sched_setattr(current_task, 0, attr_addr, 0).expect("sched_setattr keep_policy");
+            sys_sched_getattr(current_task, 0, attr_addr, SCHED_ATTR_SIZE_VER1, 0)
                 .expect("sched_getattr after keep_policy");
             let after_keep_policy: sched_attr = current_task.read_object(attr_ref).unwrap();
             assert_eq!(after_keep_policy.sched_policy, SCHED_BATCH);
@@ -3400,7 +3461,7 @@ mod tests {
                 ..Default::default()
             };
             current_task.write_object(attr_ref, &invalid_order).unwrap();
-            assert_eq!(sys_sched_setattr(&current_task, 0, attr_addr, 0), error!(EINVAL));
+            assert_eq!(sys_sched_setattr(current_task, 0, attr_addr, 0), error!(EINVAL));
 
             let invalid_scale = sched_attr {
                 size: SCHED_ATTR_SIZE_VER1,
@@ -3409,7 +3470,7 @@ mod tests {
                 ..Default::default()
             };
             current_task.write_object(attr_ref, &invalid_scale).unwrap();
-            assert_eq!(sys_sched_setattr(&current_task, 0, attr_addr, 0), error!(EINVAL));
+            assert_eq!(sys_sched_setattr(current_task, 0, attr_addr, 0), error!(EINVAL));
 
             let valid_attr = sched_attr {
                 size: SCHED_ATTR_SIZE_VER1,
@@ -3417,8 +3478,10 @@ mod tests {
                 ..Default::default()
             };
             current_task.write_object(attr_ref, &valid_attr).unwrap();
-            assert_eq!(sys_sched_setattr(&current_task, 0, attr_addr, 1), error!(EINVAL));
+            assert_eq!(sys_sched_setattr(current_task, 0, attr_addr, 1), error!(EINVAL));
         })
         .await;
+        let _ = stop_tx.send(());
+        server_thread.join().unwrap();
     }
 }
