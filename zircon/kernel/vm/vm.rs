@@ -49,16 +49,38 @@ pub use vm_ktrace_level_enabled;
 /// Creates a scoped VM ktrace duration if tracing is enabled at `$level`.
 #[macro_export]
 macro_rules! vm_ktrace_duration {
-    ($level:tt, $label:tt $(, $key:tt => $val:expr)* $(,)?) => {
-        let _duration = $crate::ktrace_rs::begin_scope_cond!(
-            $crate::vm::vm::vm_ktrace_level_enabled!($level),
-            "kernel:vm",
-            $label
-            $(, $key => $val)*
-        );
+    (1, $($rest:tt)*) => {
+        $crate::vm::vm::vm_ktrace_duration_if!(vm_tracing_level_at_least_1, $($rest)*);
+    };
+    (2, $($rest:tt)*) => {
+        $crate::vm::vm::vm_ktrace_duration_if!(vm_tracing_level_at_least_2, $($rest)*);
+    };
+    (3, $($rest:tt)*) => {
+        $crate::vm::vm::vm_ktrace_duration_if!(vm_tracing_level_at_least_3, $($rest)*);
     };
 }
 pub use vm_ktrace_duration;
+
+/// Implements `vm_ktrace_duration!` for the level whose cfg is `$cfg`.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! vm_ktrace_duration_if {
+    ($cfg:ident, $label:tt $(, $key:tt => $val:expr)* $(,)?) => {
+        #[cfg($cfg)]
+        let _duration =
+            $crate::ktrace_rs::begin_scope_cond!(true, "kernel:vm", $label $(, $key => $val)*);
+        #[cfg(not($cfg))]
+        if false {
+            // Type-checks the arguments without evaluating them.
+            let _: $crate::ktrace_rs::StringRef<'_> = ($label).into();
+            $(
+                let _: $crate::ktrace_rs::StringRef<'_> = ($key).into();
+                let _: $crate::ktrace_rs::ArgValue<'_> = ($val).into();
+            )*
+        }
+    };
+}
+pub use vm_ktrace_duration_if;
 
 #[macro_export]
 macro_rules! vm_ktrace_duration_begin {
