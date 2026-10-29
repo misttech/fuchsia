@@ -108,6 +108,11 @@ When working with Rust (`.rs`), a common pitfall is specifying the wrong
 "edition" in new targets defined in `BUILD.gn` files. The current correct
 edition is "2024".
 
+When changing Rust code, consider whether you should use one of the existing
+third-party dependencies in `third_party/rust_crates` (see
+`third_party/rust_crates/Cargo.toml` and `third_party/rust_crates/BUILD.gn`)
+instead of writing duplicate functionality.
+
 **Common Agent Pitfalls in Rust:**
 
 *   **Do not use `fuchsia_zircon`**: The `fuchsia_zircon` crate no longer exists.
