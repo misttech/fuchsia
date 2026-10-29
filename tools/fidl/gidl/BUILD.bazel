@@ -1,0 +1,82 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules:golden_files.bzl", "verify_golden_files")
+load(
+    "//src/tests/fidl/conformance_suite:gidl_conformance_suite.bzl",
+    "CONFORMANCE_SUITE_FIDL_TARGET",
+    "CONFORMANCE_SUITE_GOLDEN_GIDL_FILES",
+)
+load("//tools/fidl/gidl:gidl.bzl", "gidl")
+
+package(default_applicable_licenses = ["//:license"])
+
+# LINT.IfChange
+_CONFORMANCE_GOLDEN_ITEMS = [
+    {
+        "extension": "cc",
+        "language": "cpp",
+    },
+    {
+        "extension": "cc",
+        "language": "hlcpp",
+    },
+    {
+        "extension": "cc",
+        "language": "llcpp",
+    },
+    {
+        "extension": "py",
+        "language": "python",
+    },
+    {
+        "extension": "rs",
+        "language": "rust",
+    },
+    {
+        "extension": "rs",
+        "language": "dynfidl",
+    },
+    {
+        "extension": "rs",
+        "language": "rust_codec",
+    },
+    {
+        "extension": "rs",
+        "language": "rust_next",
+    },
+]
+
+[
+    gidl(
+        name = "%s_goldens" % item["language"],
+        fidl = CONFORMANCE_SUITE_FIDL_TARGET,
+        inputs = CONFORMANCE_SUITE_GOLDEN_GIDL_FILES,
+        language = item["language"],
+        output = "%s_golden.%s" % (
+            item["language"],
+            item["extension"],
+        ),
+        type = "conformance",
+    )
+    for item in _CONFORMANCE_GOLDEN_ITEMS
+]
+
+verify_golden_files(
+    name = "gidl_golden_tests",
+    testonly = True,
+    candidate_files = [
+        ":%s_goldens" % item["language"]
+        for item in _CONFORMANCE_GOLDEN_ITEMS
+    ],
+    golden_files = [
+        "goldens/%s_golden.%s.golden" % (
+            item["language"],
+            item["extension"],
+        )
+        for item in _CONFORMANCE_GOLDEN_ITEMS
+    ],
+    visibility = ["//tools/fidl:__subpackages__"],
+)
+# LINT.ThenChange(//tools/fidl/gidl/BUILD.gn)
