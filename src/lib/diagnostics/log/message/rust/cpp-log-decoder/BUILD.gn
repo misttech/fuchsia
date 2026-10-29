@@ -11,8 +11,8 @@ cc_test_executable("cpp-log-decoder-unittest") {
   testonly = true
   sources = [ "test.cc" ]
   deps = [
-    ":log_decoder_api",
-    ":staticlib",
+    ":log_decoder_api_cpp",
+    ":test_staticlib",
     "//sdk/lib/syslog/cpp",
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gmock",
@@ -22,11 +22,10 @@ cc_test_executable("cpp-log-decoder-unittest") {
 }
 
 _sources = [ "src/lib.rs" ]
-_deps = [
+_base_deps = [
   "//src/lib/diagnostics/log/encoding/rust",
   "//src/lib/diagnostics/log/message/rust",
   "//third_party/rust_crates:bumpalo",
-  "//third_party/rust_crates:serde_json",
   "//third_party/rust_crates:thiserror",
 ]
 
@@ -40,7 +39,8 @@ rustc_library("lib") {
   with_unit_tests = true
   edition = "2024"
   sources = _sources
-  deps = _deps
+  features = [ "json" ]
+  deps = _base_deps + [ "//third_party/rust_crates:serde_json" ]
 }
 
 # Use this target if you need both fake-log-sink and cpp-log-decoder (see
@@ -57,7 +57,7 @@ rustc_staticlib("staticlib") {
   edition = "2024"
   sources = _sources
   public = [ "log_decoder.h" ]
-  deps = _deps
+  deps = _base_deps
   test_deps = [
     "//sdk/fidl/fuchsia.logger:fuchsia.logger_rust",
     "//third_party/rust_crates:serde",
@@ -69,15 +69,33 @@ rustc_staticlib("staticlib") {
   ]
 }
 
-source_set("log_decoder_api") {
+# Test-only static library with JSON log decoding enabled.
+rustc_staticlib("test_staticlib") {
+  testonly = true
+  name = "log_decoder_c_bindings_test"
+  edition = "2024"
+  sources = _sources
+  public = [ "log_decoder.h" ]
+  features = [ "json" ]
+  deps = _base_deps + [ "//third_party/rust_crates:serde_json" ]
+}
+
+source_set("log_decoder_api_cpp") {
   sources = [
+    "log_decoder.h",
     "log_decoder_api.cc",
     "log_decoder_api.h",
   ]
   public_deps = [
-    ":staticlib",
     "//sdk/fidl/fuchsia.logger:fuchsia.logger_hlcpp",
     "//sdk/lib/fit-promise",
+  ]
+}
+
+group("log_decoder_api") {
+  public_deps = [
+    ":log_decoder_api_cpp",
+    ":staticlib",
   ]
 }
 

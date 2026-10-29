@@ -4,9 +4,11 @@
 use bumpalo::Bump;
 use diagnostics_log_encoding;
 use diagnostics_log_encoding::parse::ParseError;
+use diagnostics_message as message;
+#[cfg(feature = "json")]
+use diagnostics_message::MonikerWithUrl;
 use diagnostics_message::error::MessageError;
 use diagnostics_message::ffi::{CPPMessageFormatter, CppArray, LogMessage};
-use diagnostics_message::{self as message, MonikerWithUrl};
 use std::ffi::CString;
 use std::ops::{Deref, DerefMut};
 use std::os::raw::c_char;
@@ -22,6 +24,7 @@ use thiserror::Error;
 /// - The `size` of the slice must be no larger than `isize::MAX`, and adding
 ///   that size to data must not "wrap around" the address space. See the safety
 ///   documentation of pointer::offset.
+#[cfg(feature = "json")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn fuchsia_decode_log_message_to_json(
     msg: *const u8,
@@ -211,6 +214,7 @@ fn fuchsia_decode_log_messages_to_struct_internal_legacy<'a>(
 ///
 /// This should only be called with a pointer obtained through
 /// `fuchsia_decode_log_message_to_json`.
+#[cfg(feature = "json")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn fuchsia_free_decoded_log_message(msg: *mut c_char) {
     let str_to_free = unsafe { CString::from_raw(msg) };
