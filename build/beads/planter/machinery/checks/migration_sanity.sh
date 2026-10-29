@@ -4140,16 +4140,38 @@ for pkg_dir in sorted(candidate_dirs):
             for t in btargets
             if t["rule"] in ("fx_component", "resource", "fuchsia_package_resource_group")
         }
+        bz_bin_names = {
+            t["name"]
+            for t in btargets
+            if t["rule"]
+            in ("rustc_binary", "rust_binary", "fx_cc_binary", "cc_binary", "go_binary", "fx_packaged_binary")
+        }
+        bz_pkg_dep_names = bz_comp_names | bz_bin_names
         bridge_gn_abs = os.path.join(
             workdir, "bundles", "assembly", "bazel_inputs", pdir, "BUILD.gn"
         )
         has_bridge = os.path.isfile(bridge_gn_abs)
+        bridge_txt = ""
+        if has_bridge:
+            try:
+                with open(bridge_gn_abs, encoding="utf-8") as bf:
+                    bridge_txt = bf.read()
+            except OSError:
+                bridge_txt = ""
         for gname, (gtmpl, gline, gbody) in sorted(g_info["pre_targets"].items()):
             if gtmpl not in ("fuchsia_package", "fuchsia_package_with_single_component"):
                 continue
             cleaned = re.sub(r"#[^\n]*", "", gbody)
+            is_testonly_pkg = bool(re.search(r"\btestonly\s*=\s*true\b", cleaned))
+            is_bridged_in_assembly = bool(
+                bridge_txt
+                and re.search(
+                    r'"//' + re.escape(pdir) + r"(?::" + re.escape(gname) + r')?"',
+                    bridge_txt,
+                )
+            )
             if (
-                re.search(r"\btestonly\s*=\s*true\b", cleaned)
+                (is_testonly_pkg and not is_bridged_in_assembly)
                 or "$" in cleaned
                 or re.search(r"\b(?:if|foreach)\s*\(", cleaned)
                 or GN_ONLY_ATTR_RE.search(cleaned)
@@ -4170,7 +4192,7 @@ for pkg_dir in sorted(candidate_dirs):
                 else (d.split(":", 1)[1] if pdir and d.startswith(f"//{pdir}:") else "")
                 for d in dep_lbls
             ]
-            if not all(d and d in bz_comp_names for d in dep_locals):
+            if not all(d and d in bz_pkg_dep_names for d in dep_locals):
                 continue
             vis_lbls = []
             for vm in re.finditer(r"\bvisibility\s*\+?=\s*\[([^\]]*)\]", cleaned):
@@ -4179,7 +4201,7 @@ for pkg_dir in sorted(candidate_dirs):
                 v.startswith("//bundles/assembly") or v in (":*", f"//{pdir}:*")
                 for v in vis_lbls
             )
-            if not (assembly_only_vis or has_bridge):
+            if not (assembly_only_vis or has_bridge or is_bridged_in_assembly):
                 continue
             # Keep fuchsia_package in BUILD.gn when a packaged component binary depends
             # on a rustc_dylib target and collect_debug_symbols_manifest_aspect in
@@ -4247,20 +4269,62 @@ for pkg_dir in sorted(candidate_dirs):
             pkg_attr = (
                 f'package_name = "{gn_pkg_name}", ' if gn_pkg_name != gname else ""
             )
+            testonly_attr = "testonly = True, " if is_testonly_pkg else ""
+            bz_rule_by_name = {t["name"]: t["rule"] for t in btargets}
+            comp_deps = [d for d in dep_locals if bz_rule_by_name.get(d) == "fx_component"]
+            res_deps = [
+                d
+                for d in dep_locals
+                if bz_rule_by_name.get(d) in ("resource", "fuchsia_package_resource_group")
+            ]
+            bin_deps = [d for d in dep_locals if d in bz_bin_names]
             comp_list = ", ".join(f'":{d}"' for d in dep_locals)
+            fx_pkg_kwargs = []
+            if comp_deps:
+                fx_pkg_kwargs.append("components = [" + ", ".join(f'":{d}"' for d in comp_deps) + "]")
+            if res_deps:
+                fx_pkg_kwargs.append("resources = [" + ", ".join(f'":{d}"' for d in res_deps) + "]")
+            if bin_deps:
+                tool_lbls = []
+                for d in bin_deps:
+                    if bz_rule_by_name.get(d) == "fx_packaged_binary":
+                        tool_lbls.append(f'":{d}"')
+                    elif bz_rule_by_name.get(f"{d}_packaged_bin") == "fx_packaged_binary":
+                        tool_lbls.append(f'":{d}_packaged_bin"')
+                    elif bz_rule_by_name.get(f"{d}_packaged") == "fx_packaged_binary":
+                        tool_lbls.append(f'":{d}_packaged"')
+                    else:
+                        tool_lbls.append(f'":{d}_packaged_bin"')
+                fx_pkg_kwargs.append("tools = [" + ", ".join(tool_lbls) + "]")
+            kwargs_str = (", ".join(fx_pkg_kwargs) + ", ") if fx_pkg_kwargs else ""
+            bin_note = (
+                " (wrapping each raw binary in `# @bazel2gn:skip` `fx_packaged_binary(name = \"<bin>_packaged_bin\", binary = \":<bin>\")`)"
+                if any(bz_rule_by_name.get(d) != "fx_packaged_binary" for d in bin_deps)
+                else ""
+            )
             msg = (
-                f'GN `{gtmpl}("{gname}")` in \'{grel}\' packages component(s) '
+                f'GN `{gtmpl}("{gname}")` in \'{grel}\' packages target(s) '
                 f"({comp_list}) that are already migrated to `BUILD.bazel`, and "
                 "shared library / `rustc_dylib` runfiles deduplication is supported "
                 "in `fx_package`, but the package target remains in `'BUILD.gn'`."
             )
             rem = (
-                f'Add `# @bazel2gn:skip` `fx_package(name = "{gname}", {pkg_attr}'
-                f'components = [{comp_list}], visibility = ["//bundles/assembly:__subpackages__"])` '
+                f'Add `# @bazel2gn:skip` `fx_package(name = "{gname}", {pkg_attr}{testonly_attr}'
+                f'{kwargs_str}visibility = ["//bundles/assembly:__subpackages__"])`{bin_note} '
                 f"in '{brel}', delete `{gtmpl}(\"{gname}\")` from '{grel}', and "
                 f"replace any `//bundles/assembly/bazel_inputs/{pdir}` bridge with "
                 f"`//{pdir}:{gname}` in `bundles/assembly/BUILD.bazel`."
             )
+            # Remove any optimistic gn_package_kept_above_sentinel INFO finding for this package
+            findings[:] = [
+                f
+                for f in findings
+                if not (
+                    f.get("category") == "gn_package_kept_above_sentinel"
+                    and f.get("file") == grel
+                    and f.get("line") == gline
+                )
+            ]
             findings.append({
                 "source": "migration_sanity",
                 "category": "duplicate_gn_fuchsia_package",
@@ -4271,9 +4335,57 @@ for pkg_dir in sorted(candidate_dirs):
                 "remediation": rem,
             })
 
+    # Flag retained targets above ## BAZEL2GN SENTINEL whose relative order in BUILD.gn
+    # changed compared to change_base, which produces unnecessary movement diffs.
+    def check_reordered_gn_targets_above_sentinel(grel, g_info):
+        if not g_info or not g_info.get("pre_targets"):
+            return
+        try:
+            base_gn_raw = subprocess.check_output(
+                ["git", "-C", workdir, "show", f"{change_base}:{grel}"],
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+        except Exception:
+            return
+        base_parsed = parse_gn_text(base_gn_raw)
+        base_all = {}
+        base_all.update(base_parsed.get("pre_targets", {}))
+        base_all.update(base_parsed.get("post_targets", {}))
+        cur_pre = g_info["pre_targets"]
+        common = [
+            name
+            for name, (_t, ln, _b) in sorted(cur_pre.items(), key=lambda kv: kv[1][1])
+            if name in base_all
+        ]
+        base_order = [
+            name
+            for name, (_t, ln, _b) in sorted(base_all.items(), key=lambda kv: kv[1][1])
+            if name in cur_pre
+        ]
+        if len(common) >= 2 and common != base_order:
+            first_diff = next(c for c, b in zip(common, base_order) if c != b)
+            diff_ln = cur_pre[first_diff][1]
+            findings.append({
+                "source": "migration_sanity",
+                "category": "reordered_gn_targets_above_sentinel",
+                "severity": "error",
+                "file": grel,
+                "line": diff_ln,
+                "message": (
+                    f"Targets retained above `## BAZEL2GN SENTINEL` in '{grel}' were reordered "
+                    f"({common} vs original order {base_order}), causing spurious diffs in `BUILD.gn`."
+                ),
+                "remediation": (
+                    f"Preserve the original relative order of targets kept above `## BAZEL2GN SENTINEL` "
+                    f"in '{grel}': {base_order}."
+                ),
+            })
+
     check_unmigrated_gn_fuchsia_packages(
         bazel_targets, bazel_rel, gn_rel, pkg_dir, gn_info
     )
+    check_reordered_gn_targets_above_sentinel(gn_rel, gn_info)
     if gn_info and gn_info["has_sentinel"]:
         # A package-private testonly helper that only skipped (Bazel-only) tests use would
         # otherwise be generated into BUILD.gn with no GN consumer.

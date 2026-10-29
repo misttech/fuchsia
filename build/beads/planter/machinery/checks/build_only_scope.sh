@@ -26,11 +26,6 @@ set -euo pipefail
 #     unmigrated ancestor/sibling `meta/` directory referenced by the pre-migration `BUILD.gn`)
 #     into a migrated Bazel package whose `BUILD.bazel` references it directly (including
 #     removal of the pre-migration `.cml` path once no external GN targets use it)
-#   - existing source files (`.rs`, `.cc`, `.cpp`, `.c`, `.h`, `.hpp`) inside a migrated
-#     package whose `BUILD.gn` at `$PLANTER_CHANGE_BASE` was disconnected from the configured
-#     GN build graph (`<build dir>/ninja_outputs.json` has no targets for that package), when
-#     modified solely to repair pre-existing compile bitrot (hard syntax, type, or removed-API
-#     errors, with no lint-suppression annotations)
 #   - an existing `<pkg>/README.md` in a migrated package directory when every modified
 #     (`+`/`-`) line only updates a target label reference (`//<pkg>...`) to match the
 #     migrated BUILD.gn / BUILD.bazel targets; other README.md or OWNERS edits are not allowed.
@@ -349,77 +344,7 @@ def is_new_test_manifest(path: str) -> bool:
     return False
 
 
-# Identify migrated packages that were disconnected from the configured GN build graph.
-def find_unbuilt_gn_packages() -> set:
-    candidate_dirs = set(target_dirs)
-    for p in changed:
-        if os.path.basename(p) == "BUILD.bazel":
-            d = os.path.dirname(p).strip("/")
-            if d:
-                candidate_dirs.add(d)
-    if not candidate_dirs:
-        return set()
-    try:
-        with open(os.path.join(workdir, ".fx-build-dir"), encoding="utf-8") as f:
-            build_dir = f.read().strip()
-        with open(os.path.join(workdir, build_dir, "ninja_outputs.json"), encoding="utf-8") as f:
-            ninja_outputs = json.load(f)
-    except (OSError, ValueError):
-        return set()
-    configured_labels = set()
-    for key, outs in ninja_outputs.items():
-        if isinstance(outs, list) and any(isinstance(o, str) and o.strip() for o in outs):
-            configured_labels.add(key.split("(", 1)[0])
-    unbuilt = set()
-    target_re = re.compile(r'^\s*([A-Za-z_]\w*)\(\s*"([^"$]+)"\s*\)\s*\{', re.M)
-    for d in sorted(candidate_dirs):
-        base_gn = "\n".join(git_lines(["show", f"{change_base}:{d}/BUILD.gn"]))
-        if not base_gn:
-            continue
-        code_gn = re.sub(r"#[^\n]*", "", base_gn)
-        gn_targets = [
-            f"//{d}:{m.group(2)}"
-            for m in target_re.finditer(code_gn)
-            if m.group(1) not in NON_BUILD_GN_CALLS
-        ]
-        if gn_targets and not any(lbl in configured_labels for lbl in gn_targets):
-            unbuilt.add(d)
-    return unbuilt
-
-
-# Check whether a modified source file in an unbuilt GN package is a bitrot compile repair.
-def check_unbuilt_target_bitrot_fix(path: str, unbuilt_dirs: set):
-    if path in added or not path.endswith(SOURCE_SUFFIXES):
-        return None
-    if not os.path.isfile(os.path.join(workdir, path)):
-        return None
-    matched_dir = next(
-        (d for d in sorted(unbuilt_dirs, key=len, reverse=True) if path.startswith(d + "/")),
-        None,
-    )
-    if not matched_dir:
-        return None
-    diff_lines = git_lines(["diff", "--unified=0", change_base, "--", path])
-    substantive_changes = 0
-    for raw in diff_lines:
-        if raw.startswith(("+++ ", "--- ", "@@ ")):
-            continue
-        if raw.startswith("+"):
-            body = raw[1:]
-            if LINT_SUPPRESSION_ADD_RE.search(body):
-                return None
-            if body.strip():
-                substantive_changes += 1
-        elif raw.startswith("-"):
-            body = raw[1:]
-            if body.strip() and not LINT_ONLY_REMOVE_RE.search(body):
-                substantive_changes += 1
-    return matched_dir if substantive_changes > 0 else None
-
-
-unbuilt_dirs = find_unbuilt_gn_packages()
 relocated_new_to_old, relocated_old_to_new = find_relocated_component_manifests()
-bitrot_fixed_dirs = set()
 
 
 # Check whether an existing README.md inside a migrated package directory only updates
@@ -562,7 +487,7 @@ for path in untracked_agent_reports:
         ),
     })
 
-# Emit findings for changed non-build files, relocated manifests, and unbuilt GN package notes.
+# Emit findings for changed non-build files and relocated manifests.
 for path in sorted(changed):
     if (
         is_build_file(path)
@@ -606,45 +531,23 @@ for path in sorted(changed):
         if fmt_finding is not None:
             findings.append(fmt_finding)
         continue
-    bitrot_dir = check_unbuilt_target_bitrot_fix(path, unbuilt_dirs)
-    if bitrot_dir is not None:
-        bitrot_fixed_dirs.add(bitrot_dir)
-        msg_text = (
-            f"Allowed pre-existing bitrot compile fix in '{path}': package '//{bitrot_dir}' "
-            "had no targets in the configured GN build graph (<build dir>/ninja_outputs.json) "
-            f"at {change_base}, and the diff contains no lint-suppression annotations. "
-            "Keep each fix strictly minimal (avoid reformatting surrounding expressions when "
-            "a 1-line fix such as changing a misplaced inner `///` comment to `//` suffices) "
-            "and explain the pre-existing compile errors in the commit message body. "
-            "Note: touching a `.rs` file in a package with no affected GN tests causes the "
-            "non-blocking experimental FYI builder `fuchsia-coverage` to fail `Step('covargs')` "
-            "with `llvm-profdata merge: error: no input files specified`; if CQ polling "
-            "triggers remediation solely for that FYI failure, leave the checkout untouched "
-            "(preserving any `Code-Review+2` vote) and report `machinery_conflict` in "
-            "`disputed_findings`."
-        )
-        findings.append({
-            "source": "build_only_scope",
-            "category": "unbuilt_target_bitrot_fix",
-            "severity": "INFO",
-            "file": path,
-            "line": 0,
-            "message": msg_text,
-        })
-        continue
     msg_text = (
         f"Migration modifies non-build file '{path}'. GN-to-Bazel migrations must not "
-        "change source code, tests, manifests, or data files (except minimal compile-fix "
-        "edits in packages disconnected from the configured GN build graph)."
+        "change source code, tests, manifests, or data files (see "
+        "//build/beads/references/migration/scoping_changelists.md)."
     )
     rem_text = (
         "Revert this file to its pre-migration contents (git checkout $PLANTER_CHANGE_BASE "
-        "-- <file> or git checkout -- <file>). If the Bazel build surfaces new lint/compile "
+        "-- <file> or git checkout -- <file>). If the Bazel build surfaces lint or compile "
         "errors on a target built in GN, fix the BUILD.bazel attributes (lint_config, "
         "rustc_flags, configs, features, deps) instead of editing sources (for a C/C++ "
         "'#include <sdk/lib/...>' on an idk_cc_source_library with include_base = '//sdk', "
         "rewrite only that include to '<lib/...>' and run 'fx format-code --changed-lines "
-        "--files=<file>'); if parity is impossible, stop and report it."
+        "--files=<file>'). If a target was not being built in GN and has pre-existing source "
+        "bitrot (or may be dead code), do not fix source files in the migration CL: either "
+        "omit an unreferenced unit test target with a `# TODO` comment in BUILD.bazel and "
+        "note it in the commit message, or leave the broken target unmigrated so its code "
+        "and GN build graph can be fixed (or deleted) in a separate precursor CL."
     )
     findings.append({
         "source": "build_only_scope",
@@ -654,26 +557,6 @@ for path in sorted(changed):
         "line": 0,
         "message": msg_text,
         "remediation": rem_text,
-    })
-
-for d in sorted(unbuilt_dirs - bitrot_fixed_dirs):
-    has_bazel = os.path.isfile(os.path.join(workdir, d, "BUILD.bazel"))
-    anchor = f"{d}/BUILD.bazel" if has_bazel else f"{d}/BUILD.gn"
-    note_text = (
-        f"Package '//{d}' had no targets in the configured GN build graph "
-        f"(<build dir>/ninja_outputs.json) at {change_base}. If `fx bazel build` fails due "
-        "to pre-existing source bitrot (hard syntax, type, or removed-API compile errors in "
-        f"'{d}/' that cannot be resolved via BUILD.bazel attributes), minimal compile-fix "
-        f"edits to existing source files under '{d}/' (without lint-suppression annotations) "
-        "are permitted by build_only_scope."
-    )
-    findings.append({
-        "source": "build_only_scope",
-        "category": "unbuilt_gn_target_scope_note",
-        "severity": "INFO",
-        "file": anchor,
-        "line": 0,
-        "message": note_text,
     })
 
 print(json.dumps(findings, indent=2))

@@ -56,12 +56,13 @@ A candidate package can be added to the **migration packages** only when all of 
 2. **Same target type:** Its targets are of the same type as the targets of the **migration packages**. Inspect the `BUILD.gn` files to determine the target types. For example, do not combine a host tool with libraries, a FIDL library with non-FIDL targets, or C++ targets with Rust targets.
 3. **`third_party/` separation:** If any of the packages is in a `third_party/` directory, all of them are in the same third-party project (e.g., a C library and its `rust/` bindings subdirectory). Never combine `third_party/` directories with first-party directories, or directories of different third-party projects.
 4. **One grouping pattern:** Together with the first **migration package**, it matches one of the patterns below, and all the **migration packages** follow the same pattern. Do not combine patterns or add extra directories: once a package is grouped with the first **migration package** by pattern A, B or D, whether it was added in step 4 or step 5, stop and do not also add sibling directories (pattern C) in step 5. Apart from this, the [packages that have to be migrated together](#packages-that-have-to-be-migrated-together) added in step 4 are not considered when applying this rule (e.g., the direct test subdirectories of sibling packages grouped by pattern C).
-   * **A. Sole same-area consumer:** `fx gn refs` shows that the candidate package is the only remaining GN consumer of the first **migration package** (or the other way around), and the consumer has minimal dependencies.
+   * **A. Sole same-area consumer:** `fx gn refs` shows that the candidate package is the only remaining GN consumer of the first **migration package** (or the other way around), the consumer has minimal dependencies, and migrating them together eliminates `bazel2gn` and allows deleting `BUILD.gn` (or the migrated GN targets) in the consumed package.
    * **B. Root target and its private helpers:** The candidate package is a small helper subdirectory that exists primarily to support the first **migration package** (or the other way around).
    * **C. Small cohesive sibling group:** The packages are sibling or child directories that form one logical library family, or simple sibling libraries in an area or generic parent directory, and have similar build structures.
-   * **D. Direct test subdirectory:** The candidate package is a direct test subdirectory (e.g., `//<dir>/tests` or `//<dir>/test`) of the first **migration package** and exercises its targets.
+   * **D. Direct test subdirectory:** The candidate package is a direct test subdirectory (e.g., `//<dir>/tests` or `//<dir>/test`) of the first **migration package** and exercises its targets. Prioritize migrating convertible test targets in `//<dir>/tests` over grouping other directories that consume `//<dir>`.
 5. **Not a general-purpose library of a single consumer:** Do not group a foundational or general-purpose library with one of its many consumers.
-6. **Small CL:** A **migration group** has at most 5 packages, not counting the [packages that have to be migrated together](#packages-that-have-to-be-migrated-together).
+6. **Small CL (`<= 5` packages and `<= ~500` new lines):** A **migration group** has at most 5 packages total (including any [packages that have to be migrated together](#packages-that-have-to-be-migrated-together)) and adds roughly 500 or fewer new lines of code. If adding another package would exceed 5 packages or ~500 new lines of code, put it in a separate **migration group** / CL.
+7. **Build-only scope (no source code or GN build graph repairs):** Do not bundle pre-existing source code fixes (`.rs`, `.cc`, `.h`) or repairs to disconnected GN targets into a migration CL; those must be handled in a separate precursor CL.
 
 ### Packages That Have to Be Migrated Together
 
@@ -70,7 +71,7 @@ The packages that have to be migrated together with a **migration package** are 
    * Its private helper packages, as in pattern B.
    * Its direct test subdirectories, as in pattern D.
 
-They must also meet the rules 1 to 3 and 5 above. Adding them is part of selecting the **migration package**, so it does not count as combining grouping patterns, and they are added even if the number of **migration packages** then exceeds the **migration package count**, or their **migration group** then has more than 5 packages.
+They must also meet the rules 1 to 7 above. Adding them is part of selecting the **migration package**, so it does not count as combining grouping patterns, and they are added even if the number of **migration packages** then exceeds the **migration package count** (provided the resulting **migration group** stays within the 5-package and ~500-new-line CL scope limits).
 
 ## Selection Failures
 

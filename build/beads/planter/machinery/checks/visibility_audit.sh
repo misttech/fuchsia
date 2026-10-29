@@ -351,10 +351,19 @@ def get_orig_gn_visibility_scopes(pkg_path):
             if pat.startswith(":"):
                 scopes.append((pkg_path, "pkg"))
                 continue
+            if not pat.startswith("//"):
+                rel_p = pat
+                while rel_p.startswith("./"):
+                    rel_p = rel_p[2:]
+                pat = f"//{pkg_path}/{rel_p}" if pkg_path else f"//{rel_p}"
             m_gn = re.match(r"^//([^:*]*?)/?(\*|:.*)?$", pat)
             if not m_gn:
                 return None
-            sp = m_gn.group(1).strip("/")
+            sp = os.path.normpath(m_gn.group(1).strip("/"))
+            if sp == ".":
+                sp = ""
+            if sp == ".." or sp.startswith("../"):
+                return None
             suffix = m_gn.group(2) or ""
             scopes.append((sp, "subpackages" if suffix == "*" else "pkg"))
         return scopes
@@ -381,10 +390,11 @@ def get_orig_gn_visibility_scopes(pkg_path):
             else gn_src
         )
         above_sentinel = re.sub(r"#[^\n]*", "", raw_above)
+        tmpl_vis_map = {}
+        target_blocks = []
         for m in target_re.finditer(above_sentinel):
+            tmpl_kind = m.group(1)
             tname = m.group(2)
-            if tname in out:
-                continue
             depth, in_str, i, n = 0, False, m.end() - 1, len(above_sentinel)
             while i < n:
                 c = above_sentinel[i]
@@ -404,27 +414,38 @@ def get_orig_gn_visibility_scopes(pkg_path):
                         break
                 i += 1
             tbody = above_sentinel[m.end() : i]
+            if tmpl_kind == "template":
+                if not re.search(r"\bvisibility\s*\+=", tbody):
+                    vm = re.search(r"\bvisibility\s*=\s*\[([^\]]*)\]", tbody)
+                    if vm:
+                        scopes = parse_gn_vis_list(vm.group(1))
+                        if scopes:
+                            tmpl_vis_map[tname] = scopes
+                continue
+            target_blocks.append((tmpl_kind, tname, tbody))
+        for tmpl_kind, tname, tbody in target_blocks:
+            if tname in out:
+                continue
             if re.search(r"\bvisibility\s*\+=", tbody):
                 continue
             vm = re.search(r"\bvisibility\s*=\s*\[([^\]]*)\]", tbody)
-            if vm:
-                scopes = parse_gn_vis_list(vm.group(1))
-                if scopes:
-                    # If a non-testonly group() in the same BUILD.gn forwards :<tname> without a
-                    # visibility restriction, external callers reach :<tname> through that group in GN
-                    # and must depend on :<tname> directly in Bazel.
-                    unrestricted_fwd = False
-                    for gm in re.finditer(r'\bgroup\(\s*"([^"$]+)"\s*\)\s*\{([^{}]*)\}', above_sentinel):
-                        gbody = gm.group(2)
-                        if (
-                            not re.search(r"\btestonly\s*=\s*true\b", gbody)
-                            and not re.search(r"\bvisibility\s*=", gbody)
-                            and re.search(r'":' + re.escape(tname) + r'(?:\([^)]*\))?"', gbody)
-                        ):
-                            unrestricted_fwd = True
-                            break
-                    if not unrestricted_fwd:
-                        out[tname] = scopes
+            scopes = parse_gn_vis_list(vm.group(1)) if vm else tmpl_vis_map.get(tmpl_kind)
+            if scopes:
+                # If a non-testonly group() in the same BUILD.gn forwards :<tname> without a
+                # visibility restriction, external callers reach :<tname> through that group in GN
+                # and must depend on :<tname> directly in Bazel.
+                unrestricted_fwd = False
+                for gm in re.finditer(r'\bgroup\(\s*"([^"$]+)"\s*\)\s*\{([^{}]*)\}', above_sentinel):
+                    gbody = gm.group(2)
+                    if (
+                        not re.search(r"\btestonly\s*=\s*true\b", gbody)
+                        and not re.search(r"\bvisibility\s*=", gbody)
+                        and re.search(r'":' + re.escape(tname) + r'(?:\([^)]*\))?"', gbody)
+                    ):
+                        unrestricted_fwd = True
+                        break
+                if not unrestricted_fwd:
+                    out[tname] = list(scopes)
     return out
 
 # Convert explicit narrow GN visibility from the pre-migration BUILD.gn into Bazel
@@ -456,20 +477,17 @@ def get_preserved_gn_visibility(
                     return None
             if not os.path.isdir(os.path.join(workdir, sp)):
                 continue
-            if not (
-                pkg_path == sp
-                or pkg_path.startswith(sp + "/")
-                or any(r == sp or r.startswith(sp + "/") for r in pkgs)
-            ):
-                continue
             valid_scopes.append((sp, "subpackages"))
         else:
             if (
                 not sp
                 or not os.path.isdir(os.path.join(workdir, sp))
+                or not (
+                    os.path.isfile(os.path.join(workdir, sp, "BUILD.bazel"))
+                    or os.path.isfile(os.path.join(workdir, sp, "BUILD"))
+                )
                 or sp in vis_only_pkgs
                 or sp in gn_only_pkgs
-                or sp not in pkgs
             ):
                 continue
             valid_scopes.append((sp, "pkg"))
@@ -2041,6 +2059,14 @@ for rel_path in sorted(candidate_files):
                         f"Add visibility = {json.dumps(rec_target_vis)} to '{target_name}'."
                     ),
                 })
+            elif (
+                not preexisting_pkg_default_vis
+                and preserved_gn_vis
+                and target_name not in preexisting_no_vis_targets
+            ):
+                check_visibility_tightened_from_gn(
+                    target_name, rel_path, node.lineno, [], [], preserved_gn_vis, pkg_path
+                )
             elif not has_pkg_default_vis and not preserved_gn_vis:
                 clean_audited_targets.add((rel_path, target_name))
                 record_intentional_visibility_narrowing(

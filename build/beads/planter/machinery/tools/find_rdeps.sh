@@ -252,6 +252,34 @@ if os.path.isfile(gn_file):
     try:
         with open(gn_file, "r", encoding="utf-8", errors="ignore") as f:
             gn_src = f.read()
+        local_convertible_tmpls = set()
+        for tm in re.finditer(r'\btemplate\(\s*"([^"$]+)"\s*\)\s*\{', gn_src):
+            tname_loc = tm.group(1)
+            depth, in_str, i, n = 0, False, tm.end() - 1, len(gn_src)
+            while i < n:
+                c = gn_src[i]
+                if in_str:
+                    if c == "\\":
+                        i += 2
+                        continue
+                    if c == '"':
+                        in_str = False
+                elif c == '"':
+                    in_str = True
+                elif c == "{":
+                    depth += 1
+                elif c == "}":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                i += 1
+            tbody_loc = gn_src[tm.end() : i]
+            if any(
+                re.search(r"\b" + re.escape(ct) + r"\s*\(", tbody_loc)
+                for ct in CONVERTIBLE_GN_TEMPLATES
+            ):
+                local_convertible_tmpls.add(tname_loc)
+        all_convertible_tmpls = CONVERTIBLE_GN_TEMPLATES | local_convertible_tmpls
         for m in re.finditer(r'^\s*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)', gn_src, flags=re.MULTILINE):
             if m.group(1) in GN_PACKAGE_TEMPLATES:
                 package_targets.add(m.group(2))
@@ -264,12 +292,12 @@ if os.path.isfile(gn_file):
             gn_forwarding_groups = extract_gn_forwarding_groups(above_sentinel)
             for m in re.finditer(r'^\s*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)', above_sentinel, flags=re.MULTILINE):
                 tmpl, t = m.group(1), m.group(2)
-                if t in gn_forwarding_groups:
+                if tmpl == "template" or t in gn_forwarding_groups:
                     continue
                 if t not in bazel_targets:
                     gn_only_targets.add(t)
                 if (
-                    tmpl not in CONVERTIBLE_GN_TEMPLATES
+                    tmpl not in all_convertible_tmpls
                     and (
                         t not in bazel_targets
                         or t in ("tests", "benchmarks")
@@ -291,14 +319,14 @@ if os.path.isfile(gn_file):
         else:
             for m in re.finditer(r'^\s*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)', gn_src, flags=re.MULTILINE):
                 tmpl, t = m.group(1), m.group(2)
-                if tmpl in CONVERTIBLE_GN_TEMPLATES and t not in bazel_targets:
+                if tmpl in all_convertible_tmpls and t not in bazel_targets:
                     bazel_targets.append(t)
             gn_forwarding_groups = extract_gn_forwarding_groups(gn_src)
             for m in re.finditer(r'^\s*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)', gn_src, flags=re.MULTILINE):
                 tmpl, t = m.group(1), m.group(2)
-                if t in gn_forwarding_groups:
+                if tmpl == "template" or t in gn_forwarding_groups:
                     continue
-                if tmpl not in CONVERTIBLE_GN_TEMPLATES and t not in bazel_targets:
+                if tmpl not in all_convertible_tmpls and t not in bazel_targets:
                     gn_only_targets.add(t)
                     gn_nonconvertible_targets.add(t)
     except Exception:
@@ -905,10 +933,19 @@ def get_orig_gn_visibility_scopes(pkg_path):
             if pat.startswith(":"):
                 scopes.append((pkg_path, "pkg"))
                 continue
+            if not pat.startswith("//"):
+                rel_p = pat
+                while rel_p.startswith("./"):
+                    rel_p = rel_p[2:]
+                pat = f"//{pkg_path}/{rel_p}" if pkg_path else f"//{rel_p}"
             m_gn = re.match(r"^//([^:*]*?)/?(\*|:.*)?$", pat)
             if not m_gn:
                 return None
-            sp = m_gn.group(1).strip("/")
+            sp = os.path.normpath(m_gn.group(1).strip("/"))
+            if sp == ".":
+                sp = ""
+            if sp == ".." or sp.startswith("../"):
+                return None
             suffix = m_gn.group(2) or ""
             scopes.append((sp, "subpackages" if suffix == "*" else "pkg"))
         return scopes
@@ -935,10 +972,11 @@ def get_orig_gn_visibility_scopes(pkg_path):
             else gn_src
         )
         above_sentinel = re.sub(r"#[^\n]*", "", raw_above)
+        tmpl_vis_map = {}
+        target_blocks = []
         for m in target_re.finditer(above_sentinel):
+            tmpl_kind = m.group(1)
             tname = m.group(2)
-            if tname in out:
-                continue
             depth, in_str, i, n = 0, False, m.end() - 1, len(above_sentinel)
             while i < n:
                 c = above_sentinel[i]
@@ -958,6 +996,18 @@ def get_orig_gn_visibility_scopes(pkg_path):
                         break
                 i += 1
             tbody = above_sentinel[m.end() : i]
+            if tmpl_kind == "template":
+                if not re.search(r"\bvisibility\s*\+=", tbody):
+                    vm = re.search(r"\bvisibility\s*=\s*\[([^\]]*)\]", tbody)
+                    if vm:
+                        scopes = parse_gn_vis_list(vm.group(1))
+                        if scopes:
+                            tmpl_vis_map[tname] = scopes
+                continue
+            target_blocks.append((tmpl_kind, tname, tbody))
+        for tmpl_kind, tname, tbody in target_blocks:
+            if tname in out:
+                continue
             if re.search(r"\bvisibility\s*\+=", tbody):
                 continue
             vm = re.search(r"\bvisibility\s*=\s*\[([^\]]*)\]", tbody)
@@ -965,6 +1015,8 @@ def get_orig_gn_visibility_scopes(pkg_path):
                 scopes = parse_gn_vis_list(vm.group(1))
                 if scopes:
                     out[tname] = scopes
+            elif tmpl_kind in tmpl_vis_map:
+                out[tname] = list(tmpl_vis_map[tmpl_kind])
     return out
 
 
@@ -1003,6 +1055,10 @@ def get_preserved_gn_visibility(tname, rdep_pkgs):
             if (
                 not sp
                 or not os.path.isdir(os.path.join(workdir, sp))
+                or not (
+                    os.path.isfile(os.path.join(workdir, sp, "BUILD.bazel"))
+                    or os.path.isfile(os.path.join(workdir, sp, "BUILD"))
+                )
                 or sp in visibility_only_packages
                 or sp in gn_only_ref_packages
             ):

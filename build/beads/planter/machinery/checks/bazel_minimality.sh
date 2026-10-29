@@ -137,12 +137,45 @@ if change_base == "HEAD" and head_subj and head_subj[0].startswith("[bazel_migra
         changed.update(head_files)
 
 
-def migrated_dependency_packages():
-    """Packages this change migrates because a target (transitively) depends on them.
+def get_pkg_area(pkg: str) -> str:
+    parts = [p for p in pkg.strip("/").split("/") if p]
+    if not parts:
+        return ""
+    if parts[0] in ("src", "sdk", "tools", "zircon") and len(parts) >= 2:
+        return f"{parts[0]}/{parts[1]}"
+    return parts[0]
 
-    A dependency package is in scope when its BUILD.bazel is added or modified in this change
-    and is reachable from a target package's BUILD.bazel through non-visibility label
-    references (including across already-migrated intermediate BUILD.bazel files).
+
+def is_same_third_party_scope(pkg_a: str, pkg_b: str) -> bool:
+    tp_a = "third_party" in pkg_a.strip("/").split("/")
+    tp_b = "third_party" in pkg_b.strip("/").split("/")
+    return tp_a == tp_b
+
+
+def package_eliminated_gn_or_sentinel(pkg: str) -> bool:
+    gn_path = os.path.join(workdir, pkg, "BUILD.gn")
+    if not os.path.isfile(gn_path):
+        return True
+    try:
+        with open(gn_path, encoding="utf-8") as f:
+            return "BAZEL2GN SENTINEL" not in f.read()
+    except OSError:
+        return False
+
+
+def migrated_dependency_packages():
+    """Packages outside target_dirs that are legitimately co-migrated per scoping_changelists.md.
+
+    Per //build/beads/references/migration/scoping_changelists.md Section 2 & Section 3:
+    - Never co-migrate cross-area packages, third_party/ packages (with first-party), general-purpose
+      libraries, or multi-hop transitive dependency closures.
+    - Allowed co-migrations:
+      1. Subdirectories of an assigned target directory (`cand_pkg.startswith(td + "/")`, e.g.
+         internal helpers `//<dir>/<helper>` or direct test dirs `//<dir>/tests`, Patterns 2.B & 2.D).
+      2. A sole same-area GN consumer of `td` ONLY when co-migrating it eliminates `td/BUILD.gn` or
+         avoids `bazel2gn` in `td/BUILD.gn` (Pattern 2.A).
+      3. A same-area private helper directly depended on by `td` whose `BUILD.gn` is deleted or has
+         no `BAZEL2GN SENTINEL` because `td` is its sole consumer (Pattern 2.B).
     """
     added = set(git_lines(["diff", "--name-only", "--diff-filter=AM", change_base])) | set(untracked)
     candidates = {
@@ -150,13 +183,42 @@ def migrated_dependency_packages():
         for p in added
         if os.path.basename(p) == "BUILD.bazel"
         and not p.strip("/").startswith(ALLOWED_GLOBAL_PREFIXES)
+        and not p.strip("/").startswith("bundles/")
     }
     candidates -= set(target_dirs)
-    if not candidates:
+    if not candidates or not target_dirs:
         return set()
     label_re = re.compile(r'"@?//([^":]+)(?::([^"\s]+))?"')
-    seed_dirs = list(target_dirs)
+    td_direct_deps = set()
+    for td in target_dirs:
+        try:
+            with open(os.path.join(workdir, td, "BUILD.bazel"), encoding="utf-8") as f:
+                text = f.read()
+        except OSError:
+            continue
+        for m in label_re.finditer(text):
+            ref, target = m.group(1).strip("/"), m.group(2) or ""
+            if ref and target not in ("__pkg__", "__subpackages__"):
+                td_direct_deps.add(ref)
+    found = set()
     for cand_pkg in sorted(candidates):
+        # 1. Child/descendant directory of an assigned target directory (Patterns 2.B & 2.D)
+        if any(
+            cand_pkg.startswith(td + "/") and is_same_third_party_scope(cand_pkg, td)
+            for td in target_dirs
+        ):
+            found.add(cand_pkg)
+            continue
+        # Must be in the same area and third_party scope as at least one target_dir
+        matching_tds = [
+            td
+            for td in target_dirs
+            if get_pkg_area(cand_pkg) == get_pkg_area(td)
+            and is_same_third_party_scope(cand_pkg, td)
+        ]
+        if not matching_tds:
+            continue
+        # 2. Pattern 2.A: Sole same-area consumer of td that eliminates td/BUILD.gn or bazel2gn in td
         cand_texts = []
         for fn in ("BUILD.gn", "BUILD.bazel"):
             rel_f = f"{cand_pkg}/{fn}"
@@ -168,35 +230,23 @@ def migrated_dependency_packages():
                 pass
         joined = "\n".join(cand_texts)
         if any(
-            re.search(r'(?:@gn_targets//(?:[^\s"\':]+/)?|//)' + re.escape(td) + r'(?=[:"/\s\'])', joined)
-            for td in target_dirs
+            re.search(
+                r'(?:@gn_targets//(?:[^\s"\':]+/)?|//)' + re.escape(td) + r'(?=[:"/\s\'])',
+                joined,
+            )
+            and package_eliminated_gn_or_sentinel(td)
+            for td in matching_tds
         ):
-            seed_dirs.append(cand_pkg)
-    found, seen, frontier = set(), set(), seed_dirs
-    while frontier and found != candidates:
-        pkg = frontier.pop()
-        if pkg in seen or not pkg:
+            found.add(cand_pkg)
             continue
-        seen.add(pkg)
-        if pkg not in candidates and pkg.startswith(("third_party/rust_crates/vendor", "build/bazel/")):
-            continue
-        try:
-            with open(os.path.join(workdir, pkg, "BUILD.bazel"), encoding="utf-8") as f:
-                text = f.read()
-        except OSError:
-            continue
-        for m in label_re.finditer(text):
-            ref, target = m.group(1).strip("/"), m.group(2) or ""
-            if not ref or target in ("__pkg__", "__subpackages__"):
-                continue
-            if ref in candidates:
-                found.add(ref)
-            if ref not in seen:
-                frontier.append(ref)
+        # 3. Pattern 2.B: Direct same-area private helper of td that needs no bazel2gn
+        if cand_pkg in td_direct_deps and package_eliminated_gn_or_sentinel(cand_pkg):
+            found.add(cand_pkg)
     return found
 
 
 dependency_dirs = migrated_dependency_packages()
+newly_added_files = set(git_lines(["diff", "--name-only", "--diff-filter=A", change_base])) | set(untracked)
 
 
 def referenced_shared_configs():
@@ -292,7 +342,25 @@ def is_allowed_scope(path: str) -> bool:
             return True
     if is_shared_bazel_rule_file(norm):
         return references_in_scope_package_at_base(norm)
-    if (os.path.basename(norm) in ("BUILD.bazel", "BUILD", "BUILD.gn") or norm.endswith((".bzl", ".gni", ".cml"))) and references_in_scope_package_at_base(norm):
+    if (
+        os.path.basename(norm) in ("BUILD.bazel", "BUILD", "BUILD.gn")
+        or norm.endswith((".bzl", ".gni", ".cml"))
+    ) and references_in_scope_package_at_base(norm):
+        # Collateral updates to an existing caller's BUILD.gn/BUILD.bazel (e.g. visibility,
+        # test_suite registration, or bazel_host_tool wiring) are allowed, but full migration of
+        # an out-of-scope package (creating <pkg_dir>/BUILD.bazel or adding BAZEL2GN SENTINEL to
+        # <pkg_dir>/BUILD.gn) is forbidden unless <pkg_dir> is in target_dirs or dependency_dirs.
+        if pkg_dir and not pkg_dir.startswith(ALLOWED_GLOBAL_PREFIXES) and not pkg_dir.startswith("bundles/"):
+            if f"{pkg_dir}/BUILD.bazel" in newly_added_files:
+                return False
+            base_gn = "\n".join(git_lines(["show", f"{change_base}:{pkg_dir}/BUILD.gn"]))
+            if base_gn and "BAZEL2GN SENTINEL" not in base_gn:
+                try:
+                    with open(os.path.join(workdir, pkg_dir, "BUILD.gn"), encoding="utf-8") as f:
+                        if "BAZEL2GN SENTINEL" in f.read():
+                            return False
+                except OSError:
+                    pass
         return True
     if is_relocated_in_scope_cml(norm):
         return True
@@ -397,13 +465,73 @@ for path in sorted(changed):
                 "line": 1,
                 "message": (
                     f"File '{path}' is outside the assigned target directory scope "
-                    f"({', '.join(target_dirs)}). Drive-by edits or cleanups in unrelated packages are forbidden."
+                    f"({', '.join(target_dirs)}). Per //build/beads/references/migration/scoping_changelists.md, "
+                    "do not sweep cross-area packages, general-purpose dependencies, transitive closures, "
+                    "or downstream consumers that do not eliminate BUILD.gn/bazel2gn into the same CL."
                 ),
                 "remediation": (
-                    f"Revert changes to '{path}' (`git checkout {change_base} -- {path}` or `git checkout -- {path}`) "
-                    "and restrict modifications strictly to the assigned target package(s)."
+                    f"Revert changes to '{path}' (`git checkout {change_base} -- {path}` or `rm -f {path}`) "
+                    "and restrict modifications strictly to the assigned target package(s) and allowed "
+                    "co-migrated subdirectories."
                 ),
             })
+
+
+# Enforce CL directory count (<= 5) and added-line count (<= ~500 for multi-directory CLs)
+# per //build/beads/references/migration/scoping_changelists.md.
+def check_cl_scoping_guidelines():
+    migrated_pkgs = set()
+    for p in sorted(changed):
+        norm = p.strip("/")
+        if os.path.basename(norm) != "BUILD.bazel":
+            continue
+        if norm.startswith(ALLOWED_GLOBAL_PREFIXES) or norm.startswith(("bundles/", RUST_CRATES)):
+            continue
+        pkg = os.path.dirname(norm)
+        if not pkg:
+            continue
+        if norm in newly_added_files or pkg in target_dirs or pkg in dependency_dirs:
+            migrated_pkgs.add(pkg)
+    if len(migrated_pkgs) <= 1:
+        return
+    added_lines = 0
+    for p in sorted(changed):
+        norm = p.strip("/")
+        if norm.startswith(ALLOWED_GLOBAL_PREFIXES) or norm.startswith(("bundles/", RUST_CRATES)):
+            continue
+        if norm in untracked:
+            try:
+                with open(os.path.join(workdir, norm), encoding="utf-8", errors="ignore") as f:
+                    added_lines += sum(1 for _ in f)
+            except OSError:
+                pass
+        else:
+            for dl in git_lines(["diff", "--unified=0", change_base, "--", norm]):
+                if dl.startswith("+") and not dl.startswith("+++"):
+                    added_lines += 1
+    anchor = f"{target_dirs[0]}/BUILD.bazel" if target_dirs else f"{sorted(migrated_pkgs)[0]}/BUILD.bazel"
+    if len(migrated_pkgs) > 5 or added_lines > 550:
+        pkg_list_str = ", ".join(f"//{d}" for d in sorted(migrated_pkgs))
+        findings.append({
+            "source": "bazel_minimality",
+            "category": "cl_scope_exceeded",
+            "severity": "error",
+            "file": anchor,
+            "line": 1,
+            "message": (
+                f"Change migrates {len(migrated_pkgs)} directories ({pkg_list_str}) and adds "
+                f"{added_lines} new lines, exceeding the CL scoping limits in "
+                "//build/beads/references/migration/scoping_changelists.md (at most 3-5 directories "
+                "and ~500 new lines of code max)."
+            ),
+            "remediation": (
+                "Reduce the scope of this CL by reverting extra co-migrated directories so that "
+                "at most 5 directories and <= ~500 new lines are migrated in a single CL."
+            ),
+        })
+
+
+check_cl_scoping_guidelines()
 
 def load_platform_api_level_visibility():
     ver_path = os.path.join(workdir, "build/bazel/versioning/BUILD.bazel")

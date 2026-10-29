@@ -199,7 +199,8 @@ GN_TOKEN_RE = re.compile(
 )
 
 
-# Parse enclosing and inner `if (...)` conditions for each GN target in `text`.
+# Parse enclosing and inner `if (...)` conditions for each GN target in `text`,
+# propagating inner `if (...)` conditions from file-local `template(...)` definitions.
 def parse_gn_target_conditions(text):
     out = {}
     if not text:
@@ -209,6 +210,7 @@ def parse_gn_target_conditions(text):
         for ln in text.splitlines()
     )
     stack = []
+    tmpl_inner = {}
     for m in GN_TOKEN_RE.finditer(cleaned):
         tok = m.group(0)
         line = cleaned.count("\n", 0, m.start()) + 1
@@ -217,9 +219,14 @@ def parse_gn_target_conditions(text):
             for kind, tname, _ in stack:
                 if kind == "target" and tname in out:
                     out[tname]["inner"].append((cond, line))
+                elif kind == "template" and tname:
+                    tmpl_inner.setdefault(tname, []).append((cond, line))
             stack.append(("if", cond, line))
         elif m.group(3):
             tmpl, tname = m.group(3), m.group(4)
+            if tmpl == "template":
+                stack.append(("template", tname, line))
+                continue
             if tmpl in NOT_TARGETS:
                 stack.append(("other", "", line))
                 continue
@@ -233,15 +240,20 @@ def parse_gn_target_conditions(text):
             stack.append(("other", "", line))
         elif tok == "}" and stack:
             stack.pop()
+    for tname, info in out.items():
+        if info["tmpl"] in tmpl_inner:
+            info["inner"].extend(tmpl_inner[info["tmpl"]])
     return out
 
 
-# Check that retained hand-written GN targets above BAZEL2GN SENTINEL do not gain new
-# `if (...)` platform/toolchain constraints that were absent at $PLANTER_CHANGE_BASE.
+# Check that retained hand-written GN targets above BAZEL2GN SENTINEL and bazel2gn-synced
+# library/binary targets below BAZEL2GN SENTINEL do not silently gain new `if (...)`
+# platform/toolchain constraints that were absent at $PLANTER_CHANGE_BASE.
 def check_unrequested_gn_conditions(gn_rel, pkg, before, after):
     if not before or not after:
         return []
-    above_after = after.split("## BAZEL2GN SENTINEL", 1)[0]
+    parts = after.split("## BAZEL2GN SENTINEL", 1)
+    above_after = parts[0]
     old_cond_map = parse_gn_target_conditions(before)
     new_cond_map = parse_gn_target_conditions(above_after)
     grouped = {}
@@ -281,6 +293,142 @@ def check_unrequested_gn_conditions(gn_rel, pkg, before, after):
                 "definition from the change base."
             ),
         })
+
+    # Also check synced library/binary targets below BAZEL2GN SENTINEL for newly added
+    # enclosing `if (is_fuchsia)` / `if (is_host)` platform restrictions.
+    if len(parts) > 1:
+        full_cond_map = parse_gn_target_conditions(after)
+        bz_rel = f"{pkg}/BUILD.bazel" if pkg else "BUILD.bazel"
+        bz_txt = ""
+        try:
+            with open(os.path.join(workdir, bz_rel), encoding="utf-8") as bf:
+                bz_txt = bf.read()
+        except OSError:
+            pass
+        head_sha = (git(["rev-parse", "HEAD"]) or "").strip()
+        base_sha = (git(["rev-parse", "--verify", f"{change_base}^{{commit}}"]) or "").strip()
+        uploaded_commit = os.environ.get("PLANTER_UPLOADED_COMMIT", "").strip()
+        worktree_dirty = bool(git(["status", "--porcelain", "--"]))
+        has_task_commit = (
+            head_sha
+            and base_sha
+            and head_sha != base_sha
+            and not worktree_dirty
+            and (not uploaded_commit or head_sha != uploaded_commit)
+        )
+        commit_body = (git(["log", "-1", "--format=%b", "HEAD"]) or "") if has_task_commit else ""
+        note_re = re.compile(
+            r"#\s*(?:TODO|Note|Needs reviewer attention)\b[^\n]*(?:target_compatible_with|Fuchsia-only|host-only|platform)",
+            re.I,
+        )
+
+        def _bz_target_line_and_note(text, target_name):
+            if not text:
+                return 0, False
+            m_nm = re.search(r'(?m)^\s*name\s*=\s*"' + re.escape(target_name) + r'"', text)
+            if not m_nm:
+                return 0, False
+            call_start = text.rfind("\n(", 0, m_nm.start())
+            for cm in re.finditer(r"(?m)^[A-Za-z_]\w*\s*\(", text[: m_nm.start()]):
+                call_start = cm.start()
+            if call_start < 0:
+                call_start = m_nm.start()
+            call_end = text.find("\n)", m_nm.end())
+            if call_end < 0:
+                call_end = len(text)
+            else:
+                call_end += 2
+            block = text[call_start:call_end]
+            tcw_m = re.search(r"(?m)^\s*target_compatible_with\s*=", block)
+            line_no = (
+                text.count("\n", 0, call_start + tcw_m.start()) + 1
+                if tcw_m
+                else text.count("\n", 0, call_start) + 1
+            )
+            prefix_lines = text[:call_start].splitlines()
+            above_comments = []
+            for pl in reversed(prefix_lines):
+                s = pl.strip()
+                if s.startswith("#"):
+                    above_comments.append(s)
+                elif s == "":
+                    if above_comments:
+                        break
+                else:
+                    break
+            comment_ctx = "\n".join(reversed(above_comments)) + "\n" + block
+            return line_no, bool(note_re.search(comment_ctx))
+
+        for tname, new_info in sorted(full_cond_map.items()):
+            if tname in new_cond_map:
+                continue
+            if new_info["tmpl"] in ("rustc_test", "test", "go_test", "host_test"):
+                continue
+            old_info = old_cond_map.get(tname)
+            if not old_info:
+                continue
+            old_enc = {c for c, _ in old_info["enclosing"]}
+            old_inner = [c for c, _ in old_info["inner"]]
+            had_multiplatform_inner = any(
+                "is_fuchsia" in c or "is_host" in c for c in old_inner
+            )
+            bz_line, has_bz_note = _bz_target_line_and_note(bz_txt, tname)
+            rep_ln = bz_line or 1
+            for cond, cond_line in new_info["enclosing"]:
+                if cond not in ("is_fuchsia", "is_host") or cond in old_enc:
+                    continue
+                if had_multiplatform_inner:
+                    out_findings.append({
+                        "source": "gn_attr_parity",
+                        "category": "unrequested_gn_condition",
+                        "severity": "error",
+                        "file": bz_rel,
+                        "line": rep_ln,
+                        "message": (
+                            f"Target `{tname}` in `{bz_rel}` adds `target_compatible_with` "
+                            f"(generating `if ({cond})` in `{gn_rel}`), narrowing `{tname}` "
+                            "to a single platform even though the base GN target supported "
+                            f"multiple platforms via conditional dependencies (`if ({old_inner[0]})`)."
+                        ),
+                        "remediation": (
+                            f"Remove `target_compatible_with` from `{tname}` in `{bz_rel}`, "
+                            "use `select({\"@platforms//os:fuchsia\": [...], \"//conditions:default\": []})` "
+                            "on platform-specific `deps`/`srcs`, and re-run `fx bazel2gn`."
+                        ),
+                    })
+                    continue
+                has_msg_note = bool(
+                    re.search(
+                        r"\b(?:target_compatible_with|Fuchsia-only|host-only)\b",
+                        commit_body,
+                        re.I,
+                    )
+                )
+                if not (has_bz_note and has_msg_note):
+                    out_findings.append({
+                        "source": "gn_attr_parity",
+                        "category": "unrequested_gn_condition",
+                        "severity": "error",
+                        "file": bz_rel,
+                        "line": rep_ln,
+                        "message": (
+                            f"Target `{tname}` in `{bz_rel}` adds `target_compatible_with` "
+                            f"(generating `if ({cond})` in `{gn_rel}`), narrowing `{tname}` to "
+                            f"`{cond}` when `{gn_rel}` at the change base did not wrap `{tname}` "
+                            f"in `if ({cond})`."
+                        ),
+                        "remediation": (
+                            f"If `{tname}` itself can build on both host and Fuchsia (and only its "
+                            "unit tests were Fuchsia-only in GN), remove `target_compatible_with` "
+                            f"from `{tname}` in `{bz_rel}` (keeping `target_compatible_with` only on "
+                            f"the Fuchsia-only test target) and re-run `fx bazel2gn`. If `{tname}` "
+                            "genuinely cannot compile on other platforms due to unconditional "
+                            "platform-specific dependencies, add a `# TODO: Verify whether "
+                            f"{tname} should use target_compatible_with (was not gated by if ({cond}) in GN).` "
+                            f"comment above `{tname}` in `{bz_rel}` AND note the added "
+                            "`target_compatible_with` restriction in the commit message body."
+                        ),
+                    })
     return out_findings
 
 

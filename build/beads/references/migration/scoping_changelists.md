@@ -21,8 +21,8 @@ Properly scoping migration CLs is important for several reasons:
 
 The standard unit of a GN-to-Bazel migration is a **single directory** (`BUILD.gn` to `BUILD.bazel`):
 - Aim to migrate **all** targets defined in that directory's `BUILD.gn` (including libraries, binaries, and unit tests) and address remaining GN references so that the `BUILD.gn` file is deleted, making the migration of the directory complete rather than partial (see [`general_guidelines.md`](/build/beads/references/migration/general_guidelines.md)).
-- If a library target in the directory is only used by one (or very few) GN targets in a neighboring directory within the same subsystem, and that consumer has few dependencies, consider migrating the consumer directory in the same CL so that `bazel2gn` synchronization and `BUILD.gn` are no longer needed in the library's directory (see [Section 2.A](#a-a-target-and-its-sole-or-tightly-coupled-same-area-consumer)).
-- Group multiple directories into a single CL only when they share a tight logical relationship and target type (typically **at most 3-5 directories**). Note that grouped directories do not need to have a dependency relationship; for example, sibling directories within an area or siblings in generic directories like `//sdk/lib` can be grouped when they follow the patterns in [Section 2](#2-good-patterns-when-to-group-multiple-directories).
+- If a library target in the directory is only used by one (or very few) GN targets in a neighboring directory within the same subsystem, and that consumer has few dependencies, consider migrating the consumer directory in the same CL **only if** doing so eliminates the last GN dependency on the library so that `bazel2gn` synchronization and `BUILD.gn` are no longer needed in the library's directory (see [Section 2.A](#a-a-target-and-its-sole-or-tightly-coupled-same-area-consumer)).
+- Group multiple directories into a single CL only when they share a tight logical relationship and target type (**at most 3-5 directories** and **roughly 500 new lines of code maximum**). Note that grouped directories do not need to have a dependency relationship; for example, sibling directories within an area or siblings in generic directories like `//sdk/lib` can be grouped when they follow the patterns in [Section 2](#2-good-patterns-when-to-group-multiple-directories).
 
 ---
 
@@ -31,14 +31,16 @@ The standard unit of a GN-to-Bazel migration is a **single directory** (`BUILD.g
 Grouping multiple directories into a single CL is appropriate when all of the following hold:
 1. **Same subsystem/area (or shared generic parent directory):** The directories belong to the same subsystem/area (or a generic parent directory such as `//sdk/lib`). While identical `OWNERS` files are not strictly required, `OWNERS` files are a useful indicator of areas and subtrees.
 2. **Same target type:** The directories contain targets of the same type. For example, do **not** migrate a host tool alongside unrelated libraries, a FIDL library alongside non-FIDL targets, or unrelated C++ and Rust targets in the same CL.
-3. **Single cohesive unit of review:** The directories match one of the specific grouping patterns below.
+3. **Bounded size (`<= 3-5` directories and `~500` new lines max):** The total number of migrated directories is at most 3-5 and the CL adds roughly 500 or fewer new lines of code. If grouping additional directories would push the CL past ~500 new lines, split them into separate CLs.
+4. **Single cohesive unit of review:** The directories match one of the specific grouping patterns below.
 
 > **Important:** Do not combine multiple grouping patterns or tack on extra directories. If multiple directories already have a relationship under one of the cases below (such as a target and its sole consumer, or a target and its helper library), stop there and do **not** also add sibling directories or other directories in the same area to the CL.
 
 ### A. A Target and Its Sole (or Tightly Coupled) Same-Area Consumer
 
-When migrating directory `A`, if `fx gn refs` shows that directory `B` in the same subsystem is the only remaining GN consumer of `A` and `B` has minimal dependencies, migrate `A` and `B` together.
+When migrating directory `A`, if `fx gn refs` shows that directory `B` in the same subsystem is the only remaining GN consumer of `A`, `B` has minimal dependencies, and migrating `B` allows deleting `A/BUILD.gn` (or eliminating `bazel2gn` and the migrated GN targets in `A`), migrate `A` and `B` together.
 - **Why:** Eliminates the last GN dependency on `A`, avoiding `bazel2gn` boilerplate and allowing `A/BUILD.gn` to be cleaned up or deleted.
+- **When NOT to apply:** Do **not** fold another directory `B` that uses `A` into `A`'s migration CL if doing so does not allow deleting any GN targets or `BUILD.gn` files, if `A` already requires migrating multiple directories, or if `A` has its own unmigrated test subdirectory (`//<dir>/tests`) that should be migrated with `A` instead.
 
 ### B. A Root Target and Its Private/Internal Helper Packages
 
@@ -66,6 +68,7 @@ When a small number of sibling or child directories (`<= 3-5` directories) of th
 ### D. A Package and Its Direct Test Subdirectories
 
 When a package's unit or integration tests live in direct child directories (such as `//<dir>/tests` or `//<dir>/test`) and exercise the targets being migrated in `//<dir>`, migrate them in the same CL so the target and its tests move to Bazel together.
+- Prioritize migrating convertible test targets in `//<dir>/tests` (for example, `rustc_test` or `cc_test` targets, even if an integration test package in `//<dir>/tests/BUILD.gn` has unmigrated subpackages and must remain in GN) over migrating other directories that consume `//<dir>`.
 
 ---
 
@@ -97,6 +100,12 @@ Host tools should always be migrated using the [`migrating-host-tool-to-bazel`](
 1. Upstream libraries in other areas that the host tool depends on, and
 2. Downstream targets in other areas that invoke or depend on the host tool. However, when possible, GN targets that invoke the tool should be updated in the host tool's migration CL to use the Bazel-defined binary (via `bazel_host_tool()`) so that the binary target definition in `BUILD.gn` can be deleted (see [`general_guidelines.md`](/build/beads/references/migration/general_guidelines.md)).
 
+### E. Pre-existing Code, Lint, or GN Build Graph Fixes and Dead Code
+
+Migration CLs must be strictly limited to build files (`BUILD.bazel`, `BUILD.gn`, `.bzl`, `.gni`). Do **not** bundle source code edits (`.rs`, `.cc`, `.h`, etc.), lint fixes, or repairs to disconnected GN targets into a migration CL:
+1. **Separate precursor CL for code and GN build graph fixes:** If a target (such as a library or test that was not wired into the GN build graph) fails to compile or pass `clippy` in Bazel due to pre-existing source code issues, fix the source code and wire the target into the GN build graph in a **separate precursor CL** before migrating the directory to Bazel. This cleanly separates code and GN build graph fixes from the build-system migration.
+2. **Check whether unbuilt targets are dead code:** If a target or unit test was not being built in GN at all, that may be a sign that it is obsolete and can be deleted. Check with the area owners; if it should be deleted or enabled, do so in a separate CL (or leave a `TODO` comment in `BUILD.bazel` and note it in the commit message if an unreferenced template-generated unit test is omitted during migration).
+
 ---
 
 ## 4. Warning Signs That a CL Scope Is Too Large or Diverse
@@ -106,7 +115,8 @@ Attempting to write the commit message according to [`//build/beads/references/m
 ### A. Subject Line and `[<area>]` Tag Friction
 
 Per [`commit_message/guidelines.md`](/build/beads/references/migration/commit_message/guidelines.md), the subject line must follow `[bazel_migration][<area>] <target-or-directory-reference>` (aiming for `<= 50-65` characters):
-- **Mismatched `[<area>]` tag and directories:** All directories in a CL should be from the same area. If the `[<area>]` tag matches some directories in the CL but not all of them, or worse, does not match the directory named in the subject line (for example, `[bazel_migration][pkg] //src/lib/storage/vfs`), the directories do not belong in the same CL.
+- **Mismatched `[<area>]` tag and directories:** All directories in a CL should be from the same area. If the `[<area>]` tag matches some directories in the CL but not all of them, or worse, does not match the directory named in the subject line (for example, `[bazel_migration][pkg] //src/lib/storage/vfs`), or if migrated directories fall outside the directory/target named in the subject line, the directories do not belong in the same CL.
+- **Exceeding directory count (`> 5`) or line count (`> ~500` new lines):** A migration CL that touches more than 5 directories or adds significantly more than ~500 new lines of code is too large to review effectively and should be split into smaller precursor and follow-up CLs.
 - **Subject directory is an unrelated leaf dependency:** If the directory in the subject line does not depend on the other directories in the CL, the grouping is inverted or too broad.
 - **No concise multi-directory summary fits:** If multiple directories cannot be concisely named in the subject line using one of the three standard patterns in [`commit_message/guidelines.md` Section 2.D](/build/beads/references/migration/commit_message/guidelines.md) (root dependent target, subsystem/library family, or short list of directories under a shared area), or if you feel forced to add an `"Also migrated in this change:"` list at the top of the commit body, the CL scope is too large.
 

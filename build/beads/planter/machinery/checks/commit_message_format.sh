@@ -713,6 +713,8 @@ if head and base_rev and head != base_rev:
         return s
 
     def is_dir_migrated_in_commit(rel_dir):
+        if not os.path.isfile(os.path.join(workdir, rel_dir, "BUILD.bazel")):
+            return False
         _, _, new_bz_lbls = inspect_dir_migration(rel_dir)
         if new_bz_lbls:
             return True
@@ -914,47 +916,41 @@ if head and base_rev and head != base_rev:
             )
             add("commit_subject_partial_directory", 1, msg_text, rem_text, severity="error")
 
-    # Check that any pre-existing source bitrot compile fix is explained in the commit body.
-    source_suffixes = (".rs", ".cc", ".cpp", ".c", ".h", ".hpp")
-    bitrot_reason_re = re.compile(
-        r"\b(bitrot|unbuilt|not\s+built|disconnected|pre-existing|compile|build\s+error"
-        r"|type\s+error|syntax|E0\d{3})\b",
-        re.I,
-    )
-
-    def check_source_bitrot_explanation():
-        for f in changed:
-            if not f.endswith(source_suffixes):
+    # Check that any file-local GN template("<name>") unrolled during migration is noted in the commit body.
+    def check_unrolled_gn_template_explanation():
+        for d in active_mig_dirs:
+            gn_rel = f"{d}/BUILD.gn"
+            base_gtxt = git("show", f"{base_rev}:{gn_rel}")
+            if not base_gtxt:
                 continue
-            base_name = f.rsplit("/", 1)[-1]
-            rel_names = [f, base_name]
-            for d in dirs:
-                if f.startswith(d + "/"):
-                    rel_names.append(f[len(d) + 1:])
-            mentioned = any(n in body for n in rel_names)
-            has_reason = bool(bitrot_reason_re.search(body))
-            if not (mentioned and has_reason):
-                msg_text = (
-                    f"The change modifies source file `{f}` (allowed by `build_only_scope` "
-                    "only to repair pre-existing compile bitrot in an unbuilt GN package), "
-                    "but the commit body does not mention the file and explain the "
-                    "pre-existing compile errors, making the source diff appear unrelated "
-                    "to the Bazel migration during review."
-                )
-                rem_text = (
-                    f"Explain the `{f}` compile fixes in the commit body (naming `{base_name}` "
-                    "and stating that the package was disconnected from the GN build graph and "
-                    "had pre-existing compile errors that prevented the migrated Bazel target "
-                    "from compiling). Keep the source diff strictly minimal (e.g. changing a "
-                    "misplaced `///` doc comment inside a closure to `//` or moving it without "
-                    "unrelated reformatting, and fixing only broken types/APIs)."
-                )
-                add("commit_body_unmentioned_source_fix", 1, msg_text, rem_text)
+            cur_gtxt = ""
+            gn_path = os.path.join(workdir, gn_rel)
+            if os.path.isfile(gn_path):
+                try:
+                    with open(gn_path) as fh:
+                        cur_gtxt = fh.read()
+                except OSError:
+                    pass
+            base_tmpls = set(re.findall(r'^\s*template\(\s*"([^"]+)"\s*\)', base_gtxt, re.M))
+            cur_tmpls = set(re.findall(r'^\s*template\(\s*"([^"]+)"\s*\)', cur_gtxt, re.M))
+            for tmpl_name in sorted(base_tmpls - cur_tmpls):
+                if tmpl_name not in body:
+                    msg_text = (
+                        f"`{gn_rel}` defined GN `template(\"{tmpl_name}\")` which was unrolled into "
+                        f"explicit targets in `{d}/BUILD.bazel`, but the commit body does not mention "
+                        f"`{tmpl_name}`."
+                    )
+                    rem_text = (
+                        f"Mention in the commit message body that GN `template(\"{tmpl_name}\")` was "
+                        f"unrolled into explicit targets in `{d}/BUILD.bazel` (and note any unreferenced "
+                        "template unit test targets if applicable)."
+                    )
+                    add("commit_body_unmentioned_unrolled_template", 1, msg_text, rem_text)
 
     check_redundant_body_title(lines)
     check_checkout_relative_paths(lines)
     check_subject_partial_directory(subject)
-    check_source_bitrot_explanation()
+    check_unrolled_gn_template_explanation()
 
     # Check subject and body line lengths (mirroring scripts/shac/commit_msg_checker.py).
     exempt_subject_re = re.compile(r"^(?:Revert(?:\^\d+)?|Reland|fixup!|squash!|amend!) ")
@@ -1499,11 +1495,8 @@ if head and base_rev and head != base_rev:
                 "Because GN-to-Bazel migrations must not modify `README.fuchsia` (`build_only_scope`), add `Skip-Readme-Check: No version change, Bazel build files only.` to the contiguous footer block at the bottom of the commit message (before `TAG:`/`Change-Id:`).",
                 severity="error")
         # Check for unwarranted Cq-Include-Trybots: footers when migrated build files
-        # have no architecture-specific conditionals matching the requested trybot
-        # and no source files were modified for bitrot repair.
+        # have no architecture-specific conditionals matching the requested trybot.
         def check_cq_include_trybots(msg_lines):
-            if any(f.endswith(source_suffixes) for f in changed):
-                return
             cq_lines = [
                 (i + 1, l)
                 for i, l in enumerate(msg_lines)

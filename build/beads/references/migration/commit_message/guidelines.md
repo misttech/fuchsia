@@ -126,7 +126,11 @@ The commit body must clearly explain the scope and details of the migration so h
    - Explicitly note any targets in `BUILD.bazel` that do **not** use `bazel2gn` (such as targets marked with `# @bazel2gn:skip`).
 
 4. **Other Non-Trivial Conversion Details:**
-   - Note any non-trivial aspects of the migration, such as visibility scoping, `target_compatible_with` constraints, IDK atom registration, or changes to shared `.bzl` files outside the migrated directory.
+   - Note any non-trivial aspects of the migration, such as:
+     - **Unrolled GN templates:** When unrolling a file-local GN `template("<name>")` into explicit targets in `BUILD.bazel`, name the unrolled template in the commit body.
+     - **Unreachable/unreferenced template unit tests:** If a GN template generated unit tests (`with_unit_tests = true`) for an instance whose `<instance>_test` target was never wired into `group("tests")` or a test package in `BUILD.gn`, note this in the commit body and leave a `# TODO` comment in `BUILD.bazel` asking owners whether the test should be enabled or removed.
+     - **Platform compatibility narrowing (`target_compatible_with`):** Never silently restrict a library to Fuchsia-only just because its unit tests only ran on Fuchsia. If a target was not enclosed in `if (is_fuchsia)` or `if (is_host)` in `BUILD.gn` but requires `target_compatible_with` in `BUILD.bazel` (for example, due to unconditional Fuchsia-only dependencies), explicitly explain this in the commit body and flag it with a comment in `BUILD.bazel` so reviewers can confirm whether the platform restriction is intended.
+     - **Visibility scoping, IDK atom registration, or shared `.bzl` changes:** Note any non-obvious visibility decisions, IDK atom updates, or edits to `.bzl` files outside the migrated directory.
 
 ---
 

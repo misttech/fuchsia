@@ -36,12 +36,11 @@ checks and fix what they report.
 5. Report with the CoderReport JSON.
 
 Edit only build-definition files (`BUILD.gn`, `BUILD.bazel`, `*.gni`, `*.bzl`, plus a new test
-`.cml` per "Migrating Tests") and never edit sources to silence warnings. A new lint or compile
+`.cml` per "Migrating Tests") and never edit `.rs`/`.cc`/`.h` source files. A lint or compile
 failure on a target built in GN means the Bazel attributes differ from GN; fix the attributes.
-Exception: if a migrated package had no targets in `<build dir>/ninja_outputs.json` and fails to
-compile due to pre-existing source bitrot (hard syntax, type, or removed-API errors), apply the
-minimal compile fix in `<dir>/` (no lint-suppression annotations) and note it in the commit body
-and `summary`.
+If an unreferenced template unit test was never built in GN and fails to compile, omit it in
+`BUILD.bazel` with a `# TODO` comment asking owners whether to enable or delete it, and note it
+in the commit body. Pre-existing source or GN build graph fixes belong in a separate CL.
 
 Reviewers also reject these, which no check can fully catch:
 - Working around a check by hiding what it looks for (e.g. assembling a `"//:prebuilt/..."` label
@@ -73,28 +72,30 @@ Non-test `fuchsia_package`, `fuchsia_package_with_single_component`, `fuchsia_co
      raw `.shard.cml` files so callers only list the direct `cml_shard`.
 2. **Packaged binary & component (`fx_packaged_binary`, `fx_component`)**:
    - Declare the binary (`fx_cc_binary` or `rustc_binary`) with `tags = ["manual"]`. An
-     `fx_cc_binary` must include `"//sdk/lib/fdio"` in `deps` (added implicitly in GN by
-     `BUILDCONFIG.gn`); `rustc_binary` and `rustc_test` already add it on Fuchsia.
-   - Wrap it with `fx_packaged_binary(name = "<n>_packaged_bin", binary = ":<bin>", binary_name = "<elf_name>")`,
-     where `binary_name` matches `bin/<elf_name>` in the `.cml`'s `program.binary` (GN
-     `output_name` / `name`), and pass `deps = [":<n>_packaged_bin"]` to
-     `fx_component(name = "<c>", compiled_manifest = ":<c>-manifest", component_name = "<comp_name>", deps = [...])`.
-   - **Helper components packaged next to a test** (mock services, fakes, test servers listed in
-     a test package's `deps`, not its `test_components`) are `fx_component(testonly = True)` with
-     `visibility` from `find_rdeps`, never `fx_test_component` (which marks a test root that only
-     `fx_package(test_components)` accepts and that bazel2gn never translates). A GN
+     `fx_cc_binary` needs `"//sdk/lib/fdio"` in `deps` (implicit in GN); `rustc_binary`/`rustc_test`
+     add it automatically on Fuchsia.
+   - Wrap with `fx_packaged_binary(name = "<n>_packaged_bin", binary = ":<bin>", binary_name = "<elf_name>")`
+     (`binary_name` matches `bin/<elf_name>` in `.cml` `program.binary` / GN `output_name`), and pass
+     `deps = [":<n>_packaged_bin"]` to `fx_component(name = "<c>", compiled_manifest = ":<c>-manifest", component_name = "<comp_name>", deps = [...])`.
+     When a `fuchsia_package` packages a binary directly (`deps = [":<bin>"]`), pass
+     `tools = [":<n>_packaged_bin"]` to `fx_package` (including `testonly = True` packages bridged in
+     `//bundles/assembly/bazel_inputs/<dir>`). Preserve the relative order of targets kept above
+     `## BAZEL2GN SENTINEL` in `BUILD.gn`.
+   - **Helper components packaged next to a test** (mocks, fakes, test servers in a test package's
+     `deps`, not `test_components`) are `fx_component(testonly = True)` with `visibility` from
+     `find_rdeps`, never `fx_test_component` (which marks a test root that only
+     `fx_package(test_components)` accepts and bazel2gn never translates). A GN
      `fuchsia_test_component` without `test_type` is only a `testonly` `fuchsia_component`, so let
-     bazel2gn generate it: no `# @bazel2gn:skip` and no hand-written copy above the sentinel.
+     bazel2gn generate it without `# @bazel2gn:skip` or a hand-written copy above the sentinel.
 3. **`fx_package`, `BUILD.gn`, `bazel2gn`, and `//bundles/assembly` bridge cleanup**:
-   - `bazel2gn` converts `fx_component` and `fx_component_manifest` (resolving same-package
-     `fx_packaged_binary` deps in `fx_component`) and `fuchsia_structured_config_rust_lib`, so
-     `fuchsia_component` and `fuchsia_component_manifest` targets that still have GN consumers can
-     be migrated to `BUILD.bazel` (with `visibility` from `find_rdeps`) and synced below
-     `## BAZEL2GN SENTINEL`. `bazel2gn` does NOT translate non-test `fx_package` (without
-     `test_components`), `fx_unittest_component` outside a test `fx_package`, or `resource` (`fx_cc_binary` IS translated by
-     `bazel2gn` into a GN `executable`; `cml_shard` is Bazel-only and has no GN equivalent). Test
-     `fx_package(test_components = ...)` targets and their same-file `fx_test_component`s and `fx_unittest_component`s ARE
-     translated (see "Migrating Tests").
+   - `bazel2gn` converts `fx_component`, `fx_component_manifest` (resolving same-package
+     `fx_packaged_binary` deps in `fx_component`), and `fuchsia_structured_config_rust_lib`, so
+     `fuchsia_component` and `fuchsia_component_manifest` targets with GN consumers can migrate to
+     `BUILD.bazel` (`visibility` from `find_rdeps`) and sync below `## BAZEL2GN SENTINEL`.
+     `bazel2gn` does NOT translate non-test `fx_package` (without `test_components`),
+     `fx_unittest_component` outside a test `fx_package`, or `resource` (`fx_cc_binary` IS translated
+     to GN `executable`; `cml_shard` has no GN equivalent). Test `fx_package(test_components = ...)`
+     and their same-file `fx_test_component`s/`fx_unittest_component`s ARE translated (see "Migrating Tests").
    - Keep `fuchsia_package` / `fuchsia_package_with_single_component` above `## BAZEL2GN SENTINEL`
      in `BUILD.gn` (wrapping the generated `fuchsia_component`) without `fx_package` in
      `BUILD.bazel` when its only callers are GN `subpackages`/`deps` outside `//bundles/assembly`
@@ -379,26 +380,24 @@ A GN `ffx_tool("<name>")` (generated or hand-written) must not remain in BUILD.g
    `_bazel_tested_tools` there so its GN `:tests` group is no longer expected. Drop
    `group("tests")` from BUILD.gn when it only listed the migrated tests.
 
-## Dependencies Without a Bazel Build or With Missing Bazel Visibility (Fix Them, Don't Stop)
-When a target you are migrating depends on something with no Bazel build yet or that fails with a
-Bazel `Visibility error`, fix that dependency in this same change instead of stopping:
+## Scoping Multi-Directory CLs & Missing Dependencies (`scoping_changelists.md`)
+Follow `//build/beads/references/migration/scoping_changelists.md` (`<= 5` directories and
+`<= ~500` new lines max):
 1. **Check each dep**: `//<path>:<name>` has a Bazel equivalent only if `<path>/BUILD.bazel`
-   defines `<name>` itself. Third-party labels are mapped, not migrated:
-   `//third_party/rust_crates:<crate>` becomes `//third_party/rust_crates/vendor:<crate>`, and
-   other third-party GN labels map via `//build/tools/bazel2gn/third_party_target_map.json`.
-2. **Migrate missing ones or widen visibility**: migrate any missing dependency's directory with
-   the same rules as the target, point the depending BUILD.bazel at the new Bazel label, and
-   repeat transitively. If an already-migrated dependency in `<path>/BUILD.bazel` rejects your
-   target with a Bazel `Visibility error`, update its `visibility` in `<path>/BUILD.bazel` from
-   `find_rdeps <path>` (`per_target_recommended_visibility`) and run `fx bazel2gn -d <path>`
-   (never use `# @bazel2gn:raw_overwrite` on `visibility` to get `":*"` or `//<dir>/*` in GN:
-   `bazel2gn` adds `":*"` to non-empty lists and maps `"//visibility:private"` to `[ ":*" ]`).
-3. **Only stop** if a required dependency cannot have a Bazel target at all: a GN-only construct
-   with no Bazel mapping, or build-system/prebuilt internals (`//build/**`, `//prebuilt/**`,
-   unmapped `//third_party/**`). Report the exact dependency chain.
-4. **Report it**: start the `summary` with `Also migrated dependencies: //a, //b (needed by
-   //target)` (and note any visibility-widened dependencies) and include their files in
-   `modified_files`.
+   defines `<name>`. Third-party labels map via `//third_party/rust_crates/vendor:<crate>` or
+   `//build/tools/bazel2gn/third_party_target_map.json`. If an already-migrated dependency in
+   `<path>/BUILD.bazel` rejects your target with a `Visibility error`, update its `visibility` from
+   `find_rdeps <path>` (`per_target_recommended_visibility`) and run `fx bazel2gn -d <path>`.
+2. **Co-migrate only tightly coupled same-area subdirectories**: co-migrate direct child
+   helper/test directories (`//<dir>/<helper>`, `//<dir>/tests`, including convertible `rustc_test`
+   targets in `tests/BUILD.gn`) or a sole same-area GN consumer ONLY when doing so eliminates
+   `BUILD.gn`/`bazel2gn`. Never sweep cross-area packages, general-purpose libraries, `third_party/`
+   packages, or downstream consumers that do not eliminate `BUILD.gn` into the same CL.
+3. **Platform & template parity**: never add `target_compatible_with = ["@platforms//os:fuchsia"]`
+   to a library just because its unit tests only ran on Fuchsia (or when GN had conditional `deps`:
+   use `select()`). Never add `wrap_host_rust_test` or `($host_toolchain)` when GN only ran the test
+   in a Fuchsia test package, or add unit tests when GN set `with_unit_tests = false`. When
+   unrolling a GN `template("<name>")`, mention `<name>` in the commit body.
 
 ## Broken Third-Party Rust Crate Bazel Targets (Fix Them, Don't Stop)
 When a vendored crate in `//third_party/rust_crates` fails to build in Bazel (typically its
