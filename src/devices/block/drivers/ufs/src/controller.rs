@@ -24,7 +24,7 @@ use crate::registers::{
 use crate::uic::{UicCommand, UicCommandOpcode};
 use crate::{UfsError, uic};
 use fuchsia_sync::Mutex;
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use mmio::{Mmio, ReadableRegister, Register, WritableRegister};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
@@ -39,6 +39,9 @@ struct ControllerState<M: Mmio> {
     /// Configured `AHIT` register value (`0` when Auto-Hibernate is disabled). Cleared on hardware
     /// while `uic_busy` is true or `ah8_hold_count > 0`.
     ah8_timer_raw: u32,
+    /// Set once `configure_auto_hibernate` has logged the initial `AHIT` timer at `INFO` level so
+    /// subsequent runtime `Sleep`/wake cycles log at `DEBUG` instead of waking `archivist`/`fxfs`.
+    ah8_logged: bool,
 }
 
 impl<M: Mmio> ControllerState<M> {
@@ -129,6 +132,22 @@ pub struct UfsController<M: Mmio> {
     state: Mutex<ControllerState<M>>,
     recovery_needed: AtomicBool,
     auto_hibern8_error_count: AtomicU64,
+    #[cfg(test)]
+    host_controller_timeout_ns: AtomicU64,
+}
+
+impl<M: Mmio> std::fmt::Debug for UfsController<M> {
+    /// Reports only the lock-free fields; `state` is not read so `fmt` never blocks on the
+    /// register lock.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UfsController")
+            .field("recovery_needed", &self.recovery_needed.load(Ordering::Relaxed))
+            .field(
+                "auto_hibern8_error_count",
+                &self.auto_hibern8_error_count.load(Ordering::Relaxed),
+            )
+            .finish_non_exhaustive()
+    }
 }
 
 impl<M: Mmio> UfsController<M> {
@@ -140,25 +159,28 @@ impl<M: Mmio> UfsController<M> {
                 uic_busy: false,
                 ah8_hold_count: 0,
                 ah8_timer_raw: 0,
+                ah8_logged: false,
             }),
             recovery_needed: AtomicBool::new(false),
             auto_hibern8_error_count: AtomicU64::new(0),
+            #[cfg(test)]
+            host_controller_timeout_ns: AtomicU64::new(0),
         }
     }
 
     /// Marks the controller and link as needing full recovery (`https://fxbug.dev/572019773`).
     pub fn request_link_recovery(&self) {
-        self.recovery_needed.store(true, Ordering::Release);
+        self.recovery_needed.store(true, Ordering::SeqCst);
     }
 
     /// Returns whether link recovery has been requested.
     pub fn is_recovery_needed(&self) -> bool {
-        self.recovery_needed.load(Ordering::Acquire)
+        self.recovery_needed.load(Ordering::SeqCst)
     }
 
     /// Atomically takes and clears any pending link recovery request.
     pub fn take_recovery_needed(&self) -> bool {
-        self.recovery_needed.swap(false, Ordering::AcqRel)
+        self.recovery_needed.swap(false, Ordering::SeqCst)
     }
 
     /// Returns the cumulative count of autonomous Auto-Hibernate enter/exit errors observed.
@@ -303,7 +325,7 @@ impl<M: Mmio> UfsController<M> {
         if timer_us == 0 {
             state.ah8_timer_raw = 0;
             state.disable_ah8_on_hw();
-            info!("UFS Auto-Hibernate (AH8) disabled");
+            debug!("UFS Auto-Hibernate (AH8) disabled");
             return;
         }
         // Scale n means units of 10^n us.
@@ -318,7 +340,12 @@ impl<M: Mmio> UfsController<M> {
         ahit.set_timer_value(value.min(AUTO_HIBERNATE_MAX_TIMER_VALUE));
         state.ah8_timer_raw = ahit.0;
         state.restore_ah8_on_hw();
-        info!(timer_us, scale, value; "UFS Auto-Hibernate (AH8) timer set");
+        if !state.ah8_logged {
+            state.ah8_logged = true;
+            info!(timer_us, scale, value; "UFS Auto-Hibernate (AH8) timer set");
+        } else {
+            debug!(timer_us, scale, value; "UFS Auto-Hibernate (AH8) timer set");
+        }
     }
 
     /// Returns whether autonomous Auto-Hibernate is currently active in hardware (`AHIT != 0` and
@@ -361,7 +388,8 @@ impl<M: Mmio> UfsController<M> {
     }
 
     /// Returns whether the device answered link startup (`HCS.DP`).
-    pub fn device_present(&self) -> bool {
+    #[cfg(test)]
+    pub(crate) fn device_present(&self) -> bool {
         HostControllerStatusReg::read(&self.state.lock().mmio).device_present()
     }
 
@@ -371,9 +399,26 @@ impl<M: Mmio> UfsController<M> {
         self.state.lock().uic_busy
     }
 
+    /// Overrides [`HOST_CONTROLLER_TIMEOUT`] for `HCE` polling in unit tests.
+    #[cfg(test)]
+    pub(crate) fn set_host_controller_timeout_for_test(&self, timeout: zx::MonotonicDuration) {
+        self.host_controller_timeout_ns.store(timeout.into_nanos() as u64, Ordering::Relaxed);
+    }
+
+    fn host_controller_timeout(&self) -> zx::MonotonicDuration {
+        #[cfg(test)]
+        {
+            let ns = self.host_controller_timeout_ns.load(Ordering::Relaxed);
+            if ns != 0 {
+                return zx::MonotonicDuration::from_nanos(ns as i64);
+            }
+        }
+        HOST_CONTROLLER_TIMEOUT
+    }
+
     /// Waits for `HCE` to read back as `enable`.
     async fn wait_host_controller_enable(&self, enable: bool) -> Result<(), UfsError> {
-        uic::poll_until(HOST_CONTROLLER_TIMEOUT, || {
+        uic::poll_until(self.host_controller_timeout(), || {
             self.state.lock().host_controller_enable_is(enable)
         })
         .await
@@ -387,7 +432,9 @@ impl<M: Mmio> UfsController<M> {
     pub async fn reset_and_enable(&self) -> Result<(), UfsError> {
         let was_enabled = {
             let mut state = self.state.lock();
+            self.recovery_needed.store(false, Ordering::SeqCst);
             state.ah8_timer_raw = 0;
+            state.ah8_logged = false;
             state.write_interrupts_disabled();
             let enabled = HostControllerEnableReg::read(&state.mmio).host_controller_enable();
             if enabled {
@@ -412,6 +459,7 @@ impl<M: Mmio> UfsController<M> {
         {
             let mut state = self.state.lock();
             state.ah8_timer_raw = 0;
+            state.ah8_logged = false;
             state.write_interrupts_disabled();
             state.write_host_controller_enable(false);
         }

@@ -8,8 +8,8 @@ use crate::UfsError;
 use crate::constants::{GEOMETRY_SIZE_UNIT, MIN_LOGICAL_BLOCK_SIZE, UTRD_OCS_MASK};
 use crate::descriptors::{DescriptorType, DeviceDescriptor, GeometryDescriptor};
 use crate::registers::{
-    HostControllerStatusReg, InterruptStatusReg, PowerModeStatus, UicCommandArgument2Reg,
-    UicCommandArgument3Reg, UicCommandReg, UtrListDoorBellReg,
+    HostControllerEnableReg, HostControllerStatusReg, InterruptStatusReg, PowerModeStatus,
+    UicCommandArgument2Reg, UicCommandArgument3Reg, UicCommandReg, UtrListDoorBellReg,
 };
 use crate::request_list::{DataDirection, TransferRequestDescriptor};
 use crate::scsi::{InquiryData, ReadCapacity10Data, ScsiOpcode};
@@ -124,13 +124,19 @@ impl FakeUfs {
 /// the fake hardware updates them through [`FakeUtp::regs`] or its own VMO mapping.
 pub struct FakeMmio {
     inner: MmioRegion<VmoMemory>,
+    hce_stuck: bool,
 }
 
 impl FakeMmio {
     /// Maps `size` bytes of `vmo`.
     pub fn new(vmo: &zx::Vmo, size: usize) -> Self {
         let vmo = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
-        Self { inner: VmoMapping::map(0, size, vmo).unwrap() }
+        Self { inner: VmoMapping::map(0, size, vmo).unwrap(), hce_stuck: false }
+    }
+
+    /// When `stuck` is `true`, ignores writes that clear `HCE` (`bit 0 == 0`).
+    pub fn set_hce_stuck(&mut self, stuck: bool) {
+        self.hce_stuck = stuck;
     }
 }
 
@@ -169,6 +175,9 @@ impl Mmio for FakeMmio {
 
     fn try_store32(&mut self, offset: usize, value: u32) -> Result<(), MmioError> {
         let value = match offset {
+            HostControllerEnableReg::OFFSET if self.hce_stuck && (value & 1) == 0 => {
+                return Ok(());
+            }
             InterruptStatusReg::OFFSET => self.inner.try_load32(offset)? & !value,
             UtrListDoorBellReg::OFFSET => self.inner.try_load32(offset)? | value,
             _ => value,

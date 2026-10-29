@@ -105,8 +105,22 @@ pub async fn poll_until<T>(
     poll_with_spin_and_interval(timeout, SPIN_POLL_BUDGET, REGISTER_POLL_INTERVAL, step).await
 }
 
-/// Shared loop of [`poll_until`]: spins for `spin_budget` after the first miss, then sleeps
-/// `interval` between attempts, up to `timeout`.
+/// Like [`poll_until`], but sleeps `interval` between attempts and never spins, for slow
+/// conditions (slot reclaim, drain) where the register poll interval would be far too fine.
+///
+/// # Errors
+///
+/// Returns `Timeout` if `step` has not returned `Some` after `timeout`.
+pub(crate) async fn poll_until_with_interval<T>(
+    timeout: zx::MonotonicDuration,
+    interval: zx::MonotonicDuration,
+    step: impl FnMut() -> Option<T>,
+) -> Result<T, UfsError> {
+    poll_with_spin_and_interval(timeout, zx::MonotonicDuration::ZERO, interval, step).await
+}
+
+/// Shared loop of [`poll_until`] and [`poll_until_with_interval`]: spins for `spin_budget` after
+/// the first miss, then sleeps `interval` between attempts, up to `timeout`.
 async fn poll_with_spin_and_interval<T>(
     timeout: zx::MonotonicDuration,
     spin_budget: zx::MonotonicDuration,

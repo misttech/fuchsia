@@ -7,12 +7,12 @@
 
 use crate::UfsError;
 use crate::constants::{
-    COMMAND_TYPE_UFS_STORAGE, MAX_REQUEST_LIST_SIZE, OCS_OFFSET, TIMEOUT_RECLAIM_POLL_INTERVAL,
-    UTP_COMMAND_DESCRIPTOR_SIZE, UTRD_COMMAND_TYPE_MASK, UTRD_COMMAND_TYPE_SHIFT,
-    UTRD_DATA_DIRECTION_MASK, UTRD_DATA_DIRECTION_SHIFT, UTRD_INTERRUPT_BIT, UTRD_OCS_MASK,
+    COMMAND_TYPE_UFS_STORAGE, MAX_REQUEST_LIST_SIZE, OCS_OFFSET, UTP_COMMAND_DESCRIPTOR_SIZE,
+    UTRD_COMMAND_TYPE_MASK, UTRD_COMMAND_TYPE_SHIFT, UTRD_DATA_DIRECTION_MASK,
+    UTRD_DATA_DIRECTION_SHIFT, UTRD_INTERRUPT_BIT, UTRD_OCS_MASK,
 };
 use crate::dma_buffer::ContiguousDmaBuffer;
-use crate::transfer_request_processor::{IoCompletion, IoTransfer};
+use crate::transfer_request_processor::{BlockIoOp, IoCompletion, ReadBack, ScsiOutcome};
 use static_assertions::const_assert_eq;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
@@ -183,42 +183,27 @@ impl TransferRequestDescriptor {
     }
 }
 
-/// Lifecycle state of a UTRL slot.
-///
-/// `Free -> Reserved -> Scheduled -> {Completed, Timeout} -> Free`. The controller may access the
-/// slot's buffers only in `Scheduled` and `Timeout`.
+/// Lifecycle state of a UTRL slot: `Free -> Reserved -> Scheduled -> Free`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SlotState {
     /// Idle and available for reservation.
     Free,
-    /// Owned by a submitter that has not submitted the request yet.
+    /// Owned by a submitter (`ReservedSlot`) that has not rung the doorbell yet.
     Reserved,
-    /// Doorbell rung; the controller owns the slot.
+    /// Doorbell rung; the controller owns the slot until completion or `HCE == 0`.
     Scheduled,
-    /// The doorbell bit cleared; `result` holds the outcome.
-    Completed,
-    /// Deadline passed and the request was aborted (`UTRLCLR`); waiting for the doorbell bit to
-    /// clear.
-    Timeout,
 }
 
-/// Who learns that a slot left `Scheduled`, and how.
+/// Who receives a slot's outcome when it leaves [`SlotState::Scheduled`].
 #[derive(Debug, Default)]
 pub(crate) enum SlotCompletion {
-    /// Nobody: the completion path frees the slot once the controller is done with it.
+    /// Cancelled async caller (or unscheduled slot): completion frees the slot and unpins DMA.
     #[default]
     None,
-    /// An async submitter awaiting the slot; it reads the response and frees the slot itself.
-    Async(futures::channel::oneshot::Sender<SlotState>),
-    /// A synchronous I/O request: the completion path decodes the response, frees the slot and
-    /// delivers the outcome through `completion`.
-    Io {
-        /// LUN the command was addressed to; identifies the block server on completion.
-        lun: u8,
-        completion: IoCompletion,
-        /// Read buffer whose cache is invalidated once the device has written it.
-        read_back: Option<IoTransfer<'static>>,
-    },
+    /// Synchronous block I/O request delivered through [`IoCompletion`].
+    Io { lun: u8, completion: IoCompletion, io_op: Option<BlockIoOp> },
+    /// Async UTP command (`send_scsi_command` on slots `0..30` or `execute_admin` on slot `31`).
+    Scsi { lun: u8, sender: futures::channel::oneshot::Sender<ScsiOutcome> },
 }
 
 /// Per-slot state and UCD buffer.
@@ -227,15 +212,14 @@ pub struct RequestSlot {
     pub(crate) state: SlotState,
     /// UCD holding the request UPIU, response UPIU and PRDT.
     pub(crate) command_descriptor_io: ContiguousDmaBuffer,
-    /// Transport outcome recorded when the slot leaves `Scheduled`.
-    pub(crate) result: Result<(), UfsError>,
-    /// How the submitter learns that the slot left `Scheduled`.
+    /// Submitter notification once the slot leaves `Scheduled`.
     pub(crate) completion: SlotCompletion,
-    /// Set while the slot carries a synchronous I/O request (`Scheduled` or `Timeout`); counted
-    /// by [`RequestList::inflight_io`].
-    pub(crate) sync_io: bool,
-    /// Instant after which a `Scheduled` request is aborted.
+    /// Read transfer whose CPU cache is invalidated after DMA completes (`DeviceToHost` only).
+    pub(crate) read_back: Option<ReadBack>,
+    /// Instant after which the stall watchdog logs a diagnostic error for this slot.
     pub(crate) deadline: Option<zx::MonotonicInstant>,
+    /// Set once the stall watchdog has logged this scheduled request so it logs at most once.
+    pub(crate) stall_logged: bool,
     /// Pin of the client data VMO for the current request.
     pub(crate) pmt: Option<zx::Pmt>,
 }
@@ -246,14 +230,13 @@ impl RequestSlot {
         self.state
     }
 
-    /// Returns the slot to `Free` and takes the pinned data VMO [`zx::Pmt`] so the caller can
-    /// unpin it outside `request_list.lock()`.
-    pub(crate) fn release(&mut self) -> Option<zx::Pmt> {
+    /// Resets the slot to `Free` and takes `(read_back, pmt)` for post-lock cleanup.
+    pub(crate) fn release(&mut self) -> (Option<ReadBack>, Option<zx::Pmt>) {
         self.state = SlotState::Free;
         self.completion = SlotCompletion::None;
-        self.sync_io = false;
         self.deadline = None;
-        self.pmt.take()
+        self.stall_logged = false;
+        (self.read_back.take(), self.pmt.take())
     }
 }
 
@@ -268,18 +251,17 @@ pub struct RequestList {
     pub(crate) request_slots: Vec<RequestSlot>,
     /// Bitmask of slots currently in [`SlotState::Free`].
     pub(crate) free_mask: u64,
-    /// Bitmask of slots currently in [`SlotState::Scheduled`] or [`SlotState::Timeout`].
+    /// Bitmask of slots currently in [`SlotState::Scheduled`].
     pub(crate) scheduled_mask: u64,
-    /// Set once the controller is quiesced; no further submissions are accepted.
+    /// Set by [`crate::transfer_request_processor::TransferRequestProcessor::close_submissions`];
+    /// rejects new reservations while in-flight `Scheduled` slots finish via interrupts.
+    pub(crate) closing: bool,
+    /// Set once the controller is quiesced; no further submissions or completions run.
     pub(crate) stopped: bool,
-    /// Tasks to wake when an I/O slot is released (async reservations).
+    /// Tasks to wake when any slot is released (async I/O and admin reservations).
     pub(crate) slot_wakers: Vec<std::task::Waker>,
-    /// Threads blocked in a synchronous I/O slot reservation; the condition variable is only
-    /// signalled while this is non-zero.
+    /// Threads blocked in a synchronous I/O slot reservation.
     pub(crate) blocked_reservers: usize,
-    /// Number of slots with [`RequestSlot::sync_io`] set; arms the synchronous I/O timeout task
-    /// ([`crate::transfer_request_processor::TransferRequestProcessor::run_io_timeout_task`]).
-    pub(crate) inflight_io: usize,
 }
 
 impl RequestList {
@@ -297,37 +279,35 @@ impl RequestList {
             bti,
             slot_count as usize * std::mem::size_of::<TransferRequestDescriptor>(),
         )?;
-
         let mut request_slots = Vec::with_capacity(slot_count as usize);
         for _ in 0..slot_count {
             request_slots.push(RequestSlot {
                 state: SlotState::Free,
                 command_descriptor_io: ContiguousDmaBuffer::new(bti, UTP_COMMAND_DESCRIPTOR_SIZE)?,
-                result: Ok(()),
                 completion: SlotCompletion::None,
-                sync_io: false,
+                read_back: None,
                 deadline: None,
+                stall_logged: false,
                 pmt: None,
             });
         }
-
         Ok(Self {
             io_buffer,
             request_slots,
             free_mask: slot_mask(slot_count),
             scheduled_mask: 0,
+            closing: false,
             stopped: false,
             slot_wakers: Vec::new(),
             blocked_reservers: 0,
-            inflight_io: 0,
         })
     }
 
-    /// Updates `slot`'s state and keeps `free_mask` and `scheduled_mask` in sync.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `slot` is not below [`Self::slot_count`].
+    /// Bitmask of slots currently in [`SlotState::Scheduled`].
+    pub(crate) fn scheduled_mask(&self) -> u64 {
+        self.scheduled_mask
+    }
+
     pub(crate) fn set_slot_state(&mut self, slot: u8, state: SlotState) {
         let bit = 1u64 << slot;
         self.request_slots[slot as usize].state = state;
@@ -336,11 +316,11 @@ impl RequestList {
                 self.free_mask |= bit;
                 self.scheduled_mask &= !bit;
             }
-            SlotState::Reserved | SlotState::Completed => {
+            SlotState::Reserved => {
                 self.free_mask &= !bit;
                 self.scheduled_mask &= !bit;
             }
-            SlotState::Scheduled | SlotState::Timeout => {
+            SlotState::Scheduled => {
                 self.free_mask &= !bit;
                 self.scheduled_mask |= bit;
             }
@@ -349,11 +329,10 @@ impl RequestList {
         self.assert_masks_consistent();
     }
 
-    /// Checks that `free_mask` and `scheduled_mask` match the per-slot states.
-    ///
-    /// # Panics
-    ///
-    /// Panics (debug builds and tests only) if either mask has drifted from the slot states.
+    pub(crate) fn reserve_slot(&mut self, slot: u8) {
+        self.set_slot_state(slot, SlotState::Reserved);
+    }
+
     #[cfg(any(debug_assertions, test))]
     pub(crate) fn assert_masks_consistent(&self) {
         let mut expected_free = 0u64;
@@ -362,63 +341,37 @@ impl RequestList {
             let bit = 1u64 << i;
             match slot.state {
                 SlotState::Free => expected_free |= bit,
-                SlotState::Scheduled | SlotState::Timeout => expected_scheduled |= bit,
-                SlotState::Reserved | SlotState::Completed => {}
+                SlotState::Scheduled => expected_scheduled |= bit,
+                SlotState::Reserved => {}
             }
         }
-        debug_assert_eq!(self.free_mask, expected_free, "free_mask out of sync with slot states");
-        debug_assert_eq!(
-            self.scheduled_mask, expected_scheduled,
-            "scheduled_mask out of sync with slot states"
-        );
+        debug_assert_eq!(self.free_mask, expected_free, "free_mask out of sync");
+        debug_assert_eq!(self.scheduled_mask, expected_scheduled, "scheduled_mask out of sync");
     }
 
-    /// Returns the slot at `slot`.
-    ///
-    /// # Errors
-    ///
-    /// Returns `InvalidSlot` if `slot` is out of range.
     pub fn slot(&self, slot: u8) -> Result<&RequestSlot, UfsError> {
         self.request_slots.get(slot as usize).ok_or(UfsError::InvalidSlot(slot as u32))
     }
 
-    /// Returns the slot at `slot` mutably.
-    ///
-    /// # Errors
-    ///
-    /// Returns `InvalidSlot` if `slot` is out of range.
     pub(crate) fn slot_mut(&mut self, slot: u8) -> Result<&mut RequestSlot, UfsError> {
         self.request_slots.get_mut(slot as usize).ok_or(UfsError::InvalidSlot(slot as u32))
     }
 
-    /// Returns the number of slots.
     pub fn slot_count(&self) -> u8 {
         self.request_slots.len() as u8
     }
 
-    /// Returns when the synchronous I/O timeout task next needs to look at the slots in
-    /// `io_mask`: the earliest deadline of a `Scheduled` slot carrying a synchronous request, or
-    /// `now + TIMEOUT_RECLAIM_POLL_INTERVAL` if such a slot is in `Timeout` (awaiting its doorbell
-    /// bit to clear after `UTRLCLR`, which raises no interrupt), whichever is earlier. `None` when
-    /// no synchronous request is in flight.
-    pub(crate) fn next_io_deadline(&self, io_mask: u64) -> Option<zx::MonotonicInstant> {
+    /// Returns the earliest deadline of a `Scheduled` slot not yet logged by the stall watchdog.
+    pub(crate) fn next_timeout_task_deadline(&self) -> Option<zx::MonotonicInstant> {
         let mut earliest: Option<zx::MonotonicInstant> = None;
-        let mut remaining = self.scheduled_mask & io_mask;
+        let mut remaining = self.scheduled_mask;
         while remaining != 0 {
             let slot = &self.request_slots[remaining.trailing_zeros() as usize];
             remaining &= remaining - 1;
-            if !slot.sync_io {
-                continue;
-            }
-            let candidate = match slot.state {
-                SlotState::Scheduled => slot.deadline,
-                SlotState::Timeout => {
-                    Some(zx::MonotonicInstant::after(TIMEOUT_RECLAIM_POLL_INTERVAL))
+            if slot.state == SlotState::Scheduled && !slot.stall_logged {
+                if let Some(candidate) = slot.deadline {
+                    earliest = Some(earliest.map_or(candidate, |e| e.min(candidate)));
                 }
-                SlotState::Free | SlotState::Reserved | SlotState::Completed => None,
-            };
-            if let Some(candidate) = candidate {
-                earliest = Some(earliest.map_or(candidate, |e| e.min(candidate)));
             }
         }
         earliest

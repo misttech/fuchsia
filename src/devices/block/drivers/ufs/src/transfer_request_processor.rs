@@ -8,50 +8,44 @@
 //! Two submission models share the slot pool:
 //!
 //! - Synchronous I/O ([`TransferRequestProcessor::submit_io`]) for block requests: the calling
-//!   thread pins the buffer and builds the PRDT, reserves a slot (blocking for pushback when none
-//!   is free), writes the UCD/UTRD (DMA descriptors), rings the doorbell and returns. The
-//!   completion path is interrupt-driven: the interrupt handler decodes the response, frees the
-//!   slot and delivers the outcome through an [`IoCompletion`]. No future, channel or executor is
-//!   involved per request. Because nobody awaits these requests, a one-shot timeout task
-//!   ([`TransferRequestProcessor::run_io_timeout_task`]) aborts the ones the controller never
-//!   finishes within [`COMMAND_TIMEOUT`].
+//!   thread validates the transfer, reserves a slot (blocking for pushback when none is free),
+//!   pins the buffer and builds the PRDT, writes the UCD/UTRD (DMA descriptors), rings the
+//!   doorbell and returns. The completion path is interrupt-driven: the interrupt handler decodes
+//!   the response, frees the slot and delivers the outcome through an [`IoCompletion`].
 //! - Async UPIUs (`send_scsi_command`, `send_query_request_upiu`, `send_nop_out_upiu`) for
-//!   administrative and driver-internal commands, which await the completion interrupt on the
-//!   executor, racing it against their own one-shot [`COMMAND_TIMEOUT`] timer.
+//!   administrative and driver-internal commands, which await the completion interrupt through a
+//!   oneshot channel fed by the unified completion path.
 //!
-//! Slot ownership: a submitter owns a slot through a [`SlotGuard`] while it is `Reserved` or
-//! `Completed`. While `Scheduled` the controller owns it; if the submitter goes away (or never
-//! waits, as for synchronous I/O) the completion path frees it. Once `Timeout`, the completion path
-//! frees it after the doorbell bit clears. Client pages are unpinned only through explicit
-//! `unsafe` calls at points where the controller is known to be done with them, never from a
-//! `Drop` impl.
+//! Slot ownership (`Free -> Reserved -> Scheduled -> Free`): a submitter owns a slot through a
+//! [`ReservedSlot`] while `Reserved`. Once scheduled, the controller owns the slot until its
+//! doorbell bit clears or `HCE` reads `0`. Client pages are unpinned only after DMA stops (and
+//! read caches are invalidated), or quarantined without `unpin()` if `HCE = 0` times out.
 //!
 //! Lock order: `request_list` -> `controller`.
 
-use crate::UfsError;
 use crate::constants::{
-    ADMIN_COMMAND_SLOT_NUMBER, COMMAND_TIMEOUT, INLINE_DATA_OFFSET, INLINE_DATA_SIZE,
-    MAX_PRDT_ENTRIES, MAX_REQUEST_LIST_SIZE, OCS_RETRIES, SCSI_RETRIES, SCSI_RETRY_DELAY,
-    SDB_SLOTS, SENSE_DESCRIPTOR_FORMAT_CURRENT, SENSE_DESCRIPTOR_FORMAT_DEFERRED,
-    SENSE_RESPONSE_CODE_MASK, SMALL_TRANSFER_PAGES, TIMEOUT_RECLAIM_POLL_INTERVAL,
-    TIMEOUT_RECLAIM_WINDOW,
+    ADMIN_COMMAND_SLOT_NUMBER, COMMAND_TIMEOUT, DWORD_ALIGN_MASK, INLINE_DATA_OFFSET,
+    INLINE_DATA_SIZE, MAX_PRDT_ENTRIES, MAX_REQUEST_LIST_SIZE, OCS_RETRIES, REGISTER_POLL_INTERVAL,
+    SCSI_RETRIES, SCSI_RETRY_DELAY, SDB_SLOTS, SENSE_DESCRIPTOR_FORMAT_CURRENT,
+    SENSE_DESCRIPTOR_FORMAT_DEFERRED, SENSE_RESPONSE_CODE_MASK, SMALL_TRANSFER_PAGES,
 };
 use crate::controller::UfsController;
 use crate::dma_buffer::ContiguousDmaBuffer;
 use crate::query::QueryUpiu;
 use crate::registers::{
-    InterruptStatusReg, UtrListBaseAddressReg, UtrListBaseAddressUpperReg, UtrListClearReg,
-    UtrListDoorBellReg, UtrListRunStopReg,
+    InterruptStatusReg, UtrListBaseAddressReg, UtrListBaseAddressUpperReg, UtrListDoorBellReg,
+    UtrListRunStopReg,
 };
 use crate::request_list::{
     self, DataDirection, OverallCommandStatus, RequestList, SlotCompletion, SlotState,
     TransferRequestDescriptor,
 };
-use crate::scsi::{ScsiStatus, SenseKey};
+use crate::scsi::{ScsiOpcode, ScsiStatus, SenseKey};
 use crate::transfer::{self, CommandDescriptorLayout, PrdtEntry};
 use crate::upiu::{
     CommandUpiu, NopInUpiu, NopOutUpiu, ResponseUpiu, UpiuHeader, UpiuTransactionCode,
 };
+use crate::{UfsError, uic};
 use block_server::RequestId;
 use fuchsia_sync::{Condvar, Mutex, MutexGuard};
 use futures::FutureExt;
@@ -59,124 +53,166 @@ use futures::channel::oneshot;
 use futures::task::AtomicWaker;
 use log::{error, info, warn};
 use mmio::{Mmio, ReadableRegister, Register, WritableRegister};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::task::Poll;
 use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes};
+
+/// Block operation kind and logical byte count recorded in [`BlockIoStats`] on `Ok(())` completion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BlockIoOp {
+    Read(u64),
+    Write(u64),
+    Flush,
+    Trim(u64),
+}
+
+/// Lock-free block I/O operation and byte counters exported on `root/ufs` via lazy Inspect.
+#[derive(Debug, Default)]
+pub(crate) struct BlockIoStats {
+    read_ops: AtomicU64,
+    write_ops: AtomicU64,
+    flush_ops: AtomicU64,
+    trim_ops: AtomicU64,
+    read_bytes: AtomicU64,
+    write_bytes: AtomicU64,
+    trim_bytes: AtomicU64,
+}
+
+impl BlockIoStats {
+    pub(crate) fn record(&self, op: Option<BlockIoOp>) {
+        match op {
+            Some(BlockIoOp::Read(bytes)) => {
+                self.read_ops.fetch_add(1, Ordering::Relaxed);
+                self.read_bytes.fetch_add(bytes, Ordering::Relaxed);
+            }
+            Some(BlockIoOp::Write(bytes)) => {
+                self.write_ops.fetch_add(1, Ordering::Relaxed);
+                self.write_bytes.fetch_add(bytes, Ordering::Relaxed);
+            }
+            Some(BlockIoOp::Flush) => {
+                self.flush_ops.fetch_add(1, Ordering::Relaxed);
+            }
+            Some(BlockIoOp::Trim(bytes)) => {
+                self.trim_ops.fetch_add(1, Ordering::Relaxed);
+                self.trim_bytes.fetch_add(bytes, Ordering::Relaxed);
+            }
+            None => {}
+        }
+    }
+}
 
 /// Bitmask of all slots in the request list (`0..SDB_SLOTS`).
 const ALL_SLOTS_MASK: u64 = request_list::slot_mask(SDB_SLOTS as u8);
 /// Bitmask of usable I/O slots (`0..ADMIN_COMMAND_SLOT_NUMBER`).
 const IO_SLOT_MASK: u64 = request_list::slot_mask(ADMIN_COMMAND_SLOT_NUMBER);
 
-/// Client data buffer for one transfer.
-#[derive(Debug, Clone, Copy)]
+/// Direction of a non-empty [`DataTransfer`] (`NoData` is unrepresentable).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransferDirection {
+    Read,
+    Write,
+}
+
+impl TransferDirection {
+    pub(crate) const fn to_data_direction(self) -> DataDirection {
+        match self {
+            Self::Read => DataDirection::DeviceToHost,
+            Self::Write => DataDirection::HostToDevice,
+        }
+    }
+
+    fn pin_options(self) -> zx::BtiOptions {
+        match self {
+            Self::Write => zx::BtiOptions::PERM_READ,
+            Self::Read => zx::BtiOptions::PERM_READ | zx::BtiOptions::PERM_WRITE,
+        }
+    }
+}
+
+/// Backing storage for a [`DataTransfer`].
+#[derive(Clone, Debug)]
+enum TransferBuffer<'a> {
+    Vmo(Arc<zx::Vmo>),
+    Inline(&'a [u8]),
+}
+
+/// Non-empty data phase of a UTP command (`Arc<zx::Vmo>` DMA or inline UCD parameter bytes).
+#[derive(Clone, Debug)]
 pub struct DataTransfer<'a> {
-    vmo: &'a zx::Vmo,
+    buffer: TransferBuffer<'a>,
     offset: u64,
     length: u32,
-    direction: DataDirection,
+    logical_bytes: u64,
+    direction: TransferDirection,
+}
+
+impl DataTransfer<'static> {
+    pub fn read(vmo: Arc<zx::Vmo>, offset: u64, length: u32) -> Self {
+        Self {
+            buffer: TransferBuffer::Vmo(vmo),
+            offset,
+            length,
+            logical_bytes: u64::from(length),
+            direction: TransferDirection::Read,
+        }
+    }
+
+    pub fn write(vmo: Arc<zx::Vmo>, offset: u64, length: u32) -> Self {
+        Self {
+            buffer: TransferBuffer::Vmo(vmo),
+            offset,
+            length,
+            logical_bytes: u64::from(length),
+            direction: TransferDirection::Write,
+        }
+    }
 }
 
 impl<'a> DataTransfer<'a> {
-    /// `length` bytes read from the device into `vmo` at `offset`.
-    pub fn read(vmo: &'a zx::Vmo, offset: u64, length: u32) -> Self {
-        Self { vmo, offset, length, direction: DataDirection::DeviceToHost }
+    pub fn inline_write(bytes: &'a [u8]) -> Self {
+        Self {
+            buffer: TransferBuffer::Inline(bytes),
+            offset: 0,
+            length: u32::try_from(bytes.len()).unwrap_or(u32::MAX),
+            logical_bytes: bytes.len() as u64,
+            direction: TransferDirection::Write,
+        }
     }
 
-    /// `length` bytes written to the device from `vmo` at `offset`.
-    pub fn write(vmo: &'a zx::Vmo, offset: u64, length: u32) -> Self {
-        Self { vmo, offset, length, direction: DataDirection::HostToDevice }
+    pub fn inline_unmap(bytes: &'a [u8], unmapped_bytes: u64) -> Self {
+        Self { logical_bytes: unmapped_bytes, ..Self::inline_write(bytes) }
     }
 
-    /// Returns the page-aligned `(offset, length)` covering the transfer.
+    pub fn direction(&self) -> TransferDirection {
+        self.direction
+    }
+
     fn pin_range(&self, page_size: u64) -> Result<(u64, u64), UfsError> {
         let start = self.offset & !(page_size - 1);
         let end = self
             .offset
-            .checked_add(self.length as u64)
+            .checked_add(u64::from(self.length))
             .and_then(|end| end.checked_next_multiple_of(page_size))
             .ok_or(UfsError::InvalidParameter)?;
         Ok((start, end - start))
     }
-
-    fn pin_options(&self) -> zx::BtiOptions {
-        match self.direction {
-            DataDirection::HostToDevice => zx::BtiOptions::PERM_READ,
-            _ => zx::BtiOptions::PERM_READ | zx::BtiOptions::PERM_WRITE,
-        }
-    }
-
-    /// Cleans and invalidates the cache after a `DeviceToHost` DMA read so that the next CPU read
-    /// picks up data written to main memory by the controller (discarding any speculative CPU
-    /// prefetches during DMA).
-    fn invalidate_read_cache(&self) -> Result<(), zx::Status> {
-        self.vmo.op_range(zx::VmoOp::CACHE_CLEAN_INVALIDATE, self.offset, self.length as u64)
-    }
 }
 
-/// Backing storage for an [`IoTransfer`].
-#[derive(Clone, Debug)]
-enum IoBuffer<'a> {
-    /// Shared VMO (survives until completion for read cache invalidation).
-    Vmo(Arc<zx::Vmo>),
-    /// Small `HostToDevice` payload copied into the slot's UCD inline data tail on submission.
-    Inline(&'a [u8]),
-}
-
-/// Client data buffer of a synchronous I/O request ([`TransferRequestProcessor::submit_io`]).
-/// Unlike [`DataTransfer`], a VMO transfer holds an `Arc<zx::Vmo>` so it can be kept in
-/// [`SlotCompletion::Io`] for post-DMA read cache invalidation. Small write payloads up to
-/// [`INLINE_DATA_SIZE`] bytes can instead be passed via [`Self::inline_write`] and are copied
-/// into the slot's pre-pinned UCD buffer without pinning a separate VMO.
-#[derive(Clone, Debug)]
-pub struct IoTransfer<'a> {
-    buffer: IoBuffer<'a>,
+/// Read-buffer range whose CPU data cache must be invalidated after `DeviceToHost` DMA.
+#[derive(Debug)]
+pub(crate) struct ReadBack {
+    vmo: Arc<zx::Vmo>,
     offset: u64,
     length: u32,
-    direction: DataDirection,
 }
 
-impl IoTransfer<'static> {
-    /// `length` bytes read from the device into `vmo` at `offset`.
-    pub fn read(vmo: Arc<zx::Vmo>, offset: u64, length: u32) -> Self {
-        Self { buffer: IoBuffer::Vmo(vmo), offset, length, direction: DataDirection::DeviceToHost }
-    }
-
-    /// `length` bytes written to the device from `vmo` at `offset`.
-    pub fn write(vmo: Arc<zx::Vmo>, offset: u64, length: u32) -> Self {
-        Self { buffer: IoBuffer::Vmo(vmo), offset, length, direction: DataDirection::HostToDevice }
-    }
-}
-
-impl<'a> IoTransfer<'a> {
-    /// Small `HostToDevice` payload (`<= INLINE_DATA_SIZE`, dword-aligned length) copied into the
-    /// slot's UCD inline data region on submission without pinning a VMO.
-    pub fn inline_write(bytes: &'a [u8]) -> Self {
-        Self {
-            buffer: IoBuffer::Inline(bytes),
-            offset: 0,
-            length: bytes.len() as u32,
-            direction: DataDirection::HostToDevice,
+impl ReadBack {
+    fn invalidate_read_cache(&self) -> Result<(), zx::Status> {
+        if self.length == 0 {
+            return Ok(());
         }
-    }
-
-    fn as_data_transfer(&self) -> Option<DataTransfer<'_>> {
-        match &self.buffer {
-            IoBuffer::Vmo(vmo) => Some(DataTransfer {
-                vmo,
-                offset: self.offset,
-                length: self.length,
-                direction: self.direction,
-            }),
-            IoBuffer::Inline(_) => None,
-        }
-    }
-
-    fn inline_bytes(&self) -> Option<&'a [u8]> {
-        match self.buffer {
-            IoBuffer::Inline(bytes) => Some(bytes),
-            IoBuffer::Vmo(_) => None,
-        }
+        self.vmo.op_range(zx::VmoOp::CACHE_CLEAN_INVALIDATE, self.offset, u64::from(self.length))
     }
 }
 
@@ -186,17 +222,15 @@ pub enum IoCompletion {
     /// A block server request, reported to the [`IoCompleter`] installed with
     /// [`TransferRequestProcessor::set_io_completer`]. Carries no per-request allocation.
     Request(RequestId),
-    /// Reported by invoking the callback.
-    #[cfg(test)]
-    Callback(Box<dyn FnOnce(Result<(), zx::Status>) + Send>),
+    /// Reported through a oneshot channel without boxing a closure.
+    Oneshot(oneshot::Sender<Result<(), zx::Status>>),
 }
 
 impl std::fmt::Debug for IoCompletion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Request(id) => f.debug_tuple("Request").field(id).finish(),
-            #[cfg(test)]
-            Self::Callback(_) => f.write_str("Callback"),
+            Self::Oneshot(_) => f.write_str("Oneshot"),
         }
     }
 }
@@ -207,30 +241,12 @@ pub trait IoCompleter: Send + Sync {
     fn complete(&self, lun: u8, request_id: RequestId, status: Result<(), zx::Status>);
 }
 
-/// Outcome of a synchronous I/O request, delivered after `request_list` is released.
-struct IoOutcome {
-    lun: u8,
-    completion: IoCompletion,
-    read_back: Option<IoTransfer<'static>>,
-    status: Result<(), zx::Status>,
-}
-
-/// Work a slot leaves for after `request_list` is released: unpinning its client buffer and
-/// delivering its outcome.
 struct DeferredSlot {
-    /// `None` while the controller may still access the buffer (a timed-out slot keeps its PMT
-    /// until the doorbell bit clears).
+    read_back: Option<ReadBack>,
     pmt: Option<zx::Pmt>,
-    outcome: Option<IoOutcome>,
+    outcome: Option<(SlotCompletion, ScsiOutcome)>,
 }
 
-/// Deferred work collected during one completion pass. Inline storage covers every slot up to
-/// [`MAX_REQUEST_LIST_SIZE`] so the completion path never allocates.
-///
-/// Unpinning requires the explicit `unsafe` [`TransferRequestProcessor::run_deferred`], whose
-/// caller vouches that the controller is done with the buffers. If a `Deferred` is dropped
-/// without running, its outcomes are still delivered (so clients are not stuck) but the PMTs are
-/// leaked, since nothing has established that the pages are safe to unpin.
 struct Deferred<'a, M: Mmio> {
     processor: &'a TransferRequestProcessor<M>,
     inline: [Option<DeferredSlot>; MAX_REQUEST_LIST_SIZE as usize],
@@ -242,11 +258,16 @@ impl<'a, M: Mmio> Deferred<'a, M> {
         Self { processor, inline: [const { None }; MAX_REQUEST_LIST_SIZE as usize], len: 0 }
     }
 
-    fn push(&mut self, pmt: Option<zx::Pmt>, outcome: Option<IoOutcome>) {
-        if pmt.is_none() && outcome.is_none() {
+    fn push(
+        &mut self,
+        read_back: Option<ReadBack>,
+        pmt: Option<zx::Pmt>,
+        outcome: Option<(SlotCompletion, ScsiOutcome)>,
+    ) {
+        if read_back.is_none() && pmt.is_none() && outcome.is_none() {
             return;
         }
-        self.inline[self.len] = Some(DeferredSlot { pmt, outcome });
+        self.inline[self.len] = Some(DeferredSlot { read_back, pmt, outcome });
         self.len += 1;
     }
 
@@ -255,6 +276,52 @@ impl<'a, M: Mmio> Deferred<'a, M> {
         self.len = 0;
         self.inline[..len].iter_mut().filter_map(Option::take)
     }
+
+    /// Invalidates read caches, unpins PMTs, and delivers sync/async outcomes outside the lock.
+    ///
+    /// # Safety
+    ///
+    /// The controller must no longer access any buffer in `self` (doorbell bit 0 or `HCE == 0`).
+    unsafe fn complete_after_dma(mut self) {
+        let processor = self.processor;
+        for DeferredSlot { read_back, pmt, outcome } in self.drain() {
+            let cache_err = read_back.and_then(|rb| {
+                rb.invalidate_read_cache()
+                    .inspect_err(|err| {
+                        warn!(err:%; "Failed to invalidate transfer buffer cache after read");
+                    })
+                    .err()
+            });
+            // SAFETY: Guaranteed by the caller.
+            unsafe { unpin_pmt(pmt) };
+            if let Some((completion, outcome)) = outcome {
+                processor.deliver_slot_outcome(completion, outcome, cache_err);
+            }
+        }
+    }
+
+    /// Quarantines any pinned `zx::Pmt` handles (dropping without `unpin()`) and delivers `IO`
+    /// errors without touching potentially live DMA read buffers.
+    fn quarantine_and_deliver(mut self) {
+        self.quarantine_remaining();
+    }
+
+    fn quarantine_remaining(&mut self) {
+        let processor = self.processor;
+        for DeferredSlot { read_back: _, pmt, outcome } in self.drain() {
+            if let Some(pmt) = pmt {
+                processor.quarantined_pmt_count.fetch_add(1, Ordering::Relaxed);
+                drop(pmt);
+            }
+            if let Some((completion, _)) = outcome {
+                processor.deliver_slot_outcome(
+                    completion,
+                    ScsiOutcome::Fail(UfsError::IoError),
+                    None,
+                );
+            }
+        }
+    }
 }
 
 impl<M: Mmio> Drop for Deferred<'_, M> {
@@ -262,16 +329,8 @@ impl<M: Mmio> Drop for Deferred<'_, M> {
         if self.len == 0 {
             return;
         }
-        warn!("Deferred completions dropped without running; pinned buffers will be leaked");
-        let processor = self.processor;
-        for DeferredSlot { pmt, outcome } in self.drain() {
-            // Dropping the `zx::Pmt` handle without unpinning leaves its pages quarantined by
-            // the kernel, which is the safe failure mode.
-            drop(pmt);
-            if let Some(outcome) = outcome {
-                processor.deliver_io_outcome(outcome);
-            }
-        }
+        warn!("Deferred completions dropped without DMA stop confirmation; quarantining PMTs");
+        self.quarantine_remaining();
     }
 }
 
@@ -301,86 +360,49 @@ fn dwords(bytes: usize) -> u16 {
     u16::try_from(bytes / 4).expect("UCD offset or length exceeds a 16-bit dword count")
 }
 
-/// Owns a `Reserved` or `Completed` slot and returns it on drop, making async request futures
-/// cancellation-safe at every `.await` point:
-///
-/// - Dropped while `Reserved` (before [`TransferRequestProcessor::submit`] rings the doorbell): no
-///   PMT is stored in the slot yet; `Drop` frees the slot and wakes waiting reservers.
-/// - Dropped while `Scheduled` (inside `wait_for_slot`): hardware DMA is still active, so `Drop`
-///   clears `completion = SlotCompletion::None` and leaves the slot `Scheduled` with its `pmt`
-///   intact until hardware clears the doorbell (or [`TransferRequestProcessor::quiesce`] disables
-///   `HCE`), at which point `finish_slot_locked` frees the slot and unpins the `pmt` via
-///   [`Deferred`].
-/// - Dropped while `Completed` (after ISR, before `execute_with_reader` takes the `pmt`): `Drop`
-///   frees the slot and drops the `zx::Pmt` handle without calling `unpin()`, relying on Zircon's
-///   BTI quarantine rather than unpinning in `Drop`.
-/// - If the driver shuts down ([`TransferRequestProcessor::quiesce`]), `HCE` is disabled (`0`)
-///   before slots are aborted and PMTs are unpinned.
-pub(crate) struct SlotGuard<'a, M: Mmio> {
+/// Owns a [`SlotState::Reserved`] slot until `schedule_slot_locked` transitions it to `Scheduled`.
+#[must_use = "dropping the guard immediately releases the reserved slot"]
+pub(crate) struct ReservedSlot<'a, M: Mmio> {
     processor: &'a TransferRequestProcessor<M>,
     slot: u8,
-    /// Cleared when ownership passes to the completion path (timeout or synchronous I/O) or when
-    /// `execute` releases the slot directly.
     armed: bool,
 }
 
-impl<M: Mmio> SlotGuard<'_, M> {
-    /// Returns the slot index.
+impl<M: Mmio> ReservedSlot<'_, M> {
     pub(crate) fn slot(&self) -> u8 {
         self.slot
     }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
 }
 
-impl<M: Mmio> Drop for SlotGuard<'_, M> {
+impl<M: Mmio> Drop for ReservedSlot<'_, M> {
     fn drop(&mut self) {
         if !self.armed {
             return;
         }
         let slot = self.slot;
         let mut list = self.processor.request_list.lock();
-        let Ok(request_slot) = list.slot_mut(slot) else {
-            return;
-        };
-        match request_slot.state {
-            // Pinning happens before reservation and the PMT moves into the slot only when the
-            // doorbell is rung, so a `Reserved` slot never holds one.
-            SlotState::Reserved => {
-                debug_assert!(request_slot.pmt.is_none(), "Reserved slot {slot} holds a PMT");
-                self.processor.take_and_release_slot(&mut list, slot);
+        if let Ok(request_slot) = list.slot(slot) {
+            if request_slot.state == SlotState::Reserved {
+                debug_assert!(request_slot.pmt.is_none() && request_slot.read_back.is_none());
+                self.processor.release_reserved_slot_locked(&mut list, slot);
             }
-            // The async submitter was dropped before it resumed. Only release the slot index:
-            // nothing here has established that the pages are safe to unpin, so a PMT still
-            // present is leaked (the kernel quarantines its pages) rather than unpinned.
-            SlotState::Completed => {
-                if let Some(pmt) = self.processor.take_and_release_slot(&mut list, slot) {
-                    warn!(slot; "Slot released without unpinning; leaking pinned pages");
-                    drop(pmt);
-                }
-            }
-            // The completion path frees the slot once the controller is done with it.
-            SlotState::Scheduled => request_slot.completion = SlotCompletion::None,
-            SlotState::Timeout | SlotState::Free => {}
         }
     }
 }
 
-/// Holds the admin lock and the admin slot.
+#[must_use = "dropping the guard immediately releases the admin slot and lock"]
 struct AdminSlotGuard<'a, M: Mmio> {
-    // Declared first so the slot is released before the lock.
-    slot: SlotGuard<'a, M>,
+    slot: ReservedSlot<'a, M>,
     _lock: futures::lock::MutexGuard<'a, ()>,
 }
 
-/// Transfer buffer source passed into [`TransferRequestProcessor::with_prepared_transfer`].
-enum TransferSource<'a> {
-    None,
-    Borrowed(DataTransfer<'a>),
-    Owned(IoTransfer<'a>),
-}
-
-/// Pinned or inline transfer state prepared before acquiring `request_list`.
 struct PreparedTransfer<'p, 'a> {
     pmt: Option<zx::Pmt>,
+    read_back: Option<ReadBack>,
     prdt: &'p [PrdtEntry],
     inline_data: Option<&'a [u8]>,
     direction: DataDirection,
@@ -401,11 +423,25 @@ pub struct TransferRequestProcessor<M: Mmio> {
     slot_available: Condvar,
     /// Sink for [`IoCompletion::Request`] outcomes.
     io_completer: OnceLock<Arc<dyn IoCompleter>>,
-    /// Wakes [`Self::run_io_timeout_task`] when the first synchronous I/O request is scheduled.
+    pub(crate) io_stats: BlockIoStats,
+    /// Cumulative `zx::Pmt` handles quarantined without `unpin()` after an `HCE = 0` timeout.
+    quarantined_pmt_count: AtomicU64,
+    /// Wakes [`Self::run_io_timeout_task`] when a request is scheduled on an idle list or the
+    /// processor is stopped.
     timeout_waker: AtomicWaker,
     /// Wakes [`Self::wait_for_link_recovery`] when link recovery is requested or the processor is
     /// stopped.
     recovery_waker: AtomicWaker,
+}
+
+impl<M: Mmio> std::fmt::Debug for TransferRequestProcessor<M> {
+    /// Reports only the lock-free fields; `request_list` and the controller are not locked so
+    /// `fmt` never blocks or deadlocks.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TransferRequestProcessor")
+            .field("page_size", &self.page_size)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<M: Mmio> TransferRequestProcessor<M> {
@@ -426,6 +462,8 @@ impl<M: Mmio> TransferRequestProcessor<M> {
             admin_lock: futures::lock::Mutex::new(()),
             slot_available: Condvar::new(),
             io_completer: OnceLock::new(),
+            io_stats: BlockIoStats::default(),
+            quarantined_pmt_count: AtomicU64::new(0),
             timeout_waker: AtomicWaker::new(),
             recovery_waker: AtomicWaker::new(),
         })
@@ -445,13 +483,18 @@ impl<M: Mmio> TransferRequestProcessor<M> {
 
     /// Waits until link recovery is requested (returning `true`) or the processor is stopped by
     /// [`Self::quiesce`] (returning `false`).
+    ///
+    /// Only peeks at the request: the caller consumes it with
+    /// [`UfsController::take_recovery_needed`] once it holds the device manager, so a request
+    /// raised in between is not lost. The waker is registered before the flag is loaded
+    /// (`Acquire`) so a [`Self::request_link_recovery`] racing with the check is not missed.
     pub async fn wait_for_link_recovery(&self) -> bool {
         std::future::poll_fn(|cx| {
             self.recovery_waker.register(cx.waker());
             if self.is_stopped() {
                 return Poll::Ready(false);
             }
-            if self.controller.take_recovery_needed() {
+            if self.controller.is_recovery_needed() {
                 return Poll::Ready(true);
             }
             Poll::Pending
@@ -462,6 +505,38 @@ impl<M: Mmio> TransferRequestProcessor<M> {
     /// Returns whether the processor has been stopped by [`Self::quiesce`].
     pub fn is_stopped(&self) -> bool {
         self.request_list.lock().stopped
+    }
+
+    /// Cumulative `zx::Pmt` handles quarantined without `unpin()` after an `HCE = 0` timeout.
+    pub fn quarantined_pmt_count(&self) -> u64 {
+        self.quarantined_pmt_count.load(Ordering::Relaxed)
+    }
+
+    /// Rejects new slot reservations and wakes blocked/async reservers while leaving `stopped`
+    /// clear so in-flight `Scheduled` slots can drain cleanly via completion interrupts.
+    pub fn close_submissions(&self) {
+        let mut list = self.request_list.lock();
+        list.closing = true;
+        self.wake_all_slot_waiters(&mut list);
+    }
+
+    /// Returns the number of transfer slots (including [`ADMIN_COMMAND_SLOT_NUMBER`]) not `Free`.
+    pub(crate) fn busy_slot_count(&self) -> usize {
+        let list = self.request_list.lock();
+        ((!list.free_mask) & ALL_SLOTS_MASK).count_ones() as usize
+    }
+
+    /// Waits up to `timeout` until every transfer slot is [`SlotState::Free`].
+    pub async fn drain_inflight(&self, timeout: zx::MonotonicDuration) -> Result<(), UfsError> {
+        let res = uic::poll_until_with_interval(timeout, REGISTER_POLL_INTERVAL, || {
+            let _ = self.process_slots(ALL_SLOTS_MASK);
+            (self.busy_slot_count() == 0).then_some(())
+        })
+        .await;
+        if res.is_err() {
+            let _ = self.process_slots(ALL_SLOTS_MASK);
+        }
+        res
     }
 
     /// Installs the sink for [`IoCompletion::Request`] outcomes. Must be called before the first
@@ -499,38 +574,46 @@ impl<M: Mmio> TransferRequestProcessor<M> {
         Ok(())
     }
 
-    /// Wakes every blocked and async I/O slot reserver so it re-examines the slot pool (or
-    /// `stopped`).
+    /// Wakes every blocked and async slot reserver so it re-examines the slot pool (or
+    /// `stopped` / `closing`).
     fn wake_all_slot_waiters(&self, list: &mut RequestList) {
-        if list.blocked_reservers > 0 {
+        self.wake_slot_waiters_for_mask(list, ALL_SLOTS_MASK);
+    }
+
+    fn wake_slot_waiters_for_mask(&self, list: &mut RequestList, released_mask: u64) {
+        if (released_mask & IO_SLOT_MASK) != 0 && list.blocked_reservers > 0 {
             self.slot_available.notify_all();
         }
-        for waker in list.slot_wakers.drain(..) {
-            waker.wake();
+        if (released_mask & ALL_SLOTS_MASK) != 0 {
+            for waker in list.slot_wakers.drain(..) {
+                waker.wake();
+            }
         }
     }
 
-    /// Returns `slot` to `Free` without waking waiters and returns its pinned [`zx::Pmt`] so the
-    /// caller can unpin it outside `request_list.lock()`.
-    fn release_slot_locked(&self, list: &mut RequestList, slot: u8) -> Option<zx::Pmt> {
-        let request_slot = list.slot_mut(slot).ok()?;
-        let sync_io = request_slot.sync_io;
-        let pmt = request_slot.release();
-        if sync_io {
-            list.inflight_io -= 1;
-        }
+    /// Returns `slot` to `Free` without waking waiters and returns its read-back descriptor and
+    /// pinned [`zx::Pmt`] so the caller can invalidate caches and unpin outside
+    /// `request_list.lock()`.
+    fn release_slot_locked(
+        &self,
+        list: &mut RequestList,
+        slot: u8,
+    ) -> (Option<ReadBack>, Option<zx::Pmt>) {
+        let Some(request_slot) = list.slot_mut(slot).ok() else {
+            return (None, None);
+        };
+        let released = request_slot.release();
         list.set_slot_state(slot, SlotState::Free);
-        pmt
+        released
     }
 
-    /// Returns `slot` to `Free`, wakes waiting I/O slot reservers, and returns its pinned
-    /// [`zx::Pmt`] so the caller can unpin it outside `request_list.lock()`.
-    fn take_and_release_slot(&self, list: &mut RequestList, slot: u8) -> Option<zx::Pmt> {
-        let pmt = self.release_slot_locked(list, slot);
-        if slot != ADMIN_COMMAND_SLOT_NUMBER {
-            self.wake_all_slot_waiters(list);
-        }
-        pmt
+    fn release_reserved_slot_locked(&self, list: &mut RequestList, slot: u8) {
+        let _ = self.release_slot_locked(list, slot);
+        self.wake_slot_waiters_for_mask(list, 1u64 << slot);
+    }
+
+    fn reserved_slot(&self, slot: u8) -> ReservedSlot<'_, M> {
+        ReservedSlot { processor: self, slot, armed: true }
     }
 
     /// Marks the lowest `Free` I/O slot `Reserved` and returns it, if any.
@@ -540,27 +623,23 @@ impl<M: Mmio> TransferRequestProcessor<M> {
             return None;
         }
         let slot = free_io.trailing_zeros() as u8;
-        list.set_slot_state(slot, SlotState::Reserved);
+        list.reserve_slot(slot);
         Some(slot)
     }
 
     /// Reserves an I/O slot for a synchronous request while holding `request_list`, blocking the
     /// calling thread on [`Self::slot_available`] while all are busy (pushback) until a slot is
-    /// released by the completion path or the processor is stopped.
-    ///
-    /// # Errors
-    ///
-    /// Returns `IoError` after [`Self::quiesce`].
+    /// released by the completion path or the processor closes/stops.
     fn reserve_io_slot_locked(
         &self,
         list: &mut MutexGuard<'_, RequestList>,
-    ) -> Result<u8, UfsError> {
+    ) -> Result<ReservedSlot<'_, M>, UfsError> {
         loop {
-            if list.stopped {
+            if list.stopped || list.closing {
                 return Err(UfsError::IoError);
             }
             if let Some(slot) = self.take_free_io_slot_locked(list) {
-                return Ok(slot);
+                return Ok(self.reserved_slot(slot));
             }
             list.blocked_reservers += 1;
             self.slot_available.wait(list);
@@ -570,18 +649,14 @@ impl<M: Mmio> TransferRequestProcessor<M> {
 
     /// Reserves an I/O slot for an async request, waiting until one is released by the completion
     /// path.
-    ///
-    /// # Errors
-    ///
-    /// Returns `IoError` after [`Self::quiesce`].
-    pub(crate) async fn reserve_io_slot(&self) -> Result<SlotGuard<'_, M>, UfsError> {
+    async fn reserve_io_slot(&self) -> Result<ReservedSlot<'_, M>, UfsError> {
         std::future::poll_fn(|cx| {
             let mut list = self.request_list.lock();
-            if list.stopped {
+            if list.stopped || list.closing {
                 return Poll::Ready(Err(UfsError::IoError));
             }
             if let Some(slot) = self.take_free_io_slot_locked(&mut list) {
-                return Poll::Ready(Ok(SlotGuard { processor: self, slot, armed: true }));
+                return Poll::Ready(Ok(self.reserved_slot(slot)));
             }
             if !list.slot_wakers.iter().any(|waker| waker.will_wake(cx.waker())) {
                 list.slot_wakers.push(cx.waker().clone());
@@ -591,63 +666,74 @@ impl<M: Mmio> TransferRequestProcessor<M> {
         .await
     }
 
-    /// Takes the admin lock and reserves the admin slot. If the previous admin request timed out
-    /// or was cancelled, the slot is still owned by the controller until its doorbell bit clears;
-    /// since `UTRLCLR` raises no interrupt, the bit is polled every
-    /// [`TIMEOUT_RECLAIM_POLL_INTERVAL`] until the slot is reclaimed.
+    /// Serializes on `admin_lock` and awaits `ADMIN_COMMAND_SLOT_NUMBER == Free` via `slot_wakers`
+    /// in case an earlier cancelled admin future is still finishing on hardware.
     async fn reserve_admin_slot(&self) -> Result<AdminSlotGuard<'_, M>, UfsError> {
         let lock = self.admin_lock.lock().await;
         let slot = ADMIN_COMMAND_SLOT_NUMBER;
-        let deadline = zx::MonotonicInstant::after(COMMAND_TIMEOUT);
-        loop {
-            {
-                let mut list = self.request_list.lock();
-                if list.stopped {
-                    return Err(UfsError::IoError);
-                }
-                if list.slot(slot)?.state == SlotState::Free {
-                    list.set_slot_state(slot, SlotState::Reserved);
-                    break;
-                }
+        let guard = std::future::poll_fn(|cx| {
+            let mut list = self.request_list.lock();
+            if list.stopped || list.closing {
+                return Poll::Ready(Err(UfsError::IoError));
             }
-            self.process_slot_completion(slot);
-            if zx::MonotonicInstant::get() >= deadline {
-                return Err(UfsError::NoResources);
+            if list.slot(slot)?.state == SlotState::Free {
+                list.reserve_slot(slot);
+                return Poll::Ready(Ok(self.reserved_slot(slot)));
             }
-            fuchsia_async::Timer::new(zx::MonotonicInstant::after(TIMEOUT_RECLAIM_POLL_INTERVAL))
-                .await;
-        }
-        Ok(AdminSlotGuard { slot: SlotGuard { processor: self, slot, armed: true }, _lock: lock })
+            if !list.slot_wakers.iter().any(|waker| waker.will_wake(cx.waker())) {
+                list.slot_wakers.push(cx.waker().clone());
+            }
+            Poll::Pending
+        })
+        .await?;
+        Ok(AdminSlotGuard { slot: guard, _lock: lock })
     }
 
-    /// Validates and pins `source` (if a VMO transfer) and invokes `f` with the prepared PRDT
-    /// slice and PMT. Any PMT still left in `PreparedTransfer::pmt` when `f` returns (because `f`
-    /// failed before storing it in a slot) is unpinned after `f` returns.
+    /// Validates `transfer` before reserving a slot. Returns `Ok(Some((offset, len)))` for VMO
+    /// transfers needing `bti.pin` and `Ok(None)` for inline UCD parameter transfers.
+    fn validate_transfer(
+        &self,
+        transfer: &DataTransfer<'_>,
+    ) -> Result<Option<(u64, u64)>, UfsError> {
+        match &transfer.buffer {
+            TransferBuffer::Vmo(_) => {
+                if (transfer.offset & DWORD_ALIGN_MASK) != 0
+                    || (u64::from(transfer.length) & DWORD_ALIGN_MASK) != 0
+                {
+                    return Err(UfsError::InvalidParameter);
+                }
+                let (offset, length) = transfer.pin_range(self.page_size)?;
+                if (length / self.page_size) as usize > MAX_PRDT_ENTRIES {
+                    return Err(UfsError::InvalidParameter);
+                }
+                Ok(Some((offset, length)))
+            }
+            TransferBuffer::Inline(bytes) => {
+                if bytes.is_empty()
+                    || bytes.len() > INLINE_DATA_SIZE
+                    || !bytes.len().is_multiple_of(4)
+                {
+                    return Err(UfsError::InvalidParameter);
+                }
+                Ok(None)
+            }
+        }
+    }
+
+    /// Pins `transfer` outside `request_list.lock()`, cleans/invalidates the CPU cache before DMA,
+    /// and invokes `f` with the prepared PRDT and PMT (unpinning if `f` fails before scheduling).
     fn with_prepared_transfer<'a, R>(
         &self,
-        source: TransferSource<'a>,
+        transfer: Option<DataTransfer<'a>>,
         f: impl FnOnce(&mut PreparedTransfer<'_, 'a>) -> Result<R, UfsError>,
     ) -> Result<R, UfsError> {
         let page_size = self.page_size;
-        let data_transfer = match &source {
-            TransferSource::Borrowed(data) => Some(*data),
-            TransferSource::Owned(io) => io.as_data_transfer(),
-            TransferSource::None => None,
-        };
-        let inline_data = match &source {
-            TransferSource::Owned(io) => io.inline_bytes(),
+        let pin_range = transfer.as_ref().map(|t| self.validate_transfer(t)).transpose()?.flatten();
+        let inline_data = match &transfer {
+            Some(DataTransfer { buffer: TransferBuffer::Inline(bytes), .. }) => Some(*bytes),
             _ => None,
         };
-        if let Some(bytes) = inline_data {
-            if bytes.is_empty() || bytes.len() > INLINE_DATA_SIZE || bytes.len() % 4 != 0 {
-                return Err(UfsError::InvalidParameter);
-            }
-        }
-        let pin_range = data_transfer.map(|data| data.pin_range(page_size)).transpose()?;
         let page_count = pin_range.map_or(0, |(_, length)| (length / page_size) as usize);
-        if page_count > MAX_PRDT_ENTRIES {
-            return Err(UfsError::InvalidParameter);
-        }
 
         // Only zero-initialize scratch PRDT arrays for the transfer size class actually used.
         let mut small_prdt: [PrdtEntry; SMALL_TRANSFER_PAGES];
@@ -665,9 +751,13 @@ impl<M: Mmio> TransferRequestProcessor<M> {
         };
 
         let mut pmt = None;
+        let mut read_back = None;
         let mut prdt_count = 0;
         let mut direction = DataDirection::NoData;
-        if let (Some(data), Some((offset, length))) = (data_transfer, pin_range) {
+        if let (Some(data), Some((offset, length))) = (transfer, pin_range) {
+            let TransferBuffer::Vmo(vmo) = data.buffer else {
+                unreachable!("validate_transfer returns Some only for Vmo transfers");
+            };
             let mut small_phys: [usize; SMALL_TRANSFER_PAGES];
             let mut large_phys: [usize; MAX_PRDT_ENTRIES];
             let phys: &mut [usize] = match page_count {
@@ -681,8 +771,10 @@ impl<M: Mmio> TransferRequestProcessor<M> {
                     &mut large_phys[..page_count]
                 }
             };
-            let pinned =
-                self.bti.pin(data.pin_options(), data.vmo, offset, length, phys).map_err(|s| {
+            let pinned = self
+                .bti
+                .pin(data.direction.pin_options(), &vmo, offset, length, phys)
+                .map_err(|s| {
                     error!(status:% = s; "Failed to pin transfer buffer");
                     UfsError::IoError
                 })?;
@@ -695,24 +787,31 @@ impl<M: Mmio> TransferRequestProcessor<M> {
                 }
             }
             let cache_op = match data.direction {
-                DataDirection::DeviceToHost => zx::VmoOp::CACHE_CLEAN_INVALIDATE,
-                DataDirection::HostToDevice => zx::VmoOp::CACHE_CLEAN,
-                DataDirection::NoData => unreachable!(),
+                TransferDirection::Read => zx::VmoOp::CACHE_CLEAN_INVALIDATE,
+                TransferDirection::Write => zx::VmoOp::CACHE_CLEAN,
             };
-            if let Err(s) = data.vmo.op_range(cache_op, data.offset, data.length as u64) {
+            if let Err(s) = vmo.op_range(cache_op, data.offset, u64::from(data.length)) {
                 error!(status:% = s; "Failed to clean/invalidate transfer buffer cache");
                 // SAFETY: The pinned addresses were never written into a descriptor.
                 unsafe { unpin_pmt(Some(pinned)) };
                 return Err(UfsError::IoError);
             }
+            direction = data.direction.to_data_direction();
+            if data.direction == TransferDirection::Read && data.length > 0 {
+                read_back = Some(ReadBack { vmo, offset: data.offset, length: data.length });
+            }
             pmt = Some(pinned);
-            direction = data.direction;
         } else if inline_data.is_some() {
             direction = DataDirection::HostToDevice;
         }
 
-        let mut prepared =
-            PreparedTransfer { pmt, prdt: &prdt_table[..prdt_count], inline_data, direction };
+        let mut prepared = PreparedTransfer {
+            pmt,
+            read_back,
+            prdt: &prdt_table[..prdt_count],
+            inline_data,
+            direction,
+        };
         let result = f(&mut prepared);
         // SAFETY: Any PMT still in `prepared.pmt` was not stored in a scheduled slot.
         unsafe { unpin_pmt(prepared.pmt.take()) };
@@ -734,16 +833,12 @@ impl<M: Mmio> TransferRequestProcessor<M> {
         if request.len() != layout.request_length() {
             return Err(UfsError::InvalidParameter);
         }
-        let RequestList { io_buffer, request_slots, stopped, inflight_io, .. } = &mut *list;
+        let should_wake_watchdog = list.next_timeout_task_deadline().is_none();
+        let RequestList { io_buffer, request_slots, closing, stopped, .. } = &mut *list;
         let request_slot = match request_slots.get_mut(slot as usize) {
-            Some(s) if !*stopped && s.state == SlotState::Reserved => s,
-            _ => {
-                return Err(if *stopped {
-                    UfsError::IoError
-                } else {
-                    UfsError::InvalidSlot(slot as u32)
-                });
-            }
+            Some(s) if !*stopped && !*closing && s.state == SlotState::Reserved => s,
+            Some(_) if *stopped || *closing => return Err(UfsError::IoError),
+            Some(_) | None => return Err(UfsError::InvalidSlot(slot as u32)),
         };
 
         let io_error = |status: zx::Status| {
@@ -754,7 +849,7 @@ impl<M: Mmio> TransferRequestProcessor<M> {
         ucd.write(0, request).map_err(io_error)?;
         // Zero the response UPIU header (padded to 8-byte alignment so `zero` uses 64-bit stores)
         // so a failed request cannot return a stale response.
-        ucd.zero(layout.response_offset(), (std::mem::size_of::<UpiuHeader>() + 7) & !7)
+        ucd.zero(layout.response_offset(), std::mem::size_of::<UpiuHeader>().next_multiple_of(8))
             .map_err(io_error)?;
         let ucd_address = ucd.phys_address();
         let prdt_len = if let Some(inline_bytes) = prepared.inline_data {
@@ -803,107 +898,141 @@ impl<M: Mmio> TransferRequestProcessor<M> {
             doorbell.write(mmio);
         });
 
-        // Completions are processed under `request_list`, which is still held.
         request_slot.pmt = prepared.pmt.take();
-        request_slot.result = Ok(());
+        request_slot.read_back = prepared.read_back.take();
         request_slot.completion = std::mem::take(completion);
         request_slot.deadline = Some(zx::MonotonicInstant::after(COMMAND_TIMEOUT));
-        if matches!(request_slot.completion, SlotCompletion::Io { .. }) {
-            request_slot.sync_io = true;
-            *inflight_io += 1;
-            if *inflight_io == 1 {
-                // Nobody waits on this request; arm the timeout task that bounds its lifetime.
-                self.timeout_waker.wake();
-            }
-        }
+        request_slot.stall_logged = false;
         list.set_slot_state(slot, SlotState::Scheduled);
+        if should_wake_watchdog {
+            self.timeout_waker.wake();
+        }
         Ok(())
     }
 
-    /// Pins `data`, fills the UCD and UTRD for `slot` and rings its doorbell. `completion` is
-    /// moved into the slot only once the doorbell has been rung, so on error the caller still
-    /// owns it.
+    /// Pins `data`, fills the UCD and UTRD for `reserved`, rings its doorbell, and returns the
+    /// oneshot receiver that yields its [`ScsiOutcome`].
     fn submit(
         &self,
-        slot: u8,
+        reserved: &mut ReservedSlot<'_, M>,
         layout: CommandDescriptorLayout,
         request: &[u8],
-        data: Option<&DataTransfer<'_>>,
-        completion: &mut SlotCompletion,
-    ) -> Result<(), UfsError> {
+        data: Option<DataTransfer<'_>>,
+        lun: u8,
+    ) -> Result<oneshot::Receiver<ScsiOutcome>, UfsError> {
         if request.len() != layout.request_length() {
             return Err(UfsError::InvalidParameter);
         }
-        let source = data.copied().map_or(TransferSource::None, TransferSource::Borrowed);
-        self.with_prepared_transfer(source, |prepared| {
+        let slot = reserved.slot();
+        let (tx, rx) = oneshot::channel();
+        let mut completion = SlotCompletion::Scsi { lun, sender: tx };
+        self.with_prepared_transfer(data, |prepared| {
             let mut list = self.request_list.lock();
-            self.schedule_slot_locked(&mut list, slot, layout, request, prepared, completion)
-        })
+            let scheduled = self.schedule_slot_locked(
+                &mut list,
+                slot,
+                layout,
+                request,
+                prepared,
+                &mut completion,
+            );
+            if scheduled.is_ok() {
+                reserved.disarm();
+            }
+            scheduled
+        })?;
+        Ok(rx)
     }
 
     /// Submits a SCSI command to `lun` synchronously and returns as soon as its doorbell has been
     /// rung. Blocks the calling thread while all I/O slots are busy (pushback). The outcome is
-    /// delivered through `completion` from the completion path once the controller finishes,
-    /// aborts (`TIMED_OUT`) or is quiesced (`IO`); transient SCSI statuses are reported, not
-    /// retried.
+    /// delivered through `completion` from the completion path once the controller finishes or is
+    /// quiesced (`IO`); transient SCSI statuses are reported, not retried.
     ///
     /// # Errors
     ///
-    /// Returns `InvalidParameter` for a misaligned or oversized buffer, or `IoError` on a pin
-    /// failure or after [`Self::quiesce`]. On error `completion` has already been delivered with
-    /// the matching `zx::Status`.
+    /// Returns `InvalidParameter` for a misaligned or oversized buffer (validated before reserving
+    /// a slot), or `IoError` on a pin failure or after [`Self::close_submissions`] /
+    /// [`Self::quiesce`]. On error `completion` has already been delivered with the matching
+    /// `zx::Status`.
     pub fn submit_io(
         &self,
         lun: u8,
         cdb: [u8; 16],
-        data: Option<IoTransfer<'_>>,
+        data: Option<DataTransfer<'_>>,
         completion: IoCompletion,
     ) -> Result<(), UfsError> {
-        let data = data.filter(|data| data.length != 0);
+        let data = data.filter(|d| !matches!(d.buffer, TransferBuffer::Vmo(_)) || d.length != 0);
+        if let Some(ref transfer) = data {
+            if let Err(e) = self.validate_transfer(transfer) {
+                self.complete_io(lun, completion, Err(zx::Status::from(e)));
+                return Err(e);
+            }
+        }
         let expected_transfer_len = data.as_ref().map_or(0, |data| data.length);
-        let direction = data.as_ref().map_or(DataDirection::NoData, |data| data.direction);
-        let mut read_back = match &data {
-            Some(IoTransfer {
-                buffer: IoBuffer::Vmo(vmo),
-                offset,
-                length,
-                direction: DataDirection::DeviceToHost,
-            }) => Some(IoTransfer::read(Arc::clone(vmo), *offset, *length)),
+        let direction =
+            data.as_ref().map_or(DataDirection::NoData, |data| data.direction.to_data_direction());
+        let io_op = match cdb[0] {
+            x if x == ScsiOpcode::Read10 as u8 || x == ScsiOpcode::Read16 as u8 => {
+                Some(BlockIoOp::Read(u64::from(expected_transfer_len)))
+            }
+            x if x == ScsiOpcode::Write10 as u8 || x == ScsiOpcode::Write16 as u8 => {
+                Some(BlockIoOp::Write(u64::from(expected_transfer_len)))
+            }
+            x if x == ScsiOpcode::SynchronizeCache10 as u8 => Some(BlockIoOp::Flush),
+            x if x == ScsiOpcode::Unmap as u8 => {
+                Some(BlockIoOp::Trim(data.as_ref().map_or(0, |d| d.logical_bytes)))
+            }
             _ => None,
         };
-        let source = data.map_or(TransferSource::None, TransferSource::Owned);
+
+        // Reserve (and possibly block for) the slot before pinning, so pushback never holds
+        // client pages pinned while waiting.
+        let mut reserved = {
+            let mut list = self.request_list.lock();
+            match self.reserve_io_slot_locked(&mut list) {
+                Ok(reserved) => reserved,
+                Err(e) => {
+                    drop(list);
+                    self.complete_io(lun, completion, Err(zx::Status::from(e)));
+                    return Err(e);
+                }
+            }
+        };
+        let slot = reserved.slot();
+        let mut command = CommandUpiu::new(cdb, expected_transfer_len, direction);
+        command.header.lun = lun;
+        command.header.task_tag = slot;
         let mut completion = Some(completion);
 
-        let result = self.with_prepared_transfer(source, |prepared| {
+        let result = self.with_prepared_transfer(data, |prepared| {
             let mut list = self.request_list.lock();
-            let slot = self.reserve_io_slot_locked(&mut list)?;
-            let mut command = CommandUpiu::new(cdb, expected_transfer_len, direction);
-            command.header.lun = lun;
-            command.header.task_tag = slot;
             let mut slot_completion = SlotCompletion::Io {
                 lun,
-                completion: completion.take().unwrap(),
-                read_back: read_back.take(),
+                completion: completion
+                    .take()
+                    .expect("with_prepared_transfer invokes its closure at most once"),
+                io_op,
             };
-            if let Err(e) = self.schedule_slot_locked(
+            let scheduled = self.schedule_slot_locked(
                 &mut list,
                 slot,
                 CommandDescriptorLayout::SCSI_COMMAND,
                 command.as_bytes(),
                 prepared,
                 &mut slot_completion,
-            ) {
-                if let SlotCompletion::Io { completion: c, .. } = slot_completion {
-                    completion = Some(c);
+            );
+            match scheduled {
+                Ok(()) => reserved.disarm(),
+                Err(_) => {
+                    if let SlotCompletion::Io { completion: c, .. } = slot_completion {
+                        completion = Some(c);
+                    }
                 }
-                let pmt = self.take_and_release_slot(&mut list, slot);
-                drop(list);
-                // SAFETY: The slot's doorbell was never rung.
-                unsafe { unpin_pmt(pmt) };
-                return Err(e);
             }
-            Ok(())
+            scheduled
         });
+        drop(reserved);
         if let Err(e) = result {
             if let Some(completion) = completion {
                 self.complete_io(lun, completion, Err(zx::Status::from(e)));
@@ -919,295 +1048,145 @@ impl<M: Mmio> TransferRequestProcessor<M> {
                 Some(completer) => completer.complete(lun, request_id, status),
                 None => error!(lun, request_id:?; "No I/O completer installed; dropping request"),
             },
-            #[cfg(test)]
-            IoCompletion::Callback(callback) => callback(status),
+            IoCompletion::Oneshot(sender) => {
+                let _ = sender.send(status);
+            }
         }
     }
 
-    /// Invalidates the read buffer of a `DeviceToHost` outcome (even on error, in case of partial
-    /// DMA or speculative CPU prefetches) so the client sees main memory, failing a successful
-    /// outcome if cache invalidation fails.
-    fn invalidate_read_back(&self, mut outcome: IoOutcome) -> IoOutcome {
-        if let Some(read_back) = &outcome.read_back {
-            if let Some(transfer) = read_back.as_data_transfer() {
-                if let Err(err) = transfer.invalidate_read_cache() {
-                    warn!(err:%; "Failed to invalidate transfer buffer cache after read");
-                    if outcome.status.is_ok() {
-                        outcome.status = Err(err);
-                    }
+    fn deliver_slot_outcome(
+        &self,
+        completion: SlotCompletion,
+        outcome: ScsiOutcome,
+        cache_err: Option<zx::Status>,
+    ) {
+        match completion {
+            SlotCompletion::None => {}
+            SlotCompletion::Io { lun, completion, io_op } => {
+                let mut status = outcome.into_io_status();
+                if let Some(err) = cache_err
+                    && status.is_ok()
+                {
+                    status = Err(err);
                 }
+                if status.is_ok() {
+                    self.io_stats.record(io_op);
+                }
+                self.complete_io(lun, completion, status);
             }
-        }
-        outcome
-    }
-
-    /// Delivers a synchronous I/O outcome without unpinning anything: invalidates its read
-    /// buffer (if any) and reports its status.
-    fn deliver_io_outcome(&self, outcome: IoOutcome) {
-        let outcome = self.invalidate_read_back(outcome);
-        self.complete_io(outcome.lun, outcome.completion, outcome.status);
-    }
-
-    /// Runs deferred slot work: invalidates read buffers, unpins client buffers and delivers
-    /// synchronous I/O outcomes, in that order (as `cqhci::PendingTask::complete` does). Must run
-    /// without `request_list` held. This is the only path that unpins completed slots.
-    ///
-    /// # Safety
-    ///
-    /// As for [`unpin_pmt`]: the controller must no longer access any buffer whose PMT is being
-    /// unpinned.
-    unsafe fn run_deferred(&self, mut deferred: Deferred<'_, M>) {
-        for DeferredSlot { pmt, outcome } in deferred.drain() {
-            // 1. Invalidate CPU caches so the transferred data is visible to the client.
-            let outcome = outcome.map(|outcome| self.invalidate_read_back(outcome));
-            // 2. Unpin the pages.
-            // SAFETY: Guaranteed by the caller.
-            unsafe { unpin_pmt(pmt) };
-            // 3. Report the outcome, which may hand the buffer back to the client.
-            if let Some(outcome) = outcome {
-                self.complete_io(outcome.lun, outcome.completion, outcome.status);
+            SlotCompletion::Scsi { sender, .. } => {
+                let outcome = match outcome {
+                    ScsiOutcome::Good if cache_err.is_some() => {
+                        ScsiOutcome::Fail(UfsError::IoError)
+                    }
+                    other => other,
+                };
+                let _ = sender.send(outcome);
             }
         }
     }
 
-    /// Returns whether any I/O slot is currently in [`SlotState::Timeout`].
-    fn has_timed_out_io_slots(&self) -> bool {
-        let list = self.request_list.lock();
+    /// Processes any already-clear doorbells, then logs each `Scheduled` slot past
+    /// [`COMMAND_TIMEOUT`] at most once while leaving its slot state and `zx::Pmt` intact.
+    fn log_stalled_slots(&self) {
+        let _ = self.process_slots(ALL_SLOTS_MASK);
+        let now = zx::MonotonicInstant::get();
+        let mut list = self.request_list.lock();
         if list.stopped {
-            return false;
+            return;
         }
-        let mut remaining = list.scheduled_mask & IO_SLOT_MASK;
+        let mut remaining = list.scheduled_mask;
         while remaining != 0 {
             let slot = remaining.trailing_zeros() as u8;
             remaining &= remaining - 1;
-            if list.slot(slot).is_ok_and(|s| s.state == SlotState::Timeout) {
-                return true;
+            let Ok(request_slot) = list.slot_mut(slot) else {
+                continue;
+            };
+            if request_slot.state == SlotState::Scheduled
+                && !request_slot.stall_logged
+                && request_slot.deadline.is_some_and(|deadline| now >= deadline)
+            {
+                request_slot.stall_logged = true;
+                error!(
+                    slot;
+                    "UTP transfer slot still scheduled past COMMAND_TIMEOUT; leaving DMA pinned"
+                );
             }
-        }
-        false
-    }
-
-    /// Polls timed-out I/O slots every [`TIMEOUT_RECLAIM_POLL_INTERVAL`] for up to
-    /// [`TIMEOUT_RECLAIM_WINDOW`] so their doorbell bits can clear after `UTRLCLR`. If any slot
-    /// remains in [`SlotState::Timeout`] after the abort window, requests full controller and link
-    /// recovery ([`Self::request_link_recovery`]).
-    async fn reclaim_timed_out_io_slots(&self) {
-        if !self.has_timed_out_io_slots() {
-            return;
-        }
-        let deadline = zx::MonotonicInstant::after(TIMEOUT_RECLAIM_WINDOW);
-        while zx::MonotonicInstant::get() < deadline {
-            fuchsia_async::Timer::new(zx::MonotonicInstant::after(TIMEOUT_RECLAIM_POLL_INTERVAL))
-                .await;
-            self.process_completion_of_io_requests();
-            if !self.has_timed_out_io_slots() {
-                return;
-            }
-        }
-        if self.has_timed_out_io_slots() {
-            warn!("Timed-out I/O slot did not clear after abort; requesting link recovery");
-            self.request_link_recovery();
         }
     }
 
-    /// Command-timeout watchdog for synchronous I/O requests, whose submitters do not wait
-    /// (mirroring the C++ driver's `timeout_task_` and Linux `ufshcd` command timeouts).
-    ///
-    /// Hardware link/controller/protocol errors raise an interrupt (`IS.ULLS`, `IS.DFES`,
-    /// `IS.HCFES`, `IS.SBFES`, `IS.CEFES`, `IS.UE`) and immediately trigger
-    /// [`Self::request_link_recovery`]. UFSHCI has no hardware per-command completion timer,
-    /// however, so if device firmware wedges on a command without dropping the link or raising an
-    /// error interrupt, no interrupt fires. This task bounds synchronous I/O with a one-shot timer
-    /// at [`COMMAND_TIMEOUT`], aborts expired slots with `UTRLCLR`, and escalates to
-    /// [`Self::request_link_recovery`] via [`Self::reclaim_timed_out_io_slots`] if the aborted slot
-    /// does not clear within [`TIMEOUT_RECLAIM_WINDOW`]. Returns once [`Self::quiesce`] stops the
-    /// processor; run it on the driver's scope.
-    ///
-    /// Idle with no timer while no synchronous request is in flight (woken by
-    /// [`Self::schedule_slot_locked`] on the 0 -> 1 transition). Otherwise sleeps on a single
-    /// one-shot timer at the earliest deadline reported by [`RequestList::next_io_deadline`].
-    /// Because all requests share one [`COMMAND_TIMEOUT`], a slot scheduled while the timer is
-    /// armed never has an earlier deadline than the one being waited on, so one timer suffices.
+    /// Diagnostic stall watchdog for in-flight `Scheduled` slots; exits promptly on `quiesce()`.
     pub async fn run_io_timeout_task(&self) {
         loop {
             let Some(wake_at) = std::future::poll_fn(|cx| {
-                // Register first so a submission or quiesce racing with the check is not missed.
                 self.timeout_waker.register(cx.waker());
                 let list = self.request_list.lock();
                 if list.stopped {
                     return Poll::Ready(None);
                 }
-                if list.inflight_io == 0 {
-                    return Poll::Pending;
+                match list.next_timeout_task_deadline() {
+                    Some(wake_at) => Poll::Ready(Some(wake_at)),
+                    None => Poll::Pending,
                 }
-                // Every in-flight synchronous slot is `Scheduled` with a deadline or `Timeout`, so
-                // a deadline is always reported while `inflight_io > 0`.
-                Poll::Ready(Some(
-                    list.next_io_deadline(IO_SLOT_MASK)
-                        .expect("synchronous I/O in flight without a deadline"),
-                ))
             })
             .await
             else {
                 return;
             };
-            fuchsia_async::Timer::new(wake_at).await;
-            if self.is_stopped() {
+            let mut timer = std::pin::pin!(fuchsia_async::Timer::new(wake_at).fuse());
+            let mut interrupted = std::pin::pin!(
+                std::future::poll_fn(|cx| {
+                    self.timeout_waker.register(cx.waker());
+                    let list = self.request_list.lock();
+                    if list.stopped {
+                        return Poll::Ready(true);
+                    }
+                    match list.next_timeout_task_deadline() {
+                        Some(earlier) if earlier < wake_at => Poll::Ready(false),
+                        Some(_) | None => Poll::Pending,
+                    }
+                })
+                .fuse()
+            );
+            let stopped = futures::select_biased! {
+                stopped = interrupted => stopped,
+                () = timer => false,
+            };
+            if stopped {
                 return;
             }
-            self.process_completion_of_io_requests();
-            self.reclaim_timed_out_io_slots().await;
+            self.log_stalled_slots();
         }
     }
 
-    /// Waits until `slot` leaves `Scheduled` and returns its new state.
-    ///
-    /// On the interrupt-driven path (`rx` resolves), returns the state sent by the completion
-    /// handler directly without locking `request_list` or issuing any MMIO reads. The only other
-    /// wakeup is a single one-shot timer at [`COMMAND_TIMEOUT`]: the slot's deadline was set
-    /// before the timer was armed, so when it fires [`Self::poll_slot`] either completes the slot
-    /// (its doorbell bit has cleared) or times it out with `UTRLCLR`.
-    async fn wait_for_slot(&self, slot: u8, rx: oneshot::Receiver<SlotState>) -> SlotState {
-        let mut rx = rx.fuse();
-        let mut timeout = std::pin::pin!(
-            fuchsia_async::Timer::new(zx::MonotonicInstant::after(COMMAND_TIMEOUT)).fuse()
-        );
-        loop {
-            futures::select_biased! {
-                res = rx => {
-                    if let Ok(state) = res {
-                        return state;
-                    }
-                    let state =
-                        self.request_list.lock().slot(slot).map_or(SlotState::Free, |s| s.state);
-                    if state != SlotState::Scheduled {
-                        return state;
-                    }
-                }
-                _ = timeout => {
-                    let state = self.poll_slot(slot);
-                    if state != SlotState::Scheduled {
-                        return state;
-                    }
-                    // Not expected: the deadline predates the timer. Re-arm briefly rather
-                    // than wait on `rx` alone.
-                    timeout.set(
-                        fuchsia_async::Timer::new(zx::MonotonicInstant::after(
-                            TIMEOUT_RECLAIM_POLL_INTERVAL,
-                        ))
-                        .fuse(),
-                    );
-                }
-            }
-        }
-    }
-
-    /// Polls a timed-out slot's doorbell bit every [`TIMEOUT_RECLAIM_POLL_INTERVAL`] for up to
-    /// [`TIMEOUT_RECLAIM_WINDOW`] so it can be reclaimed promptly after `UTRLCLR`, which raises
-    /// no interrupt (like Linux `ufshcd_clear_cmd`). If the bit does not clear in time, escalates
-    /// to full controller and link recovery ([`Self::request_link_recovery`]).
-    async fn reclaim_timed_out_slot(&self, slot: u8) {
-        let deadline = zx::MonotonicInstant::after(TIMEOUT_RECLAIM_WINDOW);
-        while !self.is_stopped()
-            && self.poll_slot(slot) == SlotState::Timeout
-            && zx::MonotonicInstant::get() < deadline
-        {
-            fuchsia_async::Timer::new(zx::MonotonicInstant::after(TIMEOUT_RECLAIM_POLL_INTERVAL))
-                .await;
-        }
-        if !self.is_stopped() && self.poll_slot(slot) == SlotState::Timeout {
-            warn!(slot; "Timed-out slot did not clear after abort; requesting link recovery");
-            self.request_link_recovery();
-        }
-    }
-
-    /// Submits a request on `guard`'s slot, waits for it, reads the response via `read_response`
-    /// while releasing the slot in the same `request_list` lock acquisition, and validates the
-    /// response header.
-    ///
-    /// # Cancellation Safety
-    ///
-    /// Dropping this future at any `.await` point is DMA-safe; see [`SlotGuard`] for how
-    /// `Reserved`, `Scheduled`, and `Completed` slots and their pinned buffers are reclaimed.
-    async fn execute_with_reader<R, F>(
+    /// Submits an administrative UPIU on `admin`'s slot, awaits completion while holding
+    /// `AdminSlotGuard`, and reads the validated response UPIU directly from the admin UCD.
+    async fn execute_admin<R: FromBytes + IntoBytes + Immutable>(
         &self,
-        guard: &mut SlotGuard<'_, M>,
+        admin: &mut AdminSlotGuard<'_, M>,
         layout: CommandDescriptorLayout,
         request: &[u8],
         expected_response: UpiuTransactionCode,
-        data: Option<DataTransfer<'_>>,
-        read_response: F,
-    ) -> Result<R, UfsError>
-    where
-        F: FnOnce(&ContiguousDmaBuffer, usize) -> Result<(R, UpiuHeader), UfsError>,
-    {
-        let slot = guard.slot;
-        let (tx, rx) = oneshot::channel();
-        let mut completion = SlotCompletion::Async(tx);
-        self.submit(slot, layout, request, data.as_ref(), &mut completion)?;
-        match self.wait_for_slot(slot, rx).await {
-            SlotState::Completed => {}
-            SlotState::Timeout => {
-                // The completion path now owns the slot.
-                guard.armed = false;
-                self.reclaim_timed_out_slot(slot).await;
-                error!(slot; "Slot timed out");
-                return Err(UfsError::Timeout);
-            }
-            state => {
-                error!(slot, state:?; "Slot in unexpected state");
-                return Err(UfsError::IoError);
-            }
-        }
-
-        let (result, pmt) = {
-            let mut list = self.request_list.lock();
-            let res = list.slot(slot).and_then(|request_slot| {
-                request_slot.result?;
-                read_response(&request_slot.command_descriptor_io, layout.response_offset())
-            });
-            let pmt = self.take_and_release_slot(&mut list, slot);
-            guard.armed = false;
-            (res, pmt)
-        };
-        // Explicit cleanup in the same order as `cqhci::PendingTask::complete`:
-        // 1. Invalidate CPU caches so the transferred data is visible to the caller.
-        let invalidated =
-            match data.filter(|d| d.direction == DataDirection::DeviceToHost && d.length > 0) {
-                Some(data) => data.invalidate_read_cache().map_err(|s| {
-                    error!(status:% = s; "Failed to invalidate transfer buffer cache after read");
-                    UfsError::IoError
-                }),
-                None => Ok(()),
-            };
-        // 2. Unpin the pages.
-        // SAFETY: The slot's doorbell bit was observed clear.
-        unsafe { unpin_pmt(pmt) };
-        // 3. Return the response.
-        let (response, header) = result?;
-        check_response_header(header.as_bytes(), expected_response, slot)?;
-        invalidated?;
-        Ok(response)
-    }
-
-    /// Submits a request on `guard`'s slot, waits for it and returns the validated response
-    /// UPIU.
-    async fn execute<R: FromBytes + IntoBytes + Immutable>(
-        &self,
-        guard: &mut SlotGuard<'_, M>,
-        layout: CommandDescriptorLayout,
-        request: &[u8],
-        expected_response: UpiuTransactionCode,
-        data: Option<DataTransfer<'_>>,
     ) -> Result<R, UfsError> {
         debug_assert_eq!(std::mem::size_of::<R>(), layout.response_length());
-        self.execute_with_reader(guard, layout, request, expected_response, data, |ucd, offset| {
-            let response: R = ucd.read_struct(offset).map_err(|_| UfsError::IoError)?;
-            let (header, _) =
-                UpiuHeader::read_from_prefix(response.as_bytes()).map_err(|_| UfsError::IoError)?;
-            Ok((response, header))
-        })
-        .await
+        let slot = admin.slot.slot();
+        let rx = self.submit(&mut admin.slot, layout, request, None, 0)?;
+        match rx.await.map_err(|_| UfsError::IoError)? {
+            ScsiOutcome::Good => {}
+            ScsiOutcome::Retry { error, .. } | ScsiOutcome::Fail(error) => return Err(error),
+        }
+        let response: R = {
+            let list = self.request_list.lock();
+            if list.stopped {
+                return Err(UfsError::IoError);
+            }
+            list.slot(slot)?
+                .command_descriptor_io
+                .read_struct(layout.response_offset())
+                .map_err(|_| UfsError::IoError)?
+        };
+        check_response_header(response.as_bytes(), expected_response, slot)?;
+        Ok(response)
     }
 
     /// Reads `UTRLDBR`.
@@ -1235,23 +1214,28 @@ impl<M: Mmio> TransferRequestProcessor<M> {
         ocs
     }
 
-    /// Decodes the RESPONSE UPIU of a finished synchronous SCSI command in `slot`'s UCD.
-    fn decode_io_response(list: &RequestList, slot: u8, lun: u8) -> Result<(), UfsError> {
-        let request_slot = list.slot(slot)?;
-        let (response, header) = read_scsi_response(
+    /// Decodes the RESPONSE UPIU of a finished SCSI command in `slot`'s UCD (`slots 0..30`).
+    fn decode_io_response(list: &RequestList, slot: u8, lun: u8) -> ScsiOutcome {
+        let Ok(request_slot) = list.slot(slot) else {
+            return ScsiOutcome::Fail(UfsError::InvalidSlot(u32::from(slot)));
+        };
+        let Ok((response, header)) = read_scsi_response(
             &request_slot.command_descriptor_io,
             CommandDescriptorLayout::SCSI_COMMAND.response_offset(),
-        )?;
-        check_response_header(header.as_bytes(), UpiuTransactionCode::Response, slot)?;
-        match check_scsi_status(lun, &response) {
-            ScsiOutcome::Good => Ok(()),
-            ScsiOutcome::Retry { error, .. } | ScsiOutcome::Fail(error) => Err(error),
+        ) else {
+            return ScsiOutcome::Fail(UfsError::IoError);
+        };
+        if let Err(err) =
+            check_response_header(header.as_bytes(), UpiuTransactionCode::Response, slot)
+        {
+            return ScsiOutcome::Fail(err);
         }
+        check_scsi_status(lun, &response)
     }
 
-    /// Records `result` for a finished `slot` and wakes its async submitter; otherwise releases the
-    /// slot and defers unpinning its PMT and (for synchronous I/O) delivering its outcome until
-    /// `request_list` is released.
+    /// Decodes the slot's [`ScsiOutcome`], releases `slot` to `Free`, and pushes read-back cache
+    /// invalidation, `zx::Pmt` unpinning, and outcome delivery to `deferred` for execution outside
+    /// `request_list.lock()`.
     fn finish_slot_locked(
         &self,
         list: &mut RequestList,
@@ -1262,63 +1246,28 @@ impl<M: Mmio> TransferRequestProcessor<M> {
         let Ok(request_slot) = list.slot_mut(slot) else {
             return;
         };
-        request_slot.result = result;
-        request_slot.deadline = None;
-        match std::mem::take(&mut request_slot.completion) {
-            SlotCompletion::Async(sender) => {
-                list.set_slot_state(slot, SlotState::Completed);
-                let _ = sender.send(SlotState::Completed);
-            }
-            SlotCompletion::Io { lun, completion, read_back } => {
-                let status = result
-                    .and_then(|()| Self::decode_io_response(list, slot, lun))
-                    .map_err(zx::Status::from);
-                let pmt = self.release_slot_locked(list, slot);
-                deferred.push(pmt, Some(IoOutcome { lun, completion, read_back, status }));
-            }
-            // A dropped async submitter means its guard is releasing the `Completed` slot.
-            SlotCompletion::None => deferred.push(self.release_slot_locked(list, slot), None),
-        }
-    }
-
-    /// Marks a `Scheduled` slot `Timeout` and reports the timeout to its submitter. The slot's
-    /// buffers stay pinned and the completion path frees it once the controller is done with it.
-    fn time_out_slot_locked(list: &mut RequestList, slot: u8, deferred: &mut Deferred<'_, M>) {
-        let Ok(request_slot) = list.slot_mut(slot) else {
-            return;
-        };
-        request_slot.result = Err(UfsError::Timeout);
-        request_slot.deadline = None;
         let completion = std::mem::take(&mut request_slot.completion);
-        list.set_slot_state(slot, SlotState::Timeout);
-        match completion {
-            SlotCompletion::Async(sender) => {
-                let _ = sender.send(SlotState::Timeout);
+        let outcome = match completion {
+            SlotCompletion::None => None,
+            SlotCompletion::Io { lun, .. } | SlotCompletion::Scsi { lun, .. } => {
+                let scsi_outcome = match result {
+                    Ok(()) if slot == ADMIN_COMMAND_SLOT_NUMBER => ScsiOutcome::Good,
+                    Ok(()) => Self::decode_io_response(list, slot, lun),
+                    Err(err) => ScsiOutcome::Fail(err),
+                };
+                Some((completion, scsi_outcome))
             }
-            SlotCompletion::Io { lun, completion, .. } => {
-                let status = Err(zx::Status::TIMED_OUT);
-                deferred.push(None, Some(IoOutcome { lun, completion, read_back: None, status }));
-            }
-            SlotCompletion::None => {}
-        }
+        };
+        let (read_back, pmt) = self.release_slot_locked(list, slot);
+        deferred.push(read_back, pmt, outcome);
     }
 
-    /// Returns whether `slot` has reached its deadline (inclusive, so a one-shot timer armed at
-    /// the deadline always finds it expired). A slot without a deadline (never scheduled, or
-    /// already finished or timed out) counts as past it, so callers that only look at
-    /// `Scheduled` slots never wait on a deadline that was cleared underneath them.
-    fn is_past_deadline(list: &RequestList, slot: u8, now: zx::MonotonicInstant) -> bool {
-        list.slot(slot).is_ok_and(|s| s.deadline.is_none_or(|deadline| now >= deadline))
-    }
-
-    /// Advances `slot`'s state machine given the current `doorbell` value. Returns whether the
-    /// slot changed state; work that must run outside `request_list.lock()` goes to `deferred`.
+    /// Completes `slot` if it is `Scheduled` and its `doorbell` bit has cleared.
     fn process_sdb_slot_locked(
         &self,
         list: &mut RequestList,
         slot: u8,
         doorbell: u32,
-        now: zx::MonotonicInstant,
         deferred: &mut Deferred<'_, M>,
     ) -> bool {
         if slot as usize >= SDB_SLOTS {
@@ -1328,16 +1277,14 @@ impl<M: Mmio> TransferRequestProcessor<M> {
             return false;
         };
         let outstanding = doorbell & (1 << slot) != 0;
-        let is_past_deadline = Self::is_past_deadline(list, slot, now);
         match (request_slot.state, outstanding) {
             (SlotState::Scheduled, false) => {
                 let ocs = self.read_ocs(list, slot);
                 let result = match OverallCommandStatus::from_raw(ocs) {
                     Some(OverallCommandStatus::Success) => Ok(()),
-                    Some(OverallCommandStatus::Invalid) if !is_past_deadline => return false,
                     Some(OverallCommandStatus::Invalid) => {
-                        error!(slot; "Slot doorbell cleared but OCS never became valid");
-                        Err(UfsError::Timeout)
+                        error!(slot; "Slot doorbell cleared with OCS still Invalid (0x0F)");
+                        Err(UfsError::IoError)
                     }
                     status => {
                         error!(slot, ocs, status:?; "Slot failed with OCS error");
@@ -1347,41 +1294,24 @@ impl<M: Mmio> TransferRequestProcessor<M> {
                 self.finish_slot_locked(list, slot, result, deferred);
                 true
             }
-            (SlotState::Scheduled, true) if is_past_deadline => {
-                self.controller.with_mmio(|mmio| UtrListClearReg(!(1u32 << slot)).write(mmio));
-                Self::time_out_slot_locked(list, slot, deferred);
-                true
-            }
-            // Covers both normal post-`UTRLCLR` doorbell clearing and the race where hardware
-            // completed the request just before `UTRLCLR` took effect (raising a completion
-            // interrupt after the slot entered `Timeout`): `time_out_slot_locked` already took
-            // `request_slot.completion` to notify the submitter once, so here we unpin the PMT via
-            // `Deferred` and return the slot to `Free` with `outcome: None`.
-            (SlotState::Timeout, false) => {
-                deferred.push(self.release_slot_locked(list, slot), None);
-                true
-            }
-            _ => false,
+            (SlotState::Scheduled, true) | (SlotState::Free | SlotState::Reserved, _) => false,
         }
     }
 
-    /// Processes completions and timeouts of `slot_mask`, then unpins orphaned buffers and
-    /// delivers synchronous I/O outcomes after releasing `request_list`. Returns the number of
-    /// slots that changed state. This is the single lock-once wrapper used by every completion
-    /// entry point.
+    /// Processes completions of `slot_mask`, then invalidates read caches, unpins PMTs, and
+    /// delivers outcomes after releasing `request_list`.
     fn process_slots(&self, slot_mask: u64) -> u32 {
         let mut deferred = Deferred::new(self);
         let completed = {
             let mut list = self.request_list.lock();
             self.process_slots_locked(&mut list, slot_mask, &mut deferred)
         };
-        // SAFETY: Each unpinned slot's doorbell bit was observed clear; timed-out slots keep
-        // their PMT.
-        unsafe { self.run_deferred(deferred) };
+        // SAFETY: Every slot pushed into `deferred` had its doorbell bit observed clear (`0`).
+        unsafe { deferred.complete_after_dma() };
         completed
     }
 
-    /// Processes completions and timeouts of `slot_mask` while holding `request_list`.
+    /// Processes completions of `slot_mask` while holding `request_list`.
     fn process_slots_locked(
         &self,
         list: &mut RequestList,
@@ -1397,45 +1327,28 @@ impl<M: Mmio> TransferRequestProcessor<M> {
         }
         let free_before = list.free_mask;
         let doorbell = self.read_doorbell();
-        let now = zx::MonotonicInstant::get();
         let mut completed = 0;
         let mut remaining = active;
         while remaining != 0 {
             let slot = remaining.trailing_zeros() as u8;
             remaining &= remaining - 1;
-            if self.process_sdb_slot_locked(list, slot, doorbell, now, deferred) {
+            if self.process_sdb_slot_locked(list, slot, doorbell, deferred) {
                 completed += 1;
             }
         }
-        let released_io = ((list.free_mask & !free_before) & IO_SLOT_MASK).count_ones();
-        if released_io > 0 {
-            self.wake_all_slot_waiters(list);
+        let released_mask = (list.free_mask & !free_before) & ALL_SLOTS_MASK;
+        if released_mask != 0 {
+            self.wake_slot_waiters_for_mask(list, released_mask);
         }
         completed
     }
 
-    /// Processes `slot` and returns its resulting state, acquiring `request_list` once.
-    fn poll_slot(&self, slot: u8) -> SlotState {
-        let mut deferred = Deferred::new(self);
-        let state = {
-            let mut list = self.request_list.lock();
-            // Returns early (without touching the controller) unless the slot is `Scheduled` or
-            // `Timeout`.
-            self.process_slots_locked(&mut list, 1u64 << slot, &mut deferred);
-            list.slot(slot).map_or(SlotState::Free, |s| s.state)
-        };
-        // SAFETY: Each unpinned slot's doorbell bit was observed clear; timed-out slots keep
-        // their PMT.
-        unsafe { self.run_deferred(deferred) };
-        state
-    }
-
-    /// Processes a possible completion or timeout of `slot`. Returns whether it changed state.
+    /// Processes a possible completion of `slot`. Returns whether it completed.
     pub fn process_slot_completion(&self, slot: u8) -> bool {
         (slot as usize) < SDB_SLOTS && self.process_slots(1u64 << slot) > 0
     }
 
-    /// Processes all I/O slots. Returns the number of slots that changed state.
+    /// Processes all I/O slots. Returns the number of slots that completed.
     pub fn process_completion_of_io_requests(&self) -> u32 {
         self.process_slots(IO_SLOT_MASK)
     }
@@ -1443,6 +1356,9 @@ impl<M: Mmio> TransferRequestProcessor<M> {
     /// Services an interrupt: clears and logs the handled `IS` bits, and processes SDB
     /// completions. Status is cleared before the state it reports is read, so concurrent calls
     /// lose no event. Returns `IS` as read.
+    ///
+    /// The `stopped` check is needed here because [`UfsController::fetch_and_clear_interrupts`]
+    /// accesses the register block unconditionally.
     pub fn service_interrupt(&self) -> InterruptStatusReg {
         if self.is_stopped() {
             return InterruptStatusReg::default();
@@ -1451,7 +1367,7 @@ impl<M: Mmio> TransferRequestProcessor<M> {
         if self.controller.is_recovery_needed() {
             self.recovery_waker.wake();
         }
-        if status.utp_transfer_request_completion_status() || status.cq_event_status() {
+        if status.utp_transfer_request_completion_status() {
             self.process_slots(ALL_SLOTS_MASK);
         }
         status
@@ -1460,10 +1376,6 @@ impl<M: Mmio> TransferRequestProcessor<M> {
     /// Sends a QUERY REQUEST UPIU on the admin slot and returns the QUERY RESPONSE UPIU.
     ///
     /// The response's `Query Response` code is not checked; callers interpret it.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Timeout`, or `IoError` on a transport error or malformed response.
     pub async fn send_query_request_upiu(
         &self,
         query_request: &QueryUpiu,
@@ -1471,32 +1383,26 @@ impl<M: Mmio> TransferRequestProcessor<M> {
         let mut admin = self.reserve_admin_slot().await?;
         let mut request = *query_request;
         request.header.task_tag = admin.slot.slot();
-        self.execute(
-            &mut admin.slot,
+        self.execute_admin(
+            &mut admin,
             CommandDescriptorLayout::QUERY,
             request.as_bytes(),
             UpiuTransactionCode::QueryResponse,
-            None,
         )
         .await
     }
 
     /// Sends a NOP OUT UPIU on the admin slot and checks the NOP IN response.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Timeout`, or `IoError` on a transport error or a failed NOP IN.
     pub async fn send_nop_out_upiu(&self) -> Result<(), UfsError> {
         let mut admin = self.reserve_admin_slot().await?;
         let mut nop = NopOutUpiu::new();
         nop.header.task_tag = admin.slot.slot();
         let response: NopInUpiu = self
-            .execute(
-                &mut admin.slot,
+            .execute_admin(
+                &mut admin,
                 CommandDescriptorLayout::NOP,
                 nop.as_bytes(),
                 UpiuTransactionCode::NopIn,
-                None,
             )
             .await?;
         if response.header.response != 0 {
@@ -1509,39 +1415,35 @@ impl<M: Mmio> TransferRequestProcessor<M> {
     /// Sends a SCSI command to `lun` and awaits its completion, transferring `data` (if any) to or
     /// from the device. Retries up to [`SCSI_RETRIES`] times on UNIT ATTENTION, NOT READY, BUSY,
     /// and TASK SET FULL. For block I/O use [`Self::submit_io`] instead.
-    ///
-    /// # Errors
-    ///
-    /// Returns `InvalidParameter` for a misaligned or oversized buffer, `Timeout`,
-    /// `CheckCondition` for a CHECK CONDITION status, or `IoError`.
     pub async fn send_scsi_command(
         &self,
         lun: u8,
         cdb: [u8; 16],
         data: Option<DataTransfer<'_>>,
-    ) -> Result<ResponseUpiu, UfsError> {
-        let data = data.filter(|data| data.length != 0);
-        let expected_transfer_len = data.map_or(0, |data| data.length);
-        let direction = data.map_or(DataDirection::NoData, |data| data.direction);
+    ) -> Result<(), UfsError> {
+        let data = data.filter(|d| !matches!(d.buffer, TransferBuffer::Vmo(_)) || d.length != 0);
+        if let Some(ref transfer) = data {
+            self.validate_transfer(transfer)?;
+        }
+        let expected_transfer_len = data.as_ref().map_or(0, |data| data.length);
+        let direction =
+            data.as_ref().map_or(DataDirection::NoData, |data| data.direction.to_data_direction());
         let mut retries = 0;
         loop {
-            let mut guard = self.reserve_io_slot().await?;
+            let mut reserved = self.reserve_io_slot().await?;
             let mut command = CommandUpiu::new(cdb, expected_transfer_len, direction);
             command.header.lun = lun;
-            command.header.task_tag = guard.slot();
-            let response: ResponseUpiu = self
-                .execute_with_reader(
-                    &mut guard,
-                    CommandDescriptorLayout::SCSI_COMMAND,
-                    command.as_bytes(),
-                    UpiuTransactionCode::Response,
-                    data,
-                    read_scsi_response,
-                )
-                .await?;
-            drop(guard);
-            match check_scsi_status(lun, &response) {
-                ScsiOutcome::Good => return Ok(response),
+            command.header.task_tag = reserved.slot();
+            let rx = self.submit(
+                &mut reserved,
+                CommandDescriptorLayout::SCSI_COMMAND,
+                command.as_bytes(),
+                data.clone(),
+                lun,
+            )?;
+            drop(reserved);
+            match rx.await.map_err(|_| UfsError::IoError)? {
+                ScsiOutcome::Good => return Ok(()),
                 ScsiOutcome::Retry { error: _, delay } if retries < SCSI_RETRIES => {
                     retries += 1;
                     if delay {
@@ -1555,54 +1457,53 @@ impl<M: Mmio> TransferRequestProcessor<M> {
     }
 
     /// Stops the controller so it can no longer access any buffer, fails outstanding requests
-    /// (synchronous I/O completes with `IO`), wakes blocked submitters and unpins all DMA memory.
-    /// Later submissions fail with `IoError`.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Timeout` if `HCE` does not clear; DMA memory then stays pinned.
+    /// (synchronous I/O completes with `zx::Status::IO`, async requests with `UfsError::IoError`),
+    /// wakes blocked submitters, and unpins all DMA memory (or quarantines PMTs if `HCE` fails to
+    /// clear). Later submissions fail with `IoError`.
     pub async fn quiesce(&self) -> Result<(), UfsError> {
         {
             let mut list = self.request_list.lock();
+            list.closing = true;
             list.stopped = true;
-            let outstanding = (list.scheduled_mask & ALL_SLOTS_MASK) as u32;
             self.controller.with_mmio(|mmio| {
-                if outstanding != 0 {
-                    UtrListClearReg(!outstanding).write(mmio);
-                }
                 UtrListRunStopReg::from_raw(0).write(mmio);
             });
-            // Blocked and async reservers observe `stopped` and fail.
             self.wake_all_slot_waiters(&mut list);
             self.timeout_waker.wake();
             self.recovery_waker.wake();
         }
-        self.controller.disable_host_controller().await.inspect_err(|e| {
-            error!(err:? = e; "Failed to disable host controller, leaving DMA memory pinned");
-        })?;
+        let disable_res = self.controller.disable_host_controller().await.inspect_err(|e| {
+            error!(err:? = e; "Failed to disable host controller; quarantining DMA memory");
+        });
 
         let mut deferred = Deferred::new(self);
         {
             let mut list = self.request_list.lock();
-            let mut remaining = list.scheduled_mask;
+            let mut remaining = list.scheduled_mask();
             while remaining != 0 {
                 let slot = remaining.trailing_zeros() as u8;
                 remaining &= remaining - 1;
                 self.finish_slot_locked(&mut list, slot, Err(UfsError::IoError), &mut deferred);
             }
-            let RequestList { io_buffer, request_slots, .. } = &mut *list;
-            for buffer in std::iter::once(io_buffer)
-                .chain(request_slots.iter_mut().map(|s| &mut s.command_descriptor_io))
-            {
-                // SAFETY: `HCE` reads 0, so the controller performs no DMA.
-                if let Err(status) = unsafe { buffer.unpin() } {
-                    error!(status:%; "Failed to unpin descriptor buffer");
+            if disable_res.is_ok() {
+                let RequestList { io_buffer, request_slots, .. } = &mut *list;
+                for buffer in std::iter::once(io_buffer)
+                    .chain(request_slots.iter_mut().map(|s| &mut s.command_descriptor_io))
+                {
+                    // SAFETY: `HCE` reads 0, so the controller performs no DMA.
+                    if let Err(status) = unsafe { buffer.unpin() } {
+                        error!(status:%; "Failed to unpin descriptor buffer");
+                    }
                 }
             }
         }
-        // SAFETY: `HCE` reads 0, so the controller performs no DMA.
-        unsafe { self.run_deferred(deferred) };
-        Ok(())
+        if disable_res.is_ok() {
+            // SAFETY: `HCE` reads 0, so the controller performs no DMA.
+            unsafe { deferred.complete_after_dma() };
+        } else {
+            deferred.quarantine_and_deliver();
+        }
+        disable_res
     }
 }
 
@@ -1665,14 +1566,24 @@ fn parse_sense(response: &ResponseUpiu) -> (u8, u8, u8) {
     }
 }
 
-/// Classification of a RESPONSE UPIU by [`check_scsi_status`].
-enum ScsiOutcome {
+/// Classification of a UTP command outcome (and SCSI RESPONSE UPIU on slots `0..30`).
+#[derive(Debug)]
+pub(crate) enum ScsiOutcome {
     /// GOOD status and no transport-level response error.
     Good,
     /// A transient failure (UNIT ATTENTION, NOT READY, BUSY, TASK SET FULL) worth retrying.
     Retry { error: UfsError, delay: bool },
     /// A failure that retrying will not fix.
     Fail(UfsError),
+}
+
+impl ScsiOutcome {
+    fn into_io_status(self) -> Result<(), zx::Status> {
+        match self {
+            Self::Good => Ok(()),
+            Self::Retry { error, .. } | Self::Fail(error) => Err(zx::Status::from(error)),
+        }
+    }
 }
 
 /// Classifies a RESPONSE UPIU and logs failures.
@@ -1722,7 +1633,7 @@ mod tests {
     use crate::testing::{
         ADMIN_SLOT, IoOutcomeReceiver, OCS_SUCCESS, PAGE_SIZE, check_condition,
         create_test_processor, delivered, expire_deadline, fake_utp, io_callback, nop_in,
-        scsi_response, slot_pinned, slot_state, wait_for_any_doorbell,
+        scsi_response, slot_pinned, slot_state, wait_async, wait_for_any_doorbell,
     };
     use futures::poll;
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -1864,22 +1775,23 @@ mod tests {
         let (mmio_vmo, processor) = create_test_processor();
         let mut utp = fake_utp(&mmio_vmo, &processor);
 
-        // Dropped after the completion interrupt was delivered but before it resumed.
+        // Dropped after the completion interrupt was delivered: `finish_slot_locked` already
+        // released the slot immediately upon completion.
         let mut request = Box::pin(processor.send_nop_out_upiu());
         assert!(poll!(request.as_mut()).is_pending());
         utp.complete(ADMIN_SLOT, nop_in(ADMIN_SLOT).as_bytes(), OCS_SUCCESS);
-        assert_eq!(slot_state(&processor, ADMIN_SLOT), SlotState::Completed);
+        assert_eq!(slot_state(&processor, ADMIN_SLOT), SlotState::Free);
         drop(request);
         assert_eq!(slot_state(&processor, ADMIN_SLOT), SlotState::Free);
 
-        // Dropped while the controller still owns the slot: the completion interrupt frees it and
-        // unpins the orphaned buffer.
-        let data_vmo = zx::Vmo::create(PAGE_SIZE).unwrap();
+        // Dropped while the controller still owns the slot: the completion interrupt frees it,
+        // invalidates read caches, and unpins the orphaned buffer.
+        let data_vmo = Arc::new(zx::Vmo::create(PAGE_SIZE).unwrap());
         let cdb = ScsiOpcode::build_read_10_cdb(0, 1);
         let mut request = Box::pin(processor.send_scsi_command(
             0,
             cdb,
-            Some(DataTransfer::read(&data_vmo, 0, 4096)),
+            Some(DataTransfer::read(Arc::clone(&data_vmo), 0, 4096)),
         ));
         assert!(poll!(request.as_mut()).is_pending());
         drop(request);
@@ -1899,105 +1811,34 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_timeout_keeps_buffers_pinned_until_doorbell_clears() {
-        let (mmio_vmo, processor) = create_test_processor();
-        let mut utp = fake_utp(&mmio_vmo, &processor);
-        let data_vmo = zx::Vmo::create(PAGE_SIZE).unwrap();
-        let cdb = ScsiOpcode::build_read_10_cdb(0, 1);
-
-        let mut request = Box::pin(processor.send_scsi_command(
-            0,
-            cdb,
-            Some(DataTransfer::read(&data_vmo, 0, 4096)),
-        ));
-        assert!(poll!(request.as_mut()).is_pending());
-        assert_ne!(utp.doorbell() & 1, 0);
-
-        // The interrupt path aborts the expired request.
-        expire_deadline(&processor, 0);
-        assert_eq!(processor.process_completion_of_io_requests(), 1);
-        assert_eq!(utp.regs.load32(UtrListClearReg::OFFSET), !1u32);
-        {
-            let list = processor.request_list.lock();
-            let slot = list.slot(0).unwrap();
-            assert_eq!(slot.state(), SlotState::Timeout);
-            assert!(slot.deadline.is_none());
-            assert!(matches!(slot.completion, SlotCompletion::None));
-        }
-
-        // The waiter reports the timeout, requests link recovery since the doorbell bit did not
-        // clear within the abort window, and must not unpin while the doorbell bit is set.
-        assert_eq!(request.await.err(), Some(UfsError::Timeout));
-        assert!(processor.controller().is_recovery_needed());
-        assert_eq!(slot_state(&processor, 0), SlotState::Timeout);
-        assert!(slot_pinned(&processor, 0));
-        assert!(!processor.process_slot_completion(0));
-
-        utp.clear_doorbell(0);
-        assert!(processor.process_slot_completion(0));
-        assert_eq!(slot_state(&processor, 0), SlotState::Free);
-        assert!(!slot_pinned(&processor, 0));
-    }
-
-    #[fuchsia::test]
-    async fn test_timed_out_slot_reclaimed_by_waiter() {
-        let (mmio_vmo, processor) = create_test_processor();
-        let mut utp = fake_utp(&mmio_vmo, &processor);
-        let cdb = ScsiOpcode::build_test_unit_ready_cdb();
-
-        let mut request = Box::pin(processor.send_scsi_command(0, cdb, None));
-        assert!(poll!(request.as_mut()).is_pending());
-        // The command timeout aborts the request with UTRLCLR and notifies the waiter.
-        expire_deadline(&processor, 0);
-        assert!(processor.process_slot_completion(0));
-        assert_eq!(slot_state(&processor, 0), SlotState::Timeout);
-
-        // The controller finishes the abort shortly after UTRLCLR without raising an interrupt;
-        // the waiter polls the doorbell bit and reclaims the slot without needing link recovery.
-        let hardware = std::thread::spawn(move || {
-            assert!(wait_until(|| utp.regs.load32(UtrListClearReg::OFFSET) == !1u32));
-            std::thread::sleep(std::time::Duration::from_millis(10));
-            utp.clear_doorbell(0);
-        });
-        assert_eq!(request.await.err(), Some(UfsError::Timeout));
-        hardware.join().unwrap();
-        assert_eq!(slot_state(&processor, 0), SlotState::Free);
-        assert!(!processor.controller().is_recovery_needed());
-    }
-
-    #[fuchsia::test]
     async fn test_ocs_invalid_after_doorbell_clear() {
         let (mmio_vmo, processor) = create_test_processor();
         let mut utp = fake_utp(&mmio_vmo, &processor);
 
-        // A late OCS write before the deadline is picked up once visible.
+        // Async UPIU: doorbell bit cleared while `OCS` stays `0x0F` fails immediately with
+        // `Err(UfsError::IoError)` and releases the slot.
         let mut request = Box::pin(processor.send_nop_out_upiu());
         assert!(poll!(request.as_mut()).is_pending());
         utp.write_ucd(ADMIN_SLOT, NOP_RESPONSE_OFFSET, nop_in(ADMIN_SLOT).as_bytes());
         utp.clear_doorbell(ADMIN_SLOT);
-        assert!(!processor.process_slot_completion(ADMIN_SLOT));
-        assert_eq!(slot_state(&processor, ADMIN_SLOT), SlotState::Scheduled);
-        utp.set_ocs(ADMIN_SLOT, OCS_SUCCESS);
         assert!(processor.process_slot_completion(ADMIN_SLOT));
-        assert_eq!(request.await, Ok(()));
-
-        // OCS still invalid past the deadline is a timeout, not a success.
-        let mut request = Box::pin(processor.send_nop_out_upiu());
-        assert!(poll!(request.as_mut()).is_pending());
-        utp.write_ucd(ADMIN_SLOT, NOP_RESPONSE_OFFSET, nop_in(ADMIN_SLOT).as_bytes());
-        utp.clear_doorbell(ADMIN_SLOT);
-        expire_deadline(&processor, ADMIN_SLOT);
-        assert!(processor.process_slot_completion(ADMIN_SLOT));
-        assert_eq!(request.await, Err(UfsError::Timeout));
         assert_eq!(slot_state(&processor, ADMIN_SLOT), SlotState::Free);
+        assert_eq!(request.await, Err(UfsError::IoError));
+
+        // Sync I/O: doorbell bit cleared while `OCS` stays `0x0F` delivers `Err(zx::Status::IO)`.
+        let mut rx = submit_tur(&processor, 0);
+        utp.clear_doorbell(0);
+        assert!(processor.process_slot_completion(0));
+        assert_eq!(slot_state(&processor, 0), SlotState::Free);
+        assert_eq!(delivered(&mut rx), Err(zx::Status::IO));
     }
 
     #[fuchsia::test]
     async fn test_scsi_command_integration() {
         let (mmio_vmo, processor) = create_test_processor();
         let mut utp = fake_utp(&mmio_vmo, &processor);
-        let data_vmo = zx::Vmo::create(PAGE_SIZE).unwrap();
-        let data_vmo_clone = data_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+        let data_vmo = Arc::new(zx::Vmo::create(PAGE_SIZE).unwrap());
+        let data_vmo_clone = Arc::clone(&data_vmo);
 
         let hardware = std::thread::spawn(move || {
             let slot = wait_for_any_doorbell(&utp);
@@ -2016,12 +1857,10 @@ mod tests {
         });
 
         let cdb = ScsiOpcode::build_inquiry_cdb(36);
-        let response = processor
-            .send_scsi_command(0, cdb, Some(DataTransfer::read(&data_vmo, 0, 36)))
+        processor
+            .send_scsi_command(0, cdb, Some(DataTransfer::read(Arc::clone(&data_vmo), 0, 36)))
             .await
             .unwrap();
-        assert_eq!(response.header.trans_code(), UpiuTransactionCode::Response as u8);
-        assert_eq!(response.header.status, 0x00);
 
         let (slot, utrd, command, prdt) = hardware.join().unwrap();
         assert_eq!(utrd.data_direction(), DataDirection::DeviceToHost as u32);
@@ -2045,7 +1884,7 @@ mod tests {
     async fn test_scsi_write_descriptors() {
         let (mmio_vmo, processor) = create_test_processor();
         let mut utp = fake_utp(&mmio_vmo, &processor);
-        let data_vmo = zx::Vmo::create(3 * PAGE_SIZE).unwrap();
+        let data_vmo = Arc::new(zx::Vmo::create(3 * PAGE_SIZE).unwrap());
 
         let hardware = std::thread::spawn(move || {
             let slot = wait_for_any_doorbell(&utp);
@@ -2057,7 +1896,7 @@ mod tests {
 
         let cdb = ScsiOpcode::build_write_10_cdb(0, 2);
         processor
-            .send_scsi_command(0, cdb, Some(DataTransfer::write(&data_vmo, 4096, 8192)))
+            .send_scsi_command(0, cdb, Some(DataTransfer::write(Arc::clone(&data_vmo), 4096, 8192)))
             .await
             .unwrap();
         let (utrd, command) = hardware.join().unwrap();
@@ -2069,19 +1908,28 @@ mod tests {
     #[fuchsia::test]
     async fn test_scsi_rejects_invalid_buffers() {
         let (_mmio_vmo, processor) = create_test_processor();
-        let data_vmo = zx::Vmo::create(258 * PAGE_SIZE).unwrap();
+        let data_vmo = Arc::new(zx::Vmo::create(258 * PAGE_SIZE).unwrap());
         let cdb = ScsiOpcode::build_read_10_cdb(0, 1);
         let err = Some(UfsError::InvalidParameter);
 
-        let unaligned =
-            processor.send_scsi_command(0, cdb, Some(DataTransfer::read(&data_vmo, 2, 4096))).await;
+        let unaligned = processor
+            .send_scsi_command(0, cdb, Some(DataTransfer::read(Arc::clone(&data_vmo), 2, 4096)))
+            .await;
         assert_eq!(unaligned.err(), err);
         let too_large = processor
-            .send_scsi_command(0, cdb, Some(DataTransfer::read(&data_vmo, 0, 257 * 4096)))
+            .send_scsi_command(
+                0,
+                cdb,
+                Some(DataTransfer::read(Arc::clone(&data_vmo), 0, 257 * 4096)),
+            )
             .await;
         assert_eq!(too_large.err(), err);
         let overflow = processor
-            .send_scsi_command(0, cdb, Some(DataTransfer::read(&data_vmo, u64::MAX - 8, 4096)))
+            .send_scsi_command(
+                0,
+                cdb,
+                Some(DataTransfer::read(Arc::clone(&data_vmo), u64::MAX - 8, 4096)),
+            )
             .await;
         assert_eq!(overflow.err(), err);
 
@@ -2191,18 +2039,17 @@ mod tests {
     async fn test_quiesce_stops_controller_and_fails_requests() {
         let (mmio_vmo, processor) = create_test_processor();
         let utp = fake_utp(&mmio_vmo, &processor);
-        let data_vmo = zx::Vmo::create(PAGE_SIZE).unwrap();
+        let data_vmo = Arc::new(zx::Vmo::create(PAGE_SIZE).unwrap());
         let cdb = ScsiOpcode::build_read_10_cdb(0, 1);
 
         let mut request = Box::pin(processor.send_scsi_command(
             0,
             cdb,
-            Some(DataTransfer::read(&data_vmo, 0, 4096)),
+            Some(DataTransfer::read(Arc::clone(&data_vmo), 0, 4096)),
         ));
         assert!(poll!(request.as_mut()).is_pending());
 
         assert_eq!(processor.quiesce().await, Ok(()));
-        assert_eq!(utp.regs.load32(UtrListClearReg::OFFSET), !1u32);
         assert!(!UtrListRunStopReg::read(&utp.regs).value());
         assert!(!HostControllerEnableReg::read(&utp.regs).host_controller_enable());
 
@@ -2232,12 +2079,12 @@ mod tests {
 
         // The submitter returns as soon as the doorbell is rung and does not wait.
         let (completion, mut rx) = io_callback();
-        let transfer = IoTransfer::read(Arc::clone(&data_vmo), 0, 4096);
+        let transfer = DataTransfer::read(Arc::clone(&data_vmo), 0, 4096);
         assert_eq!(processor.submit_io(3, cdb, Some(transfer), completion), Ok(()));
         assert_eq!(utp.doorbell(), 1);
         assert_eq!(slot_state(&processor, 0), SlotState::Scheduled);
         assert!(slot_pinned(&processor, 0));
-        assert_eq!(processor.request_list.lock().inflight_io, 1);
+        assert_eq!(processor.request_list.lock().scheduled_mask.count_ones(), 1);
         assert!(rx.try_recv().unwrap().is_none());
 
         let utrd = utp.utrd(0);
@@ -2254,7 +2101,7 @@ mod tests {
         assert_eq!(delivered(&mut rx), Ok(()));
         assert_eq!(slot_state(&processor, 0), SlotState::Free);
         assert!(!slot_pinned(&processor, 0));
-        assert_eq!(processor.request_list.lock().inflight_io, 0);
+        assert_eq!(processor.request_list.lock().scheduled_mask.count_ones(), 0);
     }
 
     #[fuchsia::test]
@@ -2300,20 +2147,29 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_submit_io_rejects_invalid_buffer_and_delivers_error() {
-        let (_mmio_vmo, processor) = create_test_processor();
+    async fn test_submit_io_rejects_invalid_transfer_without_reserving_slot() {
+        let (mmio_vmo, processor) = create_test_processor();
+        let _utp = fake_utp(&mmio_vmo, &processor);
         let data_vmo = Arc::new(zx::Vmo::create(PAGE_SIZE).unwrap());
         let cdb = ScsiOpcode::build_read_10_cdb(0, 1);
 
+        // Fill every I/O slot (`0..ADMIN_SLOT`) so `reserve_io_slot_locked` would block on Condvar
+        // if `submit_io` attempted reservation before validating `data`.
+        let mut inflight: Vec<_> = (0..ADMIN_SLOT).map(|_| submit_tur(&processor, 0)).collect();
+
         let (completion, mut rx) = io_callback();
-        let unaligned = IoTransfer::read(Arc::clone(&data_vmo), 2, 4096);
+        let unaligned = DataTransfer::read(Arc::clone(&data_vmo), 2, 4096);
         assert_eq!(
             processor.submit_io(0, cdb, Some(unaligned), completion),
             Err(UfsError::InvalidParameter)
         );
         assert_eq!(delivered(&mut rx), Err(zx::Status::INVALID_ARGS));
-        assert_eq!(slot_state(&processor, 0), SlotState::Free);
-        assert_eq!(processor.request_list.lock().inflight_io, 0);
+        assert_eq!(processor.request_list.lock().blocked_reservers, 0);
+
+        assert_eq!(processor.quiesce().await, Ok(()));
+        for rx in &mut inflight {
+            assert_eq!(delivered(rx), Err(zx::Status::IO));
+        }
     }
 
     #[fuchsia::test]
@@ -2354,39 +2210,9 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_submit_io_timeout_keeps_buffers_pinned_until_doorbell_clears() {
-        let (mmio_vmo, processor) = create_test_processor();
-        let mut utp = fake_utp(&mmio_vmo, &processor);
-        let data_vmo = Arc::new(zx::Vmo::create(PAGE_SIZE).unwrap());
-        let cdb = ScsiOpcode::build_read_10_cdb(0, 1);
-
-        let (completion, mut rx) = io_callback();
-        let transfer = IoTransfer::read(Arc::clone(&data_vmo), 0, 4096);
-        processor.submit_io(0, cdb, Some(transfer), completion).unwrap();
-        assert_ne!(utp.doorbell() & 1, 0);
-
-        // The command timeout aborts the expired request and reports the timeout right away, but
-        // must not unpin while the doorbell bit is set.
-        expire_deadline(&processor, 0);
-        assert_eq!(processor.process_completion_of_io_requests(), 1);
-        assert_eq!(utp.regs.load32(UtrListClearReg::OFFSET), !1u32);
-        assert_eq!(delivered(&mut rx), Err(zx::Status::TIMED_OUT));
-        assert_eq!(slot_state(&processor, 0), SlotState::Timeout);
-        assert!(slot_pinned(&processor, 0));
-        assert_eq!(processor.request_list.lock().inflight_io, 1);
-        assert!(!processor.process_slot_completion(0));
-
-        utp.clear_doorbell(0);
-        assert!(processor.process_slot_completion(0));
-        assert_eq!(slot_state(&processor, 0), SlotState::Free);
-        assert!(!slot_pinned(&processor, 0));
-        assert_eq!(processor.request_list.lock().inflight_io, 0);
-    }
-
-    #[fuchsia::test]
     async fn test_quiesce_fails_blocked_and_inflight_io() {
         let (mmio_vmo, processor) = create_test_processor();
-        let utp = fake_utp(&mmio_vmo, &processor);
+        let _utp = fake_utp(&mmio_vmo, &processor);
 
         let mut inflight: Vec<_> = (0..ADMIN_SLOT).map(|_| submit_tur(&processor, 0)).collect();
         let blocked = {
@@ -2400,7 +2226,6 @@ mod tests {
         assert!(wait_until(|| processor.request_list.lock().blocked_reservers == 1));
 
         assert_eq!(processor.quiesce().await, Ok(()));
-        assert_eq!(utp.regs.load32(UtrListClearReg::OFFSET), !((1u32 << ADMIN_SLOT) - 1));
         let (result, mut rx) = blocked.join().unwrap();
         assert_eq!(result, Err(UfsError::IoError));
         assert_eq!(delivered(&mut rx), Err(zx::Status::IO));
@@ -2410,60 +2235,13 @@ mod tests {
         for slot in 0..ADMIN_SLOT {
             assert_eq!(slot_state(&processor, slot), SlotState::Free);
         }
-        assert_eq!(processor.request_list.lock().inflight_io, 0);
+        assert_eq!(processor.request_list.lock().scheduled_mask.count_ones(), 0);
 
         // Later synchronous submissions fail immediately.
         let (completion, mut rx) = io_callback();
         let cdb = ScsiOpcode::build_test_unit_ready_cdb();
         assert_eq!(processor.submit_io(0, cdb, None, completion), Err(UfsError::IoError));
         assert_eq!(delivered(&mut rx), Err(zx::Status::IO));
-    }
-
-    #[fuchsia::test]
-    async fn test_io_timeout_task_aborts_expired_request() {
-        let (mmio_vmo, processor) = create_test_processor();
-        let mut utp = fake_utp(&mmio_vmo, &processor);
-        let timeout_task = {
-            let processor = Arc::clone(&processor);
-            fuchsia_async::Task::local(async move { processor.run_io_timeout_task().await })
-        };
-
-        // With nothing in flight the task parks on its waker without arming a timer.
-        fuchsia_async::Timer::new(zx::MonotonicInstant::after(TIMEOUT_RECLAIM_POLL_INTERVAL)).await;
-        let parked = processor.timeout_waker.take().expect("timeout task not parked on waker");
-        // Hand the waker back by re-polling the task, which re-registers it.
-        parked.wake();
-
-        // The deadline is read when the task is woken by the submission (it shares this test's
-        // executor, so it runs only once the test yields); expire it first so the one-shot timer
-        // fires immediately and the task aborts the request with UTRLCLR, delivering `TIMED_OUT`
-        // without any explicit processing.
-        let rx = submit_tur(&processor, 0);
-        expire_deadline(&processor, 0);
-        assert_eq!(rx.await.unwrap(), Err(zx::Status::TIMED_OUT));
-        assert_eq!(utp.regs.load32(UtrListClearReg::OFFSET), !1u32);
-        assert_eq!(slot_state(&processor, 0), SlotState::Timeout);
-
-        // `UTRLCLR` raises no interrupt: the task polls the doorbell bit and reclaims the slot
-        // once the controller clears it within the abort window, without requesting link recovery.
-        utp.clear_doorbell(0);
-        while slot_state(&processor, 0) != SlotState::Free {
-            fuchsia_async::Timer::new(zx::MonotonicInstant::after(TIMEOUT_RECLAIM_POLL_INTERVAL))
-                .await;
-        }
-        assert_eq!(processor.request_list.lock().inflight_io, 0);
-        assert!(!processor.controller().is_recovery_needed());
-
-        // If the controller never clears the doorbell bit after `UTRLCLR`, the timeout task
-        // escalates to full link recovery once `TIMEOUT_RECLAIM_WINDOW` elapses.
-        let rx = submit_tur(&processor, 0);
-        expire_deadline(&processor, 0);
-        assert_eq!(rx.await.unwrap(), Err(zx::Status::TIMED_OUT));
-        assert!(processor.wait_for_link_recovery().await);
-        utp.clear_doorbell(0);
-        assert!(processor.process_slot_completion(0));
-        assert_eq!(slot_state(&processor, 0), SlotState::Free);
-        drop(timeout_task);
     }
 
     #[fuchsia::test]
@@ -2475,7 +2253,7 @@ mod tests {
 
         let (completion, mut rx) = io_callback();
         assert_eq!(
-            processor.submit_io(0, cdb, Some(IoTransfer::inline_write(&payload)), completion),
+            processor.submit_io(0, cdb, Some(DataTransfer::inline_write(&payload)), completion),
             Ok(())
         );
         assert_eq!(utp.doorbell(), 1);
@@ -2497,10 +2275,10 @@ mod tests {
         utp.complete(0, scsi_response(0, 0).as_bytes(), OCS_SUCCESS);
         assert_eq!(delivered(&mut rx), Ok(()));
 
-        // Non-dword-aligned or oversized inline slices fail before reserving a slot.
+        // Non-dword-aligned or oversized inline slices fail and release the reserved slot.
         let (completion, mut rx) = io_callback();
         assert_eq!(
-            processor.submit_io(0, cdb, Some(IoTransfer::inline_write(&[1u8; 6])), completion),
+            processor.submit_io(0, cdb, Some(DataTransfer::inline_write(&[1u8; 6])), completion),
             Err(UfsError::InvalidParameter)
         );
         assert_eq!(delivered(&mut rx), Err(zx::Status::INVALID_ARGS));
@@ -2510,11 +2288,239 @@ mod tests {
             processor.submit_io(
                 0,
                 cdb,
-                Some(IoTransfer::inline_write(&[1u8; INLINE_DATA_SIZE + 4])),
+                Some(DataTransfer::inline_write(&[1u8; INLINE_DATA_SIZE + 4])),
                 completion
             ),
             Err(UfsError::InvalidParameter)
         );
         assert_eq!(delivered(&mut rx), Err(zx::Status::INVALID_ARGS));
+        assert_eq!(slot_state(&processor, 0), SlotState::Free);
+    }
+
+    #[fuchsia::test]
+    async fn test_io_timeout_task_wakes_promptly_on_quiesce() {
+        let (mmio_vmo, processor) = create_test_processor();
+        let _utp = fake_utp(&mmio_vmo, &processor);
+        let finished = Arc::new(AtomicBool::new(false));
+        let timeout_task = {
+            let processor = Arc::clone(&processor);
+            let finished = Arc::clone(&finished);
+            fuchsia_async::Task::local(async move {
+                processor.run_io_timeout_task().await;
+                finished.store(true, Ordering::SeqCst);
+            })
+        };
+
+        // An in-flight request parks the task on a timer at its `COMMAND_TIMEOUT` deadline.
+        let mut rx = submit_tur(&processor, 0);
+        fuchsia_async::Timer::new(zx::MonotonicInstant::after(zx::MonotonicDuration::from_millis(
+            10,
+        )))
+        .await;
+        assert!(!finished.load(Ordering::SeqCst));
+
+        // Quiescing cuts that timer short instead of letting it run out.
+        assert_eq!(processor.quiesce().await, Ok(()));
+        assert!(wait_async(|| finished.load(Ordering::SeqCst)).await);
+        assert_eq!(delivered(&mut rx), Err(zx::Status::IO));
+        drop(timeout_task);
+    }
+
+    #[fuchsia::test]
+    async fn test_async_and_sync_read_completion_unifies_cache_invalidation_and_pmt_unpin() {
+        let (mmio_vmo, processor) = create_test_processor();
+        let mut utp = fake_utp(&mmio_vmo, &processor);
+        let data_vmo = Arc::new(zx::Vmo::create(PAGE_SIZE).unwrap());
+        let cdb = ScsiOpcode::build_read_10_cdb(0, 1);
+
+        // 1. Async read: `finish_slot_locked` + `Deferred::complete_after_dma` frees the slot and
+        //    unpins the `zx::Pmt` inside `utp.complete(...)` BEFORE the async future is polled.
+        let mut async_req = Box::pin(processor.send_scsi_command(
+            0,
+            cdb,
+            Some(DataTransfer::read(Arc::clone(&data_vmo), 0, 4096)),
+        ));
+        assert!(poll!(async_req.as_mut()).is_pending());
+        assert_eq!(slot_state(&processor, 0), SlotState::Scheduled);
+        assert!(slot_pinned(&processor, 0));
+
+        utp.complete(0, scsi_response(0, 0).as_bytes(), OCS_SUCCESS);
+        assert_eq!(slot_state(&processor, 0), SlotState::Free);
+        assert!(!slot_pinned(&processor, 0));
+        assert!(async_req.await.is_ok());
+
+        // 2. Sync read: same `finish_slot_locked` + `Deferred::complete_after_dma` path.
+        let (completion, mut rx) = io_callback();
+        processor
+            .submit_io(0, cdb, Some(DataTransfer::read(Arc::clone(&data_vmo), 0, 4096)), completion)
+            .unwrap();
+        assert_eq!(slot_state(&processor, 0), SlotState::Scheduled);
+        assert!(slot_pinned(&processor, 0));
+        utp.complete(0, scsi_response(0, 0).as_bytes(), OCS_SUCCESS);
+        assert_eq!(slot_state(&processor, 0), SlotState::Free);
+        assert!(!slot_pinned(&processor, 0));
+        assert_eq!(delivered(&mut rx), Ok(()));
+    }
+
+    #[fuchsia::test]
+    async fn test_stalled_slot_logs_once_and_completes_cleanly_on_late_irq() {
+        let (mmio_vmo, processor) = create_test_processor();
+        let mut utp = fake_utp(&mmio_vmo, &processor);
+        let data_vmo = Arc::new(zx::Vmo::create(PAGE_SIZE).unwrap());
+        let cdb = ScsiOpcode::build_read_10_cdb(0, 1);
+
+        let timeout_task = {
+            let processor = Arc::clone(&processor);
+            fuchsia_async::Task::local(async move { processor.run_io_timeout_task().await })
+        };
+
+        let (completion, mut rx) = io_callback();
+        processor
+            .submit_io(0, cdb, Some(DataTransfer::read(Arc::clone(&data_vmo), 0, 4096)), completion)
+            .unwrap();
+        expire_deadline(&processor, 0);
+        processor.timeout_waker.wake();
+
+        assert!(wait_async(|| processor.request_list.lock().slot(0).unwrap().stall_logged).await);
+        // Slot stays `Scheduled` with its `zx::Pmt` pinned while hardware still owns it.
+        assert_eq!(slot_state(&processor, 0), SlotState::Scheduled);
+        assert!(slot_pinned(&processor, 0));
+
+        // Late completion interrupt frees the slot, unpins the PMT, and delivers `Ok(())`.
+        utp.complete(0, scsi_response(0, 0).as_bytes(), OCS_SUCCESS);
+        assert_eq!(slot_state(&processor, 0), SlotState::Free);
+        assert!(!slot_pinned(&processor, 0));
+        assert_eq!(delivered(&mut rx), Ok(()));
+
+        assert_eq!(processor.quiesce().await, Ok(()));
+        timeout_task.await;
+    }
+
+    #[fuchsia::test]
+    fn test_stall_watchdog_monitors_new_slot_while_prior_slot_stalled() {
+        let mut exec = fuchsia_async::TestExecutor::new_with_fake_time();
+        exec.set_fake_time(fuchsia_async::MonotonicInstant::from_zx(zx::MonotonicInstant::get()));
+
+        let (mmio_vmo, processor) = create_test_processor();
+        let mut utp = fake_utp(&mmio_vmo, &processor);
+        let mut watchdog = std::pin::pin!(processor.run_io_timeout_task());
+        assert!(exec.run_until_stalled(&mut watchdog).is_pending());
+        assert_eq!(fuchsia_async::TestExecutor::next_timer(), None);
+
+        // 1. Schedule slot 0 and let its `COMMAND_TIMEOUT` deadline expire: the watchdog logs slot
+        //    0 once (`stall_logged == true`), leaves it `Scheduled`, and parks with no timer armed.
+        let mut rx0 = submit_tur(&processor, 0);
+        let d0 = processor.request_list.lock().slot(0).unwrap().deadline.unwrap();
+        assert!(exec.run_until_stalled(&mut watchdog).is_pending());
+        assert_eq!(
+            fuchsia_async::TestExecutor::next_timer(),
+            Some(fuchsia_async::MonotonicInstant::from_zx(d0))
+        );
+
+        expire_deadline(&processor, 0);
+        exec.set_fake_time(fuchsia_async::MonotonicInstant::from_zx(d0));
+        assert!(exec.wake_expired_timers());
+        assert!(exec.run_until_stalled(&mut watchdog).is_pending());
+        {
+            let list = processor.request_list.lock();
+            assert!(list.slot(0).unwrap().stall_logged);
+            assert_eq!(list.scheduled_mask, 0b01);
+            assert_eq!(list.next_timeout_task_deadline(), None);
+        }
+        assert_eq!(fuchsia_async::TestExecutor::next_timer(), None);
+
+        // 2. While slot 0 remains `Scheduled` with `stall_logged == true`, scheduling slot 1 must
+        //    wake `timeout_waker` (`next_timeout_task_deadline().is_none()`) to monitor slot 1.
+        let mut rx1 = submit_tur(&processor, 0);
+        let d1 = processor.request_list.lock().slot(1).unwrap().deadline.unwrap();
+        {
+            let list = processor.request_list.lock();
+            assert_eq!(list.scheduled_mask, 0b11);
+            assert!(!list.slot(1).unwrap().stall_logged);
+        }
+        assert!(exec.run_until_stalled(&mut watchdog).is_pending());
+        assert_eq!(
+            fuchsia_async::TestExecutor::next_timer(),
+            Some(fuchsia_async::MonotonicInstant::from_zx(d1))
+        );
+
+        expire_deadline(&processor, 1);
+        exec.set_fake_time(fuchsia_async::MonotonicInstant::from_zx(d1));
+        assert!(exec.wake_expired_timers());
+        assert!(exec.run_until_stalled(&mut watchdog).is_pending());
+        assert!(processor.request_list.lock().slot(1).unwrap().stall_logged);
+
+        utp.complete(0, scsi_response(0, 0).as_bytes(), OCS_SUCCESS);
+        utp.complete(1, scsi_response(1, 0).as_bytes(), OCS_SUCCESS);
+        assert_eq!(delivered(&mut rx0), Ok(()));
+        assert_eq!(delivered(&mut rx1), Ok(()));
+
+        let mut quiesce = std::pin::pin!(processor.quiesce());
+        assert_eq!(exec.run_until_stalled(&mut quiesce), Poll::Ready(Ok(())));
+        assert_eq!(exec.run_until_stalled(&mut watchdog), Poll::Ready(()));
+    }
+
+    #[fuchsia::test]
+    async fn test_close_submissions_and_drain_inflight() {
+        let (mmio_vmo, processor) = create_test_processor();
+        let mut utp = fake_utp(&mmio_vmo, &processor);
+
+        let mut inflight_rx = submit_tur(&processor, 0);
+        assert_eq!(processor.busy_slot_count(), 1);
+
+        processor.close_submissions();
+
+        // New sync and async submissions are rejected immediately while in-flight slots drain.
+        let (completion, mut rejected_rx) = io_callback();
+        let cdb = ScsiOpcode::build_test_unit_ready_cdb();
+        assert_eq!(processor.submit_io(0, cdb, None, completion), Err(UfsError::IoError));
+        assert_eq!(delivered(&mut rejected_rx), Err(zx::Status::IO));
+        assert_eq!(processor.send_nop_out_upiu().await, Err(UfsError::IoError));
+
+        let hardware = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            utp.complete(0, scsi_response(0, 0).as_bytes(), OCS_SUCCESS);
+        });
+        assert_eq!(processor.drain_inflight(zx::MonotonicDuration::from_seconds(1)).await, Ok(()));
+        hardware.join().unwrap();
+        assert_eq!(processor.busy_slot_count(), 0);
+        assert_eq!(delivered(&mut inflight_rx), Ok(()));
+    }
+
+    #[fuchsia::test]
+    async fn test_quiesce_quarantines_pmt_and_delivers_io_error_when_disable_fails() {
+        let (mmio_vmo, processor) = create_test_processor();
+        let _utp = fake_utp(&mmio_vmo, &processor);
+        let data_vmo = Arc::new(zx::Vmo::create(PAGE_SIZE).unwrap());
+        let cdb = ScsiOpcode::build_read_10_cdb(0, 1);
+
+        // Set `HCE = 1` and freeze `HCE` so `disable_host_controller()` times out.
+        processor.controller().with_mmio(|mmio| {
+            HostControllerEnableReg::from_raw(1).write(mmio);
+            mmio.set_hce_stuck(true);
+        });
+        processor
+            .controller()
+            .set_host_controller_timeout_for_test(zx::MonotonicDuration::from_millis(5));
+
+        let mut async_req = Box::pin(processor.send_scsi_command(
+            0,
+            cdb,
+            Some(DataTransfer::read(Arc::clone(&data_vmo), 0, 4096)),
+        ));
+        assert!(poll!(async_req.as_mut()).is_pending());
+
+        let (completion, mut sync_rx) = io_callback();
+        processor
+            .submit_io(0, cdb, Some(DataTransfer::read(Arc::clone(&data_vmo), 0, 4096)), completion)
+            .unwrap();
+        assert!(slot_pinned(&processor, 0) && slot_pinned(&processor, 1));
+
+        assert_eq!(processor.quiesce().await, Err(UfsError::Timeout));
+        assert_eq!(async_req.await, Err(UfsError::IoError));
+        assert_eq!(delivered(&mut sync_rx), Err(zx::Status::IO));
+        assert_eq!(processor.quarantined_pmt_count(), 2);
+        assert!(processor.request_list.lock().io_buffer.is_pinned());
+        assert!(processor.request_list.lock().slot(0).unwrap().command_descriptor_io.is_pinned());
     }
 }

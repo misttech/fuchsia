@@ -72,15 +72,8 @@ pub const PRDT_DBC_MASK: u32 = MAX_PRDT_ENTRY_BYTES - 1;
 /// (UFSHCI 3.0/4.0 section 6.1.2).
 pub const DWORD_ALIGN_MASK: u64 = 0x3;
 
-/// Time a UTP transfer request may stay outstanding before the I/O timeout task aborts it.
+/// Time a UTP transfer request may stay outstanding before the stall watchdog logs an error.
 pub const COMMAND_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(10);
-/// Interval at which a timed-out slot is re-checked for its doorbell bit to clear.
-pub const TIMEOUT_RECLAIM_POLL_INTERVAL: zx::MonotonicDuration =
-    zx::MonotonicDuration::from_millis(10);
-/// Time allowed for `UTRLCLR` (UFSHCI 4.0 section 5.4.4) to release a timed-out slot before the
-/// driver escalates to link recovery. Kept short because the slot's DMA buffers stay pinned until
-/// then.
-pub const TIMEOUT_RECLAIM_WINDOW: zx::MonotonicDuration = zx::MonotonicDuration::from_millis(100);
 /// Spin re-reads of `UTRD.OCS` after a completion is signalled, covering the window in which the
 /// controller's posted write of the UTRD has not yet landed in memory.
 pub const OCS_RETRIES: u32 = 100;

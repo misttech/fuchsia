@@ -56,8 +56,7 @@ pub(crate) fn slot_pinned(processor: &TestProcessor, slot: u8) -> bool {
     processor.request_list.lock().slot(slot).unwrap().pmt.is_some()
 }
 
-/// Moves `slot`'s deadline into the past so the next completion pass (or the timeout task) times
-/// it out.
+/// Moves `slot`'s deadline into the past so the stall watchdog logs it on its next pass.
 pub(crate) fn expire_deadline(processor: &TestProcessor, slot: u8) {
     processor.request_list.lock().slot_mut(slot).unwrap().deadline =
         Some(zx::MonotonicInstant::get() - zx::MonotonicDuration::from_seconds(1));
@@ -66,13 +65,10 @@ pub(crate) fn expire_deadline(processor: &TestProcessor, slot: u8) {
 /// Receives the outcome delivered to an [`io_callback`].
 pub(crate) type IoOutcomeReceiver = futures::channel::oneshot::Receiver<Result<(), zx::Status>>;
 
-/// A callback [`IoCompletion`] that forwards the outcome to the returned receiver.
+/// A oneshot [`IoCompletion`] and the receiver that collects its delivered outcome.
 pub(crate) fn io_callback() -> (IoCompletion, IoOutcomeReceiver) {
     let (tx, rx) = futures::channel::oneshot::channel();
-    let completion = IoCompletion::Callback(Box::new(move |status| {
-        let _ = tx.send(status);
-    }));
-    (completion, rx)
+    (IoCompletion::Oneshot(tx), rx)
 }
 
 /// Returns the outcome already delivered to `rx`, panicking if none was.
@@ -109,6 +105,20 @@ pub(crate) fn check_condition(task_tag: u8, sense_key: u8) -> ResponseUpiu {
     response.sense_data[2] = sense_key;
     response.sense_data[7] = 10;
     response
+}
+
+/// Yields to the executor until `condition` holds, for up to [`fake_ufs::FAKE_HW_TIMEOUT`]. Unlike
+/// [`fake_ufs::wait_until`] this lets tasks sharing the test executor (the timeout task,
+/// interrupt loops) make progress.
+pub(crate) async fn wait_async(mut condition: impl FnMut() -> bool) -> bool {
+    let deadline = zx::MonotonicInstant::after(fake_ufs::FAKE_HW_TIMEOUT.into());
+    while !condition() {
+        if zx::MonotonicInstant::get() > deadline {
+            return false;
+        }
+        fuchsia_async::Timer::new(zx::MonotonicDuration::from_millis(1)).await;
+    }
+    true
 }
 
 /// Returns the lowest slot whose doorbell bit is set, waiting for one.
