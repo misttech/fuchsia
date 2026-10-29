@@ -406,7 +406,10 @@ if head and base_rev and head != base_rev:
         if (
             re.search(r"\bfx bazel2gn\b", cmd)
             or re.search(r"verify_bazel2gn", cmd)
-            or (re.search(r"\bshac\s+check\b", cmd) and cmd != "fx host-tool shac check")
+            or (
+                re.search(r"\bshac\s+check\b", cmd)
+                and cmd not in ("fx host-tool shac check", "fx host-tool shac check --fail-level warning")
+            )
         ):
             add("test_footer_bazel2gn_form", ln,
                 f"`Test:` footer `{cmd}` verifies bazel2gn/shac in a narrower or indirect form.",

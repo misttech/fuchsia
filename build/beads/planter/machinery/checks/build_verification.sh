@@ -16,8 +16,9 @@ set -uo pipefail
 #   2. gn_build_dependents:    `fx build <labels>` for any remaining GN dependents
 #                              if gn_build ran a full product build. Skipped when
 #                              gn_build is target-scoped or fails.
-#   3. shac_check:             `fx host-tool shac check`, which runs shac static
-#                              checks on the change (including `verify_bazel2gn`
+#   3. shac_check:             `fx host-tool shac check --fail-level warning`,
+#                              which runs shac static checks on the change (failing
+#                              on both errors and warnings, including `verify_bazel2gn`
 #                              for BUILD.gn/BUILD.bazel drift, buildifier,
 #                              gn_format, fidl_gn2bazel_migration_check, and
 #                              check_licenses), building
@@ -679,8 +680,9 @@ steps = [
     ("gn_build_dependents", None),  # Labels are computed once gn_build has regenerated the GN graph.
 ]
 # TODO(https://fxbug.dev/538640644): Replace with fx lint once it runs these shac checks.
-# `shac check` without file arguments finds and checks all modified files itself.
-steps.append(("shac_check", [fx, "host-tool", "shac", "check"]))
+# `shac check` without file arguments finds and checks all modified files itself;
+# `--fail-level warning` makes `shac check` fail on warnings as well as errors.
+steps.append(("shac_check", [fx, "host-tool", "shac", "check", "--fail-level", "warning"]))
 fuchsia_bazel_dirs = [d for d in bazel_dirs if has_non_suite_bazel_targets(d)]
 if fuchsia_bazel_dirs:
     steps.append((
@@ -716,8 +718,15 @@ LOCATION = re.compile(
     re.M,
 )
 BUILD_FILE_LOCATION = re.compile(r"((?:\.\./\.\./)?[\w./+-]*(?:BUILD\.gn|BUILD\.bazel|\.gni|\.bzl)):(\d+)")
-# Shac findings: `[<check>/error] <path>(<line>): ...` or `[<check>/warning] <path>: ...`.
-SHAC_FILE_LOCATION = re.compile(r"\[[\w_-]+/(?:error|warning)\]\s+([\w./+-]+)(?:\((\d+)\))?:")
+# Shac findings: `[<check>/error] <path>(<line>): ...` or `[<check>/warning] <path>: ...`,
+# and commit findings `[<check>/warning] Commit <sha>(<line>): ...`.
+SHAC_FILE_LOCATION = re.compile(r"\[[\w_-]+/(?:error|warning)\]\s+(?!Commit\s+[0-9a-f]{7,40}(?:\(\d+\))?:)([\w./+-]+)(?:\((\d+)\))?:")
+SHAC_COMMIT_LOCATION = re.compile(r"\[[\w_-]+/(?:error|warning)\]\s+Commit\s+([0-9a-f]{7,40})(?:\((\d+)\))?:")
+SHAC_FINDING = re.compile(
+    r"^\[([\w_-]+)/(notice|warning|error)\]\s+"
+    r"(?:Commit\s+([0-9a-f]{7,40})|([\w./+-]+))(?:\((\d+)\))?:\s*([^\n]*)",
+    re.M,
+)
 SHAC_MISSING_TOOL = re.compile(
     r"(//bundles/buildbot/static_checks|fx build --host|tool_paths\.json|"
     r"has not been built yet|out of date|flag provided but not defined|"
@@ -735,16 +744,56 @@ def summarize(output, location=LOCATION):
             for j in range(max(0, i - 1), min(len(lines), i + 4)):
                 if not picked or picked[-1] < j:
                     picked.append(j)
-    text = "\n".join(lines[j] for j in picked) if picked else "\n".join(lines[-40:])
-    if len(text) > 6000:
-        text = text[:6000] + "\n... (truncated)"
+    raw_text = "\n".join(lines[j] for j in picked) if picked else "\n".join(lines[-40:])
+    text = raw_text[:6000] + "\n... (truncated)" if len(raw_text) > 6000 else raw_text
     file, line = "", 0
+    if location is SHAC_FILE_LOCATION:
+        cur_head = (git_lines(["rev-parse", "HEAD"]) or [""])[0]
+        cur_base = (git_lines(["rev-parse", "--verify", f"{change_base}^{{commit}}"]) or [""])[0]
+        is_task_head = bool(
+            cur_head
+            and cur_base
+            and cur_head != cur_base
+            and not worktree_dirty_vs_head
+            and (not uploaded_commit_env or cur_head != uploaded_commit_env)
+        )
+        first_shac = None
+        for m in SHAC_FINDING.finditer(raw_text):
+            if m.group(2) not in ("warning", "error"):
+                continue
+            c_sha, f_raw, ln_str, msg_text = m.group(3), m.group(4), m.group(5), m.group(6) or ""
+            if c_sha:
+                is_rel = is_task_head and cur_head.startswith(c_sha)
+                cand_f, cand_ln = ("COMMIT_MSG" if is_rel else ""), int(ln_str or 0)
+            else:
+                cand_f = f_raw.replace("../../", "", 1)
+                if cand_f.startswith(workdir + "/"):
+                    cand_f = cand_f[len(workdir) + 1:]
+                cand_ln = int(ln_str or 0)
+                norm_f = os.path.normpath(cand_f)
+                in_chg = _shac_finding_in_change(norm_f, msg_text)
+                is_rel = in_chg and not (
+                    m.group(2) == "warning" and _is_unchanged_preexisting_warning(norm_f, cand_ln)
+                )
+            if first_shac is None:
+                first_shac = (cand_f, cand_ln)
+            if is_rel:
+                if m.end() > 6000:
+                    snippet_start = max(0, raw_text.rfind("\n", 0, m.start()) + 1)
+                    text = text + "\n" + raw_text[snippet_start : snippet_start + 1000]
+                return text, cand_f, cand_ln
+        if first_shac is not None:
+            return text, first_shac[0], first_shac[1]
     m = location.search(text) or SHAC_FILE_LOCATION.search(text)
     if m:
         file = m.group(1).replace("../../", "", 1)
         if file.startswith(workdir + "/"):
             file = file[len(workdir) + 1:]
         line = int(m.group(2) or 0)
+    else:
+        cm = SHAC_COMMIT_LOCATION.search(text)
+        if cm:
+            file, line = "COMMIT_MSG", int(cm.group(2) or 0)
     return text, file, line
 
 
@@ -1482,36 +1531,193 @@ def unrelated_bazel_failure(output):
             "Do not edit them; the changed packages are still verified by the remaining steps.")
 
 
-# Check whether a `shac check` failure (such as repo-wide `verify_bazel2gn`) only
-# reports files outside the changed packages and modified files.
+def _existed_at_change_base(p):
+    try:
+        return (
+            subprocess.run(
+                ["git", "-C", workdir, "cat-file", "-e", f"{change_base}:{p}"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            ).returncode
+            == 0
+        )
+    except Exception:
+        return False
+
+
+def _modified_lines_since_base(p):
+    lines = set()
+    try:
+        diff_out = subprocess.check_output(
+            ["git", "-C", workdir, "diff", "-U0", change_base, "--", p],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except Exception:
+        return lines
+    for m in re.finditer(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@", diff_out, re.M):
+        start = int(m.group(1))
+        count = int(m.group(2)) if m.group(2) is not None else 1
+        if count > 0:
+            lines.update(range(start, start + count))
+        elif start > 0:
+            lines.add(start)
+    return lines
+
+
+def _top_level_starlark_spans(p):
+    text = read(p)
+    if not text:
+        return []
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
+    spans = []
+    for stmt in tree.body:
+        start_ln = getattr(stmt, "lineno", 0) or 0
+        end_ln = getattr(stmt, "end_lineno", start_ln) or start_ln
+        if start_ln > 0:
+            spans.append((start_ln, max(start_ln, end_ln)))
+    return spans
+
+
+def _is_unchanged_preexisting_warning(p, line_num):
+    if p not in changed_set or line_num <= 0:
+        return False
+    if not _existed_at_change_base(p):
+        return False
+    mod_lines = _modified_lines_since_base(p)
+    if not mod_lines:
+        return False
+    if line_num in mod_lines:
+        return False
+    if p.endswith((".bazel", ".bzl")):
+        for start_ln, end_ln in _top_level_starlark_spans(p):
+            if start_ln <= line_num <= end_ln:
+                return not any(start_ln <= ln <= end_ln for ln in mod_lines)
+    return True
+
+
+def _path_in_change(p):
+    return p in changed_set or any(p == d or p.startswith(d + "/") for d in dirs)
+
+
+_GLOB_ALLOWLIST_STALE_ENTRY = re.compile(
+    r"^\s*([^\s:;]+)\s+(?:contains no Bazel files that use|doesn't exist|no longer uses)\b"
+)
+
+
+def _shac_finding_in_change(p, msg):
+    if _path_in_change(p):
+        return True
+    if p in ("build/bazel/shac/glob_allowlist.json", "build/bazel/shac/recursive_glob_allowlist.json"):
+        m_entry = _GLOB_ALLOWLIST_STALE_ENTRY.match(msg or "")
+        if not m_entry:
+            return True
+        entry = m_entry.group(1)
+        if entry.endswith("/"):
+            entry_dir = os.path.normpath(entry.rstrip("/"))
+            return any(f == entry_dir or f.startswith(entry_dir + "/") for f in changed_set) or any(
+                d == entry_dir or d.startswith(entry_dir + "/") or entry_dir.startswith(d + "/")
+                for d in dirs
+            )
+        return _path_in_change(os.path.normpath(entry))
+    return False
+
+
+# Check whether a `shac check` failure (such as repo-wide `verify_bazel2gn`, stacked
+# ancestor commit messages, or pre-existing `unchanged_lines_warning_only` warnings on
+# untouched targets of modified files) only reports items outside the task's change.
 def unrelated_shac_failure(output):
     if not dirs or any(
         p.startswith(("scripts/shac/", "build/tools/bazel2gn/")) for p in changed
     ):
         return None
-    paths = set()
-    for m in SHAC_FILE_LOCATION.finditer(output):
-        paths.add(os.path.normpath(m.group(1).replace("../../", "", 1)))
-    for m in LOCATION.finditer(output):
-        paths.add(os.path.normpath(m.group(1).replace("../../", "", 1)))
-    for raw in re.findall(r"[\w./+-]+/(?:BUILD\.gn|BUILD\.bazel)", output):
-        paths.add(os.path.normpath(raw.lstrip("./")))
-    paths = sorted(p for p in paths if p and not p.startswith("out/"))
-    if not paths:
+    if re.search(r"^shac:\s*fail:|Traceback \(most recent call last\):", output, re.M):
         return None
-    for p in paths:
-        if p in changed_set or any(
-            p == d or p.startswith(d + "/") for d in dirs
-        ):
+    finding_lines = [
+        l for l in output.splitlines()
+        if re.match(r"^\[[\w_-]+/(?:warning|error)\]", l)
+    ]
+    if not finding_lines:
+        return None
+    parsed_findings = []
+    for l in finding_lines:
+        m = SHAC_FINDING.match(l)
+        if not m:
             return None
-    joined = " ".join(paths)
-    return (
-        f"the failing shac check file(s) ({joined}) are outside the changed "
-        "packages and were not modified by this change, so the failure "
-        "predates the change on main (e.g. upstream verify_bazel2gn drift). "
-        "Do not edit unrelated packages; the changed packages are still "
-        "verified by the remaining steps."
-    )
+        if m.group(2) in ("warning", "error"):
+            parsed_findings.append((
+                m.group(1),
+                m.group(2),
+                m.group(3),
+                m.group(4),
+                int(m.group(5) or 0),
+                m.group(6) or "",
+            ))
+    if not parsed_findings:
+        return None
+    change_base_sha = (git_lines(["rev-parse", "--verify", f"{change_base}^{{commit}}"]) or [""])[0]
+    unrelated_items = []
+    unchanged_line_warnings = []
+    for _, level, commit_sha, raw_path, line_num, msg_text in parsed_findings:
+        if commit_sha:
+            if (
+                head_sha
+                and change_base_sha
+                and head_sha != change_base_sha
+                and not worktree_dirty_vs_head
+                and (not uploaded_commit_env or head_sha != uploaded_commit_env)
+                and head_sha.startswith(commit_sha)
+            ):
+                return None
+            item = f"Commit {commit_sha}"
+            if item not in unrelated_items:
+                unrelated_items.append(item)
+            continue
+        p = os.path.normpath((raw_path or "").replace("../../", "", 1))
+        if not p or p.startswith("out/"):
+            return None
+        in_change = _shac_finding_in_change(p, msg_text)
+        if not in_change:
+            if p not in unrelated_items:
+                unrelated_items.append(p)
+            continue
+        if level == "warning" and _is_unchanged_preexisting_warning(p, line_num):
+            loc = f"{p}:{line_num}"
+            if loc not in unchanged_line_warnings:
+                unchanged_line_warnings.append(loc)
+            continue
+        return None
+    if unrelated_items and not unchanged_line_warnings:
+        joined = " ".join(unrelated_items)
+        return (
+            f"the failing shac check item(s) ({joined}) are outside the changed "
+            "packages/commits and were not modified by this change, so the failure "
+            "predates the change (e.g. upstream verify_bazel2gn drift or parent commit). "
+            "Do not edit unrelated packages; the changed packages are still "
+            "verified by the remaining steps."
+        )
+    if unchanged_line_warnings and not unrelated_items:
+        joined = " ".join(unchanged_line_warnings)
+        return (
+            f"the failing shac check warning(s) ({joined}) are on unchanged lines/targets "
+            "of pre-existing file(s) outside the modified hunks (e.g. unchanged_lines_warning_only), "
+            "so they predate this change and do not block Gerrit CQ. "
+            "Do not edit untouched pre-existing targets; the modified lines and changed packages "
+            "are still verified."
+        )
+    if unrelated_items or unchanged_line_warnings:
+        joined = " ".join(unrelated_items + unchanged_line_warnings)
+        return (
+            f"the failing shac check finding(s) ({joined}) are either outside the changed "
+            "packages/commits or warnings on unchanged lines/targets of pre-existing file(s) "
+            "outside the modified hunks, so they predate this change. "
+            "Do not edit unrelated packages or untouched pre-existing targets; the modified lines "
+            "and changed packages are still verified."
+        )
+    return None
 
 
 failed = set()
@@ -1616,7 +1822,7 @@ for name, cmd in steps:
     if name == "shac_check":
         note = unrelated_shac_failure(output)
         if note:
-            text, file, line = summarize(output, LOCATION)
+            text, file, line = summarize(output, SHAC_FILE_LOCATION)
             findings.append({
                 "source": "build_verification",
                 "category": "preexisting_failure_shac_check",
@@ -1669,7 +1875,12 @@ for name, cmd in steps:
             })
             continue
     failed.add(name)
-    text, file, line = summarize(output, BUILD_FILE_LOCATION if name == "gn_build_dependents" else LOCATION)
+    loc_re = (
+        SHAC_FILE_LOCATION
+        if name == "shac_check"
+        else (BUILD_FILE_LOCATION if name == "gn_build_dependents" else LOCATION)
+    )
+    text, file, line = summarize(output, loc_re)
     findings.append({
         "source": "build_verification",
         "category": f"build_failure_{name}",
