@@ -3,6 +3,8 @@
 # found in the LICENSE file.
 """Unit tests for mobly_driver/driver/infra.py."""
 
+import os
+import tempfile
 import unittest
 from datetime import timedelta
 from typing import Any
@@ -275,3 +277,103 @@ class InfraMoblyDriverTest(unittest.TestCase):
             ],
         )
         mock_rm.assert_called_once()
+
+    @patch("builtins.print")
+    def test_teardown_renames_timestamp_directory_to_artifacts(
+        self, mock_print: Any
+    ) -> None:
+        """Test case verifying timestamped Mobly subdir is renamed to artifacts."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            sibling_file = os.path.join(tmp_dir, "stdout-and-stderr.txt")
+            with open(sibling_file, "w") as f:
+                f.write("runner output")
+
+            testbed_dir = os.path.join(tmp_dir, "InfraTestbed")
+            timestamp_dir = os.path.join(testbed_dir, "07-08-2026_07-05-38-773")
+            nested_case_dir = os.path.join(
+                timestamp_dir, "BootBenchmark", "test_e2e_boot"
+            )
+            os.makedirs(nested_case_dir)
+
+            with open(
+                os.path.join(timestamp_dir, "test_summary.yaml"), "w"
+            ) as f:
+                f.write("summary_content")
+            with open(os.path.join(timestamp_dir, "test_log.DEBUG"), "w") as f:
+                f.write("debug_log")
+            with open(
+                os.path.join(nested_case_dir, "warm_kcounters.txt"), "w"
+            ) as f:
+                f.write("kcounters_data")
+
+            symlink_path = os.path.join(testbed_dir, "latest")
+            os.symlink(timestamp_dir, symlink_path)
+
+            driver = infra.InfraDriver(
+                tb_json_path="",
+                honeydew_config=_HONEYDEW_CONFIG,
+                output_path=tmp_dir,
+            )
+            driver.teardown()
+
+            artifacts_dir = os.path.join(testbed_dir, "artifacts")
+            self.assertFalse(os.path.lexists(symlink_path))
+            self.assertFalse(os.path.exists(timestamp_dir))
+            self.assertTrue(os.path.isfile(sibling_file))
+            self.assertTrue(
+                os.path.isfile(os.path.join(artifacts_dir, "test_summary.yaml"))
+            )
+            self.assertTrue(
+                os.path.isfile(os.path.join(artifacts_dir, "test_log.DEBUG"))
+            )
+            moved_artifact = os.path.join(
+                artifacts_dir,
+                "BootBenchmark",
+                "test_e2e_boot",
+                "warm_kcounters.txt",
+            )
+            self.assertTrue(os.path.isfile(moved_artifact))
+            with open(moved_artifact, "r") as f:
+                self.assertEqual(f.read(), "kcounters_data")
+            self.assertIn(call("summary_content"), mock_print.call_args_list)
+
+    @patch("logging.exception")
+    @patch("builtins.print")
+    def test_teardown_relative_latest_symlink_and_logs_on_error(
+        self, unused_mock_print: Any, mock_log_exception: Any
+    ) -> None:
+        """Test case verifying relative latest symlink and error logging on collision."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            testbed_dir = os.path.join(tmp_dir, "InfraTestbed")
+            ts_dir_1 = os.path.join(testbed_dir, "07-08-2026_07-05-38-773")
+            os.makedirs(ts_dir_1)
+            with open(os.path.join(ts_dir_1, "test_log.INFO"), "w") as f:
+                f.write("run_1_log")
+
+            symlink_path = os.path.join(testbed_dir, "latest")
+            os.symlink("07-08-2026_07-05-38-773", symlink_path)
+
+            driver = infra.InfraDriver(
+                tb_json_path="",
+                honeydew_config=_HONEYDEW_CONFIG,
+                output_path=tmp_dir,
+            )
+            driver.teardown()
+
+            artifacts_dir = os.path.join(testbed_dir, "artifacts")
+            self.assertFalse(os.path.lexists(symlink_path))
+            self.assertFalse(os.path.exists(ts_dir_1))
+            self.assertTrue(
+                os.path.isfile(os.path.join(artifacts_dir, "test_log.INFO"))
+            )
+            mock_log_exception.assert_not_called()
+
+            # If `artifacts` already exists and is non-empty, os.rename raises
+            # OSError which is caught and logged via logging.exception.
+            ts_dir_2 = os.path.join(testbed_dir, "07-08-2026_07-06-12-104")
+            os.makedirs(ts_dir_2)
+            os.symlink("07-08-2026_07-06-12-104", symlink_path)
+            driver.teardown()
+
+            mock_log_exception.assert_called_once()
+            self.assertTrue(os.path.isdir(ts_dir_2))

@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 """Implements BaseDriver for the lab infra execution environment."""
 
+import logging
 import os
 from datetime import timedelta
 from typing import Any, Optional
@@ -169,8 +170,30 @@ class InfraDriver(base.BaseDriver):
         symlink_path = api_mobly.get_latest_test_output_dir_symlink_path(
             self._output_path, self._TESTBED_NAME
         )
+        timestamp_dir: Optional[str] = None
+        try:
+            timestamp_dir = os.path.join(
+                os.path.dirname(symlink_path), os.readlink(symlink_path)
+            )
+        except (OSError, TypeError):
+            pass
+
         try:
             os.remove(symlink_path)
         except OSError:
             # No-op if the symlink does not exist (e.g. if the test crashed).
             pass
+
+        # Rename Mobly's per-run `<timestamp>` subdirectory to `artifacts` so
+        # ResultDB artifact paths are deterministic across runs
+        # (https://fxbug.dev/533398596).
+        if timestamp_dir and os.path.isdir(timestamp_dir):
+            target_dir = os.path.join(
+                os.path.dirname(timestamp_dir), "artifacts"
+            )
+            try:
+                os.rename(timestamp_dir, target_dir)
+            except Exception:
+                logging.exception(
+                    "Failed to rename %s to %s", timestamp_dir, target_dir
+                )
