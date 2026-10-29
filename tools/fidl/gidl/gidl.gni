@@ -91,7 +91,7 @@ template("_gidl_cc_source_set") {
     fidl_bindings = fidl_bindings + invoker.bindings_suffix
   }
 
-  output_filename = "${target_gen_dir}/${target_name}_gidl_generated.cc"
+  output_filename = "${target_gen_dir}/gidl_generated_${target_name}.cc"
 
   gidl_target = "${target_name}_gidl"
 

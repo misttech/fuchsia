@@ -2,14 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/bazel/bazel_test_suite.gni")
 import("//build/test.gni")
 import("//build/testing/cc_test_executable.gni")
 import("//sdk/ctf/build/ctf.gni")
 import("//src/tests/fidl/conformance_suite/gidl-conformance-suite.gni")
 import("//tools/fidl/gidl/gidl.gni")
-
-# LINT.IfChange
 
 gidl_output_prefix = "conformance_suite__"
 gidl_deps = []
@@ -183,7 +180,6 @@ fuchsia_test_package("fidl-hlcpp-unit-tests-latest") {
 }
 
 fuchsia_test_package("fidl-hlcpp-conformance-tests-latest") {
-  package_name = "fidl-hlcpp-conformance-tests-latest-gn"
   test_components = [ ":fidl-hlcpp-conformance-tests-root" ]
   subpackages = [ ":fidl-hlcpp-conformance-tests" ]
 }
@@ -204,19 +200,9 @@ if (is_host) {
   }
 }
 
-# LINT.ThenChange(//sdk/ctf/tests/pkg/fidl/cpp/BUILD.bazel)
-
-bazel_test_suite("bazel_tests") {
-  target_tests =
-      [ "//sdk/ctf/tests/pkg/fidl/cpp:fidl-hlcpp-conformance-tests-latest" ]
-  host_tests =
-      [ "//sdk/ctf/tests/pkg/fidl/cpp:fidl-hlcpp-conformance-tests-host" ]
-}
-
 group("tests") {
   testonly = true
   deps = [
-    ":bazel_tests",
     ":fidl-hlcpp-conformance-tests-host($host_toolchain)",
     ":fidl-hlcpp-conformance-tests-latest",
     ":fidl-hlcpp-unit-tests-host($host_toolchain)",
