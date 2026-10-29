@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use core::ffi::c_void;
 use core::mem::MaybeUninit;
 use core::ptr::NonNull;
 use zx_status::Status;
@@ -18,7 +19,8 @@ use super::handle::{HandleRef, KernelHandle};
 use super::job_dispatcher_ffi::{
     cpp_job_dispatcher_create, cpp_job_dispatcher_create_debug_exceptionate,
     cpp_job_dispatcher_create_root_job, cpp_job_dispatcher_enumerate_children,
-    cpp_job_dispatcher_exceptionate, cpp_job_dispatcher_get_info, cpp_job_dispatcher_get_root_job,
+    cpp_job_dispatcher_enumerate_children_recursive, cpp_job_dispatcher_exceptionate,
+    cpp_job_dispatcher_get_info, cpp_job_dispatcher_get_root_job,
     cpp_job_dispatcher_get_root_job_handle, cpp_job_dispatcher_get_runtime_stats,
     cpp_job_dispatcher_is_root, cpp_job_dispatcher_kill,
     cpp_job_dispatcher_kill_job_with_kill_on_oom, cpp_job_dispatcher_lookup_job_by_id,
@@ -47,6 +49,19 @@ crate::object::dispatcher::impl_dispatcher_facade!(
 );
 
 zr::static_assert!(core::mem::size_of::<JobDispatcher>() == 0);
+
+/// Interface for walking a job/process tree.
+pub trait JobEnumerator {
+    /// Visits a job. If `on_job` returns false, the enumeration stops.
+    fn on_job(&mut self, _job: &JobDispatcher) -> bool {
+        true
+    }
+
+    /// Visits a process. If `on_process` returns false, the enumeration stops.
+    fn on_process(&mut self, _proc: &ProcessDispatcher) -> bool {
+        true
+    }
+}
 
 impl JobDispatcher {
     /// Returns the default rights for a JobDispatcher handle.
@@ -254,6 +269,62 @@ impl JobDispatcher {
         let ptr = unsafe { cpp_job_dispatcher_parent(core::ptr::from_ref(self)) };
         // SAFETY: `ptr` is exported via `fbl::ExportToRawPtr` with an acquired refcount, or null.
         unsafe { fbl::RefPtr::try_from_raw(ptr) }
+    }
+
+    /// Recursively walks the job/process tree and invokes `je` methods on each
+    /// node. The `je` methods are invoked with all parent `JobDispatcher` object
+    /// locks held. Returns false if any methods of `je` return false; returns true
+    /// otherwise.
+    ///
+    /// Must not be called with this job's lock held.
+    pub fn enumerate_children_recursive<E: JobEnumerator>(&self, je: &mut E) -> bool {
+        /// # Safety
+        ///
+        /// `ctx` must point to a live `E` that remains valid for the duration of the C++ FFI
+        /// callback, and `job` must point to a live `JobDispatcher`.
+        unsafe extern "C" fn on_job_shim<E: JobEnumerator>(
+            ctx: *mut c_void,
+            job: *mut JobDispatcher,
+        ) -> bool {
+            // SAFETY: `ctx` is guaranteed by `cpp_job_dispatcher_enumerate_children_recursive` to
+            // be the non-null `ctx_ptr` passed from `enumerate_children_recursive`, which points
+            // to a live `E`.
+            let je = unsafe { &mut *ctx.cast::<E>() };
+            // SAFETY: The C++ enumeration holds the parent job locks, keeping `job` alive for the
+            // duration of the visit.
+            let job = unsafe { &*job };
+            je.on_job(job)
+        }
+
+        /// # Safety
+        ///
+        /// `ctx` must point to a live `E` that remains valid for the duration of the C++ FFI
+        /// callback, and `proc` must point to a live `ProcessDispatcher`.
+        unsafe extern "C" fn on_process_shim<E: JobEnumerator>(
+            ctx: *mut c_void,
+            proc: *mut ProcessDispatcher,
+        ) -> bool {
+            // SAFETY: `ctx` is guaranteed by `cpp_job_dispatcher_enumerate_children_recursive` to
+            // be the non-null `ctx_ptr` passed from `enumerate_children_recursive`, which points
+            // to a live `E`.
+            let je = unsafe { &mut *ctx.cast::<E>() };
+            // SAFETY: The C++ enumeration holds the parent job locks, keeping `proc` alive for the
+            // duration of the visit.
+            let proc = unsafe { &*proc };
+            je.on_process(proc)
+        }
+
+        let ctx_ptr: *mut c_void = core::ptr::from_mut(je).cast();
+        // SAFETY: `self` is a valid `JobDispatcher` reference, and `ctx_ptr`, `on_job_shim::<E>`
+        // and `on_process_shim::<E>` remain valid for the duration of the call.
+        unsafe {
+            cpp_job_dispatcher_enumerate_children_recursive(
+                core::ptr::from_ref(self).cast_mut(),
+                ctx_ptr,
+                on_job_shim::<E>,
+                on_process_shim::<E>,
+            )
+        }
     }
 }
 

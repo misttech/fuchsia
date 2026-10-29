@@ -199,3 +199,31 @@ FFI_ALWAYS_INLINE JobDispatcher* cpp_job_dispatcher_parent(const JobDispatcher* 
 }
 
 }  // extern "C"
+
+namespace {
+
+// Forwards JobEnumerator visits to the Rust callbacks passed to
+// cpp_job_dispatcher_enumerate_children_recursive.
+class CallbackJobEnumerator final : public JobEnumerator {
+ public:
+  CallbackJobEnumerator(void* ctx, cpp_job_enumerator_on_job_fn on_job,
+                        cpp_job_enumerator_on_process_fn on_process)
+      : ctx_(ctx), on_job_(on_job), on_process_(on_process) {}
+
+ private:
+  bool OnJob(JobDispatcher* job) final { return on_job_(ctx_, job); }
+  bool OnProcess(ProcessDispatcher* proc) final { return on_process_(ctx_, proc); }
+
+  void* const ctx_;
+  const cpp_job_enumerator_on_job_fn on_job_;
+  const cpp_job_enumerator_on_process_fn on_process_;
+};
+
+}  // namespace
+
+extern "C" bool cpp_job_dispatcher_enumerate_children_recursive(
+    JobDispatcher* job, void* ctx, cpp_job_enumerator_on_job_fn on_job,
+    cpp_job_enumerator_on_process_fn on_process) {
+  CallbackJobEnumerator je(ctx, on_job, on_process);
+  return job->EnumerateChildrenRecursive(&je);
+}

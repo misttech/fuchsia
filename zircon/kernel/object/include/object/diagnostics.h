@@ -13,8 +13,6 @@
 void DumpHandlesForKoid(zx_koid_t id);
 
 extern "C" {
-void cpp_dump_process_list();
-void cpp_dump_job_list();
 void cpp_dump_job_policies(zx_koid_t id);
 void cpp_dump_process_handles(zx_koid_t id);
 void cpp_dump_peer_dispatchers_by_koid(zx_obj_type_t type, zx_koid_t id);

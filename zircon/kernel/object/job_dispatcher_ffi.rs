@@ -9,6 +9,7 @@ use super::exceptionate::Exceptionate;
 use super::handle::KernelHandle;
 use super::job_dispatcher::JobDispatcher;
 use super::process_dispatcher::ProcessDispatcher;
+use core::ffi::c_void;
 use core::mem::MaybeUninit;
 use zx_types::{
     zx_info_job_t, zx_koid_t, zx_policy_basic_v1_t, zx_policy_basic_v2_t, zx_policy_timer_slack_t,
@@ -197,4 +198,19 @@ unsafe extern "C" {
     ///
     /// `job` must point to a valid `JobDispatcher`.
     pub(crate) fn cpp_job_dispatcher_parent(job: *const JobDispatcher) -> *mut JobDispatcher;
+
+    /// Recursively walks the job/process tree rooted at `job`, invoking `on_job` and `on_process`
+    /// (with `ctx`) on each node. Returns false if any callback returns false; returns true
+    /// otherwise.
+    ///
+    /// # Safety
+    ///
+    /// `job` must point to a valid `JobDispatcher`, and `ctx` must remain valid for the duration
+    /// of the call for use by `on_job` and `on_process`.
+    pub(crate) fn cpp_job_dispatcher_enumerate_children_recursive(
+        job: *mut JobDispatcher,
+        ctx: *mut c_void,
+        on_job: unsafe extern "C" fn(*mut c_void, *mut JobDispatcher) -> bool,
+        on_process: unsafe extern "C" fn(*mut c_void, *mut ProcessDispatcher) -> bool,
+    ) -> bool;
 }

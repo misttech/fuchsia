@@ -337,6 +337,12 @@ zx_status_t cpp_job_dispatcher_create_debug_exceptionate(JobDispatcher* job,
 JobDispatcher* cpp_job_dispatcher_lookup_job_by_id(JobDispatcher* job, zx_koid_t koid);
 ProcessDispatcher* cpp_job_dispatcher_lookup_process_by_id(JobDispatcher* job, zx_koid_t koid);
 JobDispatcher* cpp_job_dispatcher_parent(const JobDispatcher* job);
+
+typedef bool (*cpp_job_enumerator_on_job_fn)(void* ctx, JobDispatcher* job);
+typedef bool (*cpp_job_enumerator_on_process_fn)(void* ctx, ProcessDispatcher* proc);
+bool cpp_job_dispatcher_enumerate_children_recursive(JobDispatcher* job, void* ctx,
+                                                     cpp_job_enumerator_on_job_fn on_job,
+                                                     cpp_job_enumerator_on_process_fn on_process);
 }
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_JOB_DISPATCHER_H_

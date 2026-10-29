@@ -28,14 +28,15 @@ use zx_types::{
 
 #[cfg(console_enabled)]
 use super::diagnostics_ffi::{
-    dump_all_peer_dispatchers, dump_all_vm_objects, dump_handles_for_koid, dump_job_list,
-    dump_job_policies, dump_orphaned_mapped_vmos, dump_orphaned_slices,
-    dump_peer_dispatchers_by_koid, dump_process_address_space, dump_process_handles,
-    dump_process_list, dump_process_memory_usage, dump_process_vm_objects, dump_vm_object_cow_tree,
-    kill_process,
+    dump_all_peer_dispatchers, dump_all_vm_objects, dump_handles_for_koid, dump_job_policies,
+    dump_orphaned_mapped_vmos, dump_orphaned_slices, dump_peer_dispatchers_by_koid,
+    dump_process_address_space, dump_process_handles, dump_process_memory_usage,
+    dump_process_vm_objects, dump_vm_object_cow_tree, kill_process,
 };
 #[cfg(console_enabled)]
 use super::handle::HandleTableArena;
+#[cfg(console_enabled)]
+use super::job_dispatcher::{JobDispatcher, JobEnumerator};
 #[cfg(console_enabled)]
 use crate::console::{CMD_AVAIL_NORMAL, CmdArgs, static_command};
 #[cfg(console_enabled)]
@@ -49,11 +50,16 @@ use core::ptr;
 #[cfg(console_enabled)]
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 #[cfg(console_enabled)]
-use kprint::kprintln;
+use kprint::{kformat, kprintln};
 #[cfg(console_enabled)]
 use zx_types::{
-    ZX_OBJ_TYPE_CHANNEL, ZX_OBJ_TYPE_EVENTPAIR, ZX_OBJ_TYPE_FIFO, ZX_OBJ_TYPE_IOB,
-    ZX_OBJ_TYPE_SOCKET,
+    ZX_OBJ_TYPE_BTI, ZX_OBJ_TYPE_CHANNEL, ZX_OBJ_TYPE_DEBUGLOG, ZX_OBJ_TYPE_EVENT,
+    ZX_OBJ_TYPE_EVENTPAIR, ZX_OBJ_TYPE_EXCEPTION, ZX_OBJ_TYPE_FIFO, ZX_OBJ_TYPE_GUEST,
+    ZX_OBJ_TYPE_INTERRUPT, ZX_OBJ_TYPE_IOB, ZX_OBJ_TYPE_IOMMU, ZX_OBJ_TYPE_JOB, ZX_OBJ_TYPE_PAGER,
+    ZX_OBJ_TYPE_PMT, ZX_OBJ_TYPE_PORT, ZX_OBJ_TYPE_PROCESS, ZX_OBJ_TYPE_PROFILE,
+    ZX_OBJ_TYPE_RESOURCE, ZX_OBJ_TYPE_SOCKET, ZX_OBJ_TYPE_SUSPEND_TOKEN, ZX_OBJ_TYPE_THREAD,
+    ZX_OBJ_TYPE_TIMER, ZX_OBJ_TYPE_UPPER_BOUND, ZX_OBJ_TYPE_VCPU, ZX_OBJ_TYPE_VMAR,
+    ZX_OBJ_TYPE_VMO,
 };
 
 /// Abstraction around writing `zx_info_vmo_t`s to user space. As there are multiple versions of the
@@ -84,6 +90,12 @@ fn copy_cstr_to_name(dst: &mut [u8; ZX_MAX_NAME_LEN], src: &CStr) {
     let len = bytes.len().min(dst.len() - 1);
     dst[..len].copy_from_slice(&bytes[..len]);
     dst[len..].fill(0);
+}
+
+/// Returns the NUL-terminated prefix of a `ZX_MAX_NAME_LEN` name buffer for printing.
+#[cfg(console_enabled)]
+fn c_name(name: &[u8]) -> &CStr {
+    CStr::from_bytes_until_nul(name).unwrap_or(c"")
 }
 
 fn arch_mmu_flags_to_vm_flags(arch_mmu_flags: ArchMmuFlags) -> u32 {
@@ -416,6 +428,128 @@ pub fn get_process_vmos(
         Ok(())
     })?;
     Ok((actual, available))
+}
+
+/// Machinery to walk over a job tree and run a callback on each process.
+#[cfg(console_enabled)]
+struct ProcessWalker<F: FnMut(&ProcessDispatcher)> {
+    cb: F,
+}
+
+#[cfg(console_enabled)]
+impl<F: FnMut(&ProcessDispatcher)> JobEnumerator for ProcessWalker<F> {
+    fn on_process(&mut self, process: &ProcessDispatcher) -> bool {
+        (self.cb)(process);
+        true
+    }
+}
+
+#[cfg(console_enabled)]
+fn make_process_walker<F: FnMut(&ProcessDispatcher)>(cb: F) -> ProcessWalker<F> {
+    ProcessWalker { cb }
+}
+
+/// Machinery to walk over a job tree and run a callback on each job.
+#[cfg(console_enabled)]
+struct JobWalker<F: FnMut(&JobDispatcher)> {
+    cb: F,
+}
+
+#[cfg(console_enabled)]
+impl<F: FnMut(&JobDispatcher)> JobEnumerator for JobWalker<F> {
+    fn on_job(&mut self, job: &JobDispatcher) -> bool {
+        (self.cb)(job);
+        true
+    }
+}
+
+#[cfg(console_enabled)]
+fn make_job_walker<F: FnMut(&JobDispatcher)>(cb: F) -> JobWalker<F> {
+    JobWalker { cb }
+}
+
+/// Per-`zx_obj_type_t` handle counts, indexed by object type.
+#[cfg(console_enabled)]
+type HandleTypeCounts<'a> = &'a mut [u32; ZX_OBJ_TYPE_UPPER_BOUND];
+
+/// Returns the count of a process's handles. For each handle, the corresponding
+/// `zx_obj_type_t`-indexed element of `handle_types` is incremented.
+#[cfg(console_enabled)]
+fn build_handle_stats(pd: &ProcessDispatcher, handle_types: HandleTypeCounts<'_>) -> u32 {
+    let mut total = 0;
+    let _ = pd.handle_table().for_each_handle(|_handle, _rights, disp| {
+        let obj_type = disp.get_type() as usize;
+        handle_types[obj_type] += 1;
+        total += 1;
+        Ok(())
+    });
+    total
+}
+
+/// Counts the process's handles by type and formats them into the provided
+/// buffer as strings.
+#[cfg(console_enabled)]
+fn format_handle_type_count<'a>(pd: &ProcessDispatcher, buf: &'a mut [u8]) -> &'a [u8] {
+    let mut types = [0u32; ZX_OBJ_TYPE_UPPER_BOUND];
+    let handle_count = build_handle_stats(pd, &mut types);
+
+    kformat!(
+        buf,
+        "{:4u}: {:4u} {:3u} {:3u} {:3u} {:3u} {:3u} {:3u} {:3u} {:3u} {:3u} {:3u} {:3u}",
+        handle_count,
+        types[ZX_OBJ_TYPE_JOB as usize],
+        types[ZX_OBJ_TYPE_PROCESS as usize],
+        types[ZX_OBJ_TYPE_THREAD as usize],
+        types[ZX_OBJ_TYPE_VMO as usize],
+        types[ZX_OBJ_TYPE_VMAR as usize],
+        types[ZX_OBJ_TYPE_CHANNEL as usize],
+        types[ZX_OBJ_TYPE_EVENT as usize] + types[ZX_OBJ_TYPE_EVENTPAIR as usize],
+        types[ZX_OBJ_TYPE_PORT as usize],
+        types[ZX_OBJ_TYPE_SOCKET as usize],
+        types[ZX_OBJ_TYPE_TIMER as usize],
+        types[ZX_OBJ_TYPE_FIFO as usize],
+        types[ZX_OBJ_TYPE_INTERRUPT as usize]
+            + types[ZX_OBJ_TYPE_DEBUGLOG as usize]
+            + types[ZX_OBJ_TYPE_RESOURCE as usize]
+            + types[ZX_OBJ_TYPE_GUEST as usize]
+            + types[ZX_OBJ_TYPE_VCPU as usize]
+            + types[ZX_OBJ_TYPE_IOMMU as usize]
+            + types[ZX_OBJ_TYPE_BTI as usize]
+            + types[ZX_OBJ_TYPE_PROFILE as usize]
+            + types[ZX_OBJ_TYPE_PMT as usize]
+            + types[ZX_OBJ_TYPE_SUSPEND_TOKEN as usize]
+            + types[ZX_OBJ_TYPE_PAGER as usize]
+            + types[ZX_OBJ_TYPE_EXCEPTION as usize]
+    )
+}
+
+#[cfg(console_enabled)]
+fn dump_process_list() {
+    kprintln!("{:>7s}   #h:  #jb #pr #th #vo #vm #ch #ev #po #so #tm #fi #?? [name]", "id");
+
+    let mut walker = make_process_walker(|process: &ProcessDispatcher| {
+        let mut handle_counts = [0u8; (ZX_OBJ_TYPE_UPPER_BOUND * 4) + 1 + /*slop*/ 16];
+        let handle_counts_str = format_handle_type_count(process, &mut handle_counts);
+
+        let mut pname = [0u8; ZX_MAX_NAME_LEN];
+        let status = process.get_name(&mut pname);
+        debug_assert!(status.is_ok());
+        kprintln!("{:7u} {:s} [{:s}]", process.get_koid(), handle_counts_str, c_name(&pname));
+    });
+    JobDispatcher::get_root_job().enumerate_children_recursive(&mut walker);
+}
+
+#[cfg(console_enabled)]
+fn dump_job_list() {
+    kprintln!("All jobs:");
+    kprintln!("{:>7s} {:s}", "koid", "name");
+    let mut walker = make_job_walker(|job: &JobDispatcher| {
+        let mut name = [0u8; ZX_MAX_NAME_LEN];
+        let status = job.get_name(&mut name);
+        debug_assert!(status.is_ok());
+        kprintln!("{:7u} '{:s}'", job.get_koid(), c_name(&name));
+    });
+    JobDispatcher::get_root_job().enumerate_children_recursive(&mut walker);
 }
 
 #[cfg(console_enabled)]

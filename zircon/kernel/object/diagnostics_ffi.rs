@@ -8,8 +8,6 @@ use core::ffi::{CStr, c_char};
 use zx_types::{zx_koid_t, zx_obj_type_t};
 
 unsafe extern "C" {
-    fn cpp_dump_process_list();
-    fn cpp_dump_job_list();
     fn cpp_dump_job_policies(id: zx_koid_t);
     fn cpp_dump_process_handles(id: zx_koid_t);
     fn cpp_dump_peer_dispatchers_by_koid(obj_type: zx_obj_type_t, id: zx_koid_t);
@@ -23,18 +21,6 @@ unsafe extern "C" {
     fn cpp_dump_process_address_space(id: zx_koid_t);
     fn cpp_dump_process_memory_usage(prefix: *const c_char, min_bytes: usize);
     fn cpp_dump_handles_for_koid(id: zx_koid_t);
-}
-
-/// Dumps all processes in the system to the kernel console.
-pub(super) fn dump_process_list() {
-    // SAFETY: Takes no pointers and synchronizes access to the job/process tree internally.
-    unsafe { cpp_dump_process_list() };
-}
-
-/// Dumps all jobs in the system to the kernel console.
-pub(super) fn dump_job_list() {
-    // SAFETY: Takes no pointers and synchronizes access to the job tree internally.
-    unsafe { cpp_dump_job_list() };
 }
 
 /// Dumps policies for the job with koid `id` to the kernel console.
