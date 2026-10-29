@@ -1,0 +1,22 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+"""Tests for FIDL Rust bindings."""
+
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "test_executable_using_fidl_rust",
+    testonly = True,
+    srcs = ["fidl_test.rs"],
+    edition = "2024",
+    visibility = ["//build/bazel/rules/fidl/tests:__pkg__"],
+    deps = [
+        "//examples/fidl/fuchsia.examples:fuchsia.examples_rust",
+        "//sdk/fidl/fuchsia.math:fuchsia.math_rust",
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust",
+    ],
+)

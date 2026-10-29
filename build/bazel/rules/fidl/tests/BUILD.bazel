@@ -39,6 +39,7 @@ filegroup(
     testonly = True,
     srcs = [
         "//build/bazel/rules/fidl/tests/cc:test_executable_using_fidl_cc",
+        "//build/bazel/rules/fidl/tests/rust:test_executable_using_fidl_rust",
     ],
 )
 
@@ -59,16 +60,29 @@ filegroup(
         "//examples/fidl/fuchsia.examples.docs:versioning",
 
         # Bindings for a library with dependencies.
-        # It also depends on "zx", which is handled uniquely and does not support HLCPP.
+        # It also depends on "zx", which is handled uniquely and does not
+        # support HLCPP or Rust.
         "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp",
         "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp_testing",
         "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp_hlcpp_conversion",
         "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_hlcpp",
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust",
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust_fdomain",
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust_fdomain_flex",
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust_flex",
+        # TODO(https://fxbug.dev/546092413): Uncomment both once Rust next bindings are implemented.
+        # "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust_next",
+        # "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust_fdomain_next",
 
         # A library with indirect dependencies.
         # It is also a library not in a category.
         "//sdk/fidl/fuchsia.hardware.display.engine",
         "//sdk/fidl/fuchsia.hardware.display.engine:fuchsia.hardware.display.engine_cpp",
+        "//sdk/fidl/fuchsia.hardware.display.engine:fuchsia.hardware.display.engine_rust",
+        "//sdk/fidl/fuchsia.hardware.display.engine:fuchsia.hardware.display.engine_rust_fdomain",
+        # TODO(https://fxbug.dev/546092413): Uncomment both once Rust next bindings are implemented.
+        # "//sdk/fidl/fuchsia.hardware.display.engine:fuchsia.hardware.display.engine_rust_next",
+        # "//sdk/fidl/fuchsia.hardware.display.engine:fuchsia.hardware.display.engine_rust_fdomain_next",
 
         # fdomain uses `excluded_checks` and `experimental_flags`.
         "//sdk/fidl/fuchsia.fdomain:fuchsia.fdomain_cpp",
@@ -116,6 +130,13 @@ filegroup(
         "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp",
         "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp_hlcpp_conversion",
         "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_hlcpp",
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust",
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust_fdomain",
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust_fdomain_flex",
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust_flex",
+        # TODO(https://fxbug.dev/546092413): Uncomment both once Rust next bindings are implemented.
+        # "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust_next",
+        # "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust_fdomain_next",
     ],
     target_compatible_with = HOST_OS_CONSTRAINTS,
     visibility = [
