@@ -254,6 +254,10 @@ pub struct SignalState {
     /// Wait queue for signalfd and sigtimedwait. Signaled whenever a signal is added to the queue.
     pub signal_wait: WaitQueue,
 
+    /// Set of signals currently being waited on by `rt_sigtimedwait(2)`. Signals in this set are
+    /// consumed by `rt_sigtimedwait` rather than initiating synchronous group termination.
+    sigtimedwait_set: SigSet,
+
     /// The signal mask of the task.
     ///
     /// It is the set of signals whose delivery is currently blocked for the caller.
@@ -302,6 +306,18 @@ impl SignalState {
             self.mask = mask;
             self.saved_mask = None;
         }
+        self.sigtimedwait_set = SigSet::default();
+    }
+
+    /// Records the set of signals being waited on by `rt_sigtimedwait(2)` until [`restore_mask`]
+    /// is called.
+    pub fn set_sigtimedwait_set(&mut self, wait_set: SigSet) {
+        self.sigtimedwait_set = wait_set & !UNBLOCKABLE_SIGNALS;
+    }
+
+    /// Returns whether `signal` is currently being waited on by `rt_sigtimedwait(2)`.
+    pub fn is_sigtimedwait_waiting(&self, signal: Signal) -> bool {
+        self.sigtimedwait_set.has_signal(signal)
     }
 
     pub fn mask(&self) -> SigSet {

@@ -12,7 +12,9 @@
 #include <stdlib.h>
 #include <sys/epoll.h>
 #include <sys/mman.h>
+#include <sys/ptrace.h>
 #include <sys/syscall.h>
+#include <sys/wait.h>
 #include <ucontext.h>
 #include <unistd.h>
 
@@ -22,10 +24,13 @@
 #include <csignal>
 #include <cstdint>
 #include <functional>
+#include <future>
 #include <latch>
 #include <new>
 #include <optional>
 #include <thread>
+#include <tuple>
+#include <utility>
 
 #include <gtest/gtest.h>
 #include <linux/futex.h>
@@ -2065,4 +2070,412 @@ TEST(SignalHandling, InvalidSigsegvHandlerPcWithNodeferExhaustsAltStack) {
 }
 #endif  // (!__has_feature(address_sanitizer))
 
+// Helper that suspends a child process inside clone(CLONE_VFORK) in the kernel.
+//
+// Note on clone flags: SYS_clone is invoked with `CLONE_VFORK | SIGCHLD` without `CLONE_VM`.
+// Unlike userspace vfork(2) which shares the memory map, omitting CLONE_VM gives the vfork
+// child its own copy-on-write page table and stack while still holding the parent in kernel
+// wait until the child exits.
+//
+// A process waiting in CLONE_VFORK is held in the kernel and cannot return to userspace
+// to dequeue signals or run signal handlers until its vfork child exits. This enables tests
+// to verify whether a signal triggers synchronous termination immediately at signal-generation
+// time (which kills the vfork-blocked parent) or only upon returning to userspace.
+//
+// ScopedVforkBlocker synchronizes child setup, signals the vfork child to exit when
+// Release() is called, and reaps the reparented vfork grandchild on Reap() or destruction.
+class ScopedVforkBlocker {
+ public:
+  ScopedVforkBlocker() = default;
+  ~ScopedVforkBlocker() {
+    Release();
+    Reap();
+  }
+
+  // Suspends the calling thread inside clone(CLONE_VFORK).
+  // The vfork child notifies the parent via pipe when it is alive, and waits for a release
+  // token before calling _exit(0).
+  void BlockInChild() {
+    ready_pipe_.ReadSide().reset();
+    release_pipe_.WriteSide().reset();
+    pid_t vfork_child = static_cast<pid_t>(
+        syscall(SYS_clone, CLONE_VFORK | SIGCHLD, /* child_stack = */ nullptr,
+                /* parent_tid = */ nullptr, /* child_tid = */ nullptr, /* tls = */ 0));
+    ASSERT_THAT(vfork_child, SyscallSucceeds());
+    if (vfork_child == 0) {
+      pid_t my_pid = getpid();
+      if (write(ready_pipe_.WriteSide().get(), &my_pid, sizeof(my_pid)) != sizeof(my_pid)) {
+        _exit(1);
+      }
+      ready_pipe_.WriteSide().reset();
+      char c = 0;
+      (void)read(release_pipe_.ReadSide().get(), &c, 1);
+      _exit(0);
+    }
+    for (;;) {
+      pause();
+    }
+  }
+
+  // Blocks until the vfork child is running and the caller is suspended in CLONE_VFORK.
+  void WaitUntilBlocked() {
+    ready_pipe_.WriteSide().reset();
+    release_pipe_.ReadSide().reset();
+    ASSERT_THAT(read(ready_pipe_.ReadSide().get(), &vfork_child_pid_, sizeof(vfork_child_pid_)),
+                SyscallSucceedsWithValue(static_cast<ssize_t>(sizeof(vfork_child_pid_))));
+  }
+
+  // Signals the vfork child to exit, unblocking the vfork parent if it was not killed.
+  void Release() { release_pipe_.WriteSide().reset(); }
+
+  // Reaps the reparented vfork grandchild.
+  void Reap() {
+    if (vfork_child_pid_ > 0) {
+      int status = 0;
+      (void)HANDLE_EINTR(waitpid(vfork_child_pid_, &status, 0));
+      vfork_child_pid_ = -1;
+    }
+  }
+
+ private:
+  test_helper::ScopedPipe ready_pipe_;
+  test_helper::ScopedPipe release_pipe_;
+  pid_t vfork_child_pid_ = -1;
+};
+
+struct FastPathTestCase {
+  int sig;
+  bool block_signal;
+  int expected_exit_sig;
+  bool use_tgkill;
+  const char *name;
+};
+
+class FastPathTerminationTest : public ::testing::TestWithParam<FastPathTestCase> {};
+
+// Verifies synchronous fatal-signal fast path behavior:
+// - Signals with default action Terminate that are unblocked terminate the process immediately
+//   at signal generation time (observed by the process exiting with `sig` rather than fallback
+//   SIGKILL).
+// - Signals that are blocked, or signals whose default action is DumpCore, do not initiate
+// fast-path
+//   termination and only terminate when the fallback SIGKILL is delivered.
+TEST_P(FastPathTerminationTest, ValidatesFastPathExit) {
+  const FastPathTestCase &test_case = GetParam();
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+  helper.KillChildrenOnDestroy();
+  helper.ExpectSignal(test_case.expected_exit_sig);
+  ScopedVforkBlocker blocker;
+
+  pid_t child_pid = helper.RunInForkedProcess([&blocker, &test_case] {
+    ASSERT_NE(signal(test_case.sig, SIG_DFL), SIG_ERR);
+    sigset_t mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, test_case.sig);
+    ASSERT_THAT(pthread_sigmask(test_case.block_signal ? SIG_BLOCK : SIG_UNBLOCK, &mask, nullptr),
+                SyscallSucceeds());
+
+    blocker.BlockInChild();
+  });
+
+  blocker.WaitUntilBlocked();
+
+  if (test_case.use_tgkill) {
+    ASSERT_THAT(syscall(SYS_tgkill, child_pid, child_pid, test_case.sig), SyscallSucceeds());
+  } else {
+    ASSERT_THAT(kill(child_pid, test_case.sig), SyscallSucceeds());
+  }
+  // If the fast path terminated the process, its exit status is already fixed as `test_case.sig`.
+  // If the fast path was inhibited (signal blocked or DumpCore), fallback SIGKILL will terminate
+  // it.
+  ASSERT_THAT(kill(child_pid, SIGKILL), SyscallSucceeds());
+
+  blocker.Release();
+  ASSERT_TRUE(helper.WaitForChildren());
+  blocker.Reap();
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    SignalHandling, FastPathTerminationTest,
+    ::testing::Values(FastPathTestCase{SIGTERM, /*block_signal=*/false, SIGTERM,
+                                       /*use_tgkill=*/false, "UnblockedDefaultTerminate_kill"},
+                      FastPathTestCase{SIGTERM, /*block_signal=*/false, SIGTERM,
+                                       /*use_tgkill=*/true, "UnblockedDefaultTerminate_tgkill"},
+                      FastPathTestCase{SIGTERM, /*block_signal=*/true, SIGKILL,
+                                       /*use_tgkill=*/false, "BlockedTerminate_kill"},
+                      FastPathTestCase{SIGTERM, /*block_signal=*/true, SIGKILL, /*use_tgkill=*/true,
+                                       "BlockedTerminate_tgkill"},
+                      FastPathTestCase{SIGQUIT, /*block_signal=*/false, SIGKILL,
+                                       /*use_tgkill=*/false, "DefaultDumpCore_kill"},
+                      FastPathTestCase{SIGQUIT, /*block_signal=*/false, SIGKILL,
+                                       /*use_tgkill=*/true, "DefaultDumpCore_tgkill"}),
+    [](const ::testing::TestParamInfo<FastPathTestCase> &info) { return info.param.name; });
+
+class SigtimedwaitConsumeTest : public ::testing::TestWithParam<bool /*use_tgkill*/> {};
+
+// Verifies that when a thread is blocked in sigwaitinfo(2) for a default-terminate signal,
+// sending that signal consumes it in sigwaitinfo(2) rather than triggering immediate group exit.
+TEST_P(SigtimedwaitConsumeTest, ConsumesWaitedTerminateSignalWithoutExiting) {
+  const bool use_tgkill = GetParam();
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+
+  pid_t child_pid = helper.RunInForkedProcess([] {
+    ASSERT_NE(signal(SIGTERM, SIG_DFL), SIG_ERR);
+    sigset_t wait_set;
+    sigemptyset(&wait_set);
+    sigaddset(&wait_set, SIGTERM);
+    ASSERT_THAT(pthread_sigmask(SIG_BLOCK, &wait_set, nullptr), SyscallSucceeds());
+
+    siginfo_t info = {};
+    int received = HANDLE_EINTR(sigwaitinfo(&wait_set, &info));
+    _exit(received == SIGTERM ? 0 : 1);
+  });
+
+  // Wait until the child is blocked in sigwaitinfo(2) (task state 'S').
+  ASSERT_TRUE(test_helper::WaitForTaskState(child_pid, child_pid,
+                                            [](std::string_view state) { return state == "S"; }));
+
+  if (use_tgkill) {
+    ASSERT_THAT(syscall(SYS_tgkill, child_pid, child_pid, SIGTERM), SyscallSucceeds());
+  } else {
+    ASSERT_THAT(kill(child_pid, SIGTERM), SyscallSucceeds());
+  }
+
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+INSTANTIATE_TEST_SUITE_P(SignalHandling, SigtimedwaitConsumeTest,
+                         /*use_tgkill=*/::testing::Bool(),
+                         [](const ::testing::TestParamInfo<bool> &info) {
+                           return info.param ? "tgkill" : "kill";
+                         });
+
+class DefaultTerminateWhileStoppedTest : public ::testing::TestWithParam<bool /*use_tgkill*/> {};
+
+// Verifies that sending an unblocked default-terminate signal (SIGHUP) to a stopped process does
+// not initiate synchronous group exit or overwrite the stopped status reported by waitid(2), and
+// that resuming the process with SIGCONT delivers the queued signal and terminates the process.
+TEST_P(DefaultTerminateWhileStoppedTest, DoesNotExitOrClobberStopSignal) {
+  const bool use_tgkill = GetParam();
+  test_helper::ScopedPipe ready_pipe;
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+  helper.KillChildrenOnDestroy();
+  helper.ExpectSignal(SIGHUP);
+
+  pid_t child_pid = helper.RunInForkedProcess([&ready_pipe] {
+    ready_pipe.ReadSide().reset();
+
+    ASSERT_NE(signal(SIGHUP, SIG_DFL), SIG_ERR);
+    sigset_t mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGHUP);
+    ASSERT_THAT(pthread_sigmask(SIG_UNBLOCK, &mask, nullptr), SyscallSucceeds());
+
+    char c = 'r';
+    ASSERT_THAT(write(ready_pipe.WriteSide().get(), &c, 1), SyscallSucceedsWithValue(1));
+    ready_pipe.WriteSide().reset();
+
+    for (;;) {
+      pause();
+    }
+  });
+  ready_pipe.WriteSide().reset();
+
+  char c = 0;
+  ASSERT_THAT(read(ready_pipe.ReadSide().get(), &c, 1), SyscallSucceedsWithValue(1));
+
+  // Stop the child with SIGSTOP and verify it enters the stopped state without consuming wait
+  // status.
+  ASSERT_THAT(kill(child_pid, SIGSTOP), SyscallSucceeds());
+  siginfo_t info = {};
+  ASSERT_THAT(HANDLE_EINTR(waitid(P_PID, child_pid, &info, WSTOPPED | WNOWAIT)), SyscallSucceeds());
+  EXPECT_EQ(info.si_code, CLD_STOPPED);
+  EXPECT_EQ(info.si_status, SIGSTOP);
+
+  // Sending an unblocked default-terminate signal (SIGHUP) while the process is stopped must not
+  // initiate group exit early and must not overwrite the stopping signal reported by waitid(2).
+  if (use_tgkill) {
+    ASSERT_THAT(syscall(SYS_tgkill, child_pid, child_pid, SIGHUP), SyscallSucceeds());
+  } else {
+    ASSERT_THAT(kill(child_pid, SIGHUP), SyscallSucceeds());
+  }
+
+  memset(&info, 0, sizeof(info));
+  ASSERT_THAT(HANDLE_EINTR(waitid(P_PID, child_pid, &info, WEXITED | WSTOPPED)), SyscallSucceeds());
+  EXPECT_EQ(info.si_code, CLD_STOPPED);
+  EXPECT_EQ(info.si_status, SIGSTOP);
+
+  // Continuing the child delivers the queued SIGHUP, terminating the process with SIGHUP.
+  ASSERT_THAT(kill(child_pid, SIGCONT), SyscallSucceeds());
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+INSTANTIATE_TEST_SUITE_P(SignalHandling, DefaultTerminateWhileStoppedTest,
+                         /*use_tgkill=*/::testing::Bool(),
+                         [](const ::testing::TestParamInfo<bool> &info) {
+                           return info.param ? "tgkill" : "kill";
+                         });
+
+// Verifies that process-directed signals correctly search for a thread that has the signal
+// unblocked:
+// - If all threads block a process-directed signal, it does not trigger fast-path termination.
+// - If a thread-directed signal is sent to a thread that blocks it, it does not trigger fast-path
+//   termination even if another thread has it unblocked.
+// - If a process-directed signal has at least one thread with the signal unblocked, it triggers
+//   synchronous group termination immediately.
+TEST(SignalHandling, MultithreadedDefaultTerminateSelectsUnblockedThread) {
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+  helper.KillChildrenOnDestroy();
+  helper.ExpectSignal(SIGTERM);
+  ScopedVforkBlocker blocker;
+
+  pid_t child_pid = helper.RunInForkedProcess([&blocker] {
+    ASSERT_NE(signal(SIGHUP, SIG_DFL), SIG_ERR);
+    ASSERT_NE(signal(SIGINT, SIG_DFL), SIG_ERR);
+    ASSERT_NE(signal(SIGTERM, SIG_DFL), SIG_ERR);
+    sigset_t mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGHUP);
+    sigaddset(&mask, SIGINT);
+    sigaddset(&mask, SIGTERM);
+    ASSERT_THAT(pthread_sigmask(SIG_BLOCK, &mask, nullptr), SyscallSucceeds());
+
+    std::thread worker([&blocker] {
+      sigset_t worker_mask;
+      sigemptyset(&worker_mask);
+      sigaddset(&worker_mask, SIGINT);
+      sigaddset(&worker_mask, SIGTERM);
+      ASSERT_THAT(pthread_sigmask(SIG_UNBLOCK, &worker_mask, nullptr), SyscallSucceeds());
+      blocker.BlockInChild();
+    });
+    worker.detach();
+
+    for (;;) {
+      pause();
+    }
+  });
+
+  blocker.WaitUntilBlocked();
+
+  // Process-directed SIGHUP (blocked on all threads) must not terminate the process.
+  ASSERT_THAT(kill(child_pid, SIGHUP), SyscallSucceeds());
+  // Thread-directed SIGINT to leader (blocked on leader) must not terminate the process, even
+  // though worker has SIGINT unblocked.
+  ASSERT_THAT(syscall(SYS_tgkill, child_pid, child_pid, SIGINT), SyscallSucceeds());
+  // Process-directed SIGTERM finds the unblocked worker thread and initiates immediate group
+  // termination.
+  ASSERT_THAT(kill(child_pid, SIGTERM), SyscallSucceeds());
+  // If the fast path failed, sending SIGKILL before releasing the vfork blocker would cause the
+  // child to exit with SIGKILL rather than SIGTERM.
+  ASSERT_THAT(kill(child_pid, SIGKILL), SyscallSucceeds());
+
+  blocker.Release();
+  ASSERT_TRUE(helper.WaitForChildren());
+  blocker.Reap();
+}
+
+// Verifies that seizing a task with ptrace inhibits fast-path termination on default-fatal signals,
+// ensuring the tracer receives signal-delivery-stop rather than an immediate exit.
+TEST(SignalHandling, PtracedTaskInhibitsFastPath) {
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+  helper.KillChildrenOnDestroy();
+  helper.ExpectSignal(SIGKILL);
+  ScopedVforkBlocker blocker;
+
+  pid_t child_pid = helper.RunInForkedProcess([&blocker] {
+    ASSERT_NE(signal(SIGTERM, SIG_DFL), SIG_ERR);
+    sigset_t mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGTERM);
+    ASSERT_THAT(pthread_sigmask(SIG_UNBLOCK, &mask, nullptr), SyscallSucceeds());
+
+    blocker.BlockInChild();
+  });
+
+  blocker.WaitUntilBlocked();
+
+  ASSERT_THAT(ptrace(PTRACE_SEIZE, child_pid, /* addr = */ nullptr, /* data = */ 0),
+              SyscallSucceeds());
+
+  // Sending SIGTERM (via tgkill or kill) to a ptraced task must not fast-path terminate.
+  ASSERT_THAT(syscall(SYS_tgkill, child_pid, child_pid, SIGTERM), SyscallSucceeds());
+  ASSERT_THAT(kill(child_pid, SIGTERM), SyscallSucceeds());
+
+  // Fallback SIGKILL terminates the process.
+  ASSERT_THAT(kill(child_pid, SIGKILL), SyscallSucceeds());
+
+  blocker.Release();
+  ASSERT_TRUE(helper.WaitForChildren());
+  blocker.Reap();
+}
+
+// Verifies that in a multi-threaded process where the leader is untraced and blocks a signal,
+// a process-directed signal takes the fast path even if the unblocked worker is ptraced,
+// per Linux semantics where process-directed signal fast-path checks the leader's ptrace state.
+TEST(SignalHandling, MultithreadedPtraceUntracedLeaderAllowsFastPath) {
+  test_helper::ScopedPipe tid_pipe;
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+  helper.KillChildrenOnDestroy();
+  helper.ExpectSignal(SIGTERM);
+  ScopedVforkBlocker blocker;
+
+  pid_t child_pid = helper.RunInForkedProcess([&tid_pipe, &blocker] {
+    tid_pipe.ReadSide().reset();
+
+    ASSERT_NE(signal(SIGTERM, SIG_DFL), SIG_ERR);
+    sigset_t mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGTERM);
+    ASSERT_THAT(pthread_sigmask(SIG_BLOCK, &mask, nullptr), SyscallSucceeds());
+
+    std::thread worker([&tid_pipe, &blocker] {
+      sigset_t worker_mask;
+      sigemptyset(&worker_mask);
+      sigaddset(&worker_mask, SIGTERM);
+      ASSERT_THAT(pthread_sigmask(SIG_UNBLOCK, &worker_mask, nullptr), SyscallSucceeds());
+
+      pid_t worker_tid = static_cast<pid_t>(syscall(SYS_gettid));
+      ASSERT_THAT(write(tid_pipe.WriteSide().get(), &worker_tid, sizeof(worker_tid)),
+                  SyscallSucceedsWithValue(static_cast<ssize_t>(sizeof(worker_tid))));
+      tid_pipe.WriteSide().reset();
+      blocker.BlockInChild();
+    });
+    worker.detach();
+
+    for (;;) {
+      pause();
+    }
+  });
+  tid_pipe.WriteSide().reset();
+
+  pid_t worker_tid = -1;
+  ASSERT_THAT(read(tid_pipe.ReadSide().get(), &worker_tid, sizeof(worker_tid)),
+              SyscallSucceedsWithValue(static_cast<ssize_t>(sizeof(worker_tid))));
+  blocker.WaitUntilBlocked();
+
+  ASSERT_THAT(ptrace(PTRACE_SEIZE, worker_tid, /* addr = */ nullptr, /* data = */ 0),
+              SyscallSucceeds());
+
+  // Process-directed SIGTERM checks the untraced leader, finding the unblocked worker and
+  // initiating fast-path termination with SIGTERM.
+  ASSERT_THAT(kill(child_pid, SIGTERM), SyscallSucceeds());
+  ASSERT_THAT(kill(child_pid, SIGKILL), SyscallSucceeds());
+
+  blocker.Release();
+  int status = 0;
+  while (HANDLE_EINTR(waitpid(worker_tid, &status, __WALL)) > 0) {
+    if (WIFEXITED(status) || WIFSIGNALED(status)) {
+      break;
+    }
+    (void)ptrace(PTRACE_CONT, worker_tid, /* addr = */ nullptr, /* data = */ 0);
+  }
+  ASSERT_TRUE(helper.WaitForChildren());
+  blocker.Reap();
+}
 }  // namespace

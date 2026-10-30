@@ -111,41 +111,49 @@ fn send_signal_prio(
     prio: SignalPriority,
     force_wake: bool,
 ) -> Result<(), Errno> {
-    let (signal_info, signal, is_masked, was_masked, is_real_time, sigaction, action) =
-        match kernel_signal_info {
-            KernelSignalInfo::User(ref user_signal_info) => {
-                if (!task_state.is_ptraced() || user_signal_info.signal == SIGKILL)
-                    && task.thread_group().ignores_signal(user_signal_info)
-                {
-                    return Ok(());
-                }
-                if user_signal_info.signal == SIGKILL {
-                    drop(task_state);
-                    // Synchronously transition the thread group to Exiting and interrupt all
-                    // member tasks.
-                    // TODO(https://fxbug.dev/573607334): Immediately transition the thread group
-                    // to Exiting for other unblocked default-fatal signals
-                    // (DeliveryAction::Terminate when not ptraced).
-                    task.thread_group().write().force_exit_for_sigkill(user_signal_info.clone());
-                    return Ok(());
-                }
-                let signal = user_signal_info.signal;
-                let is_masked = task_state.is_signal_masked(signal);
-                let was_masked = task_state.is_signal_masked_by_saved_mask(signal);
-                let sigaction = task.get_signal_action(signal);
-                let action = action_for_signal(user_signal_info, sigaction);
-                (
-                    Some(user_signal_info.clone()),
-                    Some(signal),
-                    is_masked,
-                    was_masked,
-                    signal.is_real_time(),
-                    Some(sigaction),
-                    Some(action),
-                )
+    let (
+        signal_info,
+        signal,
+        is_masked,
+        was_masked,
+        is_real_time,
+        mut sigaction,
+        mut action,
+        should_force_exit,
+    ) = match kernel_signal_info {
+        KernelSignalInfo::User(ref user_signal_info) => {
+            if (!task_state.is_ptraced() || user_signal_info.signal == SIGKILL)
+                && task.thread_group().ignores_signal(user_signal_info)
+            {
+                return Ok(());
             }
-            KernelSignalInfo::Freeze(_) => (None, None, false, false, false, None, None),
-        };
+            if user_signal_info.signal == SIGKILL {
+                drop(task_state);
+                // Synchronously transition the thread group to Exiting and interrupt all
+                // member tasks.
+                task.thread_group().write().force_exit_for_default_fatal(user_signal_info.clone());
+                return Ok(());
+            }
+            let signal = user_signal_info.signal;
+            let is_masked = task_state.is_signal_masked(signal);
+            let was_masked = task_state.is_signal_masked_by_saved_mask(signal);
+            let sigaction = task.get_signal_action(signal);
+            let action = action_for_signal(user_signal_info, sigaction);
+            let should_force_exit = !task.thread_group().load_stopped().is_stopping_or_stopped()
+                && task_state.will_terminate_immediately(user_signal_info, action);
+            (
+                Some(user_signal_info.clone()),
+                Some(signal),
+                is_masked,
+                was_masked,
+                signal.is_real_time(),
+                Some(sigaction),
+                Some(action),
+                should_force_exit,
+            )
+        }
+        KernelSignalInfo::Freeze(_) => (None, None, false, false, false, None, None, false),
+    };
 
     if is_real_time && prio != SignalPriority::First {
         if task_state.pending_signal_count()
@@ -181,6 +189,25 @@ fn send_signal_prio(
     }
 
     drop(task_state);
+    if should_force_exit {
+        if let Some(ref user_signal_info) = signal_info {
+            // `ThreadGroup` locks must be acquired before `Task` locks, so drop `task_state`
+            // first and re-verify the fast-path preconditions under `tg_state`.
+            let tg_state = task.thread_group().write();
+            let current_sigaction = tg_state.base.signal_actions.get(user_signal_info.signal);
+            let current_action = action_for_signal(user_signal_info, current_sigaction);
+            sigaction = Some(current_sigaction);
+            action = Some(current_action);
+            if !tg_state.base.ignores_signal(user_signal_info)
+                && !tg_state.base.load_stopped().is_stopping_or_stopped()
+                && task.is_running()
+                && task.read().will_terminate_immediately(user_signal_info, current_action)
+            {
+                tg_state.force_exit_for_default_fatal(user_signal_info.clone());
+                return Ok(());
+            }
+        }
+    }
     if is_queued
         && !is_masked
         && action.map_or_else(|| true, |action| action.must_interrupt(sigaction))
@@ -213,7 +240,7 @@ fn send_signal_prio(
 /// Represents the action to take when signal is delivered.
 ///
 /// See https://man7.org/linux/man-pages/man7/signal.7.html.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum DeliveryAction {
     Ignore,
     CallHandler,

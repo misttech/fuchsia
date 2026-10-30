@@ -194,9 +194,9 @@ fn maybe_reset_signal_state(
     // for it to be received before the credentials are committed (in which case it should be
     // cleared), or afterward (in which case it need not be cleared).  It's therefore acceptable to
     // take the signal queues' locks here, rather than holding them across the credentials commit.
-    // Note that `SIGKILL` transitions the thread group to the exiting state immediately on
-    // delivery rather than being queued here, so clearing the signal queues cannot cancel a
-    // pending `SIGKILL`.
+    // Note that `SIGKILL` and other unblocked default-fatal (`DeliveryAction::Terminate`) signals
+    // transition the thread group to the exiting state immediately on send, so clearing the signal
+    // queues cannot cancel an already-initiated fatal exit.
     let mut task_mutable_state = current_task.write();
     let mut thread_group_signal_queue = current_task.thread_group().pending_signals.lock();
 
