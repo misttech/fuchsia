@@ -99,6 +99,45 @@ class TestCommitMessageChecker(unittest.TestCase):
         findings = commit_msg_checker.check_commit_message(msg)
         self.assertEqual(findings, [])
 
+    def test_long_no_ifttt_lines_exempt(self) -> None:
+        # Gerrit's IfThisThenAnalyzer requires `NO_IFTTT=<reason>` (with '=')
+        # and matches it anywhere in the commit message. Long justifications or
+        # file paths should not trigger body line-length warnings.
+        long_reason = (
+            "NO_IFTTT=Visibility-only change in "
+            "//build/config/rust/lints/BUILD.bazel that does not affect paired files."
+        )
+        self.assertGreater(len(long_reason), 72)
+
+        for msg in (
+            # In a body paragraph
+            f"Subject line\n\n{long_reason}\n\nBug: 1\nTest: 1\n",
+            # In the footer block
+            f"Subject line\n\nBody line.\n\nBug: 1\nTest: 1\n{long_reason}\n",
+        ):
+            with self.subTest(msg=msg):
+                findings = commit_msg_checker.check_commit_message(msg)
+                self.assertEqual(findings, [])
+
+    def test_long_no_ifttt_invalid_variants_not_exempt(self) -> None:
+        # Only exact `NO_IFTTT=` at the start of a line is recognized by
+        # Gerrit's IfThisThenAnalyzer; colon, lowercase, spaced '=', or
+        # mid-line occurrences are not exempt from line wrapping.
+        suffix = "a" * 80
+        for line in (
+            f"NO_IFTTT: {suffix}",
+            f"no_ifttt={suffix}",
+            f"NO_IFTTT = {suffix}",
+            f"See NO_IFTTT={suffix}",
+        ):
+            with self.subTest(line=line):
+                msg = f"Subject line\n\n{line}\n\nBug: 1\nTest: 1\n"
+                findings = commit_msg_checker.check_commit_message(msg)
+                self.assertEqual(len(findings), 1)
+                self.assertIn(
+                    "Line 3 exceeds 72 characters", findings[0]["message"]
+                )
+
     def test_quoted_revert_long_line_exempt(self) -> None:
         msg = (
             'Revert "Subject"\n\n' "> " + "a" * 80 + "\n\n" "Bug: 1\n" "Test: 1"

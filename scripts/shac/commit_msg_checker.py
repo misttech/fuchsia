@@ -29,6 +29,13 @@ URL_REGEX = re.compile(r"https?://[^\s]+")
 FOOTER_REGEX = re.compile(
     r"^(Bug|Fixed|Test|Bazel-Migration-Target|Build-Only|Deleted-Tests|Renamed-Tests|Skipped-Dual-Tests|Skip-Readme-Check|Change-Id|Cq-Include-Trybots|Fuchsia-Auto-Submit|Multiply|Depends-on|Run-All-Tests|Exempt|No-Tree-Checks|No-Presubmit|No-Try|TAG|CONV)[:=]"
 )
+# Line prefixes (in addition to footers) that are exempt from line length
+# checks. Gerrit's IfThisThenThat check (`IfThisThenAnalyzer`) requires
+# `NO_IFTTT=<reason>` (with '=', not ':') and matches it anywhere in the commit
+# message rather than parsing it as a Git/Gerrit footer. These lines often
+# exceed 72 characters due to long file paths and justifications, and keeping
+# them on a single line also avoids unindented wraps.
+EXEMPT_LINE_PREFIXES = ("NO_IFTTT=",)
 # Reverts, relands, and autosquash commits take the original subject and prepend
 # a prefix. These are exempt from the length check to avoid manual rewrites of
 # auto-generated subjects.
@@ -106,6 +113,9 @@ def check_commit_message(
             continue
         # Allow standard footers (e.g. Change-Id, Bug, etc.)
         if FOOTER_REGEX.match(line):
+            continue
+        # Allow exempt line prefixes / pseudo-footers (e.g. NO_IFTTT=)
+        if line.startswith(EXEMPT_LINE_PREFIXES):
             continue
         # Allow indented code block / stack trace lines, quoted revert lines, or comments
         if line.startswith(("    ", "\t", ">", "#")):
