@@ -1549,12 +1549,18 @@ def compute_package_rdeps(
             if caller_pkg.startswith("build/") and (rel.endswith(".bzl") or rel.endswith(".gni")) and "verification" not in os.path.basename(rel):
                 has_macro_injected_rdeps = True
             # GN checks a label written in a .gni in the BUILD.gn that imports it, so attribute
-            # references in non-build/ .gni files to the importing packages.
+            # references in non-build/ .gni files to the importing packages (while also recording
+            # the .gni's own package in true_rdep_packages/per_target_rdeps so granting visibility
+            # to the .gni package matching find_rdeps is not flagged as a false-positive rdep).
             gni_importers = (
                 gni_importer_pkgs(rel)
                 if rel.endswith(".gni") and not caller_pkg.startswith("build/")
                 else set()
             )
+            if gni_importers and norm_caller and norm_caller != pkg_path:
+                true_rdep_packages.add(norm_caller)
+                if owner is not None:
+                    per_target_rdeps[owner].add(norm_caller)
             callers = sorted(gni_importers - {pkg_path}) if gni_importers else [norm_caller]
             for caller in callers:
                 true_rdep_packages.add(caller)

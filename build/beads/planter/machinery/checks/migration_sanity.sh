@@ -1069,6 +1069,45 @@ def inspect_gn_target_deps(gbody, pkg_dir, pre_targets, bazel_names):
                 gn_blocked_dep = True
             else:
                 body_queue.append(lbody)
+        # Check whether a dependency's BUILD.bazel defines the target directly
+        # or via a macro that generates <base>_<suffix> sub-targets (such as
+        # fidl_library language bindings), rather than unrelated exports_files.
+        def _bazel_pkg_has_target(dep_bz_txt, dep_target, dep_gn_path):
+            norm_target = dep_target.replace("-", "_")
+            bz_names = [
+                m.group(1)
+                for m in re.finditer(r'\bname\s*=\s*"([^"]+)"', dep_bz_txt)
+            ]
+            if any(
+                n == dep_target or n.replace("-", "_") == norm_target
+                for n in bz_names
+            ):
+                return True
+            if dep_target.endswith("_rust_next"):
+                return False
+            gn_defined = set()
+            if os.path.isfile(dep_gn_path):
+                try:
+                    gn_pre = open(dep_gn_path, encoding="utf-8").read().split(
+                        "BAZEL2GN SENTINEL"
+                    )[0]
+                    gn_defined = {
+                        m.group(1)
+                        for m in re.finditer(
+                            r'\b[a-zA-Z_][a-zA-Z0-9_]*\s*\(\s*"([^"]+)"\s*\)',
+                            gn_pre,
+                        )
+                    }
+                except Exception:
+                    pass
+            if dep_target in gn_defined:
+                return False
+            return any(
+                dep_target.startswith(n + "_")
+                or norm_target.startswith(n.replace("-", "_") + "_")
+                for n in bz_names
+            )
+
         for dm in re.finditer(r'"//([^":(\s]+)(?::([^"(\s]+))?"', cur_body):
             dep_pkg = dm.group(1).strip("/")
             dep_target = dm.group(2) or os.path.basename(dep_pkg)
@@ -1084,14 +1123,13 @@ def inspect_gn_target_deps(gbody, pkg_dir, pre_targets, bazel_names):
             if os.path.isfile(dep_bazel):
                 try:
                     dep_bz_txt = open(dep_bazel, encoding="utf-8").read()
-                    has_bazel_target = (
-                        re.search(r'\bname\s*=\s*"' + re.escape(dep_target) + r'"', dep_bz_txt)
-                        is not None
+                    has_bazel_target = _bazel_pkg_has_target(
+                        dep_bz_txt, dep_target, dep_gn
                     )
                 except Exception:
                     has_bazel_target = True
             if os.path.isfile(dep_gn) and not has_bazel_target:
-                if not os.path.isfile(dep_bazel) and f"//{dep_pkg}" not in unmigrated_deps:
+                if f"//{dep_pkg}" not in unmigrated_deps:
                     unmigrated_deps.append(f"//{dep_pkg}")
                 try:
                     dep_gn_txt = open(dep_gn, encoding="utf-8").read()
@@ -3724,9 +3762,12 @@ for pkg_dir in sorted(candidate_dirs):
                 unmigrated_deps, declare_args_deps, gn_blocked_dep = inspect_gn_target_deps(
                     gbody, pkg_dir, gn_info["pre_targets"], bazel_names
                 )
+                has_external_unmigrated_dep = any(
+                    not d[2:].startswith(pkg_dir + "/") for d in unmigrated_deps
+                )
                 if (
                     gname not in bazel_names
-                    and gn_blocked_dep
+                    and (gn_blocked_dep or has_external_unmigrated_dep)
                     and any(
                         t["rule"] in CONVERTIBLE_BAZEL_RULES and t["skip_line"] is None
                         for t in bazel_targets
