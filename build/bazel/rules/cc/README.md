@@ -18,6 +18,12 @@ for general usage guidance. For Zircon libraries (`zx_library()` in GN), see
 * [`fx_cc_library_headers.bzl`](./fx_cc_library_headers.bzl): Defines
   `fx_cc_library_headers()`, a macro for defining a set of public headers for a
   C++ library.
+* [`fx_cc_shared_library.bzl`](./fx_cc_shared_library.bzl): Defines
+  `fx_cc_shared_library()`, Fuchsia's wrapper macro for `@rules_cc`'s
+  `cc_shared_library()`.
+* [`instrumentation.bzl`](./instrumentation.bzl): Shared helper functions for
+  applying sanitizer and coverage instrumentation features in `fx_cc_*()`
+  wrapper macros.
 * [`providers.bzl`](./providers.bzl): Defines C++ library providers (such as
   `PrebuiltLibraryInfo`).
 * [`shared_library.bzl`](./shared_library.bzl): Defines rules and macros for

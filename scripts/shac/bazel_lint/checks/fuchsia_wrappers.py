@@ -50,7 +50,6 @@ _WRAPPED_RULES: dict[str, _WrapperSpec] = {
         alt_wrapper_name="cc_*_library_zx",
         alt_wrapper_module="//build/bazel/rules:zx_library.bzl",
     ),
-    # `fx_cc_shared_library` is added proactively ahead of https://fxrev.dev/1906761.
     "cc_shared_library": _WrapperSpec(
         wrapper_name="fx_cc_shared_library",
         wrapper_module="//build/bazel/rules/cc:fx_cc_shared_library.bzl",
