@@ -56,6 +56,7 @@ rustc_library("settings_common") {
   ]
 
   test_deps = [
+    "//sdk/fidl/fuchsia.settings:fuchsia.settings_rust",
     "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
     "//src/lib/fuchsia",
     "//src/settings/test_common:settings_test_common",

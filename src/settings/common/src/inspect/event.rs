@@ -5,6 +5,7 @@
 use super::listener_logger::ListenerInspectLogger;
 use crate::service_context::ExternalServiceEvent;
 use anyhow::{Error, anyhow};
+use fidl::endpoints::{ControlHandle, Responder};
 use futures::channel::mpsc::UnboundedSender;
 use std::cell::Cell;
 use std::marker::PhantomData;
@@ -71,6 +72,15 @@ where
             _phantom: PhantomData,
         }
     }
+
+    /// Records an error read from a client's request stream. The request could not be handled, so
+    /// it is recorded as a [RequestType::Unknown] request with a
+    /// [ResponseType::CommunicationError] response.
+    pub fn record_stream_error(&self, error: &fidl::Error) {
+        log::warn!("{} request stream failed: {error:?}", T::NAME);
+        self.request(format!("{error:?}"), RequestType::Unknown)
+            .respond(format!("Err({error:?})"), ResponseType::CommunicationError);
+    }
 }
 
 #[derive(Clone)]
@@ -98,6 +108,32 @@ where
             self.listener_logger.remove_listener(T::NAME.into());
         }
         self.sent = true;
+    }
+
+    /// Sends a successful response to the client with `send` and records `response_type`, unless
+    /// the client could not receive it. A response that failed to send is recorded as
+    /// [ResponseType::DeliveryError], and a response sent after the client closed its channel is
+    /// recorded as [ResponseType::Cancelled].
+    pub fn send_and_respond<R, F>(
+        self,
+        responder: R,
+        send: F,
+        response: String,
+        response_type: ResponseType,
+    ) -> Result<(), fidl::Error>
+    where
+        R: Responder,
+        F: FnOnce(R) -> Result<(), fidl::Error>,
+    {
+        // Writes to a closed channel succeed, so check whether the client is gone before sending.
+        let peer_closed = responder.control_handle().is_closed();
+        let result = send(responder);
+        match &result {
+            Err(e) => self.respond(format!("Err({e:?})"), ResponseType::DeliveryError),
+            Ok(()) if peer_closed => self.respond("Cancelled".to_string(), ResponseType::Cancelled),
+            Ok(()) => self.respond(response, response_type),
+        }
+        result
     }
 }
 
@@ -150,6 +186,8 @@ pub enum RequestType {
     Set,
     Camera,
     MediaButtons,
+    /// A request that could not be read from the client's request stream.
+    Unknown,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -231,11 +269,136 @@ mod tests {
     use crate::inspect::listener_logger::ListenerInspectLogger;
     use diagnostics_assertions::assert_data_tree;
     use fuchsia_inspect as inspect;
+    use futures::StreamExt;
     use futures::channel::mpsc;
 
     struct TestSetting;
     impl Nameable for TestSetting {
         const NAME: &'static str = "TestSetting";
+    }
+
+    /// Returns a responder for a pending `fuchsia.settings.Privacy/Watch` call, along with the
+    /// client end that issued it.
+    async fn privacy_watch_responder()
+    -> (fidl_fuchsia_settings::PrivacyProxy, fidl_fuchsia_settings::PrivacyWatchResponder) {
+        let (proxy, mut stream) =
+            fidl::endpoints::create_proxy_and_stream::<fidl_fuchsia_settings::PrivacyMarker>();
+        // The request is written when the call is made; the response is not needed.
+        drop(proxy.watch());
+        let responder = match stream.next().await {
+            Some(Ok(fidl_fuchsia_settings::PrivacyRequest::Watch { responder })) => responder,
+            other => panic!("Expected Watch request, got {other:?}"),
+        };
+        (proxy, responder)
+    }
+
+    fn expect_response(rx: &mut mpsc::UnboundedReceiver<UsageEvent>) -> (String, ResponseType) {
+        let request = rx.try_recv().unwrap();
+        assert!(matches!(request.direction, Direction::Request(_)));
+        let response = rx.try_recv().unwrap();
+        assert_eq!(response.id, request.id);
+        match response.direction {
+            Direction::Response(response, response_type) => (response, response_type),
+            Direction::Request(_) => panic!("Expected Direction::Response"),
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_send_and_respond_delivered() {
+        let (tx, mut rx) = mpsc::unbounded();
+        let logger = Rc::new(ListenerInspectLogger::with_inspector(&inspect::Inspector::default()));
+        let publisher = UsagePublisher::<TestSetting>::new(tx, logger);
+        let (_proxy, responder) = privacy_watch_responder().await;
+
+        let result = publisher.request("Watch".to_string(), RequestType::Get).send_and_respond(
+            responder,
+            |responder| responder.send(&fidl_fuchsia_settings::PrivacySettings::default()),
+            "Delivered".to_string(),
+            ResponseType::OkSome,
+        );
+
+        assert!(result.is_ok());
+        let (response, response_type) = expect_response(&mut rx);
+        assert_eq!(response, "Delivered");
+        assert!(matches!(response_type, ResponseType::OkSome));
+    }
+
+    #[fuchsia::test]
+    async fn test_send_and_respond_client_closed() {
+        let (tx, mut rx) = mpsc::unbounded();
+        let inspector = inspect::Inspector::default();
+        let logger = Rc::new(ListenerInspectLogger::with_inspector(&inspector));
+        let publisher = UsagePublisher::<TestSetting>::new(tx, logger);
+        let (proxy, responder) = privacy_watch_responder().await;
+        let usage_res = publisher.request("Watch".to_string(), RequestType::Get);
+        drop(proxy);
+
+        let result = usage_res.send_and_respond(
+            responder,
+            |responder| responder.send(&fidl_fuchsia_settings::PrivacySettings::default()),
+            "Delivered".to_string(),
+            ResponseType::OkSome,
+        );
+
+        // Writes to a closed channel succeed, but the response never reached the client.
+        assert!(result.is_ok());
+        let (response, response_type) = expect_response(&mut rx);
+        assert_eq!(response, "Cancelled");
+        assert!(matches!(response_type, ResponseType::Cancelled));
+        assert_data_tree!(inspector, root: {
+            active_listeners: {
+                TestSetting: {
+                    "count": 0u64,
+                }
+            }
+        });
+    }
+
+    #[fuchsia::test]
+    async fn test_send_and_respond_send_failed() {
+        let (tx, mut rx) = mpsc::unbounded();
+        let inspector = inspect::Inspector::default();
+        let logger = Rc::new(ListenerInspectLogger::with_inspector(&inspector));
+        let publisher = UsagePublisher::<TestSetting>::new(tx, logger);
+        let (_proxy, responder) = privacy_watch_responder().await;
+
+        let result = publisher.request("Watch".to_string(), RequestType::Get).send_and_respond(
+            responder,
+            |_responder| Err(fidl::Error::InvalidHeader),
+            "Delivered".to_string(),
+            ResponseType::OkSome,
+        );
+
+        assert!(result.is_err());
+        let (response, response_type) = expect_response(&mut rx);
+        assert_eq!(response, format!("Err({:?})", fidl::Error::InvalidHeader));
+        assert!(matches!(response_type, ResponseType::DeliveryError));
+        assert_data_tree!(inspector, root: {
+            active_listeners: {
+                TestSetting: {
+                    "count": 0u64,
+                }
+            }
+        });
+    }
+
+    #[fuchsia::test]
+    fn test_record_stream_error() {
+        let (tx, mut rx) = mpsc::unbounded();
+        let logger = Rc::new(ListenerInspectLogger::with_inspector(&inspect::Inspector::default()));
+        let publisher = UsagePublisher::<TestSetting>::new(tx, logger);
+
+        publisher.record_stream_error(&fidl::Error::InvalidHeader);
+
+        let request = rx.try_recv().unwrap();
+        assert_eq!(request.setting, "TestSetting");
+        assert!(matches!(request.request_type, RequestType::Unknown));
+        let response = rx.try_recv().unwrap();
+        assert_eq!(response.id, request.id);
+        assert!(matches!(
+            response.direction,
+            Direction::Response(_, ResponseType::CommunicationError)
+        ));
     }
 
     #[fuchsia::test]

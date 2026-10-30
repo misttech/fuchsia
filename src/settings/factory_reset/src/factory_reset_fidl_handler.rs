@@ -52,8 +52,13 @@ impl FactoryResetFidlHandler {
 
     fn hanging_get(info: &FactoryResetInfo, observer: SubscriberObject) -> bool {
         let (usage_responder, responder) = observer.into_parts();
-        usage_responder.respond(format!("{info:?}"), ResponseType::OkSome);
-        if let Err(e) = responder.send(&FactoryResetSettings::from(*info)) {
+        let result = usage_responder.send_and_respond(
+            responder,
+            |responder| responder.send(&FactoryResetSettings::from(*info)),
+            format!("{info:?}"),
+            ResponseType::OkSome,
+        );
+        if let Err(e) = result {
             log::warn!("Failed to respond to watch request: {e:?}");
             return false;
         }
@@ -67,7 +72,14 @@ impl FactoryResetFidlHandler {
             usage_publisher: self.usage_publisher.clone(),
         };
         fasync::Task::local(async move {
-            while let Some(Ok(request)) = stream.next().await {
+            while let Some(request) = stream.next().await {
+                let request = match request {
+                    Ok(request) => request,
+                    Err(e) => {
+                        request_handler.usage_publisher.record_stream_error(&e);
+                        break;
+                    }
+                };
                 request_handler.handle_request(request).await;
             }
         })
@@ -121,8 +133,12 @@ impl RequestHandler {
                     usage_res.respond(format!("Err({e:?}"), ResponseType::from(&e));
                     let _ = responder.send(Err(SettingsError::Failed));
                 } else {
-                    usage_res.respond("Ok(())".to_string(), ResponseType::OkNone);
-                    let _ = responder.send(Ok(()));
+                    let _ = usage_res.send_and_respond(
+                        responder,
+                        |responder| responder.send(Ok(())),
+                        "Ok(())".to_string(),
+                        ResponseType::OkNone,
+                    );
                 }
             }
         }
