@@ -36,6 +36,7 @@ python_library("fast_copy_mock") {
   ]
   visibility = [
     ":*",
+    "//build/python:*",
     "//build/python/tests/assembly:*",
   ]
   deps = [ "//build/python/modules/assembly" ]

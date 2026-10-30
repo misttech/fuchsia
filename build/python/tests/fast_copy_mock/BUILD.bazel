@@ -13,6 +13,9 @@ py_library(
         "fast_copy_mock.py",
     ],
     imports = [".."],
-    visibility = ["//build/python/tests/assembly:__pkg__"],
+    visibility = [
+        "//build/python:__pkg__",
+        "//build/python/tests/assembly:__pkg__",
+    ],
     deps = ["//build/python/modules/assembly"],
 )

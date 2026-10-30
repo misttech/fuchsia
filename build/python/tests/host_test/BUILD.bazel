@@ -1,0 +1,21 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_py_test.bzl", "host_py_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+test_suite(
+    name = "host_tests",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//build/python:__pkg__"],
+)
+
+host_py_test(
+    name = "py_host_test_with_lib",
+    srcs = ["py_host_test_with_lib.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = ["//build/python/tests/lib"],
+)

@@ -2,7 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/bazel_test_suite.gni")
 import("//build/python/python_binary.gni")
+import("//build/python/python_library.gni")
 import("//build/testing/host_test_data.gni")
 
 assert(is_host, "python only supported in host toolchains")
@@ -25,15 +27,38 @@ host_test_data("pip") {
   ]
 }
 
+bazel_test_suite("bazel_tests") {
+  host_tests = [ "//build/python:host_tests" ]
+}
+
+# Python test scripts in subdirectories that have been migrated to Bazel-only
+# host_py_test() targets. Listing them here makes them subject to GN mypy
+# type checking as required by //build/shac.star.
+python_library("type_checked_scripts") {
+  testonly = true
+  visibility = [ ":*" ]
+  sources = [
+    "tests/assembly/assembly_module_test.py",
+    "tests/depfile/depfile_test.py",
+    "tests/host_test/py_host_test_with_lib.py",
+    "tests/serialization/serialization_test.py",
+  ]
+  library_deps = [
+    "//build/python/modules/assembly",
+    "//build/python/modules/depfile",
+    "//build/python/modules/serialization",
+    "//build/python/tests/fast_copy_mock",
+    "//build/python/tests/lib",
+  ]
+}
+
 group("host_tests") {
   testonly = true
   deps = [
-    "tests/assembly:tests",
+    ":bazel_tests",
+    ":type_checked_scripts",
     "tests/bin",
-    "tests/depfile:tests",
-    "tests/host_test:py_host_test_with_lib",
     "tests/lib",
-    "tests/serialization:tests",
   ]
 }
 
