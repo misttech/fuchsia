@@ -49,6 +49,12 @@ pub struct PinnedMemoryTokenDispatcherState {
     /// Magic canary value validating structural integrity.
     canary: Canary<{ fbl::magic(b"PIMT") }>,
 
+    /// Whether `on_zero_handles` needs to unpin `pmt` on behalf of the kernel
+    /// because ownership has not yet been handed off to user space (and
+    /// `unpin` has not yet been called).
+    #[guarded_by(lock)]
+    kernel_cleanup_needed: bool,
+
     /// Reference to the containing BTI dispatcher.
     bti: RefPtr<BusTransactionInitiatorDispatcher>,
 
@@ -70,6 +76,7 @@ impl PinnedMemoryTokenDispatcherState {
         DISPATCHER_PINNED_MEMORY_TOKEN_CREATE_COUNT.add(1);
         pin_init!(Self {
             canary: Canary::new(),
+            kernel_cleanup_needed: true.into(),
             bti,
             pmt: None.into(),
             lock <- KMutex::init(),
@@ -142,7 +149,15 @@ impl PinnedMemoryTokenDispatcher {
 
     /// Unpins and unmaps the memory which was managed by this PMT.
     pub fn unpin(&self) {
-        ksync::lock!(let guard = self.state().lock_lock());
+        ksync::lock!(let mut guard = self.state().lock_lock());
+        // If kernel code calls `unpin()` directly without having cleared
+        // `kernel_cleanup_needed` (for example, kernel tests or any in-kernel
+        // caller that does not hand the PMT out to user space), clearing it here
+        // avoids a redundant `release_pinned_memory()` call in `on_zero_handles()`.
+        // When `unpin()` is called via `zx_pmt_unpin`, `kernel_cleanup_needed` was
+        // already cleared before adding the handle to the user process's handle
+        // table, so this assignment is a no-op in that case.
+        *guard.as_mut().fields_mut().kernel_cleanup_needed = false;
         let pmt = guard.fields().pmt.as_ref().expect("PMT must be initialized");
         pmt.release_pinned_memory();
     }
@@ -154,14 +169,106 @@ impl PinnedMemoryTokenDispatcher {
         pmt.query_address(offset, size)
     }
 
+    /// Marks that the handle for this PMT is about to be added to the user
+    /// process's handle table (after all fallible steps have succeeded), so user
+    /// space is now responsible for calling `zx_pmt_unpin` before closing all
+    /// handles.
+    pub fn clear_kernel_cleanup_needed(&self) {
+        ksync::lock!(let mut guard = self.state().lock_lock());
+        *guard.as_mut().fields_mut().kernel_cleanup_needed = false;
+    }
+
     /// Callback invoked when all handles to this dispatcher are closed.
     pub fn on_zero_handles(&self) {
-        ksync::lock!(let guard = self.state().lock_lock());
+        ksync::lock!(let mut guard = self.state().lock_lock());
         // We may not have a driver level PMT if we never fully constructed
         // successfully. In this case, we will be dropping the kernel handle to the
         // PMT Dispatcher without ever having assigned an iommu::Pmt to it.
+        if *guard.fields().kernel_cleanup_needed {
+            *guard.as_mut().fields_mut().kernel_cleanup_needed = false;
+            if let Some(pmt) = guard.fields().pmt.as_ref() {
+                pmt.release_pinned_memory();
+            }
+        }
         if let Some(pmt) = guard.fields().pmt.as_ref() {
             pmt.on_dispatcher_zero_handles();
         }
+    }
+}
+
+/// Kernel unit tests for `PinnedMemoryTokenDispatcher`.
+#[cfg(ktest)]
+#[unittest::suite(name = "pinned_memory_token_dispatcher_tests")]
+mod tests {
+    use super::BusTransactionInitiatorDispatcher;
+    use crate::object::{IOMMU_FLAG_PERM_READ, IommuDispatcher};
+    use crate::vm::vm_object::VmObject;
+    use crate::vm::vm_object_paged::VmObjectPaged;
+    use unittest::{expect_eq, expect_false, expect_true};
+    use zx_types::{ZX_IOMMU_TYPE_STUB, zx_iommu_desc_stub_t};
+
+    /// Tests PMT cleanup responsibility before and after `clear_kernel_cleanup_needed`.
+    #[test]
+    fn test_pmt_handoff_cleanup_responsibility() {
+        let desc =
+            fbl::Array::<u8>::try_new_zeroed_slice(core::mem::size_of::<zx_iommu_desc_stub_t>())
+                .expect("failed to allocate stub iommu desc");
+        let (iommu_handle, _iommu_rights) =
+            IommuDispatcher::create(ZX_IOMMU_TYPE_STUB, desc).expect("failed to create stub iommu");
+
+        let (bti_handle, _bti_rights) =
+            BusTransactionInitiatorDispatcher::create(iommu_handle.dispatcher().iommu(), 0)
+                .expect("failed to create bti");
+        let bti_disp = bti_handle.dispatcher();
+
+        let vmo_paged =
+            VmObjectPaged::create(0, 0, page::SIZE as u64).expect("failed to create paged VMO");
+        let vmo: fbl::RefPtr<VmObject> = fbl::RefPtr::from_ref(&vmo_paged);
+
+        // 1. Pre-handoff drop: dropping the `KernelHandle` before `clear_kernel_cleanup_needed()`
+        //    must unpin the PMT without quarantining it or faulting the BTI.
+        {
+            let (pmt_handle, _pmt_rights) = bti_disp
+                .pin(vmo.clone(), 0, page::SIZE as u64, IOMMU_FLAG_PERM_READ)
+                .expect("failed to pin vmo");
+            expect_eq!(bti_disp.pmo_count(), 1);
+            expect_eq!(bti_disp.quarantine_count(), 0);
+            drop(pmt_handle);
+        }
+        expect_eq!(bti_disp.pmo_count(), 0);
+        expect_eq!(bti_disp.quarantine_count(), 0);
+        expect_false!(bti_disp.bti().in_fault_state());
+
+        // 2. Post-handoff drop without `unpin()`: once `clear_kernel_cleanup_needed()` is called,
+        //    dropping all handles without calling `unpin()` must quarantine the PMT.
+        {
+            let (pmt_handle, _pmt_rights) = bti_disp
+                .pin(vmo.clone(), 0, page::SIZE as u64, IOMMU_FLAG_PERM_READ)
+                .expect("failed to pin vmo after pre-handoff drop");
+            pmt_handle.dispatcher().clear_kernel_cleanup_needed();
+            drop(pmt_handle);
+        }
+        expect_eq!(bti_disp.pmo_count(), 1);
+        expect_eq!(bti_disp.quarantine_count(), 1);
+        expect_true!(bti_disp.bti().in_fault_state());
+
+        bti_disp.release_quarantine();
+        expect_eq!(bti_disp.pmo_count(), 0);
+        expect_eq!(bti_disp.quarantine_count(), 0);
+        expect_false!(bti_disp.bti().in_fault_state());
+
+        // 3. Post-handoff explicit `unpin()` followed by drop: must unpin cleanly without
+        //    quarantining.
+        {
+            let (pmt_handle, _pmt_rights) = bti_disp
+                .pin(vmo, 0, page::SIZE as u64, IOMMU_FLAG_PERM_READ)
+                .expect("failed to pin vmo after release_quarantine");
+            pmt_handle.dispatcher().clear_kernel_cleanup_needed();
+            pmt_handle.dispatcher().unpin();
+            drop(pmt_handle);
+        }
+        expect_eq!(bti_disp.pmo_count(), 0);
+        expect_eq!(bti_disp.quarantine_count(), 0);
+        expect_false!(bti_disp.bti().in_fault_state());
     }
 }

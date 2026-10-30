@@ -7,10 +7,12 @@
 use core::mem::MaybeUninit;
 
 use crate::object::{
-    BusTransactionInitiatorDispatcher, HandleValue, IOMMU_FLAG_PERM_EXECUTE, IOMMU_FLAG_PERM_READ,
-    IOMMU_FLAG_PERM_WRITE, IommuDispatcher, ProcessDispatcher, VmObjectDispatcher, dev_vaddr_t,
+    BusTransactionInitiatorDispatcher, HandleOwner, HandleValue, IOMMU_FLAG_PERM_EXECUTE,
+    IOMMU_FLAG_PERM_READ, IOMMU_FLAG_PERM_WRITE, IommuDispatcher, PinnedMemoryTokenDispatcher,
+    ProcessDispatcher, VmObjectDispatcher, dev_vaddr_t,
 };
 use crate::user_copy::UserOutPtr;
+use crate::vm::pmm;
 use debug::ltracef;
 use syscalls_macro::syscall;
 use zerocopy::{Immutable, IntoBytes};
@@ -198,20 +200,11 @@ pub fn sys_bti_pin(
     let (new_pmt_handle, new_pmt_rights) =
         bti_dispatcher.pin(vmo_dispatcher.vmo().clone(), offset, size, iommu_perms)?;
 
-    // If anything goes wrong from here on out, we _must_ remember to unpin the
-    // PMT we are holding. Failure to do this means that the PMT will hit
-    // on-zero-handles while it still has pages pinned and end up in the BTI's
-    // quarantine list. This is definitely not correct as the user never got
-    // access to the PMT handle in order to unpin the data.
-    //
-    // Notice that we're holding a RefPtr to the dispatcher rather than a
-    // reference to the `new_pmt_handle`. Just before we return, `new_pmt_handle`
-    // will be moved in order to make a `HandleValue`. `new_pmt_handle` will
-    // not be valid after the move so we keep a RefPtr to the dispatcher instead.
-    let pmt_disp = new_pmt_handle.dispatcher().clone();
-    let mut cleanup = zr::defer(move || {
-        pmt_disp.unpin();
-    });
+    // Until `clear_kernel_cleanup_needed()` is called below, `new_pmt_handle`
+    // owns the responsibility for unpinning on error: if anything fails before
+    // or during handle allocation, dropping `new_pmt_handle` invokes
+    // `on_zero_handles()`, which unpins the PMT before notifying it of zero
+    // handles so that it is not placed on the BTI's quarantine list.
 
     // Based on the passed in options, determine what size chunks we are going to report to the
     // user, and how many of those there will be.
@@ -284,8 +277,36 @@ pub fn sys_bti_pin(
     buffered_addrs.flush()?;
     debug_assert_eq!(buffered_addrs.index, 0);
 
-    let handle = new_pmt_handle.make_and_add_handle(new_pmt_rights)?;
-    cleanup.cancel();
+    // Allocate the `HandleOwner` before clearing `kernel_cleanup_needed` and
+    // before adding the handle to the process's handle table:
+    // 1. `HandleOwner::make` is the only fallible step. If it fails for want of
+    //    memory, `new_pmt_handle` is dropped inside `HandleOwner::make` while
+    //    `kernel_cleanup_needed` is still `true`, so `on_zero_handles()` unpins
+    //    the PMT rather than quarantining it.
+    // 2. Once `HandleOwner::make` succeeds, `clear_kernel_cleanup_needed()` must
+    //    run *before* `up.handle_table().add_handle(handle_owner)` publishes the
+    //    handle to the process's handle table (at which point another thread in
+    //    the process could close the handle and trigger `on_zero_handles()`,
+    //    which must quarantine the PMT if `zx_pmt_unpin` was not called).
+    // 3. Downcasting `handle_owner.dispatcher()` avoids cloning the `RefPtr`
+    //    across `HandleOwner::make` (which moves the `RefPtr` out of
+    //    `new_pmt_handle` with no extra atomic reference count updates).
+    let Some(handle_owner) = HandleOwner::make(new_pmt_handle, new_pmt_rights) else {
+        // See comment in `ProcessDispatcher::MakeAndAddHandle`.
+        pmm::node().report_alloc_failure(pmm::AllocFailure {
+            r#type: pmm::AllocFailureType::Handle,
+            size: 1,
+            free_count: 0,
+        });
+        return Err(Status::NO_MEMORY);
+    };
+    handle_owner
+        .dispatcher()
+        .downcast::<PinnedMemoryTokenDispatcher>()
+        .unwrap()
+        .clear_kernel_cleanup_needed();
+    let handle = up.handle_table().map_handle_to_value(&handle_owner);
+    up.handle_table().add_handle(handle_owner);
     *pmt = handle;
     Ok(())
 }
