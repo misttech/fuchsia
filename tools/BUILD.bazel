@@ -89,6 +89,7 @@ test_suite(
         "//tools/qemu:qemu_tests",
         "//tools/readme_fuchsia:tests",
         "//tools/rust-unsafe-analyzer:rust-unsafe-analyzer-test",
+        "//tools/rust_extract:rust_extract_tests",
         "//tools/rust_test_parser:rust_test_parser_lib_tests",
         "//tools/shac_test_runner:shac_test_runner_tests",
         "//tools/staticanalysis/clippy-reporter:clippy_reporter_tests",

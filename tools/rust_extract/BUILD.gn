@@ -45,10 +45,13 @@ import("//build/tools/bazel2gn/bazel_migration.gni")
 
 if (is_host) {
   rustc_test("rust_extract_tests") {
-    testonly = true
     sources = [ "src/main.rs" ]
     source_root = "src/main.rs"
     edition = "2024"
+    visibility = [
+      ":*",
+      "//tools:*",
+    ]
     deps = [
       "//third_party/rust_crates:anyhow",
       "//third_party/rust_crates:argh",
