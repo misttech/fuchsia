@@ -1,0 +1,83 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/components:fx_component.bzl", "fx_component_manifest", "fx_test_component")
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "settings_inspect_utils",
+    srcs = [
+        "src/joinable_inspect_vecdeque.rs",
+        "src/lib.rs",
+        "src/managed_inspect_map.rs",
+        "src/managed_inspect_queue.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    visibility = ["//src/settings:__subpackages__"],
+    deps = [
+        "//src/lib/diagnostics/inspect/derive",
+        "//src/lib/diagnostics/inspect/rust",
+    ],
+)
+
+# test-parity-allow-manual: the bare binary only runs inside its custom-manifest
+# component; the test runs through the :settings_inspect_utils_tests fx_test.
+rustc_test(
+    name = "settings_inspect_utils_lib_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":settings_inspect_utils",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+        "//src/lib/fuchsia",
+    ],
+)
+
+fx_packaged_binary(
+    name = "settings_inspect_utils_lib_test_packaged_bin",
+    testonly = True,
+    binary = ":settings_inspect_utils_lib_test",
+    binary_name = "settings_inspect_utils_lib_test",
+)
+
+fx_component_manifest(
+    name = "settings_inspect_utils_tests_manifest",
+    testonly = True,
+    component_name = "settings_inspect_utils_test",
+    includes = [
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/settings_inspect_utils_tests.cml",
+)
+
+fx_test_component(
+    name = "settings_inspect_utils_tests_component",
+    compiled_manifest = ":settings_inspect_utils_tests_manifest",
+    component_name = "settings_inspect_utils_test",
+    deps = [":settings_inspect_utils_lib_test_packaged_bin"],
+)
+
+fx_package(
+    name = "settings_inspect_utils_tests-package",
+    package_name = "settings_inspect_utils_tests",
+    test_components = [":settings_inspect_utils_tests_component"],
+)
+
+fx_test(
+    name = "settings_inspect_utils_tests",
+    max_log_severity = "ERROR",
+    package = ":settings_inspect_utils_tests-package",
+    visibility = ["//src/settings:__pkg__"],
+)
