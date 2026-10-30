@@ -304,7 +304,8 @@ class UsbConfigSwitchTest(fuchsia_base_test.FuchsiaBaseTest):
         """Switches to `config`, and waits until the DUT is back.
 
         Raises:
-            signals.TestFailure: The DUT didn't come back.
+            signals.TestFailure: The DUT didn't come back. The message also
+                says what `usb-cli diag` over serial shows.
         """
         label = ",".join(config)
         _LOGGER.info(
@@ -334,7 +335,8 @@ class UsbConfigSwitchTest(fuchsia_base_test.FuchsiaBaseTest):
                 raise signals.TestFailure(
                     f"The host didn't see {GOOGLE_USB_VID:04x}:{pid:04x} "
                     f"within {_ENUMERATION_TIMEOUT_SEC}s of switching to "
-                    f"{label}. Host devices: "
+                    f"{label}. {self._describe_diag(label)}. "
+                    "Host devices: "
                     f"{sysfs_usb.describe_usb_devices(target_vid=GOOGLE_USB_VID)}"
                 )
             time.sleep(0.5)
@@ -359,8 +361,10 @@ class UsbConfigSwitchTest(fuchsia_base_test.FuchsiaBaseTest):
                     timeout=_RECONNECT_TIMEOUT_SEC, attempts=1
                 )
         except honeydew_errors.HoneydewError as e:
+            # The diag result goes first, because FFX errors can be long.
             raise signals.TestFailure(
-                f"The DUT didn't reconnect after switching to {label}: {e}"
+                f"The DUT didn't reconnect after switching to {label}. "
+                f"{self._describe_diag(label)}. Error: {e}"
             ) from e
         _LOGGER.info("Switched to %s in %.1fs", label, time.monotonic() - start)
 
@@ -467,18 +471,40 @@ class UsbConfigSwitchTest(fuchsia_base_test.FuchsiaBaseTest):
 
     def _check_diag(self, config: list[str]) -> None:
         """Checks that `usb-cli diag` shows no errors or stuck endpoints."""
-        output = self._usb_cli_diag(config)
+        problems = self._run_diag(",".join(config), over_ssh="cdc" in config)
+        asserts.assert_false(problems, f"usb-cli diag: {problems}")
+
+    def _describe_diag(self, label: str) -> str:
+        """Runs `usb-cli diag` over serial, and says what it shows.
+
+        For when the DUT doesn't come back, so it skips SSH, and it doesn't
+        raise if the serial command fails.
+        """
+        try:
+            problems = self._run_diag(label, over_ssh=False)
+        except honeydew_errors.HoneydewError as e:
+            return f"usb-cli diag over serial failed too: {e}"
+        if not problems:
+            return "usb-cli diag over serial shows no problems"
+        return f"usb-cli diag over serial: {problems}"
+
+    def _run_diag(self, label: str, over_ssh: bool) -> list[str]:
+        """Runs `usb-cli diag`, and returns the problems that it shows.
+
+        Also logs the DWC3 endpoint types.
+        """
+        output = self._usb_cli_diag(over_ssh)
         problems = find_diag_problems(output)
         if problems:
             # Inspect reads the TRBs one by one while the hardware completes
             # them, so a single read can be torn. Only trust a repeat.
             time.sleep(1)
-            output = self._usb_cli_diag(config)
+            output = self._usb_cli_diag(over_ssh)
             problems = find_diag_problems(output)
-        self._log_endpoint_types(",".join(config), output)
+        self._log_endpoint_types(label, output)
         if problems:
             _LOGGER.warning("usb-cli diag output: %s", output)
-        asserts.assert_false(problems, f"usb-cli diag: {problems}")
+        return problems
 
     def _log_endpoint_types(self, label: str, output: str) -> None:
         """Logs the DWC3 endpoint types, and which could wedge.
@@ -520,9 +546,12 @@ class UsbConfigSwitchTest(fuchsia_base_test.FuchsiaBaseTest):
             or "none",
         )
 
-    def _usb_cli_diag(self, config: list[str]) -> str:
-        """Runs `usb-cli diag` over SSH if CDC is up and works, else serial."""
-        if "cdc" in config:
+    def _usb_cli_diag(self, over_ssh: bool) -> str:
+        """Runs `usb-cli diag` over SSH if `over_ssh`, else over serial.
+
+        Falls back to serial if SSH fails.
+        """
+        if over_ssh:
             try:
                 # SSH is faster, and kernel logs don't get mixed in.
                 return self.dut.ffx.run(
