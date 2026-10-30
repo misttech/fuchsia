@@ -876,3 +876,220 @@ async fn test_set_valid_software_toggle_flags() {
         );
     }
 }
+
+// Test that Watch reports the configured mutable_toggle_state for each device.
+#[fuchsia::test(allow_stalls = false)]
+async fn test_watch_reports_configured_mutable_toggle_state() {
+    let config = InputConfiguration {
+        devices: vec![
+            InputDeviceConfiguration {
+                device_name: DEFAULT_MIC_NAME.to_string(),
+                device_type: InputDeviceType::MICROPHONE,
+                source_states: vec![
+                    SourceState { source: DeviceStateSource::HARDWARE, state: AVAILABLE_BITS },
+                    SourceState { source: DeviceStateSource::SOFTWARE, state: AVAILABLE_BITS },
+                ],
+                mutable_toggle_state: MUTED_BITS,
+            },
+            InputDeviceConfiguration {
+                device_name: DEFAULT_CAMERA_NAME.to_string(),
+                device_type: InputDeviceType::CAMERA,
+                source_states: vec![
+                    SourceState { source: DeviceStateSource::HARDWARE, state: AVAILABLE_BITS },
+                    SourceState { source: DeviceStateSource::SOFTWARE, state: AVAILABLE_BITS },
+                ],
+                mutable_toggle_state: 0,
+            },
+        ],
+    };
+
+    let env = TestInputEnvironmentBuilder::new().set_input_device_config(config).build().await;
+    let settings = env.input_service.watch().await.expect("watch completed");
+    let devices = settings.devices.expect("devices present");
+
+    let mic = devices
+        .iter()
+        .find(|d| d.device_type == Some(DeviceType::Microphone))
+        .expect("Microphone not found");
+    assert_eq!(mic.mutable_toggle_state, Some(ToggleStateFlags::MUTED));
+
+    let cam = devices
+        .iter()
+        .find(|d| d.device_type == Some(DeviceType::Camera))
+        .expect("Camera not found");
+    assert_eq!(cam.mutable_toggle_state, Some(ToggleStateFlags::empty()));
+}
+
+// Test that Set rejects toggle states disallowed by the device's configured mutable_toggle_state.
+#[fuchsia::test(allow_stalls = false)]
+async fn test_set_disallowed_mutable_toggle_state_rejected() {
+    let config = InputConfiguration {
+        devices: vec![InputDeviceConfiguration {
+            device_name: DEFAULT_MIC_NAME.to_string(),
+            device_type: InputDeviceType::MICROPHONE,
+            source_states: vec![
+                SourceState { source: DeviceStateSource::HARDWARE, state: AVAILABLE_BITS },
+                SourceState { source: DeviceStateSource::SOFTWARE, state: AVAILABLE_BITS },
+            ],
+            // Only MUTED (4) is mutable; DISABLED (8) is not allowed.
+            mutable_toggle_state: MUTED_BITS,
+        }],
+    };
+
+    let env = TestInputEnvironmentBuilder::new().set_input_device_config(config).build().await;
+    let input_proxy = env.input_service.clone();
+
+    for disallowed_flags in
+        [ToggleStateFlags::DISABLED, ToggleStateFlags::MUTED | ToggleStateFlags::DISABLED]
+    {
+        let input_state = FidlInputState {
+            name: Some(DEFAULT_MIC_NAME.to_string()),
+            device_type: Some(DeviceType::Microphone),
+            state: Some(FidlDeviceState {
+                toggle_flags: Some(disallowed_flags),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let res = input_proxy.set(&[input_state]).await.expect("set completed");
+        assert_eq!(
+            res,
+            Err(SettingsError::Failed),
+            "Expected Set to reject disallowed toggle_flags: {disallowed_flags:?}"
+        );
+    }
+
+    let settings = input_proxy.watch().await.expect("watch completed");
+    let mic = settings
+        .devices
+        .as_ref()
+        .unwrap()
+        .iter()
+        .find(|d| d.device_type == Some(DeviceType::Microphone))
+        .expect("Microphone not found");
+    assert_eq!(
+        mic.state,
+        Some(FidlDeviceState {
+            toggle_flags: Some(ToggleStateFlags::AVAILABLE),
+            ..Default::default()
+        })
+    );
+}
+
+// Test that Set accepts toggle states allowed by the device's configured mutable_toggle_state.
+#[fuchsia::test(allow_stalls = false)]
+async fn test_set_allowed_mutable_toggle_state_succeeds() {
+    let config = InputConfiguration {
+        devices: vec![InputDeviceConfiguration {
+            device_name: DEFAULT_MIC_NAME.to_string(),
+            device_type: InputDeviceType::MICROPHONE,
+            source_states: vec![
+                SourceState { source: DeviceStateSource::HARDWARE, state: AVAILABLE_BITS },
+                SourceState { source: DeviceStateSource::SOFTWARE, state: AVAILABLE_BITS },
+            ],
+            mutable_toggle_state: MUTED_BITS,
+        }],
+    };
+
+    let env = TestInputEnvironmentBuilder::new().set_input_device_config(config).build().await;
+    let input_proxy = env.input_service.clone();
+    let _ = input_proxy.watch().await.expect("initial watch completed");
+
+    for allowed_flags in [ToggleStateFlags::MUTED, ToggleStateFlags::AVAILABLE] {
+        let input_state = FidlInputState {
+            name: Some(DEFAULT_MIC_NAME.to_string()),
+            device_type: Some(DeviceType::Microphone),
+            state: Some(FidlDeviceState {
+                toggle_flags: Some(allowed_flags),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        input_proxy
+            .set(&[input_state])
+            .await
+            .expect("set completed")
+            .expect("allowed toggle flags should succeed");
+
+        let settings = input_proxy.watch().await.expect("watch completed");
+        let mic = settings
+            .devices
+            .as_ref()
+            .unwrap()
+            .iter()
+            .find(|d| d.device_type == Some(DeviceType::Microphone))
+            .expect("Microphone not found");
+        assert_eq!(
+            mic.state,
+            Some(FidlDeviceState { toggle_flags: Some(allowed_flags), ..Default::default() })
+        );
+    }
+}
+
+// Test that Set allows toggling permitted flags when an immutable flag is already set, allows
+// idempotent no-op requests, and rejects clearing the immutable flag.
+#[fuchsia::test(allow_stalls = false)]
+async fn test_set_partial_mutable_toggle_state() {
+    let config = InputConfiguration {
+        devices: vec![InputDeviceConfiguration {
+            device_name: DEFAULT_MIC_NAME.to_string(),
+            device_type: InputDeviceType::MICROPHONE,
+            source_states: vec![
+                SourceState { source: DeviceStateSource::HARDWARE, state: AVAILABLE_BITS },
+                SourceState { source: DeviceStateSource::SOFTWARE, state: MUTED_BITS },
+            ],
+            mutable_toggle_state: ToggleStateFlags::DISABLED.bits(),
+        }],
+    };
+
+    let env = TestInputEnvironmentBuilder::new().set_input_device_config(config).build().await;
+    let input_proxy = env.input_service.clone();
+    let _ = input_proxy.watch().await.expect("initial watch completed");
+
+    let send_set = |toggle_flags: ToggleStateFlags| {
+        let input_proxy = input_proxy.clone();
+        async move {
+            let input_state = FidlInputState {
+                name: Some(DEFAULT_MIC_NAME.to_string()),
+                device_type: Some(DeviceType::Microphone),
+                state: Some(FidlDeviceState {
+                    toggle_flags: Some(toggle_flags),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+            input_proxy.set(&[input_state]).await.expect("set completed")
+        }
+    };
+
+    // Idempotent no-op Set(MUTED) succeeds.
+    assert_eq!(send_set(ToggleStateFlags::MUTED).await, Ok(()));
+
+    // Clearing immutable MUTED fails.
+    for clears_muted in [ToggleStateFlags::AVAILABLE, ToggleStateFlags::DISABLED] {
+        assert_eq!(send_set(clears_muted).await, Err(SettingsError::Failed));
+    }
+
+    // Setting and clearing permitted DISABLED while keeping MUTED succeeds.
+    for (requested_flags, expected_flags) in [
+        (
+            ToggleStateFlags::MUTED | ToggleStateFlags::DISABLED,
+            ToggleStateFlags::MUTED | ToggleStateFlags::DISABLED,
+        ),
+        (ToggleStateFlags::MUTED, ToggleStateFlags::MUTED),
+    ] {
+        assert_eq!(send_set(requested_flags).await, Ok(()));
+        let settings = input_proxy.watch().await.expect("watch completed");
+        let mic = settings
+            .devices
+            .as_ref()
+            .unwrap()
+            .iter()
+            .find(|d| d.device_type == Some(DeviceType::Microphone))
+            .expect("Microphone not found");
+        assert_eq!(
+            mic.state,
+            Some(FidlDeviceState { toggle_flags: Some(expected_flags), ..Default::default() })
+        );
+    }
+}

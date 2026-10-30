@@ -80,17 +80,6 @@ impl InputState {
         Self::default()
     }
 
-    /// Insert an InputDevice's state into the internal InputState hierarchy, updating the
-    /// state if it already exists or adding the state if it does not.
-    pub(crate) fn insert_device(&mut self, input_device: InputDevice, source: DeviceStateSource) {
-        self.set_source_state(
-            input_device.device_type,
-            input_device.name,
-            source,
-            input_device.state,
-        );
-    }
-
     /// Set the `state` for a given device and `source`.
     /// The combination of `device_type` and `device_name`
     /// uniquely identifies the device.
@@ -208,6 +197,17 @@ impl From<InputConfiguration> for InputState {
                 .entry(device_name.clone())
                 .or_insert_with(|| InputDevice::new(device_name, input_device_type));
 
+            device.mutable_toggle_state =
+                DeviceState::from_bits(device_config.mutable_toggle_state).unwrap_or_else(|| {
+                    log::error!(
+                        "Failed to deserialize mutable_toggle_state {} for {:?} {}",
+                        device_config.mutable_toggle_state,
+                        device_config.device_type,
+                        device_config.device_name,
+                    );
+                    DeviceState::empty()
+                });
+
             // Set the entry on the source states map.
             device_config.source_states.iter().for_each(|source_state| {
                 let value = DeviceState::from_bits(source_state.state).unwrap_or_default();
@@ -244,6 +244,10 @@ pub struct InputDevice {
 
     /// The overall state of the device considering the `source_state`s.
     pub state: DeviceState,
+
+    /// The software toggle states that clients are allowed to modify.
+    #[serde(default = "DeviceState::default_mutable_toggle_state")]
+    pub mutable_toggle_state: DeviceState,
 }
 
 impl InputDevice {
@@ -253,6 +257,7 @@ impl InputDevice {
             device_type,
             source_states: HashMap::<DeviceStateSource, DeviceState>::new(),
             state: DeviceState::new(),
+            mutable_toggle_state: DeviceState::default_mutable_toggle_state(),
         }
     }
 
@@ -311,8 +316,7 @@ impl From<InputDevice> for FidlInputDevice {
                 .collect(),
         );
 
-        let mutable_toggle_state: FidlDeviceState =
-            DeviceState::default_mutable_toggle_state().into();
+        let mutable_toggle_state: FidlDeviceState = device.mutable_toggle_state.into();
         result.device_name = Some(device.name.clone());
         result.device_type = Some(device.device_type.into());
         result.source_states = source_states;
@@ -412,7 +416,7 @@ impl DeviceState {
     }
 
     /// The flags that clients can manipulate by default.
-    fn default_mutable_toggle_state() -> Self {
+    pub(crate) fn default_mutable_toggle_state() -> Self {
         DeviceState::MUTED | DeviceState::DISABLED
     }
 
@@ -678,6 +682,13 @@ mod tests {
 
     #[fuchsia::test]
     fn test_input_configuration_to_input_state() {
+        let mut cam2_config = create_device_config(
+            "camera2",
+            InputDeviceType::CAMERA,
+            AVAILABLE_BITS,
+            MUTED_DISABLED_BITS,
+        );
+        cam2_config.mutable_toggle_state = MUTED_BITS;
         let config = InputConfiguration {
             devices: vec![
                 create_device_config(
@@ -692,12 +703,7 @@ mod tests {
                     AVAILABLE_BITS,
                     AVAILABLE_BITS,
                 ),
-                create_device_config(
-                    "camera2",
-                    InputDeviceType::CAMERA,
-                    AVAILABLE_BITS,
-                    MUTED_DISABLED_BITS,
-                ),
+                cam2_config,
             ],
         };
         let result: InputState = config.into();
@@ -761,6 +767,25 @@ mod tests {
                 .unwrap(),
             DeviceState::from_bits(MUTED_DISABLED_BITS).unwrap(),
         );
+        let mic_device = result
+            .input_categories
+            .get(&InputDeviceType::MICROPHONE)
+            .unwrap()
+            .devices
+            .get(DEFAULT_MIC_NAME)
+            .unwrap();
+        assert_eq!(
+            mic_device.mutable_toggle_state,
+            DeviceState::from_bits(MUTED_DISABLED_BITS).unwrap()
+        );
+        let cam2_device = result
+            .input_categories
+            .get(&InputDeviceType::CAMERA)
+            .unwrap()
+            .devices
+            .get("camera2")
+            .unwrap();
+        assert_eq!(cam2_device.mutable_toggle_state, DeviceState::from_bits(MUTED_BITS).unwrap());
     }
 
     #[fuchsia::test]
@@ -827,13 +852,14 @@ mod tests {
             AVAILABLE_BITS,
             AVAILABLE_BITS,
         );
-        let expected_cam: FidlInputDevice = create_fidl_input_device(
+        let mut expected_cam: FidlInputDevice = create_fidl_input_device(
             DEFAULT_CAMERA_NAME,
             FidlDeviceType::Camera,
             AVAILABLE_BITS,
             MUTED_BITS,
             MUTED_BITS,
         );
+        expected_cam.mutable_toggle_state = FidlToggleFlags::from_bits(MUTED_BITS);
 
         let mut mic = InputDevice::new(DEFAULT_MIC_NAME.to_string(), InputDeviceType::MICROPHONE);
         let _ = mic
@@ -852,6 +878,7 @@ mod tests {
             .source_states
             .insert(DeviceStateSource::HARDWARE, DeviceState::from_bits(MUTED_BITS).unwrap());
         cam.state = DeviceState::from_bits(MUTED_BITS).unwrap();
+        cam.mutable_toggle_state = DeviceState::from_bits(MUTED_BITS).unwrap();
 
         let mic_res: FidlInputDevice = mic.into();
         let cam_res: FidlInputDevice = cam.into();

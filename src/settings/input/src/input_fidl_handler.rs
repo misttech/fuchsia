@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::input_controller::{InputController, InputError, Request};
-use crate::types::{DeviceState, DeviceStateSource, InputDevice, InputDeviceType, InputInfo};
+use crate::input_controller::{InputController, InputError, Request, SetInputDevice};
+use crate::types::{DeviceState, InputDeviceType, InputInfo};
 use anyhow::{Error, anyhow};
 use async_utils::hanging_get::server;
 use fidl_fuchsia_settings::{
@@ -18,7 +18,7 @@ use settings_common::inspect::event::{
     HangingGetObserver, RequestType, ResponseType, UsagePublisher,
 };
 
-fn to_request(fidl_input_states: Vec<InputState>) -> Result<Vec<InputDevice>, Error> {
+fn to_request(fidl_input_states: Vec<InputState>) -> Result<Vec<SetInputDevice>, Error> {
     fidl_input_states
         .into_iter()
         .map(|input_state| {
@@ -31,8 +31,7 @@ fn to_request(fidl_input_states: Vec<InputState>) -> Result<Vec<InputDevice>, Er
             let device_type: InputDeviceType = fidl_device_type.into();
             let device_state = DeviceState::try_from(fidl_state)?;
             let device_name = input_state.name.unwrap_or_else(|| device_type.to_string());
-            let source_states = [(DeviceStateSource::SOFTWARE, device_state)].into();
-            Ok(InputDevice { name: device_name, device_type, state: device_state, source_states })
+            Ok(SetInputDevice { name: device_name, device_type, state: device_state })
         })
         .collect()
 }

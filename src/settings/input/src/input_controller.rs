@@ -5,8 +5,8 @@
 use crate::input_device_configuration::InputConfiguration;
 use crate::input_fidl_handler::Publisher;
 use crate::types::{
-    DeviceState, DeviceStateSource, InputDevice, InputDeviceType, InputInfo, InputInfoSources,
-    InputState, Microphone,
+    DeviceState, DeviceStateSource, InputDeviceType, InputInfo, InputInfoSources, InputState,
+    Microphone,
 };
 use anyhow::{Context, Error};
 use fuchsia_async as fasync;
@@ -55,6 +55,8 @@ pub(crate) enum InputError {
     WriteFailure(Error),
     #[error("The maximum number of input devices has been reached.")]
     MaximumInputDeviceLimitReached(Cow<'static, str>),
+    #[error("Invalid input argument")]
+    InvalidInput,
     #[error("Unexpected error: {0}")]
     UnexpectedError(Cow<'static, str>),
 }
@@ -69,6 +71,7 @@ impl From<&InputError> for ResponseType {
             InputError::MaximumInputDeviceLimitReached(..) => {
                 ResponseType::MaximumInputDevicesReached
             }
+            InputError::InvalidInput => ResponseType::InvalidArgument,
             InputError::UnexpectedError(..) => ResponseType::UnexpectedError,
         }
     }
@@ -154,8 +157,16 @@ impl DeviceStorageCompatible for InputInfoSourcesV1 {
     const KEY: &'static str = "input_info_sources_v1";
 }
 
+/// A software state update request for a single input device.
+#[derive(PartialEq, Eq, Debug, Clone)]
+pub(crate) struct SetInputDevice {
+    pub(crate) name: String,
+    pub(crate) device_type: InputDeviceType,
+    pub(crate) state: DeviceState,
+}
+
 pub(crate) enum Request {
-    Set(Vec<InputDevice>, Sender<Result<(), InputError>>),
+    Set(Vec<SetInputDevice>, Sender<Result<(), InputError>>),
 }
 
 pub struct InputController {
@@ -322,7 +333,7 @@ impl InputController {
                         next_request = request_rx.next();
                         let Request::Set(input_devices, tx) = request;
                         let res = check_publish(
-                            self.set_input_states(input_devices, DeviceStateSource::SOFTWARE).await,
+                            self.set_input_states(input_devices).await,
                             |info| self.publish(info)).map(|_|{});
                         let _ = tx.send(res);
                     }
@@ -459,14 +470,34 @@ impl InputController {
         check_publish(self.set_hw_media_buttons_state(buttons).await, |info| self.publish(info))
     }
 
-    // Wrapper around client.read() that fills in the config
-    // as the default value if the read value is empty. It may be empty
-    // after a migration from a previous InputInfoSources version
-    // or on pave.
+    /// Reads the stored input state and reconciles it with `input_device_config`.
+    ///
+    /// When storage is empty (for example on first boot or pave), all configured devices and their
+    /// default states are populated from `input_device_config`. When storage is non-empty,
+    /// configured devices already in storage keep their persisted states while taking
+    /// `mutable_toggle_state` from `input_device_config`, and any configured devices absent from
+    /// storage (for example `"camera"` after migrating from V1 storage) are inserted with their
+    /// configured initial states and `mutable_toggle_state`.
     async fn get_stored_info(&self) -> InputInfo {
         let mut input_info = InputInfo::from(self.store.get::<InputInfo>().await);
+        let config_state = InputState::from(self.input_device_config.clone());
         if input_info.input_device_state.is_empty() {
-            input_info.input_device_state = self.input_device_config.clone().into();
+            input_info.input_device_state = config_state;
+        } else {
+            for (device_type, config_category) in config_state.input_categories {
+                let category =
+                    input_info.input_device_state.input_categories.entry(device_type).or_default();
+                for (device_name, config_device) in config_category.devices {
+                    match category.devices.get_mut(&device_name) {
+                        Some(device) => {
+                            device.mutable_toggle_state = config_device.mutable_toggle_state;
+                        }
+                        None => {
+                            let _ = category.devices.insert(device_name, config_device);
+                        }
+                    }
+                }
+            }
         }
         input_info
     }
@@ -585,12 +616,8 @@ impl InputController {
             .map_err(InputError::WriteFailure)
     }
 
-    /// Sets state for the given input devices.
-    async fn set_input_states(
-        &mut self,
-        input_devices: Vec<InputDevice>,
-        source: DeviceStateSource,
-    ) -> UpdateInputResult {
+    /// Sets software state for the given input devices.
+    async fn set_input_states(&mut self, input_devices: Vec<SetInputDevice>) -> UpdateInputResult {
         let mut input_info = self.get_stored_info().await;
         let device_types = input_info.input_device_state.device_types();
         let cam_state = self.get_cam_sw_state().ok();
@@ -601,6 +628,38 @@ impl InputController {
         for input_device in input_devices.iter() {
             if !device_types.contains(&input_device.device_type) {
                 return Err(InputError::Unsupported(input_device.device_type));
+            }
+
+            let (mutable_toggle_state, current_sw_state) = input_info
+                .input_device_state
+                .input_categories
+                .get(&input_device.device_type)
+                .and_then(|category| category.devices.get(&input_device.name))
+                .map(|device| {
+                    let sw_state = device
+                        .source_states
+                        .get(&DeviceStateSource::SOFTWARE)
+                        .copied()
+                        .unwrap_or_default();
+                    (device.mutable_toggle_state, sw_state)
+                })
+                .unwrap_or_else(|| {
+                    (DeviceState::default_mutable_toggle_state(), DeviceState::AVAILABLE)
+                });
+
+            // Compare the requested state against `current_sw_state` masked to the client-toggleable
+            // flags (`MUTED | DISABLED`) so that:
+            // - Both setting and clearing a toggle flag require that flag in `mutable_toggle_state`
+            //   (including clearing `MUTED` or `DISABLED` when transitioning to `AVAILABLE`).
+            // - Unchanged toggle flags do not block updating a permitted flag (for example toggling
+            //   `DISABLED` on a device whose `MUTED` flag is already set and immutable, or issuing a
+            //   no-op `Set` matching the current software state).
+            // - Non-toggle flags (`AVAILABLE`) and system-managed flags (`ACTIVE`, `ERROR`) that may
+            //   be present in `current_sw_state` are ignored.
+            let changed_toggle_bits = (current_sw_state ^ input_device.state)
+                & DeviceState::default_mutable_toggle_state();
+            if !(changed_toggle_bits - mutable_toggle_state).is_empty() {
+                return Err(InputError::InvalidInput);
             }
 
             let already_exists = input_info
@@ -630,7 +689,12 @@ impl InputController {
         // Update the function-scoped storage cache with the requested changes. This will allow us
         // to determine if any camera state has changed, necessary for the logic which follows.
         for input_device in &input_devices {
-            input_info.input_device_state.insert_device(input_device.clone(), source);
+            input_info.input_device_state.set_source_state(
+                input_device.device_type,
+                input_device.name.clone(),
+                DeviceStateSource::SOFTWARE,
+                input_device.state,
+            );
         }
 
         // If the device has a camera, it should successfully get the sw state, and
@@ -678,7 +742,12 @@ impl InputController {
         // All prerequisites are done, and camera changes are committed to the hardware. We can now
         // finalize the update by updating our cache, and queue the write to storage.
         for input_device in input_devices {
-            self.input_device_state.insert_device(input_device, source);
+            self.input_device_state.set_source_state(
+                input_device.device_type,
+                input_device.name,
+                DeviceStateSource::SOFTWARE,
+                input_device.state,
+            );
         }
 
         let published_info = InputInfo { input_device_state: self.input_device_state.clone() };
@@ -884,6 +953,311 @@ mod tests {
     }
 
     #[fuchsia::test]
+    fn test_input_deserialization_without_mutable_toggle_state() {
+        let raw_json = r#"{
+            "input_device_state": {
+                "input_categories": {
+                    "MICROPHONE": {
+                        "devices": {
+                            "microphone": {
+                                "name": "microphone",
+                                "device_type": "MICROPHONE",
+                                "source_states": {
+                                    "HARDWARE": { "bits": 1 },
+                                    "SOFTWARE": { "bits": 4 }
+                                },
+                                "state": { "bits": 4 }
+                            }
+                        }
+                    }
+                }
+            }
+        }"#;
+        let deserialized = InputInfoSources::try_deserialize_from(raw_json)
+            .expect("deserialization without mutable_toggle_state should succeed");
+        let mic = deserialized
+            .input_device_state
+            .input_categories
+            .get(&InputDeviceType::MICROPHONE)
+            .and_then(|c| c.devices.get(DEFAULT_MIC_NAME))
+            .expect("microphone should exist");
+        assert_eq!(mic.mutable_toggle_state, DeviceState::default_mutable_toggle_state());
+        assert_eq!(mic.state, DeviceState::MUTED);
+    }
+
+    #[fuchsia::test]
+    async fn test_restore_applies_configured_mutable_toggle_state_to_stored_devices() {
+        let mut stored_state = InputState::new();
+        stored_state.set_source_state(
+            InputDeviceType::MICROPHONE,
+            "mic_mute_only".to_string(),
+            DeviceStateSource::SOFTWARE,
+            DeviceState::MUTED,
+        );
+        stored_state.set_source_state(
+            InputDeviceType::MICROPHONE,
+            "mic_invalid_config".to_string(),
+            DeviceStateSource::SOFTWARE,
+            DeviceState::AVAILABLE,
+        );
+        stored_state.set_source_state(
+            InputDeviceType::MICROPHONE,
+            "mic_dynamic".to_string(),
+            DeviceStateSource::SOFTWARE,
+            DeviceState::MUTED,
+        );
+        let stored_info = InputInfoSources { input_device_state: stored_state };
+
+        let storage_factory = InMemoryStorageFactory::with_initial_data(&stored_info);
+        storage_factory
+            .initialize::<InputController>()
+            .await
+            .expect("controller should have impls");
+        let (value_tx, _value_rx) = mpsc::unbounded();
+        let setting_value_publisher = SettingValuePublisher::new(value_tx);
+        let (event_tx, _event_rx) = mpsc::unbounded();
+        let external_publisher = ExternalEventPublisher::new(event_tx);
+
+        let mut controller = InputController::create_with_config::<InMemoryStorageFactory>(
+            Rc::new(ServiceContext::new(None)),
+            InputConfiguration {
+                devices: vec![
+                    InputDeviceConfiguration {
+                        device_name: "mic_mute_only".to_string(),
+                        device_type: InputDeviceType::MICROPHONE,
+                        source_states: vec![SourceState {
+                            source: DeviceStateSource::SOFTWARE,
+                            state: DeviceState::AVAILABLE.bits(),
+                        }],
+                        mutable_toggle_state: DeviceState::MUTED.bits(),
+                    },
+                    InputDeviceConfiguration {
+                        device_name: "mic_invalid_config".to_string(),
+                        device_type: InputDeviceType::MICROPHONE,
+                        source_states: vec![SourceState {
+                            source: DeviceStateSource::SOFTWARE,
+                            state: DeviceState::AVAILABLE.bits(),
+                        }],
+                        mutable_toggle_state: 1 << 63,
+                    },
+                ],
+            },
+            &storage_factory,
+            setting_value_publisher,
+            external_publisher,
+        )
+        .await;
+
+        let restored = controller.restore().await.expect("restore should succeed");
+        let mic_category = restored
+            .input_device_state
+            .input_categories
+            .get(&InputDeviceType::MICROPHONE)
+            .expect("microphone category should exist");
+
+        // Persisted state (MUTED) is preserved while mutable_toggle_state comes from config (MUTED).
+        let mic_mute_only = mic_category.devices.get("mic_mute_only").unwrap();
+        assert_eq!(mic_mute_only.state, DeviceState::MUTED);
+        assert_eq!(mic_mute_only.mutable_toggle_state, DeviceState::MUTED);
+
+        // Invalid mutable_toggle_state bits in config fail closed to empty().
+        let mic_invalid = mic_category.devices.get("mic_invalid_config").unwrap();
+        assert_eq!(mic_invalid.state, DeviceState::AVAILABLE);
+        assert_eq!(mic_invalid.mutable_toggle_state, DeviceState::empty());
+
+        // Dynamically added unconfigured devices keep their persisted state and default mutability.
+        let mic_dynamic = mic_category.devices.get("mic_dynamic").unwrap();
+        assert_eq!(mic_dynamic.state, DeviceState::MUTED);
+        assert_eq!(mic_dynamic.mutable_toggle_state, DeviceState::default_mutable_toggle_state());
+
+        // Verify the restored mutable_toggle_state values are enforced by set_input_states.
+        let disable_res = controller
+            .set_input_states(vec![SetInputDevice {
+                name: "mic_mute_only".to_string(),
+                device_type: InputDeviceType::MICROPHONE,
+                state: DeviceState::MUTED | DeviceState::DISABLED,
+            }])
+            .await;
+        assert!(matches!(disable_res, Err(InputError::InvalidInput)));
+
+        let unmute_res = controller
+            .set_input_states(vec![SetInputDevice {
+                name: "mic_mute_only".to_string(),
+                device_type: InputDeviceType::MICROPHONE,
+                state: DeviceState::AVAILABLE,
+            }])
+            .await;
+        assert!(unmute_res.is_ok());
+
+        let invalid_config_mute_res = controller
+            .set_input_states(vec![SetInputDevice {
+                name: "mic_invalid_config".to_string(),
+                device_type: InputDeviceType::MICROPHONE,
+                state: DeviceState::MUTED,
+            }])
+            .await;
+        assert!(matches!(invalid_config_mute_res, Err(InputError::InvalidInput)));
+    }
+
+    #[fuchsia::test]
+    async fn test_restore_populates_missing_configured_devices_when_storage_non_empty() {
+        use fidl::endpoints::DiscoverableProtocolMarker;
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        // Simulate partial persisted storage (such as after migrating V1 storage, which only
+        // contained the microphone).
+        let mut stored_state = InputState::new();
+        stored_state.set_source_state(
+            InputDeviceType::MICROPHONE,
+            DEFAULT_MIC_NAME.to_string(),
+            DeviceStateSource::SOFTWARE,
+            DeviceState::MUTED,
+        );
+        stored_state.set_source_state(
+            InputDeviceType::MICROPHONE,
+            DEFAULT_MIC_NAME.to_string(),
+            DeviceStateSource::HARDWARE,
+            DeviceState::AVAILABLE,
+        );
+        let stored_info = InputInfoSources { input_device_state: stored_state };
+
+        let camera_muted = Arc::new(AtomicBool::new(false));
+        let camera_muted_clone = camera_muted.clone();
+        let service_context = Rc::new(ServiceContext::new(Some(Box::new(
+            move |service_name: &str, channel: zx::Channel| {
+                let camera_muted_clone = camera_muted_clone.clone();
+                let service_name = service_name.to_string();
+                Box::pin(async move {
+                    if service_name != fidl_fuchsia_camera3::DeviceWatcherMarker::PROTOCOL_NAME {
+                        return Err(anyhow::Error::msg("unsupported service"));
+                    }
+                    let stream = fidl::endpoints::ServerEnd::<
+                        fidl_fuchsia_camera3::DeviceWatcherMarker,
+                    >::new(channel)
+                    .into_stream();
+                    fasync::Task::local(handle_camera3_device_watcher(stream, camera_muted_clone))
+                        .detach();
+                    Ok(())
+                })
+            },
+        ))));
+
+        let storage_factory = InMemoryStorageFactory::with_initial_data(&stored_info);
+        storage_factory
+            .initialize::<InputController>()
+            .await
+            .expect("controller should have impls");
+        let (value_tx, _value_rx) = mpsc::unbounded();
+        let setting_value_publisher = SettingValuePublisher::new(value_tx);
+        let (event_tx, _event_rx) = mpsc::unbounded();
+        let external_publisher = ExternalEventPublisher::new(event_tx);
+
+        let mut controller = InputController::create_with_config::<InMemoryStorageFactory>(
+            service_context,
+            InputConfiguration {
+                devices: vec![
+                    InputDeviceConfiguration {
+                        device_name: DEFAULT_MIC_NAME.to_string(),
+                        device_type: InputDeviceType::MICROPHONE,
+                        source_states: vec![
+                            SourceState {
+                                source: DeviceStateSource::HARDWARE,
+                                state: DeviceState::AVAILABLE.bits(),
+                            },
+                            SourceState {
+                                source: DeviceStateSource::SOFTWARE,
+                                state: DeviceState::AVAILABLE.bits(),
+                            },
+                        ],
+                        mutable_toggle_state: DeviceState::MUTED.bits(),
+                    },
+                    InputDeviceConfiguration {
+                        device_name: DEFAULT_CAMERA_NAME.to_string(),
+                        device_type: InputDeviceType::CAMERA,
+                        source_states: vec![
+                            SourceState {
+                                source: DeviceStateSource::HARDWARE,
+                                state: DeviceState::AVAILABLE.bits(),
+                            },
+                            SourceState {
+                                source: DeviceStateSource::SOFTWARE,
+                                state: DeviceState::MUTED.bits(),
+                            },
+                        ],
+                        mutable_toggle_state: 0,
+                    },
+                    InputDeviceConfiguration {
+                        device_name: "mic_invalid_missing".to_string(),
+                        device_type: InputDeviceType::MICROPHONE,
+                        source_states: vec![SourceState {
+                            source: DeviceStateSource::SOFTWARE,
+                            state: DeviceState::AVAILABLE.bits(),
+                        }],
+                        mutable_toggle_state: 1 << 63,
+                    },
+                ],
+            },
+            &storage_factory,
+            setting_value_publisher,
+            external_publisher,
+        )
+        .await;
+
+        let restored = controller.restore().await.expect("restore should succeed");
+
+        // Persisted microphone keeps its stored MUTED state and adopts configured mutability.
+        let mic = restored
+            .input_device_state
+            .input_categories
+            .get(&InputDeviceType::MICROPHONE)
+            .and_then(|c| c.devices.get(DEFAULT_MIC_NAME))
+            .expect("microphone should exist");
+        assert_eq!(mic.state, DeviceState::MUTED);
+        assert_eq!(mic.mutable_toggle_state, DeviceState::MUTED);
+
+        // Missing configured camera is populated with its configured initial MUTED state and
+        // immutable toggle mask, and its state is pushed to camera hardware on restore.
+        let cam = restored
+            .input_device_state
+            .input_categories
+            .get(&InputDeviceType::CAMERA)
+            .and_then(|c| c.devices.get(DEFAULT_CAMERA_NAME))
+            .expect("camera should be populated from config");
+        assert_eq!(cam.state, DeviceState::MUTED);
+        assert_eq!(cam.mutable_toggle_state, DeviceState::empty());
+        assert!(camera_muted.load(Ordering::Relaxed));
+
+        let unmute_cam_res = controller
+            .set_input_states(vec![SetInputDevice {
+                name: DEFAULT_CAMERA_NAME.to_string(),
+                device_type: InputDeviceType::CAMERA,
+                state: DeviceState::AVAILABLE,
+            }])
+            .await;
+        assert!(matches!(unmute_cam_res, Err(InputError::InvalidInput)));
+
+        // Missing configured device with invalid mutable_toggle_state bits fails closed to empty().
+        let mic_invalid = restored
+            .input_device_state
+            .input_categories
+            .get(&InputDeviceType::MICROPHONE)
+            .and_then(|c| c.devices.get("mic_invalid_missing"))
+            .expect("mic_invalid_missing should be populated from config");
+        assert_eq!(mic_invalid.state, DeviceState::AVAILABLE);
+        assert_eq!(mic_invalid.mutable_toggle_state, DeviceState::empty());
+
+        let mute_invalid_res = controller
+            .set_input_states(vec![SetInputDevice {
+                name: "mic_invalid_missing".to_string(),
+                device_type: InputDeviceType::MICROPHONE,
+                state: DeviceState::MUTED,
+            }])
+            .await;
+        assert!(matches!(mute_invalid_res, Err(InputError::InvalidInput)));
+    }
+
+    #[fuchsia::test]
     async fn test_camera_error_on_restore() {
         let (event_tx, _event_rx) = mpsc::unbounded();
         let external_publisher = ExternalEventPublisher::new(event_tx);
@@ -974,7 +1348,7 @@ mod tests {
                 device_name: format!("mic{i}"),
                 device_type: InputDeviceType::MICROPHONE,
                 source_states: vec![SourceState { source: DeviceStateSource::SOFTWARE, state: 0 }],
-                mutable_toggle_state: 0,
+                mutable_toggle_state: DeviceState::default_mutable_toggle_state().bits(),
             });
         }
 
@@ -990,14 +1364,12 @@ mod tests {
 
         let _ = controller.restore().await;
 
-        let overflow_dev = InputDevice {
+        let overflow_dev = SetInputDevice {
             name: "mic_max_exceeded".to_string(),
             device_type: InputDeviceType::MICROPHONE,
-            source_states: [(DeviceStateSource::SOFTWARE, DeviceState::AVAILABLE)].into(),
             state: DeviceState::AVAILABLE,
         };
-        let res =
-            controller.set_input_states(vec![overflow_dev], DeviceStateSource::SOFTWARE).await;
+        let res = controller.set_input_states(vec![overflow_dev]).await;
         match res {
             Err(InputError::MaximumInputDeviceLimitReached(msg)) => {
                 assert_eq!(
@@ -1112,7 +1484,7 @@ mod tests {
                         source: DeviceStateSource::SOFTWARE,
                         state: 0, // AVAILABLE
                     }],
-                    mutable_toggle_state: 0,
+                    mutable_toggle_state: DeviceState::default_mutable_toggle_state().bits(),
                 }],
             },
             &storage_factory,
@@ -1132,16 +1504,13 @@ mod tests {
 
         // Create a request to MUTE the camera. The hardware API call will fail on this request,
         // due to the previously configured mock camera service.
-        let mute_device = InputDevice {
+        let mute_device = SetInputDevice {
             name: DEFAULT_CAMERA_NAME.to_string(),
             device_type: InputDeviceType::CAMERA,
-            source_states: [(DeviceStateSource::SOFTWARE, DeviceState::MUTED)].into(),
             state: DeviceState::MUTED,
         };
 
-        let res = controller
-            .set_input_states(vec![mute_device.clone()], DeviceStateSource::SOFTWARE)
-            .await;
+        let res = controller.set_input_states(vec![mute_device.clone()]).await;
         assert!(res.is_err());
         assert_eq!(call_count.load(Ordering::Relaxed), 2);
         assert!(!camera_muted.load(Ordering::Relaxed));
@@ -1149,8 +1518,7 @@ mod tests {
         // Attempt to mute again. If the bug this test tracks is present, this will skip
         // push_cam_sw_state and return Ok, because the service thinks the state is already MUTED
         // due to the in-memory state being updated despite the hardware update failing.
-        let res2 =
-            controller.set_input_states(vec![mute_device], DeviceStateSource::SOFTWARE).await;
+        let res2 = controller.set_input_states(vec![mute_device]).await;
 
         // If the bug is fixed, we expect that the camera service will have been called again, the
         // result was okay and the mute state was properly updated.
@@ -1286,7 +1654,7 @@ mod tests {
                             source: DeviceStateSource::SOFTWARE,
                             state: initial_state,
                         }],
-                        mutable_toggle_state: 0,
+                        mutable_toggle_state: DeviceState::default_mutable_toggle_state().bits(),
                     },
                     InputDeviceConfiguration {
                         device_name: DEFAULT_MIC_NAME.to_string(),
@@ -1295,7 +1663,7 @@ mod tests {
                             source: DeviceStateSource::SOFTWARE,
                             state: 0, // AVAILABLE
                         }],
-                        mutable_toggle_state: 0,
+                        mutable_toggle_state: DeviceState::default_mutable_toggle_state().bits(),
                     },
                 ],
             },
@@ -1318,14 +1686,13 @@ mod tests {
         assert!(!camera1_muted.load(Ordering::Relaxed));
         assert!(!camera2_muted.load(Ordering::Relaxed));
 
-        let mute_device = InputDevice {
+        let mute_device = SetInputDevice {
             name: DEFAULT_CAMERA_NAME.to_string(),
             device_type: InputDeviceType::CAMERA,
-            source_states: [(DeviceStateSource::SOFTWARE, DeviceState::MUTED)].into(),
             state: DeviceState::MUTED,
         };
 
-        let res = controller.set_input_states(vec![mute_device], DeviceStateSource::SOFTWARE).await;
+        let res = controller.set_input_states(vec![mute_device]).await;
         assert!(res.is_ok());
         assert!(camera1_muted.load(Ordering::Relaxed));
         assert!(camera2_muted.load(Ordering::Relaxed));
@@ -1339,14 +1706,13 @@ mod tests {
         let (mut controller, camera1_muted, camera2_muted) =
             setup_multi_camera_test(false, Some(1)).await;
 
-        let mute_device = InputDevice {
+        let mute_device = SetInputDevice {
             name: DEFAULT_CAMERA_NAME.to_string(),
             device_type: InputDeviceType::CAMERA,
-            source_states: [(DeviceStateSource::SOFTWARE, DeviceState::MUTED)].into(),
             state: DeviceState::MUTED,
         };
 
-        let res = controller.set_input_states(vec![mute_device], DeviceStateSource::SOFTWARE).await;
+        let res = controller.set_input_states(vec![mute_device]).await;
         assert!(res.is_err());
         assert!(!camera1_muted.load(Ordering::Relaxed));
         // Even though camera 1 failed, camera 2 must still have been muted.
@@ -1363,17 +1729,14 @@ mod tests {
         assert!(camera1_muted.load(Ordering::Relaxed));
         assert!(camera2_muted.load(Ordering::Relaxed));
 
-        let unmute_device = InputDevice {
+        let unmute_device = SetInputDevice {
             name: DEFAULT_CAMERA_NAME.to_string(),
             device_type: InputDeviceType::CAMERA,
-            source_states: [(DeviceStateSource::SOFTWARE, DeviceState::AVAILABLE)].into(),
             state: DeviceState::AVAILABLE,
         };
 
         // First unmute attempt fails on camera 1 while camera 2 unmutes.
-        let res = controller
-            .set_input_states(vec![unmute_device.clone()], DeviceStateSource::SOFTWARE)
-            .await;
+        let res = controller.set_input_states(vec![unmute_device.clone()]).await;
         assert!(res.is_err());
         assert!(camera1_muted.load(Ordering::Relaxed));
         assert!(!camera2_muted.load(Ordering::Relaxed));
@@ -1387,8 +1750,7 @@ mod tests {
         assert!(camera2_muted.load(Ordering::Relaxed));
 
         // Retrying set_input_states(AVAILABLE) pushes SetSoftwareMuteState(false) to both cameras.
-        let retry_res =
-            controller.set_input_states(vec![unmute_device], DeviceStateSource::SOFTWARE).await;
+        let retry_res = controller.set_input_states(vec![unmute_device]).await;
         assert!(retry_res.is_ok());
         assert!(!camera1_muted.load(Ordering::Relaxed));
         assert!(!camera2_muted.load(Ordering::Relaxed));
@@ -1699,13 +2061,12 @@ mod tests {
 
         // Setting the stored state again applies it to the cameras. Storage is unchanged, but the
         // result must still be reported so that the ERROR state is cleared for watchers.
-        let mute_device = InputDevice {
+        let mute_device = SetInputDevice {
             name: DEFAULT_CAMERA_NAME.to_string(),
             device_type: InputDeviceType::CAMERA,
-            source_states: [(DeviceStateSource::SOFTWARE, DeviceState::MUTED)].into(),
             state: DeviceState::MUTED,
         };
-        let res = controller.set_input_states(vec![mute_device], DeviceStateSource::SOFTWARE).await;
+        let res = controller.set_input_states(vec![mute_device]).await;
         let info = res.expect("set should succeed").expect("cleared error should be published");
         assert_eq!(controller.get_stored_info().await, stored_info);
         assert!(camera1_muted.load(Ordering::Relaxed));
@@ -1734,13 +2095,12 @@ mod tests {
 
         // Updating only the microphone retries pushing the dirty camera software state and clears
         // the camera ERROR state even though the request does not include a camera device.
-        let mute_mic = InputDevice {
+        let mute_mic = SetInputDevice {
             name: DEFAULT_MIC_NAME.to_string(),
             device_type: InputDeviceType::MICROPHONE,
-            source_states: [(DeviceStateSource::SOFTWARE, DeviceState::MUTED)].into(),
             state: DeviceState::MUTED,
         };
-        let res = controller.set_input_states(vec![mute_mic], DeviceStateSource::SOFTWARE).await;
+        let res = controller.set_input_states(vec![mute_mic]).await;
         let info = res.expect("set should succeed").expect("updated mic should be published");
         assert!(camera1_muted.load(Ordering::Relaxed));
         assert!(camera2_muted.load(Ordering::Relaxed));
@@ -1763,15 +2123,12 @@ mod tests {
         let (mut controller, camera1_muted, camera2_muted, _value_rx) =
             setup_multi_camera_test_with_failures(true, vec![1, 2]).await;
 
-        let unmute_device = InputDevice {
+        let unmute_device = SetInputDevice {
             name: DEFAULT_CAMERA_NAME.to_string(),
             device_type: InputDeviceType::CAMERA,
-            source_states: [(DeviceStateSource::SOFTWARE, DeviceState::AVAILABLE)].into(),
             state: DeviceState::AVAILABLE,
         };
-        let res = controller
-            .set_input_states(vec![unmute_device.clone()], DeviceStateSource::SOFTWARE)
-            .await;
+        let res = controller.set_input_states(vec![unmute_device.clone()]).await;
         assert!(res.is_err());
         assert!(camera1_muted.load(Ordering::Relaxed));
         assert!(!camera2_muted.load(Ordering::Relaxed));
@@ -1796,8 +2153,7 @@ mod tests {
 
         // Retrying set_input_states(AVAILABLE) still pushes to camera 1 even though the reported
         // state is already AVAILABLE.
-        let retry_res =
-            controller.set_input_states(vec![unmute_device], DeviceStateSource::SOFTWARE).await;
+        let retry_res = controller.set_input_states(vec![unmute_device]).await;
         assert!(retry_res.is_ok());
         assert_eq!(controller.cam_sw_sync, CamSwSync::Synced);
         assert!(!camera1_muted.load(Ordering::Relaxed));
@@ -1822,14 +2178,13 @@ mod tests {
         // Muting the microphone while in-memory camera state carries ERROR re-applies the stored
         // MUTED camera state where possible, succeeds even though camera 1 fails, and keeps the
         // reported camera ERROR state in the published InputInfo.
-        let mute_mic = InputDevice {
+        let mute_mic = SetInputDevice {
             name: DEFAULT_MIC_NAME.to_string(),
             device_type: InputDeviceType::MICROPHONE,
-            source_states: [(DeviceStateSource::SOFTWARE, DeviceState::MUTED)].into(),
             state: DeviceState::MUTED,
         };
         let info = controller
-            .set_input_states(vec![mute_mic], DeviceStateSource::SOFTWARE)
+            .set_input_states(vec![mute_mic])
             .await
             .expect("mic mute should succeed")
             .expect("mic mute should be published");
@@ -1861,14 +2216,13 @@ mod tests {
         // Changing the microphone while Adopted still succeeds even though the reported and
         // stored camera states differ and camera 1 keeps failing, and keeps reporting the camera
         // as AVAILABLE.
-        let unmute_mic = InputDevice {
+        let unmute_mic = SetInputDevice {
             name: DEFAULT_MIC_NAME.to_string(),
             device_type: InputDeviceType::MICROPHONE,
-            source_states: [(DeviceStateSource::SOFTWARE, DeviceState::AVAILABLE)].into(),
             state: DeviceState::AVAILABLE,
         };
         let info = controller
-            .set_input_states(vec![unmute_mic], DeviceStateSource::SOFTWARE)
+            .set_input_states(vec![unmute_mic])
             .await
             .expect("mic unmute should succeed")
             .expect("mic unmute should be published");
@@ -1894,13 +2248,12 @@ mod tests {
         // AVAILABLE without being fully applied.
         let (mut controller, camera1_muted, camera2_muted, _value_rx) =
             setup_multi_camera_test_with_failures(false, vec![1]).await;
-        let mute_camera = InputDevice {
+        let mute_camera = SetInputDevice {
             name: DEFAULT_CAMERA_NAME.to_string(),
             device_type: InputDeviceType::CAMERA,
-            source_states: [(DeviceStateSource::SOFTWARE, DeviceState::MUTED)].into(),
             state: DeviceState::MUTED,
         };
-        let res = controller.set_input_states(vec![mute_camera], DeviceStateSource::SOFTWARE).await;
+        let res = controller.set_input_states(vec![mute_camera]).await;
         assert!(res.is_err());
         assert!(camera2_muted.load(Ordering::Relaxed));
         assert_eq!(controller.cam_sw_sync, CamSwSync::Pending);
@@ -1908,13 +2261,12 @@ mod tests {
         // Another client mutes camera 1. Muting the microphone does not push the stored
         // AVAILABLE state, so the cameras stay muted.
         camera1_muted.store(true, Ordering::Relaxed);
-        let mute_mic = InputDevice {
+        let mute_mic = SetInputDevice {
             name: DEFAULT_MIC_NAME.to_string(),
             device_type: InputDeviceType::MICROPHONE,
-            source_states: [(DeviceStateSource::SOFTWARE, DeviceState::MUTED)].into(),
             state: DeviceState::MUTED,
         };
-        let res = controller.set_input_states(vec![mute_mic], DeviceStateSource::SOFTWARE).await;
+        let res = controller.set_input_states(vec![mute_mic]).await;
         assert!(res.is_ok(), "unexpected result {res:?}");
         assert!(camera1_muted.load(Ordering::Relaxed));
         assert!(camera2_muted.load(Ordering::Relaxed));
@@ -2000,14 +2352,12 @@ mod tests {
         let (mut controller, camera1_muted, camera2_muted, _value_rx) =
             setup_multi_camera_test_with_failures(true, (1..100).collect()).await;
 
-        let unmute_device = InputDevice {
+        let unmute_device = SetInputDevice {
             name: DEFAULT_CAMERA_NAME.to_string(),
             device_type: InputDeviceType::CAMERA,
-            source_states: [(DeviceStateSource::SOFTWARE, DeviceState::AVAILABLE)].into(),
             state: DeviceState::AVAILABLE,
         };
-        let res =
-            controller.set_input_states(vec![unmute_device], DeviceStateSource::SOFTWARE).await;
+        let res = controller.set_input_states(vec![unmute_device]).await;
         assert!(res.is_err());
 
         // Act as CameraWatcherAgent: report the aggregate mute state (muted only if all cameras
@@ -2039,6 +2389,251 @@ mod tests {
             )
             .unwrap(),
             DeviceState::MUTED
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_set_input_states_enforces_mutable_toggle_state() {
+        let (event_tx, _event_rx) = mpsc::unbounded();
+        let external_publisher = ExternalEventPublisher::new(event_tx);
+        let storage_factory = InMemoryStorageFactory::new();
+        storage_factory
+            .initialize::<InputController>()
+            .await
+            .expect("controller should have impls");
+        let (value_tx, _value_rx) = mpsc::unbounded();
+        let setting_value_publisher = SettingValuePublisher::new(value_tx);
+
+        let mut controller = InputController::create_with_config::<InMemoryStorageFactory>(
+            Rc::new(ServiceContext::new(None)),
+            InputConfiguration {
+                devices: vec![
+                    InputDeviceConfiguration {
+                        device_name: "mic_immutable".to_string(),
+                        device_type: InputDeviceType::MICROPHONE,
+                        source_states: vec![SourceState {
+                            source: DeviceStateSource::SOFTWARE,
+                            state: DeviceState::AVAILABLE.bits(),
+                        }],
+                        mutable_toggle_state: 0,
+                    },
+                    InputDeviceConfiguration {
+                        device_name: "mic_immutable_muted".to_string(),
+                        device_type: InputDeviceType::MICROPHONE,
+                        source_states: vec![SourceState {
+                            source: DeviceStateSource::SOFTWARE,
+                            state: DeviceState::MUTED.bits(),
+                        }],
+                        mutable_toggle_state: 0,
+                    },
+                    InputDeviceConfiguration {
+                        device_name: "mic_disable_only_muted".to_string(),
+                        device_type: InputDeviceType::MICROPHONE,
+                        source_states: vec![SourceState {
+                            source: DeviceStateSource::SOFTWARE,
+                            state: DeviceState::MUTED.bits(),
+                        }],
+                        mutable_toggle_state: DeviceState::DISABLED.bits(),
+                    },
+                    InputDeviceConfiguration {
+                        device_name: "mic_mute_only".to_string(),
+                        device_type: InputDeviceType::MICROPHONE,
+                        source_states: vec![SourceState {
+                            source: DeviceStateSource::SOFTWARE,
+                            state: DeviceState::AVAILABLE.bits(),
+                        }],
+                        mutable_toggle_state: DeviceState::MUTED.bits(),
+                    },
+                ],
+            },
+            &storage_factory,
+            setting_value_publisher,
+            external_publisher,
+        )
+        .await;
+
+        let _ = controller.restore().await.expect("restore should succeed");
+
+        // Immutable microphone starting AVAILABLE cannot be muted, while an idempotent no-op
+        // Set(AVAILABLE) succeeds.
+        let mute_immutable = SetInputDevice {
+            name: "mic_immutable".to_string(),
+            device_type: InputDeviceType::MICROPHONE,
+            state: DeviceState::MUTED,
+        };
+        let res = controller.set_input_states(vec![mute_immutable]).await;
+        assert!(
+            matches!(res, Err(InputError::InvalidInput)),
+            "Expected InvalidInput when muting mic_immutable, got {res:?}"
+        );
+        let noop_available = SetInputDevice {
+            name: "mic_immutable".to_string(),
+            device_type: InputDeviceType::MICROPHONE,
+            state: DeviceState::AVAILABLE,
+        };
+        let _ = controller
+            .set_input_states(vec![noop_available])
+            .await
+            .expect("no-op Set(AVAILABLE) on mic_immutable should succeed");
+
+        // Immutable microphone starting MUTED allows an idempotent no-op Set(MUTED), while
+        // clearing MUTED to AVAILABLE or adding DISABLED is rejected.
+        let keep_immutable_muted = SetInputDevice {
+            name: "mic_immutable_muted".to_string(),
+            device_type: InputDeviceType::MICROPHONE,
+            state: DeviceState::MUTED,
+        };
+        let _ = controller
+            .set_input_states(vec![keep_immutable_muted])
+            .await
+            .expect("no-op Set(MUTED) on mic_immutable_muted should succeed");
+
+        let unmute_immutable = SetInputDevice {
+            name: "mic_immutable_muted".to_string(),
+            device_type: InputDeviceType::MICROPHONE,
+            state: DeviceState::AVAILABLE,
+        };
+        let res = controller.set_input_states(vec![unmute_immutable]).await;
+        assert!(
+            matches!(res, Err(InputError::InvalidInput)),
+            "Expected InvalidInput when unmuting mic_immutable_muted, got {res:?}"
+        );
+
+        let disable_immutable = SetInputDevice {
+            name: "mic_immutable_muted".to_string(),
+            device_type: InputDeviceType::MICROPHONE,
+            state: DeviceState::MUTED | DeviceState::DISABLED,
+        };
+        let res = controller.set_input_states(vec![disable_immutable]).await;
+        assert!(
+            matches!(res, Err(InputError::InvalidInput)),
+            "Expected InvalidInput when disabling mic_immutable_muted, got {res:?}"
+        );
+
+        // Partially mutable microphone starting MUTED with mutable_toggle_state = DISABLED allows
+        // toggling DISABLED while preserving MUTED, and rejects clearing MUTED.
+        for clears_muted in [DeviceState::AVAILABLE, DeviceState::DISABLED] {
+            let res = controller
+                .set_input_states(vec![SetInputDevice {
+                    name: "mic_disable_only_muted".to_string(),
+                    device_type: InputDeviceType::MICROPHONE,
+                    state: clears_muted,
+                }])
+                .await;
+            assert!(
+                matches!(res, Err(InputError::InvalidInput)),
+                "Expected InvalidInput when clearing immutable MUTED via {clears_muted:?}, got {res:?}"
+            );
+        }
+
+        let _ = controller
+            .set_input_states(vec![SetInputDevice {
+                name: "mic_disable_only_muted".to_string(),
+                device_type: InputDeviceType::MICROPHONE,
+                state: DeviceState::MUTED | DeviceState::DISABLED,
+            }])
+            .await
+            .expect("setting permitted DISABLED while preserving MUTED should succeed");
+        assert_eq!(
+            controller
+                .input_device_state
+                .get_source_state(
+                    InputDeviceType::MICROPHONE,
+                    "mic_disable_only_muted".to_string(),
+                    DeviceStateSource::SOFTWARE,
+                )
+                .unwrap(),
+            DeviceState::MUTED | DeviceState::DISABLED
+        );
+
+        let _ = controller
+            .set_input_states(vec![SetInputDevice {
+                name: "mic_disable_only_muted".to_string(),
+                device_type: InputDeviceType::MICROPHONE,
+                state: DeviceState::MUTED,
+            }])
+            .await
+            .expect("clearing permitted DISABLED while preserving MUTED should succeed");
+        assert_eq!(
+            controller
+                .input_device_state
+                .get_source_state(
+                    InputDeviceType::MICROPHONE,
+                    "mic_disable_only_muted".to_string(),
+                    DeviceStateSource::SOFTWARE,
+                )
+                .unwrap(),
+            DeviceState::MUTED
+        );
+
+        // Mute-only microphone cannot be set to DISABLED or MUTED | DISABLED.
+        for disallowed_state in [DeviceState::DISABLED, DeviceState::MUTED | DeviceState::DISABLED]
+        {
+            let dev = SetInputDevice {
+                name: "mic_mute_only".to_string(),
+                device_type: InputDeviceType::MICROPHONE,
+                state: disallowed_state,
+            };
+            let res = controller.set_input_states(vec![dev]).await;
+            assert!(
+                matches!(res, Err(InputError::InvalidInput)),
+                "Expected InvalidInput for disallowed state {disallowed_state:?}, got {res:?}"
+            );
+        }
+
+        // Mute-only microphone can be set to MUTED and back to AVAILABLE, even if current_sw_state
+        // contains non-toggle bits such as ACTIVE.
+        let mute_allowed = SetInputDevice {
+            name: "mic_mute_only".to_string(),
+            device_type: InputDeviceType::MICROPHONE,
+            state: DeviceState::MUTED,
+        };
+        let _ = controller
+            .set_input_states(vec![mute_allowed])
+            .await
+            .expect("muting mic_mute_only should succeed");
+        assert_eq!(
+            controller
+                .input_device_state
+                .get_source_state(
+                    InputDeviceType::MICROPHONE,
+                    "mic_mute_only".to_string(),
+                    DeviceStateSource::SOFTWARE,
+                )
+                .unwrap(),
+            DeviceState::MUTED
+        );
+
+        // Simulate a non-toggle bit (ACTIVE) present on the stored software state and verify
+        // unmuting to AVAILABLE still succeeds and updates state.
+        let mut stored_info = controller.get_stored_info().await;
+        stored_info.input_device_state.set_source_state(
+            InputDeviceType::MICROPHONE,
+            "mic_mute_only".to_string(),
+            DeviceStateSource::SOFTWARE,
+            DeviceState::ACTIVE | DeviceState::MUTED,
+        );
+        let _ = controller.store.write(&stored_info).await.expect("store write should succeed");
+
+        let unmute_allowed = SetInputDevice {
+            name: "mic_mute_only".to_string(),
+            device_type: InputDeviceType::MICROPHONE,
+            state: DeviceState::AVAILABLE,
+        };
+        let _ = controller
+            .set_input_states(vec![unmute_allowed])
+            .await
+            .expect("unmuting mic_mute_only should succeed even when ACTIVE bit was set");
+        assert_eq!(
+            controller
+                .input_device_state
+                .get_source_state(
+                    InputDeviceType::MICROPHONE,
+                    "mic_mute_only".to_string(),
+                    DeviceStateSource::SOFTWARE,
+                )
+                .unwrap(),
+            DeviceState::AVAILABLE
         );
     }
 }
