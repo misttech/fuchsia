@@ -1,0 +1,29 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "userfaultfd",
+    srcs = [
+        "lib.rs",
+        "syscalls.rs",
+        "userfault_file.rs",
+    ],
+    crate_name = "starnix_modules_userfaultfd",
+    crate_root = "lib.rs",
+    edition = "2024",
+    lint_config = "//src/starnix/build:kernel_library_config",
+    visibility = ["//src/starnix/kernel/syscall_loop:__pkg__"],
+    deps = [
+        "//src/starnix/kernel/core",
+        "//src/starnix/lib/linux_uapi",
+        "//src/starnix/lib/starnix_logging",
+        "//src/starnix/lib/starnix_syscalls",
+        "//src/starnix/lib/starnix_uapi",
+        "//third_party/rust_crates/vendor:static_assertions",
+    ],
+)

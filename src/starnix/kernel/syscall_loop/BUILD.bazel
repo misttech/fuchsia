@@ -3,6 +3,19 @@
 # found in the LICENSE file.
 
 load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -14,7 +27,6 @@ fx_cc_library(
         "@platforms//cpu:x86_64": ["src/trampoline_x64.S"],
     }),
     implementation_deps = ["//src/starnix/lib/asm_utils"],
-    visibility = ["//visibility:private"],
 )
 
 # Kept separate from `restricted_trampoline` so that targets which only need the breakpoint (such
@@ -29,4 +41,93 @@ fx_cc_library(
     }),
     implementation_deps = ["//src/starnix/lib/asm_utils"],
     visibility = ["//src/starnix/kernel/core:__pkg__"],
+)
+
+rustc_library(
+    name = "starnix_syscall_loop",
+    srcs = [
+        "src/lib.rs",
+        "src/table.rs",
+    ],
+    edition = "2024",
+    link_deps = [
+        ":module_changes_breakpoint",
+        ":restricted_trampoline",
+    ],
+    lint_config = "//src/starnix/build:kernel_library_config",
+    proc_macro_deps = ["//third_party/rust_crates/vendor:paste"],
+    visibility = ["//src/starnix/kernel/runner:__pkg__"],
+    deps = [
+        "//sdk/rust/zx",
+        "//src/lib/debug/rust",
+        "//src/lib/trace/rust:trace",
+        "//src/starnix/kernel/core",
+        "//src/starnix/lib/extended_pstate:lib",
+        "//src/starnix/lib/starnix_logging",
+        "//src/starnix/lib/starnix_registers",
+        "//src/starnix/lib/starnix_syscalls",
+        "//src/starnix/lib/starnix_uapi",
+        "//src/starnix/modules/inotify",
+        "//src/starnix/modules/iouring",
+        "//src/starnix/modules/syscalls",
+        "//src/starnix/modules/userfaultfd",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
+
+rustc_test(
+    name = "starnix_syscall_loop_test",
+    crate = ":starnix_syscall_loop",
+    crate_name = "starnix_syscall_loop_lib_test",
+    edition = "2024",
+    lint_config = "//src/starnix/build:kernel_library_config",
+    # TODO(https://fxbug.dev/42059075): Re-enable starnix in these environments.
+    tags = [
+        "exclude_toolchain_tags=asan",
+        "exclude_toolchain_tags=hwasan",
+    ],
+)
+
+fx_packaged_binary(
+    name = "starnix_syscall_loop_test_packaged_bin",
+    testonly = True,
+    binary = ":starnix_syscall_loop_test",
+    binary_name = "starnix_syscall_loop_lib_test",
+)
+
+fx_component_manifest(
+    name = "starnix_syscall_loop_tests-manifest",
+    testonly = True,
+    component_name = "starnix_syscall_loop_tests",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/starnix:unit_test.shard.cml",
+    ],
+    manifest = "meta/starnix_syscall_loop_tests.cml",
+)
+
+fx_test_component(
+    name = "starnix_syscall_loop_tests-component",
+    compiled_manifest = ":starnix_syscall_loop_tests-manifest",
+    component_name = "starnix_syscall_loop_tests",
+    test_type = "starnix",
+    deps = [
+        ":starnix_syscall_loop_test_packaged_bin",
+        # In GN, //src/starnix/kernel/vdso is a resource() propagated through
+        # //src/starnix/kernel/core's deps.
+        "//src/starnix/kernel/vdso",
+    ],
+)
+
+fx_package(
+    name = "starnix_syscall_loop_tests-package",
+    package_name = "starnix_syscall_loop_tests",
+    test_components = [":starnix_syscall_loop_tests-component"],
+)
+
+fx_test(
+    name = "starnix_syscall_loop_tests",
+    package = ":starnix_syscall_loop_tests-package",
 )
