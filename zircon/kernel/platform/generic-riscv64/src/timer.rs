@@ -174,9 +174,14 @@ pub extern "C" fn rust_platform_resume_timer_curr_cpu() -> Result<(), Status> {
 }
 
 /// Whether user mode may read the tick registers directly.
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_platform_usermode_can_access_tick_registers() -> bool {
+pub fn platform_usermode_can_access_tick_registers() -> bool {
     // If the cpu claims to have Zicntr support, then it's relatively cheap for user
     // space to access the time CSR via rdtime instruction.
     feature::has_zicntr()
+}
+
+/// FFI entry point for [`platform_usermode_can_access_tick_registers`].
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_platform_usermode_can_access_tick_registers() -> bool {
+    platform_usermode_can_access_tick_registers()
 }

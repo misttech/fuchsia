@@ -14,6 +14,12 @@ import("//zircon/kernel/phys/kernel_elf_binary.gni")
 
 _kernel_executable_deps = [
   "//zircon/kernel/lib/syscalls:syscalls-rs",
+
+  # main.rs always compiles lib/userabi (even with kernel_no_userabi, where
+  # the C++ VM code still calls the rust_vdso_* entry points), and its
+  # public_configs (VDSO_CODE_PATH, VDSO_MAX_PAGE_SIZE) must reach the kernel
+  # crate, which needs a public_deps path from here.
+  "//zircon/kernel/lib/userabi:userabi-rs",
   "//zircon/kernel/top",
 ]
 

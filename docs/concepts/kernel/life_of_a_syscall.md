@@ -112,10 +112,11 @@ x86 implementation of `zx_channel_create`:
     7a77:       c3                      retq
 ```
 
-When the kernel is built, the vDSO is linked as a
-[char array in the kernel](/zircon/kernel/lib/userabi/vdso.cc#28),
-and then loaded into a
-[vmo](/docs/reference/kernel_objects/vm_object.md).
+When the kernel is built, the vDSO is packaged as an ELF file alongside the
+kernel. During boot, [physboot](/zircon/kernel/phys/handoff-prep.cc) hands the
+vDSO image off to the kernel in a
+[vmo](/docs/reference/kernel_objects/vm_object.md), from which the kernel
+[creates the vDSO](/zircon/kernel/lib/userabi/vdso.rs).
 During boot-up, some constants are written into the vDSO to allow user-space
 programs to query these constants without doing a hop to the kernel.
 

@@ -4,17 +4,20 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use super::userboot_init;
+use super::{VDso, userboot_init};
 use crate::object::HandleOwner;
+use crate::vm::vm_aspace::VmAspaceLockClass;
+use crate::vm::vm_mapping::VmMapping;
 use crate::vm::vm_object::VmObject;
 use core::ffi::c_void;
 use core::mem::{MaybeUninit, take};
 use core::ops::Deref;
 use core::ptr::{drop_in_place, null_mut, slice_from_raw_parts_mut};
 use fbl::RefPtr;
+use ksync::LockToken;
 use libc::stdio::FILE;
 use zr::{slice_from_raw_parts, static_assert_size_and_align};
-use zx_types::ZX_MAX_NAME_LEN;
+use zx_types::{ZX_MAX_NAME_LEN, zx_ticks_t};
 
 pub const ZERO_FILL: usize = usize::MAX;
 const MAX_EXTRA_HANDOFF_PHYS_VMOS: usize = 3;
@@ -195,4 +198,36 @@ unsafe extern "C" {
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_userboot_init(handoff_end: &mut HandoffEnd) {
     userboot_init(take(handoff_end));
+}
+
+/// FFI entry point for [`VDso::vmo_is_vdso`]. C++ passes a non-null `const VmObject*`.
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_vdso_vmo_is_vdso(vmo: &VmObject) -> bool {
+    VDso::vmo_is_vdso(vmo)
+}
+
+/// FFI entry point for [`VDso::valid_code_mapping`].
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_vdso_valid_code_mapping(vmo_offset: u64, size: usize) -> bool {
+    VDso::valid_code_mapping(vmo_offset, size)
+}
+
+/// FFI entry point for [`VDso::base_address`].
+///
+/// # Safety
+///
+/// `code_mapping` must be a valid reference, and the caller must hold `code_mapping`'s `VmAspace`
+/// lock (`code_mapping->lock()`).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vdso_base_address(code_mapping: &VmMapping) -> usize {
+    // SAFETY: The caller guarantees `code_mapping`'s `VmAspace` lock (`code_mapping->lock()`) is
+    // held (`TA_REQ(code_mapping->lock())` on `VDso::base_address` in `vdso.h`).
+    let token: LockToken<'_, VmAspaceLockClass> = unsafe { LockToken::new() };
+    VDso::base_address(code_mapping, &token)
+}
+
+/// FFI entry point for [`VDso::set_monotonic_ticks_offset`].
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_vdso_set_monotonic_ticks_offset(new_offset: zx_ticks_t) {
+    VDso::set_monotonic_ticks_offset(new_offset);
 }

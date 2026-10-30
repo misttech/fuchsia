@@ -71,7 +71,10 @@ void cpp_arch_set_blocking_disallowed(bool value);
 __attribute__((returns_nonnull, assume_aligned(alignof(percpu)))) void* cpp_arch_get_curr_percpu();
 uint32_t cpp_arch_vm_features();
 uint32_t cpp_arch_num_spinlocks_held();
+uint32_t cpp_arch_cpu_features();
+uint32_t cpp_arch_cpu_sve_features();
 uint32_t cpp_arch_dcache_line_size();
+uint32_t cpp_arch_icache_line_size();
 #ifndef __riscv
 uint32_t cpp_arch_exception_context_user_synth_code(const arch_exception_context_t* context);
 uint32_t cpp_arch_exception_context_user_synth_data(const arch_exception_context_t* context);
@@ -131,7 +134,10 @@ cpp_arch_get_curr_percpu() {
 }
 FFI_ALWAYS_INLINE uint32_t cpp_arch_vm_features() { return arch_vm_features(); }
 FFI_ALWAYS_INLINE uint32_t cpp_arch_num_spinlocks_held() { return arch_num_spinlocks_held(); }
+FFI_ALWAYS_INLINE uint32_t cpp_arch_cpu_features() { return arch_cpu_features(); }
+FFI_ALWAYS_INLINE uint32_t cpp_arch_cpu_sve_features() { return arch_cpu_sve_features(); }
 FFI_ALWAYS_INLINE uint32_t cpp_arch_dcache_line_size() { return arch_dcache_line_size(); }
+FFI_ALWAYS_INLINE uint32_t cpp_arch_icache_line_size() { return arch_icache_line_size(); }
 #ifndef __riscv
 FFI_ALWAYS_INLINE uint32_t
 cpp_arch_exception_context_user_synth_code(const arch_exception_context_t* context) {

@@ -78,5 +78,6 @@ extern "C" constinit const BootConstants kBootConstants;
 extern "C" const uint8_t* cpp_boot_constants_kernel_version_ident(size_t* size);
 extern "C" const uint8_t* cpp_boot_constants_kernel_debug_ident(size_t* size);
 extern "C" uint32_t cpp_boot_constants_hw_reboot_reason();
+extern "C" const uint8_t* cpp_boot_constants_system_version_string(size_t* size);
 
 #endif  // ZIRCON_KERNEL_PHYS_HANDOFF_INCLUDE_PHYS_HANDOFF_BOOT_CONSTANTS_H_

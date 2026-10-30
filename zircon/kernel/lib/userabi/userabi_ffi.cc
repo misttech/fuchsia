@@ -5,8 +5,10 @@
 // https://opensource.org/licenses/MIT
 
 #include <lib/boot-options/boot-options.h>
+#include <lib/fasttime/internal/abi.h>
 #include <lib/userabi/userboot.h>
-#include <lib/userabi/vdso.h>
+#include <lib/userabi/vdso-constants.h>
+#include <stddef.h>
 
 #if ENABLE_ENTROPY_COLLECTOR_TEST
 #include <lib/crypto/entropy/quality_test.h>
@@ -26,7 +28,36 @@ static_assert(sizeof(HandoffEnd::Elf) == 72 && alignof(HandoffEnd::Elf) == 8);
 static_assert(sizeof(HandoffEnd) == 176 && alignof(HandoffEnd) == 8);
 static_assert(sizeof(FILE) == 16 && alignof(FILE) == 8);
 static_assert(PhysVmo::kMaxExtraHandoffPhysVmos == 3);
-static_assert(VDso::kNumVdsoVariants == 4);
+static_assert(sizeof(vdso_constants) == 56 && alignof(vdso_constants) == 8);
+static_assert(offsetof(vdso_constants, max_num_cpus) == 0);
+static_assert(offsetof(vdso_constants, features) == 4);
+static_assert(offsetof(vdso_constants, features.cpu) == 4);
+static_assert(offsetof(vdso_constants, features.hw_breakpoint_count) == 8);
+static_assert(offsetof(vdso_constants, features.hw_watchpoint_count) == 12);
+static_assert(offsetof(vdso_constants, features.address_tagging) == 16);
+static_assert(offsetof(vdso_constants, features.vm) == 20);
+static_assert(offsetof(vdso_constants, features.cpu_sve) == 24);
+static_assert(offsetof(vdso_constants, dcache_line_size) == 28);
+static_assert(offsetof(vdso_constants, icache_line_size) == 32);
+static_assert(offsetof(vdso_constants, page_size) == 36);
+static_assert(offsetof(vdso_constants, physmem) == 40);
+static_assert(offsetof(vdso_constants, version_string_len) == 48);
+static_assert(offsetof(vdso_constants, version_string) == 56);
+static_assert(sizeof(fasttime::internal::TimeValues) == 48 &&
+              alignof(fasttime::internal::TimeValues) == 8);
+static_assert(offsetof(fasttime::internal::TimeValues, version) == 0);
+static_assert(offsetof(fasttime::internal::TimeValues, ticks_per_second) == 8);
+static_assert(offsetof(fasttime::internal::TimeValues, boot_ticks_offset) == 16);
+static_assert(offsetof(fasttime::internal::TimeValues, mono_ticks_offset) == 24);
+static_assert(offsetof(fasttime::internal::TimeValues, ticks_to_time_numerator) == 32);
+static_assert(offsetof(fasttime::internal::TimeValues, ticks_to_time_denominator) == 36);
+static_assert(offsetof(fasttime::internal::TimeValues, usermode_can_access_ticks) == 40);
+static_assert(offsetof(fasttime::internal::TimeValues, use_a73_errata_mitigation) == 41);
+static_assert(offsetof(fasttime::internal::TimeValues, use_pct_instead_of_vct) == 42);
+static_assert(offsetof(fasttime::internal::TimeValues, _padding) == 43);
+// vdso.rs mirrors this as TIME_VALUES_VMO_NAME.
+static_assert(sizeof(kTimeValuesVmoName) == sizeof("time_values") &&
+              __builtin_memcmp(kTimeValuesVmoName, "time_values", sizeof("time_values")) == 0);
 
 extern "C" {
 

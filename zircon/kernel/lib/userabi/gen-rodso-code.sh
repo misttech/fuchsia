@@ -15,10 +15,21 @@
 # <NAME>_DYNSYM_* giving the dynamic symbol table index of each
 # exported symbol, and <NAME>_DYNSYM_COUNT giving the total number
 # of entries in the table.
+#
+# With --rust, the same constants are instead written as Rust
+# `pub const <NAME>_...: usize = ...;` items (and the build ID note as a
+# `[u8; N]` array), suitable for include!() in Rust code.
+#
+# With --categories FILE (only valid together with --rust), FILE is the
+# zither-generated syscall category.inc, and the output also gets one
+# `syscall_category!(<category>, [<syscall>, ...]);` invocation per
+# syscall category.  Empty test_category1 and test_category2 invocations
+# are emitted if FILE does not define those categories.
 
 usage() {
   echo >&2 "\
-Usage: $0 NM READELF [--depfile DEPFILE] [--writable] OUTFILE {NAME DSO}..."
+Usage: $0 NM READELF [--depfile DEPFILE] [--rust]
+       [--categories FILE] OUTFILE {NAME DSO}..."
   exit 2
 }
 
@@ -32,9 +43,38 @@ READELF="$1"
 shift
 
 DEPFILE=
-if [ $# -gt 2 -a "$1" = "--depfile" ]; then
-  DEPFILE="$2"
-  shift 2
+RUST=false
+CATEGORIES=
+while [ $# -gt 0 ]; do
+  case "$1" in
+  --depfile)
+    if [ $# -lt 2 ]; then
+      usage
+    fi
+    DEPFILE="$2"
+    shift 2
+    ;;
+  --rust)
+    RUST=true
+    shift
+    ;;
+  --categories)
+    if [ $# -lt 2 ]; then
+      usage
+    fi
+    CATEGORIES="$2"
+    shift 2
+    ;;
+  --*)
+    usage
+    ;;
+  *)
+    break
+    ;;
+  esac
+done
+if [ -n "$CATEGORIES" ] && ! $RUST; then
+  usage
 fi
 USED_FILES=()
 
@@ -60,10 +100,20 @@ grok_code_symbols() {
       if [ "$symbol" = _start ]; then
         symbol=ENTRY
       fi
-      echo "#define ${1}_${symbol} 0x${addr}" >> $OUTFILE
+      if $RUST; then
+        echo "pub const ${1}_${symbol}: usize = 0x${addr};" >> $OUTFILE
+      else
+        echo "#define ${1}_${symbol} 0x${addr}" >> $OUTFILE
+      fi
       case "$size" in
       ''|0|0x0) ;;
-      *) echo "#define ${1}_${symbol}_SIZE 0x${size}" >> $OUTFILE
+      *)
+        if $RUST; then
+          echo "pub const ${1}_${symbol}_SIZE: usize = 0x${size};" >> $OUTFILE
+        else
+          echo "#define ${1}_${symbol}_SIZE 0x${size}" >> $OUTFILE
+        fi
+        ;;
       esac
       status=0
       ;;
@@ -81,11 +131,19 @@ grok_dynsym_slots() {
   local symbol rest
   while read symbol rest; do
     symno=$((symno+1))
-    echo "#define ${1}_DYNSYM_${symbol} ${symno}" >> $OUTFILE
+    if $RUST; then
+      echo "pub const ${1}_DYNSYM_${symbol}: usize = ${symno};" >> $OUTFILE
+    else
+      echo "#define ${1}_DYNSYM_${symbol} ${symno}" >> $OUTFILE
+    fi
   done
   if [ $symno -gt 0 ]; then
     symno=$((symno+1))
-    echo "#define ${1}_DYNSYM_COUNT ${symno}" >> $OUTFILE
+    if $RUST; then
+      echo "pub const ${1}_DYNSYM_COUNT: usize = ${symno};" >> $OUTFILE
+    else
+      echo "#define ${1}_DYNSYM_COUNT ${symno}" >> $OUTFILE
+    fi
   fi
 }
 
@@ -108,17 +166,22 @@ grok_segments() {
       local words=($line)
       local vaddr=$(printf '%#x' ${words[2]})
       local filesz=$(printf '%#x' ${words[4]})
-      echo "#define ${1}_CODE_START $vaddr" >> $OUTFILE
-      echo "#define ${1}_CODE_END (((${1}_CODE_START + $filesz + (1 << kPageShift) - 1) >> kPageShift) << kPageShift)" >> $OUTFILE
+      if $RUST; then
+        echo "pub const ${1}_CODE_START: usize = $vaddr;" >> $OUTFILE
+        echo "pub const ${1}_CODE_END: usize =" \
+          "((${1}_CODE_START + $filesz + (1 << page::SHIFT) - 1)" \
+          ">> page::SHIFT) << page::SHIFT;" >> $OUTFILE
+      else
+        echo "#define ${1}_CODE_START $vaddr" >> $OUTFILE
+        echo "#define ${1}_CODE_END" \
+          "(((${1}_CODE_START + $filesz + (1 << kPageShift) - 1)" \
+          ">> kPageShift) << kPageShift)" >> $OUTFILE
+      fi
       ;;
-    # Make sure there's no writable segment unless --writable allows it.
+    # Make sure there's no writable segment.
     *LOAD*W*)
-      $WRITABLE || {
-        echo >&2 "$0: writable segment: $line"
-        exit 1
-      }
-      echo "#define ${1}_DATA_START $vaddr" >> $OUTFILE
-      echo "#define ${1}_DATA_END (((${1}_DATA_START + $filesz + (1 << kPageShift) - 1) >> kPageShift) << kPageShift)" >> $OUTFILE
+      echo >&2 "$0: writable segment: $line"
+      exit 1
       ;;
     # Section header for .dynsym, e.g.:
     #  [ 3] .dynsym           DYNSYM          0000000000001268 001268 000018 18   A  6   1  8
@@ -132,8 +195,13 @@ grok_segments() {
       # A stub .dynsym has a single entry.  Don't count that case.
       if [ $size != $entsize ]; then
         status=$SEGMENTS_HAVE_DYNSYM
-        echo "#define ${1}_DATA_START_dynsym $addr" >> $OUTFILE
-        echo "#define ${1}_DATA_END_dynsym (${1}_DATA_START_dynsym + $size)" >> $OUTFILE
+        if $RUST; then
+          echo "pub const ${1}_DATA_START_dynsym: usize = $addr;" >> $OUTFILE
+          echo "pub const ${1}_DATA_END_dynsym: usize = ${1}_DATA_START_dynsym + $size;" >> $OUTFILE
+        else
+          echo "#define ${1}_DATA_START_dynsym $addr" >> $OUTFILE
+          echo "#define ${1}_DATA_END_dynsym (${1}_DATA_START_dynsym + $size)" >> $OUTFILE
+        fi
       fi
       ;;
     # Hex dump of section '.note.gnu.build-id':
@@ -176,9 +244,51 @@ grok_build_id() {
     bytes+=("0x${w:0:2}," "0x${w:2:2}," "0x${w:4:2}," "0x${w:6:2},")
   done
 
-  echo "#define ${1}_BUILD_ID_NOTE_ADDRESS $addr" >> "$OUTFILE"
-  echo "#define ${1}_BUILD_ID_NOTE_SIZE ${#bytes[@]}" >> "$OUTFILE"
-  echo "#define ${1}_BUILD_ID_NOTE_BYTES {${bytes[@]}}" >> "$OUTFILE"
+  if $RUST; then
+    echo "pub const ${1}_BUILD_ID_NOTE_ADDRESS: usize = $addr;" >> "$OUTFILE"
+    echo "pub const ${1}_BUILD_ID_NOTE_SIZE: usize = ${#bytes[@]};" >> "$OUTFILE"
+    echo "pub const ${1}_BUILD_ID_NOTE_BYTES: [u8; ${1}_BUILD_ID_NOTE_SIZE] =" \
+      "[${bytes[@]}];" >> "$OUTFILE"
+  else
+    echo "#define ${1}_BUILD_ID_NOTE_ADDRESS $addr" >> "$OUTFILE"
+    echo "#define ${1}_BUILD_ID_NOTE_SIZE ${#bytes[@]}" >> "$OUTFILE"
+    echo "#define ${1}_BUILD_ID_NOTE_BYTES {${bytes[@]}}" >> "$OUTFILE"
+  fi
+}
+
+grok_categories() {
+  local line category syscall
+  local have_test_category1=false
+  local have_test_category2=false
+  while read -r line; do
+    case "$line" in
+    "#define HAVE_SYSCALL_CATEGORY_test_category1"*)
+      have_test_category1=true
+      ;;
+    "#define HAVE_SYSCALL_CATEGORY_test_category2"*)
+      have_test_category2=true
+      ;;
+    SYSCALL_CATEGORY_BEGIN\(*\))
+      category="${line#SYSCALL_CATEGORY_BEGIN(}"
+      category="${category%)}"
+      echo "syscall_category!(${category}, [" >> "$OUTFILE"
+      ;;
+    SYSCALL_IN_CATEGORY\(*\))
+      syscall="${line#SYSCALL_IN_CATEGORY(}"
+      syscall="${syscall%)}"
+      echo "    ${syscall}," >> "$OUTFILE"
+      ;;
+    SYSCALL_CATEGORY_END\(*\))
+      echo "]);" >> "$OUTFILE"
+      ;;
+    esac
+  done < "$1"
+  if ! $have_test_category1; then
+    echo "syscall_category!(test_category1, []);" >> "$OUTFILE"
+  fi
+  if ! $have_test_category2; then
+    echo "syscall_category!(test_category2, []);" >> "$OUTFILE"
+  fi
 }
 
 find_segments() {
@@ -220,6 +330,11 @@ while [ $# -gt 0 ]; do
     find_dynsym_slots "$name" "$dso"
   fi
 done
+
+if [ -n "$CATEGORIES" ]; then
+  USED_FILES+=("$CATEGORIES")
+  grok_categories "$CATEGORIES"
+fi
 
 if [ -n "$DEPFILE" ]; then
   echo "$OUTFILE: ${USED_FILES[*]}" > "$DEPFILE"

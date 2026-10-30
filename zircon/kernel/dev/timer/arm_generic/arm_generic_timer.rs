@@ -5,6 +5,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::arch_rs::arm64::arch_quirks_needs_arm_erratum_858921_mitigation;
 use crate::arch_rs::{curr_cpu_num, ints_disabled};
 use crate::counters::define_kcounter;
 use crate::kernel::deadline::{Deadline, InstantUnknown};
@@ -81,7 +82,6 @@ type ReadArmCounterFunc = fn() -> u64;
 
 unsafe extern "C" {
     fn arm64_allow_pct_in_el0();
-    fn arch_quirks_needs_arm_erratum_858921_mitigation() -> bool;
 }
 
 fn read_cntp_ctl() -> u32 {

@@ -26,6 +26,7 @@
 #include <vm/vm_address_region_enumerator.h>
 #include <vm/vm_aspace.h>
 #include <vm/vm_object.h>
+#include <vm/vm_object_paged.h>
 
 #include "vm_priv.h"
 

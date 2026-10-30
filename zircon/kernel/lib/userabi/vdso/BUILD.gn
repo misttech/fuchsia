@@ -19,9 +19,10 @@ vdso_max_page_size = 4096
 config("max-page-size.defines") {
   visibility = [
     ":data",
-    "..:vdso",
+    "..:vdso-code.rs",
   ]
   defines = [ "VDSO_MAX_PAGE_SIZE=$vdso_max_page_size" ]
+  rustenv = [ "VDSO_MAX_PAGE_SIZE=$vdso_max_page_size" ]
 }
 
 # This is how the kernel depends on the built vDSO to embed the image via the

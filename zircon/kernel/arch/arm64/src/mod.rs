@@ -35,9 +35,12 @@ pub struct CpuAlignMarker;
 
 pub use cache::clean_dcache_range;
 pub use libarch::arm64::{device_memory_barrier, isb, thread_memory_barrier, wfi, r#yield};
+pub(crate) use mmu::arch_address_tagging_features;
 /// Translates a CPU number back to the MPIDR of that CPU.
 pub use mp::arch_cpu_num_to_mpidr as cpu_num_to_mpidr;
+pub use mp::arch_quirks_needs_arm_erratum_858921_mitigation;
 pub use periphmap::{periph_paddr_to_vaddr, periph_vaddr_to_paddr};
+pub(crate) use registers::{arm64_hw_breakpoint_count, arm64_hw_watchpoint_count};
 pub use user_copy::{
     arch_copy_from_user, arch_copy_from_user_capture_faults, arch_copy_to_user,
     arch_copy_to_user_capture_faults,

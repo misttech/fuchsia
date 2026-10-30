@@ -16,6 +16,10 @@ unsafe extern "C" {
     /// Returns a pointer to `kBootConstants.kernel_debug_ident` and writes its byte length to
     /// `size`.
     fn cpp_boot_constants_kernel_debug_ident(size: &mut usize) -> *const u8;
+
+    /// Returns a pointer to `kBootConstants.system_version_string` and writes its byte length to
+    /// `size`.
+    fn cpp_boot_constants_system_version_string(size: &mut usize) -> *const u8;
 }
 
 /// Returns `kBootConstants.kernel_version_ident`: the human-readable prefix of the debug ident.
@@ -39,6 +43,19 @@ pub(crate) fn kernel_debug_ident() -> &'static [u8] {
     // modifies or frees, so the bytes are valid for `'static`.
     unsafe {
         let ptr = cpp_boot_constants_kernel_debug_ident(&mut size);
+        slice_from_raw_parts(ptr, size)
+    }
+}
+
+/// Returns `kBootConstants.system_version_string`: the version string returned to userspace by
+/// `zx_system_get_version_string()`.
+pub(crate) fn system_version_string() -> &'static [u8] {
+    let mut size = 0;
+    // SAFETY: The shim only reads `kBootConstants` and writes `size`. It returns a pointer to
+    // `size` bytes of permanent handoff memory, which physboot fills in and the kernel never
+    // modifies or frees, so the bytes are valid for `'static`.
+    unsafe {
+        let ptr = cpp_boot_constants_system_version_string(&mut size);
         slice_from_raw_parts(ptr, size)
     }
 }

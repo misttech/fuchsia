@@ -7,51 +7,44 @@
 #ifndef ZIRCON_KERNEL_LIB_USERABI_INCLUDE_LIB_USERABI_VDSO_H_
 #define ZIRCON_KERNEL_LIB_USERABI_INCLUDE_LIB_USERABI_VDSO_H_
 
-#include <lib/fasttime/internal/abi.h>
-#include <lib/instrumentation/kernel-mapped-vmo.h>
+#include <debug.h>
 #include <zircon/compiler.h>
+#include <zircon/types.h>
 
-#include <kernel/ffi.h>
-#include <ktl/array.h>
-#include <object/vm_object_dispatcher.h>
-#include <vm/handoff-end.h>
+#include <fbl/ref_ptr.h>
+#include <vm/vm_address_region.h>
 #include <vm/vm_object.h>
 
-class VmMapping;
+__BEGIN_CDECLS
+
+// |vmo| must not be null.
+bool rust_vdso_vmo_is_vdso(const VmObject* vmo);
+bool rust_vdso_valid_code_mapping(uint64_t vmo_offset, size_t size);
+// |code_mapping| must not be null and its lock must be held.
+uintptr_t rust_vdso_base_address(const VmMapping* code_mapping);
+void rust_vdso_set_monotonic_ticks_offset(zx_ticks_t new_offset);
+
+__END_CDECLS
 
 class VDso {
  public:
-  enum class Variant { STABLE, NEXT, TEST1, TEST2, COUNT };
-  static constexpr size_t kNumVdsoVariants = static_cast<size_t>(Variant::COUNT);
+  // This returns false if no vDSO has been created (as is always the case with userabi
+  // disabled).
+  static bool vmo_is_vdso(const VmObject& vmo) { return rust_vdso_vmo_is_vdso(&vmo); }
 
-  // This is called only once, at boot time.
-  //
-  // The created VDso will retain RefPtrs to the created VmObjectDispatchers,
-  // but ownership of the wrapping handles are given to the caller.
-  //
-  // The RoDso VMO is created in vmo_kernel_handles[Variant::NEXT]
-  // with the VDso variants in the other slots.
-  static const VDso* Create(
-      const HandoffEnd::Elf& elf_image,
-      ktl::span<KernelHandle<VmObjectDispatcher>, kNumVdsoVariants> vmo_kernel_handles,
-      KernelHandle<VmObjectDispatcher>* time_values_handle);
+  // This returns false if |vmo| is null.
+  static bool vmo_is_vdso(const fbl::RefPtr<VmObject>& vmo) { return vmo && vmo_is_vdso(*vmo); }
 
-  static bool vmo_is_vdso(const VmObject* vmo) {
-#ifdef KERNEL_NO_USERABI
-    // In the nouserabi case the instance_ variable is not present
-    return false;
-#else
-    return likely(instance_) && instance_->vmo_is_vdso_impl(vmo);
-#endif
+  static bool valid_code_mapping(uint64_t vmo_offset, size_t size) {
+    return rust_vdso_valid_code_mapping(vmo_offset, size);
   }
-
-  static bool vmo_is_vdso(const fbl::RefPtr<VmObject>& vmo) { return vmo_is_vdso(vmo.get()); }
-
-  static bool valid_code_mapping(uint64_t vmo_offset, size_t size);
 
   // Given VmAspace::vdso_code_mapping_, return the vDSO base address.
   static uintptr_t base_address(const fbl::RefPtr<VmMapping>& code_mapping)
-      TA_REQ(code_mapping->lock());
+      TA_REQ(code_mapping->lock()) {
+    DEBUG_ASSERT(code_mapping);
+    return rust_vdso_base_address(code_mapping.get());
+  }
 
   // Forward declaration of generated class.
   // This class is defined in the file vdso-valid-sysret.h,
@@ -64,62 +57,9 @@ class VDso {
 
   // Sets the monotonic ticks offset in all of the vDSO variants' TimeValues structure. This will
   // be called on system resume to update the amount of time the system spent in a suspended state.
-  static void SetMonotonicTicksOffset(zx_ticks_t new_offset);
-
-  fbl::RefPtr<VmObjectDispatcher> dispatcher() const {
-    return variant_vmo_[variant_index(Variant::NEXT)];
+  static void SetMonotonicTicksOffset(zx_ticks_t new_offset) {
+    rust_vdso_set_monotonic_ticks_offset(new_offset);
   }
-
-  zx_rights_t vmo_rights() const { return vmo_rights_; }
-
-  const fbl::RefPtr<VmObject>& vmo() const { return vmo_; }
-
- private:
-  VDso() = default;
-
-  void CreateVariant(Variant, KernelHandle<VmObjectDispatcher>* vmo_kernel_handle);
-  void CreateTimeValuesVmo(KernelHandle<VmObjectDispatcher>* time_values_handle);
-  zx_status_t MapTimeValuesVmo(Variant, const fbl::RefPtr<VmObject>& vdso_vmo);
-
-  bool vmo_is_vdso_impl(const VmObject* vmo) const {
-    if (vmo == vmo_.get())
-      return true;
-    for (const auto& v : variant_vmo_) {
-      if (vmo == v->vmo().get())
-        return true;
-    }
-    return false;
-  }
-
-  static constexpr size_t variant_index(Variant v) {
-    DEBUG_ASSERT(v >= Variant::STABLE && v < Variant::COUNT);
-    return static_cast<size_t>(v);
-  }
-
-  fbl::RefPtr<VmObject> vmo_;
-  fbl::RefPtr<VmObjectDispatcher> variant_vmo_[static_cast<size_t>(Variant::COUNT)];
-  KernelMappedVmo variant_time_mappings_[static_cast<size_t>(Variant::COUNT)];
-  fasttime::internal::TimeValues* time_values_[static_cast<size_t>(Variant::COUNT)];
-  zx_rights_t vmo_rights_;
-
-  static const VDso* instance_;
 };
-
-__BEGIN_CDECLS
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE const VDso* cpp_vdso_create(
-    const HandoffEnd::Elf* elf_image,
-    ffi::Uninitialized<ktl::array<KernelHandle<VmObjectDispatcher>, VDso::kNumVdsoVariants>>*
-        vmo_kernel_handles_out,
-    ffi::Uninitialized<KernelHandle<VmObjectDispatcher>>* time_values_handle_out);
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE zx_rights_t cpp_vdso_vmo_rights(const VDso* vdso);
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE bool cpp_vmo_is_vdso(const VmObject* vmo);
-
-__END_CDECLS
 
 #endif  // ZIRCON_KERNEL_LIB_USERABI_INCLUDE_LIB_USERABI_VDSO_H_
