@@ -1,0 +1,32 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_test.bzl", "fx_cc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+# Preserve original GN output_name so GN does not emit a top-level phony alias
+# that collides with fuchsia_unittest_package("fidl_cpp_formatter_tests") on incremental builds.
+# test-parity-allow-manual: Fuchsia-only test binary wrapped by :fidl_cpp_formatter_tests (host-compatible deps do not mark it Fuchsia-only on --config=host).
+# @bazel2gn:raw_attribute:output_name="fidl_cpp_formatter_tests"
+fx_cc_test(
+    name = "fidl_cpp_formatter_tests_bin",
+    srcs = ["formatter_tests.cc"],
+    tags = ["manual"],
+    deps = [
+        "//sdk/testing/fidl/types_tests:test.types_cpp",
+        "//src/lib/fxl/test:gtest_main",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+fx_unittest_package(
+    name = "fidl_cpp_formatter_tests",
+    unit_tests = [":fidl_cpp_formatter_tests_bin"],
+    visibility = [
+        "//sdk/lib:__pkg__",
+        "//sdk/lib/fidl/cpp/tests:__pkg__",
+    ],
+)

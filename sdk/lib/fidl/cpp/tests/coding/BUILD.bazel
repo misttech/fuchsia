@@ -1,0 +1,36 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_test.bzl", "fx_cc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+# Preserve original GN output_name so GN does not emit a top-level phony alias
+# that collides with fuchsia_unittest_package("fidl_cpp_natural_coding_tests") on incremental builds.
+# @bazel2gn:raw_attribute:output_name="fidl_cpp_natural_coding_tests"
+fx_cc_test(
+    name = "fidl_cpp_natural_coding_tests_bin",
+    srcs = [
+        "natural_response_test.cc",
+        "natural_struct_test.cc",
+        "persistence_test.cc",
+        "test_util.h",
+    ],
+    deps = [
+        "//sdk/lib/fidl/cpp",
+        "//sdk/lib/stdcompat",
+        "//sdk/testing/fidl/types_tests:test.types_cpp",
+        "//zircon/system/ulib/zxtest",
+    ],
+)
+
+fx_unittest_package(
+    name = "fidl_cpp_natural_coding_tests",
+    unit_tests = [":fidl_cpp_natural_coding_tests_bin"],
+    visibility = [
+        "//sdk/lib:__pkg__",
+        "//sdk/lib/fidl/cpp/tests:__pkg__",
+    ],
+)

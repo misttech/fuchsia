@@ -12,6 +12,10 @@ test_suite(
         "//sdk/lib/driver/debug/rust:driver_debug_tests",
         "//sdk/lib/driver/mmio/rust:unittests",
         "//sdk/lib/driver/mock-mmio/rust:unittests",
+        "//sdk/lib/fidl/cpp/tests/coding:fidl_cpp_natural_coding_tests",
+        "//sdk/lib/fidl/cpp/tests/formatter:fidl_cpp_formatter_tests",
+        "//sdk/lib/fidl/cpp/tests/natural_ostream:fidl_cpp_natural_ostream_tests",
+        "//sdk/lib/fidl/cpp/tests/natural_types:fidl_cpp_natural_type_api_tests",
         "//sdk/lib/power/state_recorder/rust:power_state_recorder_rust_unittests",
     ],
 )

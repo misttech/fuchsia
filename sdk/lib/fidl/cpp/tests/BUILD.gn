@@ -5,14 +5,14 @@
 group("tests") {
   testonly = true
   deps = [
-    "coding",
+    "coding:fidl_cpp_natural_coding_tests",
     "conformance",
     "conversion",
     "dispatcher",
-    "formatter",
+    "formatter:fidl_cpp_formatter_tests",
     "hlcpp_conversion",
     "integration",
-    "natural_ostream",
-    "natural_types",
+    "natural_ostream:fidl_cpp_natural_ostream_tests",
+    "natural_types:fidl_cpp_natural_type_api_tests_package",
   ]
 }

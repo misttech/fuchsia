@@ -81,6 +81,7 @@ idk_cc_source_library(
     # In GN, the library must be visible to any path that defines a `fidl()` target.
     visibility = [
         "//build/bazel/rules/fidl:__subpackages__",
+        "//sdk/lib/fidl/cpp/tests/coding:__pkg__",
         "//sdk/lib/fidl_driver:__pkg__",
         "//sdk/lib/inspect/component/cpp:__pkg__",
         "//src/lib/fidl/contrib/fpromise:__pkg__",
