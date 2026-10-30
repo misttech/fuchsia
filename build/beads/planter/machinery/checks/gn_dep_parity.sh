@@ -65,6 +65,7 @@ GN_TEST_TEMPLATES = GN_TEST_PACKAGE_TEMPLATES | {
     "go_test",
     "test",
     "cc_test_executable",
+    "bootfs_test",
 }
 SENTINEL = re.compile(r"^##\s*BAZEL2GN SENTINEL|#LOCAL_BAZEL_BUILD_SENTINEL", re.M)
 GN_TARGET = re.compile(r'\b([A-Za-z_]\w*)\(\s*"([^"$]+)"\s*\)\s*\{')
@@ -316,6 +317,34 @@ def resolve(label, now=False):
     return _resolved[key]
 
 
+# Filter added dependencies to non-test GN targets in the same package when checking
+# for sibling library wrapper substitutions.
+def non_test_substitutes(added_labels, dep_pkg):
+    out = []
+    for cand in sorted(added_labels):
+        if split(cand)[0] != dep_pkg:
+            continue
+        cand_info, _ = resolve(cand, now=True)
+        cand_tmpl = cand_info["tmpl"] if cand_info else ""
+        if cand_tmpl in GN_TEST_TEMPLATES or cand_tmpl == "bazel_test_suite":
+            continue
+        out.append(cand)
+    return out
+
+
+# Check whether a removed dependency is a migrated GN test target (without link-affecting
+# settings) or a deleted child forwarding group (whose reachability is verified by
+# cq_reachability and tests_json_parity).
+def is_migrated_test_or_group_dep(info, in_gn_now):
+    if not info:
+        return False
+    if info["tmpl"] in GN_TEST_TEMPLATES and not info["link"] and not in_gn_now:
+        return True
+    if info["forwarding_group"] and not in_gn_now:
+        return True
+    return False
+
+
 # Check whether a GN group dependency on a migrated test target was replaced by
 # bazel_test_suite and/or a renamed dual-build GN test package (<package_name>-gn).
 def is_migrated_test_group_dep(group_tmpl, label, info, old_all, subs, new_all):
@@ -554,7 +583,13 @@ for pkg in sorted(candidate_dirs):
                 re.search(r"\bwith_unit_tests\s*=\s*true\b", b) for b in new_targets[name]["bodies"]
             )
             info, exists_now = resolve(label)
-            subs = sorted(l for l in added if split(l)[0] == dep_pkg)
+            in_gn_now = info["in_gn_now"] if info is not None else (split(label)[1] in parsed(f"{dep_pkg}/BUILD.gn", "new")[1])
+            if is_migrated_test_or_group_dep(info, in_gn_now):
+                continue
+            raw_subs = sorted(l for l in added if split(l)[0] == dep_pkg)
+            if is_migrated_test_group_dep(tmpl, label, info, old_all, raw_subs, new_all):
+                continue
+            subs = non_test_substitutes(added, dep_pkg)
             public = "public_deps" in kinds
             file, line = locate(pkg, with_hops(subs) or [label], new_file, new_targets[name]["line"])
             forwarded = (info["public_deps"] | info["deps"]) if info else set()
@@ -573,13 +608,11 @@ for pkg in sorted(candidate_dirs):
                 and any(
                     new_dep_pkg_targets.get(split(s)[1], {}).get("tmpl")
                     in ("fuchsia_test_package", "fuchsia_unittest_package")
-                    for s in subs
+                    for s in raw_subs
                 )
             ):
                 continue
-            if is_migrated_test_group_dep(tmpl, label, info, old_all, subs, new_all):
-                continue
-            if subs and exists_now:
+            if subs and in_gn_now:
                 findings.append({
                     "source": "gn_dep_parity",
                     "category": "dep_label_substituted",
