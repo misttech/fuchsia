@@ -20,6 +20,7 @@ use futures::pin_mut;
 use futures::stream::StreamExt;
 use futures::task::Poll;
 use settings_common::config::AgentType;
+use settings_common::inspect::event::{Direction, RequestType};
 use settings_media_buttons::MediaButtonsEventBuilder;
 use settings_test_common::helpers::{
     clone_media_buttons_event_without_wake_lease, move_executor_forward,
@@ -598,6 +599,26 @@ async fn test_camera3_external_sw_change() {
     env.camera3_service.lock().await.set_camera_sw_muted(false);
     watch_until_camera_disabled(&input_proxy, false).await;
     assert!(!env.camera3_service.lock().await.camera_sw_muted());
+}
+
+// Test that hardware media button events are recorded as MediaButtons requests.
+#[fuchsia::test(allow_stalls = false)]
+async fn test_media_button_event_usage_request_type() {
+    let (tx, mut rx) = mpsc::unbounded();
+    let mut env = create_env_with_config(default_mic_config(), None, tx).await;
+
+    switch_hardware_mic_mute(&env, true).await;
+    wait_for_media_button_event(&mut rx).await;
+
+    let event = env.usage_rx.next().await.expect("usage event recorded");
+    let Direction::Request(request) = event.direction else {
+        panic!("Expected Request direction before Response");
+    };
+    assert!(
+        matches!(event.request_type, RequestType::MediaButtons),
+        "Media button event {request} recorded as {:?}",
+        event.request_type,
+    );
 }
 
 // Test that when either hardware or software is muted, the service

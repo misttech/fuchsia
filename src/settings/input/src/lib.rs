@@ -64,8 +64,11 @@ where
     let inner_camera_event_rx =
         event_request_logger(camera_watcher_event_rx, usage_publisher.clone(), RequestType::Camera);
     let (media_buttons_event_tx, media_buttons_event_rx) = mpsc::unbounded();
-    let inner_media_buttons_event_rx =
-        event_request_logger(media_buttons_event_rx, usage_publisher.clone(), RequestType::Camera);
+    let inner_media_buttons_event_rx = event_request_logger(
+        media_buttons_event_rx,
+        usage_publisher.clone(),
+        RequestType::MediaButtons,
+    );
     let task = input_controller
         .handle(inner_camera_event_rx, inner_media_buttons_event_rx, request_rx)
         .await;
