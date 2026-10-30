@@ -356,7 +356,8 @@ void UsbCdcFunction::ProcessRxCompletions(std::vector<fendpoint::Completion> com
 
   for (auto &completion : completions) {
     zx_status_t status = *completion.status();
-    if (status == ZX_ERR_IO_NOT_PRESENT || status == ZX_ERR_CANCELED || !online_ || !configured_) {
+    if (status == ZX_ERR_IO_NOT_PRESENT || status == ZX_ERR_CANCELED ||
+        status == ZX_ERR_BAD_STATE || !online_ || !configured_) {
       bulk_out_ep_.PutRequest(usb::FidlRequest{std::move(completion.request().value())});
       continue;
     }
