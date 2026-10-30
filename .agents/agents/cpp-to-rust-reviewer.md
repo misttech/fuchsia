@@ -178,7 +178,8 @@ Use the following markdown template when generating your review report:
     `Deref`/`DerefMut`, `Default`, `Option`/`Result`, `?` operator, returning
     values via `Option<T>` or `Result<T, Status>` instead of C-style
     out-parameters) without breaking layout or safety requirements. Keep
-    visibility as tight as possible (`pub(crate)` or file-private). Preserve
+    single-file items private; in the kernel crate, use `pub` rather than
+    `pub(crate)` for everything else (see §3.10). Preserve
     named constants. Apply idioms within the C++ structure: keep function
     boundaries, helpers and control-flow shape so the port can be compared side
     by side. Do not inline helpers, merge or split functions, or unroll macros
@@ -515,9 +516,12 @@ pin_init!(Self {
   callers still invoke the method via a `rust_*` FFI trampoline, perform the
   out-parameter adaptation inside the FFI trampoline, not on the Rust method
   itself.
-- **Tight Visibility**: Keep items private or `pub(crate)`. Functions, types, or
-  helpers used only within a single file MUST NOT be marked `pub` or
-  `pub(crate)`.
+- **Visibility**: Functions, types, or helpers used only within a single file
+  MUST be private. All kernel Rust is compiled into one crate (see
+  `//zircon/kernel/kernel_rust_mod.gni`), so in kernel code `pub(crate)` is
+  equivalent to `pub`: use plain `pub` for anything wider than file-private,
+  including `pub mod` declarations. `pub(crate)` remains appropriate in
+  standalone library crates (e.g. `//src/lib/ksync`).
 - **Idiomatic Traits**: Implement `Default` for types with natural empty states.
   Use `Deref` / `DerefMut` for slice-like or container-like types. Use
   `zerocopy` (`FromBytes`, `IntoBytes`) for safe byte casting instead of
@@ -754,8 +758,8 @@ Reviewers and Coders must audit code against this checklist:
      creating custom numeric traits for generic templates.
 16.  [ ] **Unported Trace Statements**: C++ `LTRACE` statements are preserved
      with `const LOCAL_TRACE: u32 = 0;` and the `debug` crate's `ltrace` macros.
-17.  [ ] **Over-broad Visibility**: Helpers and internal structs are private or
-     `pub(crate)`, not `pub`.
+17.  [ ] **Visibility**: Single-file helpers and internal structs are private;
+     kernel-crate items wider than that use `pub`, not `pub(crate)`.
 18.  [ ] **Missing C++ FFI Header Declarations**: All `cpp_*` functions defined
      in `.cc` have matching `extern "C"` prototype declarations in C++ headers.
 19.  [ ] **Kernel Test Harness Mismatch**: Kernel code (`zircon/kernel/`) does
