@@ -46,6 +46,42 @@ if (is_host) {
     honeydew_config = _honeydew_config
   }
 
+  python_mobly_test("usb_reset_test") {
+    main_source = "test_usb_disconnect.py"
+    libraries = [
+      "//src/testing/end_to_end/honeydew",
+      "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
+      "//src/tests/end_to_end/usb/lib:usb_lib",
+    ]
+    test_data_deps =
+        [ "//src/developer/ffx/plugins/inspect:ffx_inspect_tool_test_data" ]
+    params = {
+      num_iterations = 10
+
+      # Reset the DUT's USB port with the host's USBDEVFS_RESET ioctl instead
+      # of using a physical power hub at desk. A reset has no "off" phase, so
+      # there is no disconnect duration. See
+      # //src/tests/end_to_end/usb/lib/disconnect/udev.sh for the host udev
+      # rules it requires.
+      use_virtual_usb_hub = true
+      virtual_usb_hub_mode = "reset"
+      disconnect_method = "reset"
+
+      # Assert the link comes back at HighSpeed after every reset.
+      expected_usb_link_speed = "high"
+
+      # Retry the virtual hub's USB bus ID lookup before each reset in case
+      # the DUT is still re-enumerating after the previous one.
+      bus_id_lookup_attempts = 10
+      bus_id_lookup_timeout_sec = 15
+      test_case_prefix = "test_usb_reset"
+    }
+
+    environments = [ iris_env ]
+    timeout_secs = 600
+    honeydew_config = _honeydew_config
+  }
+
   python_mobly_test("usb_disconnect_test") {
     main_source = "test_usb_disconnect.py"
     libraries = [
@@ -289,6 +325,7 @@ group("tests") {
     ":usb_disconnect_test($host_toolchain)",
     ":usb_fastboot_loop_test($host_toolchain)",
     ":usb_mdns_hotplug_test($host_toolchain)",
+    ":usb_reset_test($host_toolchain)",
     ":usb_virtual_disconnect_test($host_toolchain)",
     "zero_function:tests($host_toolchain)",
   ]

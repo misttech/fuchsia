@@ -22,6 +22,11 @@ group("usb_virtual_disconnect_test") {
   public_deps = [ "stress:usb_virtual_disconnect_test($host_toolchain)" ]
 }
 
+group("usb_reset_test") {
+  testonly = true
+  public_deps = [ "stress:usb_reset_test($host_toolchain)" ]
+}
+
 group("usb_disconnect_test") {
   testonly = true
   public_deps = [ "stress:usb_disconnect_test($host_toolchain)" ]

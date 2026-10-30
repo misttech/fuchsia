@@ -1,8 +1,9 @@
 # Copyright 2026 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-"""Linux Virtual UsbPower auxiliary device implementation."""
+"""Linux Virtual UsbPower auxiliary device implementations."""
 
+import abc
 import glob
 import json
 import logging
@@ -15,6 +16,9 @@ from importlib import resources
 from honeydew import errors
 from honeydew.auxiliary_devices.usb_power_hub import usb_power_hub
 from honeydew.utils import common, host_shell
+from testusb import ioctl
+
+from . import usb_reset
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -25,32 +29,35 @@ _BUS_ID_LOOKUP_RETRY_INTERVAL_SEC: float = 1.0
 # Shared with //src/tests/end_to_end/usb/lib/disconnect/udev.sh.
 _PID_LIST_FILE: str = "fuchsia_usb_pids.json"
 
+_SYSFS_USB_DEVICES_DIR: str = "/sys/bus/usb/devices"
 
-class LinuxVirtualUsbPowerHub(usb_power_hub.UsbPowerHub):
-    """LinuxVirtualUsbPowerHub auxiliary device implementation.
 
-    This class enables virtual USB plug/unplug (authorization control)
-    on a Linux host. It is intended for local at-desk developer testing
-    and virtual/emulated testbeds where physical power hubs are not available.
+class _LinuxVirtualUsbPowerHubBase(usb_power_hub.UsbPowerHub):
+    """Shared base of the Linux virtual USB power hubs.
+
+    Finds the sysfs USB bus ID of the Fuchsia device on a Linux host and
+    checks, outside infra, that the host file the subclass writes to is
+    writable. Intended for local at-desk developer testing and
+    virtual/emulated testbeds where physical power hubs are not available.
 
     Note on permissions:
-        Writing to `/sys/bus/usb/devices/<bus_id>/authorized` requires write
-        access that a regular user does not have by default. Run
+        The files the subclasses write to require write access that a regular
+        user does not have by default. Run
         //src/tests/end_to_end/usb/lib/disconnect/udev.sh (or the at-desk
         runner //src/tests/end_to_end/usb/lib/disconnect/run_usb_virtual_disconnect_test_at_desk.sh,
         which invokes `udev.sh`) to install the host udev rules (`sudo` is only
-        prompted on first-time setup) so `power_off()`/`power_on()` can toggle
-        `authorized` at test time without `sudo`.
+        prompted on first-time setup) so they can be written at test time
+        without `sudo`.
 
     Args:
         target_serial: The serial number of the Fuchsia device. Used for
             discovery to match against connected USB devices.
-        bus_id_lookup_attempts: Maximum number of times `power_off()` looks up
-            the bus ID before giving up, to tolerate the DUT still
+        bus_id_lookup_attempts: Maximum number of times the bus ID is looked
+            up before each virtual disconnect, to tolerate the DUT still
             re-enumerating right after a previous reconnect.
-        bus_id_lookup_timeout_sec: Maximum total time in seconds `power_off()`
-            spends retrying the bus ID lookup. Retries stop at whichever of
-            the attempts or this timeout is reached first.
+        bus_id_lookup_timeout_sec: Maximum total time in seconds spent
+            retrying the bus ID lookup. Retries stop at whichever of the
+            attempts or this timeout is reached first.
     """
 
     def __init__(
@@ -62,7 +69,7 @@ class LinuxVirtualUsbPowerHub(usb_power_hub.UsbPowerHub):
         super().__init__()
         if platform.system() != "Linux":
             raise usb_power_hub.UsbPowerHubError(
-                "LinuxVirtualUsbPowerHub is only supported on Linux hosts."
+                f"{type(self).__name__} is only supported on Linux hosts."
             )
 
         self._target_serial = target_serial
@@ -95,37 +102,45 @@ class LinuxVirtualUsbPowerHub(usb_power_hub.UsbPowerHub):
 
         self._usb_bus_id: str = self._find_usb_bus_id()
 
-        if not common.is_infra() and not os.access(
-            f"/sys/bus/usb/devices/{self._usb_bus_id}/authorized", os.W_OK
-        ):
-            msg = (
-                "Host udev rules for virtual USB disconnect are not installed "
-                f"or /sys/bus/usb/devices/{self._usb_bus_id}/authorized is not "
-                "writable. Run //src/tests/end_to_end/usb/lib/disconnect/udev.sh "
-                "or //src/tests/end_to_end/usb/lib/disconnect/run_usb_virtual_disconnect_test_at_desk.sh "
-                "first."
-            )
-            _LOGGER.error(msg)
-            raise usb_power_hub.UsbPowerHubError(msg)
+        if not common.is_infra():
+            try:
+                path = self._host_write_path()
+            except (OSError, ValueError) as err:
+                raise usb_power_hub.UsbPowerHubError(
+                    f"Failed to resolve the host file of USB device "
+                    f"{self._usb_bus_id}: {err}"
+                ) from err
+            if not os.access(path, os.W_OK):
+                msg = (
+                    "Host udev rules for virtual USB disconnect are not "
+                    f"installed or {path} is not writable. Run "
+                    "//src/tests/end_to_end/usb/lib/disconnect/udev.sh "
+                    "or //src/tests/end_to_end/usb/lib/disconnect/run_usb_virtual_disconnect_test_at_desk.sh "
+                    "first."
+                )
+                _LOGGER.error(msg)
+                raise usb_power_hub.UsbPowerHubError(msg)
 
-    def power_off(self, port: int | None = None) -> None:
-        """Deauthorizes (virtually unplugs) the USB device.
+    @abc.abstractmethod
+    def _host_write_path(self) -> str:
+        """Returns the host file written to virtually disconnect the device."""
 
-        The bus ID is looked up again before each unplug, since the DUT may
-        have re-enumerated on a different port path (e.g. moved to another
-        port or a hub renumbered) since the last call. The lookup is retried
-        per `bus_id_lookup_attempts` and `bus_id_lookup_timeout_sec` in case
-        the DUT is still re-enumerating. `power_on()` reuses the bus ID
-        resolved here.
+    def _refresh_usb_bus_id(self) -> None:
+        """Looks up the bus ID again, retrying while the DUT re-enumerates.
 
-        Args:
-            port: None. Not used by this implementation.
+        The DUT may have re-enumerated on a different port path (e.g. moved
+        to another port or a hub renumbered) since the last lookup. The lookup
+        is retried per `bus_id_lookup_attempts` and
+        `bus_id_lookup_timeout_sec` in case the DUT is still re-enumerating.
+
+        Raises:
+            usb_power_hub.UsbPowerHubError: If every lookup attempt fails.
         """
         end_time = time.monotonic() + self._bus_id_lookup_timeout_sec
         for attempt in range(1, self._bus_id_lookup_attempts + 1):
             try:
                 self._usb_bus_id = self._find_usb_bus_id()
-                break
+                return
             except ValueError as err:
                 if (
                     attempt == self._bus_id_lookup_attempts
@@ -142,39 +157,6 @@ class LinuxVirtualUsbPowerHub(usb_power_hub.UsbPowerHub):
                     err,
                 )
                 time.sleep(_BUS_ID_LOOKUP_RETRY_INTERVAL_SEC)
-        _LOGGER.info("Virtually unplugging USB device %s...", self._usb_bus_id)
-        cmd: list[str] = [
-            "sh",
-            "-c",
-            f"echo 0 > /sys/bus/usb/devices/{self._usb_bus_id}/authorized",
-        ]
-        try:
-            host_shell.run(cmd=cmd)
-        except errors.HostCmdError as err:
-            raise usb_power_hub.UsbPowerHubError(err) from err
-        _LOGGER.info(
-            "Successfully virtually unplugged USB device %s.", self._usb_bus_id
-        )
-
-    def power_on(self, port: int | None = None) -> None:
-        """Authorizes (virtually plugs in) the USB device.
-
-        Args:
-            port: None. Not used by this implementation.
-        """
-        _LOGGER.info("Virtually plugging in USB device %s...", self._usb_bus_id)
-        cmd: list[str] = [
-            "sh",
-            "-c",
-            f"echo 1 > /sys/bus/usb/devices/{self._usb_bus_id}/authorized",
-        ]
-        try:
-            host_shell.run(cmd=cmd)
-        except errors.HostCmdError as err:
-            raise usb_power_hub.UsbPowerHubError(err) from err
-        _LOGGER.info(
-            "Successfully virtually plugged in USB device %s.", self._usb_bus_id
-        )
 
     def _find_usb_bus_id(self) -> str:
         """Finds the USB bus ID for the target device."""
@@ -183,7 +165,7 @@ class LinuxVirtualUsbPowerHub(usb_power_hub.UsbPowerHub):
         serial = self._target_serial
 
         matching_devices = []
-        for dev_path in glob.glob("/sys/bus/usb/devices/*"):
+        for dev_path in glob.glob(f"{_SYSFS_USB_DEVICES_DIR}/*"):
             vendor_file = os.path.join(dev_path, "idVendor")
             product_file = os.path.join(dev_path, "idProduct")
             serial_file = os.path.join(dev_path, "serial")
@@ -228,3 +210,149 @@ class LinuxVirtualUsbPowerHub(usb_power_hub.UsbPowerHub):
         if not re.match(r"^[a-zA-Z0-9.-]+$", usb_bus_id):
             raise ValueError(f"Invalid usb_bus_id format: {usb_bus_id}")
         return usb_bus_id
+
+
+class LinuxVirtualUsbAuthorizePowerHub(_LinuxVirtualUsbPowerHubBase):
+    """Virtually unplugs and plugs in the device by USB authorization control.
+
+    `power_off()` and `power_on()` toggle the sysfs
+    `/sys/bus/usb/devices/<bus_id>/authorized` attribute of the device on a
+    Linux host.
+
+    Args:
+        target_serial: See `_LinuxVirtualUsbPowerHubBase`.
+        bus_id_lookup_attempts: See `_LinuxVirtualUsbPowerHubBase`.
+        bus_id_lookup_timeout_sec: See `_LinuxVirtualUsbPowerHubBase`.
+    """
+
+    def _host_write_path(self) -> str:
+        return f"{_SYSFS_USB_DEVICES_DIR}/{self._usb_bus_id}/authorized"
+
+    def power_off(self, port: int | None = None) -> None:
+        """Deauthorizes (virtually unplugs) the USB device.
+
+        The bus ID is looked up again before each unplug. `power_on()` reuses
+        the bus ID resolved here.
+
+        Args:
+            port: None. Not used by this implementation.
+        """
+        self._refresh_usb_bus_id()
+        _LOGGER.info("Virtually unplugging USB device %s...", self._usb_bus_id)
+        self._write_authorized("0")
+        _LOGGER.info(
+            "Successfully virtually unplugged USB device %s.", self._usb_bus_id
+        )
+
+    def power_on(self, port: int | None = None) -> None:
+        """Authorizes (virtually plugs in) the USB device.
+
+        Args:
+            port: None. Not used by this implementation.
+        """
+        _LOGGER.info("Virtually plugging in USB device %s...", self._usb_bus_id)
+        self._write_authorized("1")
+        _LOGGER.info(
+            "Successfully virtually plugged in USB device %s.", self._usb_bus_id
+        )
+
+    def _write_authorized(self, value: str) -> None:
+        """Writes the sysfs `authorized` attribute of the USB device."""
+        cmd: list[str] = [
+            "sh",
+            "-c",
+            f"echo {value} > {self._host_write_path()}",
+        ]
+        try:
+            host_shell.run(cmd=cmd)
+        except errors.HostCmdError as err:
+            raise usb_power_hub.UsbPowerHubError(err) from err
+
+
+class LinuxVirtualUsbResetPowerHub(
+    _LinuxVirtualUsbPowerHubBase, usb_reset.UsbResetCapable
+):
+    """Resets the device's USB link with the USBDEVFS_RESET ioctl.
+
+    `reset()` issues USBDEVFS_RESET on the usbfs device node
+    `/dev/bus/usb/<busnum>/<devnum>` of the device on a Linux host. The host
+    drives a bus reset on the port and re-enumerates the device without
+    cutting VBUS, so there is no "off" phase: `power_off()` is not supported,
+    and `power_on()` is a no-op since this hub never leaves the link down.
+
+    Args:
+        target_serial: See `_LinuxVirtualUsbPowerHubBase`.
+        bus_id_lookup_attempts: See `_LinuxVirtualUsbPowerHubBase`.
+        bus_id_lookup_timeout_sec: See `_LinuxVirtualUsbPowerHubBase`.
+    """
+
+    def _host_write_path(self) -> str:
+        return self._usb_device_node()
+
+    def reset(self, port: int | None = None) -> None:
+        """Resets the USB link of the device.
+
+        The bus ID and the device node are looked up again before each
+        reset, as the device number changes whenever the device re-enumerates.
+
+        Args:
+            port: None. Not used by this implementation.
+
+        Raises:
+            usb_power_hub.UsbPowerHubError: In case of failure.
+        """
+        self._refresh_usb_bus_id()
+        try:
+            node = self._usb_device_node()
+            _LOGGER.info(
+                "Resetting USB device %s (%s)...", self._usb_bus_id, node
+            )
+            reenumerated = ioctl.reset_usb_device(node)
+        except (OSError, ValueError) as err:
+            raise usb_power_hub.UsbPowerHubError(
+                f"Failed to reset USB device {self._usb_bus_id}: {err}"
+            ) from err
+        _LOGGER.info(
+            "Successfully reset USB device %s%s.",
+            self._usb_bus_id,
+            "; it is being re-enumerated" if reenumerated else "",
+        )
+
+    def power_off(self, port: int | None = None) -> None:
+        """Not supported, as a USB reset has no "off" phase.
+
+        Args:
+            port: None. Not used by this implementation.
+
+        Raises:
+            usb_power_hub.UsbPowerHubError: Always.
+        """
+        raise usb_power_hub.UsbPowerHubError(
+            f"{type(self).__name__} cannot power off the USB link; use reset()."
+        )
+
+    def power_on(self, port: int | None = None) -> None:
+        """No-op, as this hub never leaves the USB link down.
+
+        Args:
+            port: None. Not used by this implementation.
+        """
+        _LOGGER.debug(
+            "USB device %s is never left disconnected by %s; nothing to do.",
+            self._usb_bus_id,
+            type(self).__name__,
+        )
+
+    def _usb_device_node(self) -> str:
+        """Returns the usbfs device node path of the USB device.
+
+        Raises:
+            OSError: If the sysfs `busnum` or `devnum` cannot be read.
+            ValueError: If `busnum` or `devnum` is not an integer.
+        """
+        dev_dir = f"{_SYSFS_USB_DEVICES_DIR}/{self._usb_bus_id}"
+        with open(f"{dev_dir}/busnum", "r", encoding="utf-8") as f:
+            busnum = int(f.read().strip())
+        with open(f"{dev_dir}/devnum", "r", encoding="utf-8") as f:
+            devnum = int(f.read().strip())
+        return f"/dev/bus/usb/{busnum:03d}/{devnum:03d}"

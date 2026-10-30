@@ -40,6 +40,7 @@ FUNCTIONAL_TESTS=(
 # those are opt-in via --physical-disconnect.
 STRESS_TESTS=(
   usb_virtual_disconnect_test
+  usb_reset_test
   cdc_stress_test
   usb_fastboot_loop_test
   adb_root_unroot_stress_test
@@ -114,6 +115,7 @@ Functional (-f):
   zero_function_test
 Stress (-s):
   usb_virtual_disconnect_test
+  usb_reset_test
   cdc_stress_test
   usb_fastboot_loop_test
   adb_root_unroot_stress_test

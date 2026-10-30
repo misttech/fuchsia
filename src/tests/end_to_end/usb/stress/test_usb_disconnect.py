@@ -28,6 +28,8 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 _DEFAULT_RECONNECT_TIMEOUT_SEC: int = 60
 _DEFAULT_TEST_CASE_PREFIX: str = "test_usb_disconnect"
+_DISCONNECT_METHOD_POWER_CYCLE: str = "power_cycle"
+_DISCONNECT_METHOD_RESET: str = "reset"
 
 
 class UsbDisconnectTest(usb_lib.UsbPowerHubBaseTest):
@@ -41,7 +43,16 @@ class UsbDisconnectTest(usb_lib.UsbPowerHubBaseTest):
             Defaults to 10 (or uses num_usb_disconnects if provided).
         num_usb_disconnects (int, optional): Alias for num_iterations.
         disconnect_duration_sec (int, optional): How long to stay disconnected.
-            Defaults to 10.
+            Defaults to 10. Not used by the "reset" disconnect method.
+        disconnect_method (str, optional): How to disconnect the device:
+            - "power_cycle" (default): power the USB port off, wait for the
+              device to go offline and `disconnect_duration_sec`, then power
+              it back on.
+            - "reset": reset the USB link in a single step, e.g. with
+              `virtual_usb_hub_mode: reset`. The link has no "off" phase, so
+              there is no offline wait nor disconnect duration. Hubs that
+              cannot reset fall back to a power cycle without the offline
+              wait.
         reconnect_timeout_sec (int, optional): How long to wait for the device
             to come back online after USB power is restored. Defaults to 60.
         verify_mdns (bool, optional): Verify that the device is discoverable
@@ -114,6 +125,18 @@ class UsbDisconnectTest(usb_lib.UsbPowerHubBaseTest):
         disconnect_duration = int(
             self.user_params.get("disconnect_duration_sec", 10)
         )
+        disconnect_method = self.user_params.get(
+            "disconnect_method", _DISCONNECT_METHOD_POWER_CYCLE
+        )
+        if disconnect_method not in (
+            _DISCONNECT_METHOD_POWER_CYCLE,
+            _DISCONNECT_METHOD_RESET,
+        ):
+            raise signals.TestAbortAll(
+                f"Unsupported disconnect_method {disconnect_method!r}; "
+                f"expected {_DISCONNECT_METHOD_POWER_CYCLE!r} or "
+                f"{_DISCONNECT_METHOD_RESET!r}."
+            )
         reconnect_timeout = int(
             self.user_params.get(
                 "reconnect_timeout_sec", _DEFAULT_RECONNECT_TIMEOUT_SEC
@@ -149,16 +172,29 @@ class UsbDisconnectTest(usb_lib.UsbPowerHubBaseTest):
         self.dut.fuchsia_controller.before_usb_disconnect()
         try:
             self.dut.ffx.notify_intentional_disconnect()
-            power_hub.power_off(port=self._usb_port)
-            _LOGGER.info("Waiting for the device to go offline...")
-            await asyncio.to_thread(self.dut.wait_for_offline)
-            _LOGGER.info("Device is successfully offline.")
+            if disconnect_method == _DISCONNECT_METHOD_RESET:
+                _LOGGER.info("Resetting the USB link...")
+                await asyncio.to_thread(
+                    usb_lib.reset_usb_link,
+                    power_hub,
+                    self._usb_port,
+                    disconnect_duration,
+                )
+                await asyncio.to_thread(self._restart_host_adb_server)
+            else:
+                power_hub.power_off(port=self._usb_port)
+                _LOGGER.info("Waiting for the device to go offline...")
+                await asyncio.to_thread(self.dut.wait_for_offline)
+                _LOGGER.info("Device is successfully offline.")
 
-            if disconnect_duration > 0:
-                _LOGGER.info("Sleeping for %d seconds...", disconnect_duration)
-                await asyncio.sleep(disconnect_duration)
+                if disconnect_duration > 0:
+                    _LOGGER.info(
+                        "Sleeping for %d seconds...", disconnect_duration
+                    )
+                    await asyncio.sleep(disconnect_duration)
         finally:
-            power_hub.power_on(port=self._usb_port)
+            if disconnect_method == _DISCONNECT_METHOD_POWER_CYCLE:
+                power_hub.power_on(port=self._usb_port)
             _LOGGER.info("Waiting for the device to go online...")
             try:
                 await asyncio.wait_for(
@@ -220,6 +256,22 @@ class UsbDisconnectTest(usb_lib.UsbPowerHubBaseTest):
             "Successfully ended the Usb Disconnect test iteration# %s",
             iteration,
         )
+
+    def _restart_host_adb_server(self) -> None:
+        """Restarts the isolated host ADB server of the DUT, if any.
+
+        An in-place USB reset keeps the device number, so a running host ADB
+        server keeps its stale USB handle and loses the device for good.
+        Restarting the host server is enough; adbd on the DUT is unaffected.
+        """
+        # TODO(b/562031693): Use a public Honeydew API once one exists.
+        adb_server = getattr(
+            getattr(self.dut, "adb", None), "_adb_server", None
+        )
+        if adb_server is None:
+            return
+        _LOGGER.info("Restarting the host ADB server after the USB reset...")
+        adb_server.restart()
 
     def _verify_mdns_advertisement(self, phase: str) -> None:
         """Asserts that the device is discoverable over mDNS.

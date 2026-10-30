@@ -1336,5 +1336,44 @@ class TestMaxPacketExtraction(unittest.TestCase):
                 self.assertEqual(res.status, TestStatus.PASS)
 
 
+class TestResetUsbDevice(unittest.TestCase):
+    """Tests for reset_usb_device issuing USBDEVFS_RESET."""
+
+    def _reset(self, ioctl_ret: int, err: int = 0) -> tuple[bool, MagicMock]:
+        mock_cdll = MagicMock()
+        mock_cdll.ioctl.return_value = ioctl_ret
+        with (
+            patch.object(ioctl, "_get_libc", return_value=mock_cdll),
+            patch("os.open", return_value=42) as mock_open,
+            patch("os.close") as mock_close,
+            patch("ctypes.get_errno", return_value=err),
+        ):
+            try:
+                return ioctl.reset_usb_device("/dev/bus/usb/003/005"), mock_cdll
+            finally:
+                mock_open.assert_called_once_with(
+                    "/dev/bus/usb/003/005", os.O_RDWR
+                )
+                mock_close.assert_called_once_with(42)
+
+    def test_reset_in_place(self) -> None:
+        reenumerated, mock_cdll = self._reset(ioctl_ret=0)
+        self.assertFalse(reenumerated)
+        mock_cdll.ioctl.assert_called_once_with(42, ioctl.USBDEVFS_RESET, 0)
+
+    def test_enodev_reports_reenumeration(self) -> None:
+        reenumerated, _ = self._reset(ioctl_ret=-1, err=errno.ENODEV)
+        self.assertTrue(reenumerated)
+
+    def test_other_errors_raise(self) -> None:
+        with self.assertRaises(OSError) as ctx:
+            self._reset(ioctl_ret=-1, err=errno.EBUSY)
+        self.assertEqual(ctx.exception.errno, errno.EBUSY)
+
+    def test_usbdevfs_reset_request_number(self) -> None:
+        # _IO('U', 20) from <linux/usbdevice_fs.h>.
+        self.assertEqual(ioctl.USBDEVFS_RESET, 0x5514)
+
+
 if __name__ == "__main__":
     unittest.main()

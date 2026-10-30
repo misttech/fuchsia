@@ -9,8 +9,11 @@ if [ -z "${BASH_VERSION:-}" ]; then
 fi
 
 # Sets up udev rules on a Linux host workstation to allow non-root users to
-# toggle USB authorization (/sys/bus/usb/devices/<bus_id>/authorized) for
-# Fuchsia/Android devices during local E2E testing (e.g., usb_virtual_disconnect_test).
+# virtually disconnect Fuchsia/Android devices during local E2E testing:
+#   - toggle USB authorization (/sys/bus/usb/devices/<bus_id>/authorized),
+#     e.g. for usb_virtual_disconnect_test.
+#   - reset the USB port with the USBDEVFS_RESET ioctl on the usbfs device
+#     node (/dev/bus/usb/BBB/DDD), e.g. for usb_reset_test.
 #
 # The covered USB Product IDs (PIDs) under Google's Vendor ID (VID) 18d1 are
 # read from the list shared with linux_virtual_usb_hub.py:
@@ -96,6 +99,15 @@ is_writable_by_check_user() {
   fi
 }
 
+# Prints the usbfs device node (/dev/bus/usb/BBB/DDD) of a sysfs USB device.
+usb_dev_node() {
+  local dev="$1"
+  local busnum devnum
+  busnum="$(cat "${dev}/busnum" 2>/dev/null)" || return 1
+  devnum="$(cat "${dev}/devnum" 2>/dev/null)" || return 1
+  printf '/dev/bus/usb/%03d/%03d\n' "$((10#${busnum}))" "$((10#${devnum}))"
+}
+
 # Runs a command, echoing a banner and its combined output.
 #
 # By default a non-zero exit status aborts the whole script. Pass `--soft` as
@@ -139,6 +151,8 @@ read -r -d '' EXPECTED_RULES << EOF || true
 # Google USB VID (${TARGET_VID}) rules for Fuchsia / Fastboot virtual USB disconnect testing
 # PIDs from //src/tests/end_to_end/usb/lib/fuchsia_usb_pids.json
 SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="${TARGET_VID}", ATTR{idProduct}=="${PID_ALTERNATIVES}", RUN+="/bin/chmod a+w /sys/bus/usb/devices/\$kernel/authorized"
+# Writable usbfs device node for USBDEVFS_RESET (virtual USB reset testing)
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="${TARGET_VID}", ATTR{idProduct}=="${PID_ALTERNATIVES}", MODE="0666"
 EOF
 
 needs_sudo_setup=0
@@ -151,7 +165,9 @@ else
     [[ -f "${dev}/idVendor" ]] || continue
     [[ "$(cat "${dev}/idVendor" 2>/dev/null)" == "${TARGET_VID}" ]] || continue
     is_target_pid "$(cat "${dev}/idProduct" 2>/dev/null)" || continue
-    if ! is_writable_by_check_user "${dev}/authorized"; then
+    node="$(usb_dev_node "${dev}")" || continue
+    if ! is_writable_by_check_user "${dev}/authorized" \
+      || ! is_writable_by_check_user "${node}"; then
       needs_sudo_setup=1
       break
     fi
@@ -209,13 +225,20 @@ for dev in /sys/bus/usb/devices/*; do
   serial=$(cat "${dev}/serial" 2>/dev/null || echo "unknown")
   echo "Device ${dev_name} (VID: ${TARGET_VID}, PID: ${pid}, Serial: ${serial}):"
   # Informational only: a device unplugged mid-sweep must not abort the script.
-  run_cmd --soft ls -l "${dev}/authorized"
-  if is_writable_by_check_user "${dev}/authorized"; then
-    echo "[VERIFIED]: User '${CHECK_USER}' HAS write permission to ${dev}/authorized"
-  else
-    echo "[WARNING]: User '${CHECK_USER}' does NOT have write permission to ${dev}/authorized" >&2
+  if ! node="$(usb_dev_node "${dev}")"; then
+    echo "[WARNING]: Failed to resolve the usbfs device node of ${dev}" >&2
     all_writable=0
+    continue
   fi
+  for path in "${dev}/authorized" "${node}"; do
+    run_cmd --soft ls -l "${path}"
+    if is_writable_by_check_user "${path}"; then
+      echo "[VERIFIED]: User '${CHECK_USER}' HAS write permission to ${path}"
+    else
+      echo "[WARNING]: User '${CHECK_USER}' does NOT have write permission to ${path}" >&2
+      all_writable=0
+    fi
+  done
 done
 
 echo "========================================================================"
@@ -226,6 +249,7 @@ if [[ "${found}" -eq 0 ]]; then
 elif [[ "${all_writable}" -eq 1 ]]; then
   echo "[SUMMARY]: ALL CHECKS PASSED! Your workstation is ready to run:"
   echo "           fx test --e2e usb_virtual_disconnect_test"
+  echo "           fx test --e2e usb_reset_test"
 else
   echo "[SUMMARY]: Some devices are still not writable. Try unplugging and replugging the USB cable." >&2
   exit 1

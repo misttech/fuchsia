@@ -22,7 +22,8 @@ from .irq_storm import (
 from .linux_virtual_usb_hub import (
     DEFAULT_BUS_ID_LOOKUP_ATTEMPTS,
     DEFAULT_BUS_ID_LOOKUP_TIMEOUT_SEC,
-    LinuxVirtualUsbPowerHub,
+    LinuxVirtualUsbAuthorizePowerHub,
+    LinuxVirtualUsbResetPowerHub,
 )
 from .sysfs_usb import (
     HostDevice,
@@ -45,6 +46,7 @@ from .usb_config import (
     set_usb_config,
 )
 from .usb_power_hub_base_test import UsbPowerHubBaseTest
+from .usb_reset import UsbResetCapable, reset_usb_link
 
 __all__ = [
     "DEFAULT_BUS_ID_LOOKUP_ATTEMPTS",
@@ -57,8 +59,10 @@ __all__ = [
     "HostDevice",
     "IrqStormSnapshot",
     "KERNEL_LOG_RE",
-    "LinuxVirtualUsbPowerHub",
+    "LinuxVirtualUsbAuthorizePowerHub",
+    "LinuxVirtualUsbResetPowerHub",
     "UsbPowerHubBaseTest",
+    "UsbResetCapable",
     "assert_no_dwc3_unhandled_irq_storm",
     "assert_no_irq_storm",
     "build_config_matrix",
@@ -73,6 +77,7 @@ __all__ = [
     "parse_usb_config_functions",
     "reboot_to_fastboot_mode",
     "recover_to_fuchsia_mode",
+    "reset_usb_link",
     "set_usb_config",
     "take_irq_storm_snapshot",
     "wait_for_usb_device",

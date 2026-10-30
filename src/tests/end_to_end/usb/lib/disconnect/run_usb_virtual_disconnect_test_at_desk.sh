@@ -3,20 +3,21 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# Runs usb_virtual_disconnect_test on host attached with fuchsia dut
+# Runs usb_virtual_disconnect_test (or usb_reset_test with
+# `--mode reset`) on host attached with fuchsia dut
 #
-# The test sets `use_virtual_usb_hub`, so the Mobly driver discovers the
+# The tests set `use_virtual_usb_hub`, so the Mobly driver discovers the
 # attached device and no need of testbed config.
 # Only setup is the udev rules by udev.sh, which this script runs
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
-TEST_TARGET=\
-"//src/tests/end_to_end/usb/stress:usb_virtual_disconnect_test"
-# Wrapper group that pulls in TEST_TARGET under the host toolchain. This is the
-# label to add to the build graph; the bare TEST_TARGET is not in the graph.
-TEST_GROUP="//src/tests/end_to_end/usb:usb_virtual_disconnect_test"
+# Set by --mode in main(): the Mobly test target, and its wrapper group that
+# pulls it in under the host toolchain. The group is the label to add to the
+# build graph; the bare test target is not in the graph.
+TEST_TARGET=""
+TEST_GROUP=""
 UDEV_SCRIPT="${SCRIPT_DIR}/udev.sh"
 
 # Reuse TARGET_VID, TARGET_PIDS, and is_target_pid() from udev.sh.
@@ -30,17 +31,23 @@ Usage: $0 [options] [-- <extra fx test args>]
 Options:
   -t, --target <name>   Fuchsia target name. Defaults to the device \`fx\`
                         is already pointed at.
+  -m, --mode <mode>     How to virtually disconnect the device:
+                          authorize  toggle its USB \`authorized\` attribute
+                                     (usb_virtual_disconnect_test, default)
+                          reset      reset its USB port with USBDEVFS_RESET
+                                     (usb_reset_test)
   -h, --help            Show this message.
 
 Anything after \`--\` is forwarded verbatim to \`fx test\`.
 
 Examples:
   $0 -t fuchsia-1234-5678-9abc
+  $0 --mode reset
   $0 -- --test-filter test_usb_disconnect_1 --min-severity-logs DEBUG
 USAGE_EOF
 }
 
-# The virtual hub toggles a real DUT's USB `authorized` attribute, so this
+# The virtual hub disconnects a real DUT over USB, so this
 # runner only works where a Fuchsia USB device is physically attached. Fail fast
 # when the DUT is unplugged or on remote environments (e.g. Cloudtops/VMs)
 # before prompting for sudo in udev.sh or running a build.
@@ -78,6 +85,7 @@ ensure_test_in_build_graph() {
 
 main() {
     local target_name=""
+    local mode="authorize"
     local -a extra_test_args=()
 
     while [[ $# -gt 0 ]]; do
@@ -88,6 +96,14 @@ main() {
                 ;;
             --target=*)
                 target_name="${1#*=}"
+                shift
+                ;;
+            -m|--mode)
+                mode="$2"
+                shift 2
+                ;;
+            --mode=*)
+                mode="${1#*=}"
                 shift
                 ;;
             -h|--help)
@@ -106,6 +122,19 @@ main() {
                 ;;
         esac
     done
+
+    local test_name
+    case "${mode}" in
+        authorize) test_name="usb_virtual_disconnect_test" ;;
+        reset) test_name="usb_reset_test" ;;
+        *)
+            echo "[!] ERROR: Unknown --mode: ${mode}" >&2
+            usage >&2
+            return 1
+            ;;
+    esac
+    TEST_TARGET="//src/tests/end_to_end/usb/stress:${test_name}"
+    TEST_GROUP="//src/tests/end_to_end/usb:${test_name}"
 
     local fuchsia_dir="${FUCHSIA_DIR:-}"
     if [[ -z "${fuchsia_dir}" ]]; then
@@ -127,12 +156,13 @@ main() {
 
     require_attached_device
 
-    # The test toggles `/sys/bus/usb/devices/<bus_id>/authorized` without sudo.
-    # On its first run on a workstation, `udev.sh` requires `sudo` to write
+    # The tests write `/sys/bus/usb/devices/<bus_id>/authorized` or the usbfs
+    # device node `/dev/bus/usb/BBB/DDD` without sudo. On its first run on a
+    # workstation, `udev.sh` requires `sudo` to write
     # `/etc/udev/rules.d/99-fuchsia-usb-authorize.rules` and run `udevadm` to
-    # reload/trigger the rule (granting `a+w` on `authorized`). Subsequent runs
-    # detect that the rule and write permission are already in place and exit
-    # without needing `sudo`.
+    # reload/trigger the rules (granting `a+w` on `authorized` and on the
+    # device node). Subsequent runs detect that the rules and write permission
+    # are already in place and exit without needing `sudo`.
     echo "${UDEV_SCRIPT}"
     bash "${UDEV_SCRIPT}"
 

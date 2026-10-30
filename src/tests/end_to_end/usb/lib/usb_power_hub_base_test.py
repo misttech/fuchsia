@@ -49,15 +49,21 @@ class UsbPowerHubBaseTest(fuchsia_base_test.FuchsiaBaseTest):
           1. The hub described by `usb_power_hub_hw` + `usb_power_hub_impl`
              in the testbed config, when both are present.
           2. The host side virtual hub, when the `use_virtual_usb_hub` param
-             is set. It toggles the device USB `authorized` attribute instead
-             of cutting power, so it needs no testbed config nor physical
-             hub. Intended for at-desk runs; see
+             is set. It needs no testbed config nor physical hub. Intended
+             for at-desk runs; see
              //src/tests/end_to_end/usb/lib/disconnect/udev.sh for the host
-             permissions it requires.
+             permissions it requires. The `virtual_usb_hub_mode` param picks
+             how it virtually disconnects the device:
+               - "authorize" (default): toggles the device USB `authorized`
+                 attribute.
+               - "reset": resets the device USB port with USBDEVFS_RESET.
           3. DMC, for devices power cycled in infra.
 
         Returns:
             The USB power hub and its port, or `(None, None)` if none apply.
+
+        Raises:
+            ValueError: If `virtual_usb_hub_mode` is not supported.
         """
         device_config: dict[str, object] = self._get_device_config(
             controller_type="FuchsiaDevice",
@@ -68,15 +74,34 @@ class UsbPowerHubBaseTest(fuchsia_base_test.FuchsiaBaseTest):
             device_config.get("usb_power_hub_hw")
             and device_config.get("usb_power_hub_impl")
         ) and self.user_params.get("use_virtual_usb_hub"):
+            mode = self.user_params.get("virtual_usb_hub_mode", "authorize")
+            virtual_hub_cls: type[
+                linux_virtual_usb_hub.LinuxVirtualUsbAuthorizePowerHub
+                | linux_virtual_usb_hub.LinuxVirtualUsbResetPowerHub
+            ]
+            if mode == "authorize":
+                virtual_hub_cls = (
+                    linux_virtual_usb_hub.LinuxVirtualUsbAuthorizePowerHub
+                )
+            elif mode == "reset":
+                virtual_hub_cls = (
+                    linux_virtual_usb_hub.LinuxVirtualUsbResetPowerHub
+                )
+            else:
+                raise ValueError(
+                    f"Unsupported virtual_usb_hub_mode {mode!r}; expected "
+                    "'authorize' or 'reset'."
+                )
             # Disambiguates discovery when more than one Fuchsia USB device is
             # attached to the same host.
             target_serial = typing.cast(
                 str | None, device_config.get("device_serial", None)
             )
             return (
-                linux_virtual_usb_hub.LinuxVirtualUsbPowerHub(
+                virtual_hub_cls(
                     target_serial=target_serial,
-                    # Retry settings for the bus ID lookup in power_off().
+                    # Retry settings for the bus ID lookup before each virtual
+                    # disconnect.
                     bus_id_lookup_attempts=self.user_params.get(
                         "bus_id_lookup_attempts",
                         linux_virtual_usb_hub.DEFAULT_BUS_ID_LOOKUP_ATTEMPTS,

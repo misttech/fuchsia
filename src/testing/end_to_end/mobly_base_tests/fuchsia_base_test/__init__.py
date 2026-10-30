@@ -632,13 +632,6 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
     ) -> tuple[usb_power_hub.UsbPowerHub | None, int | None]:
         """Returns the USB power hub and port to use for the given device.
 
-        LinuxVirtualUsbPowerHub is only used by USB E2E users now, so it
-        lives in usb_lib rather than Honeydew until wider demand (see
-        discussion on fxr/1876367). The `use_virtual_usb_hub` branch of
-        FuchsiaBaseTest._lookup_usb_power_hub() moves into an override in
-        UsbPowerHubBaseTest, handling the virtual hub when no physical hub
-        (`usb_power_hub_hw` + `usb_power_hub_impl`) configured.
-
         Selected in this order:
           1. The hub described by `usb_power_hub_hw` + `usb_power_hub_impl`
              in the testbed config, when both are present.

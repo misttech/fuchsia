@@ -18,6 +18,7 @@ python_library("usb_lib") {
     "sysfs_usb.py",
     "usb_config.py",
     "usb_power_hub_base_test.py",
+    "usb_reset.py",
   ]
 
   # Shared with //src/tests/end_to_end/usb/lib/disconnect/udev.sh. Read by
@@ -32,6 +33,7 @@ python_library("usb_lib") {
     "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_python",
     "//src/testing/end_to_end/honeydew",
     "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
+    "//src/tests/end_to_end/usb/lib/testusb",
   ]
 }
 

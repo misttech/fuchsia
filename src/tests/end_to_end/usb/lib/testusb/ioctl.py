@@ -170,6 +170,39 @@ USB_ENDPOINT_XFER_INT = 0x03
 USB_ENDPOINT_XFERTYPE_MASK = 0x03
 
 
+def reset_usb_device(device_path: str) -> bool:
+    """Resets a USB device's port with the USBDEVFS_RESET ioctl.
+
+    The host drives a bus reset on the device's port and then reconfigures
+    it, without dropping VBUS. The call blocks until the reset completes.
+
+    Args:
+        device_path: Path to the usbfs device node (/dev/bus/usb/BBB/DDD).
+
+    Returns:
+        True if the kernel could not reset the device in place (e.g. its
+        descriptors changed) and logically disconnected it to re-enumerate
+        it, which the ioctl reports as ENODEV. False if the device was reset
+        in place.
+
+    Raises:
+        OSError: If the device node cannot be opened or the ioctl fails.
+    """
+    fd = os.open(device_path, os.O_RDWR)
+    try:
+        if _get_libc().ioctl(fd, USBDEVFS_RESET, 0) < 0:
+            err = ctypes.get_errno()
+            if err == errno.ENODEV:
+                return True
+            raise OSError(
+                err,
+                f"USBDEVFS_RESET on {device_path} failed: {os.strerror(err)}",
+            )
+        return False
+    finally:
+        os.close(fd)
+
+
 class MalformedDescriptorError(Exception):
     """Raised when a USB configuration descriptor payload is malformed."""
 
