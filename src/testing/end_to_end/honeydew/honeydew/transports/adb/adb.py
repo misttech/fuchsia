@@ -10,6 +10,7 @@ import logging
 import os
 import shlex
 import shutil
+import socket
 import stat
 import tarfile
 import tempfile
@@ -32,8 +33,13 @@ _ADB_PATH_ENV_VAR = "HONEYDEW_ADB_OVERRIDE"
 # waits until the device is booted completely (wait_for_boot_complete), which can take
 # multiple minutes.
 _DEFAULT_CHECK_CONNECTION_TIMEOUT_SECS: float = 300.0
+_DEFAULT_WAIT_FOR_BOOT_COMPLETE_TIMEOUT_SECS: float = 300.0
 
 _BOOT_COMPLETED_GETPROP_TIMEOUT_SECS: float = 10.0
+
+_DEFAULT_TCP_CONNECT_TIMEOUT_SECS: float = 10.0
+_TCP_CONNECT_POLL_INTERVAL_SECS: float = 1.0
+_TCP_RECONNECT_TIMEOUT_SECS: float = 30.0
 
 _DEFAULT_RUN_ATTEMPTS: int = 3
 
@@ -241,6 +247,32 @@ def _check_adb_sysfs(target_serial: str | None = None) -> bool:
     return False
 
 
+def is_tcp_serial(serial_number: str | None) -> bool:
+    """Returns True if the given serial number is a TCP host:port address.
+
+    Args:
+        serial_number: The ADB device serial number or TCP address.
+
+    Returns:
+        True if the given serial number is a TCP host:port address, False
+        otherwise.
+    """
+    if not serial_number:
+        return False
+    host, sep, port_str = serial_number.rpartition(":")
+    if not (
+        sep
+        and host
+        and port_str.isascii()
+        and port_str.isdigit()
+        and 1 <= int(port_str) <= 65535
+    ):
+        return False
+    if host.startswith("[") or host.endswith("]"):
+        return host.startswith("[") and host.endswith("]") and ":" in host[1:-1]
+    return ":" not in host
+
+
 class _AdbRootContextManager(
     contextlib.AbstractContextManager[None],
     contextlib.AbstractAsyncContextManager[None],
@@ -350,6 +382,7 @@ class Adb:
         self._is_root: bool = False
         self._is_su_root: bool = False
         self._cached_adbd_pid: str | None = None
+        self._last_tcp_connect_error: str | None = None
         self._root_lock: threading.Lock = threading.Lock()
         self._root_ref_count: int = 0
         self._rooted_by_context: bool = False
@@ -376,6 +409,9 @@ class Adb:
                         f"Failed to start isolated ADB server for {self._device_name}: {err}"
                     ) from err
 
+            # For TCP targets, `check_connection()` invokes `_connect_tcp()`
+            # before running `wait-for-device` (both during `__init__` and
+            # after device reboots in `on_device_boot()`).
             self.check_connection()
             # Cache the remote adbd PID upon initial connection so FFX can kill
             # a wedged adbd out-of-band if ADB later becomes unresponsive.
@@ -384,6 +420,36 @@ class Adb:
         except BaseException:
             self.close()
             raise
+
+    @property
+    def serial_number(self) -> str:
+        """Returns the target device's ADB serial number.
+
+        Returns:
+            The target device's ADB serial number or TCP `<host>:<port>` address.
+        """
+        return self._serial_number
+
+    @property
+    def binary_path(self) -> str:
+        """Returns the path to the host ADB binary.
+
+        Returns:
+            Absolute path to the host `adb` binary.
+        """
+        return self._adb_binary
+
+    @property
+    def server_host_port(self) -> tuple[str, int] | None:
+        """Returns the isolated ADB server (host, port) tuple, or None.
+
+        Returns:
+            A `(host, port)` tuple for the isolated ADB server if running, or
+            None if no isolated server is configured.
+        """
+        if self._adb_server is None:
+            return None
+        return (self._adb_server.host(), self._adb_server.port())
 
     def on_device_boot(self) -> None:
         """Takes actions after the Fuchsia device reboots.
@@ -499,6 +565,144 @@ class Adb:
         finally:
             self._cached_adbd_pid = None
 
+    def _connect_tcp_once(
+        self, timeout: float | None = _DEFAULT_TCP_CONNECT_TIMEOUT_SECS
+    ) -> bool:
+        """Runs a single `adb connect <serial>` command for a TCP target.
+
+        Args:
+            timeout: Timeout in seconds for the `adb connect` command.
+
+        Returns:
+            True if the TCP connection was established, False otherwise.
+
+        Raises:
+            adb_errors.AdbUnauthorizedError: If the device is unauthorized for
+                ADB connections.
+        """
+        cmd = self._build_adb_cmd(
+            ["connect", self._serial_number], include_serial=False
+        )
+        try:
+            output = (
+                host_shell.run(
+                    cmd=cmd,
+                    capture_output=True,
+                    capture_error_in_output=True,
+                    timeout=timeout,
+                    env=self._get_command_env(),
+                )
+                or ""
+            )
+        except errors.HoneydewError as err:
+            err_msg = str(err).strip()
+            err_msg_lower = err_msg.lower()
+            if (
+                "unauthorized" in err_msg_lower
+                or "failed to authenticate" in err_msg_lower
+            ):
+                raise adb_errors.AdbUnauthorizedError(
+                    f"Device '{self._device_name}' ({self._serial_number}) is unauthorized. "
+                    "Ensure valid ADB vendor keys are bundled or configured via "
+                    f"vendor_keys_path / ADB_VENDOR_KEYS. Original error: {err}"
+                ) from err
+            self._last_tcp_connect_error = err_msg
+            _LOGGER.warning(
+                "`adb connect %s` failed for %s: %s",
+                self._serial_number,
+                self._device_name,
+                err_msg,
+            )
+            return False
+
+        output_lower = output.lower()
+        if (
+            "unauthorized" in output_lower
+            or "failed to authenticate" in output_lower
+        ):
+            raise adb_errors.AdbUnauthorizedError(
+                f"Device '{self._device_name}' ({self._serial_number}) is unauthorized. "
+                "Ensure valid ADB vendor keys are bundled or configured via "
+                f"vendor_keys_path / ADB_VENDOR_KEYS. Output: {output.strip()}"
+            )
+        if "connected to" in output_lower:
+            self._last_tcp_connect_error = None
+            return True
+
+        err_msg = output.strip()
+        self._last_tcp_connect_error = err_msg
+        _LOGGER.warning(
+            "`adb connect %s` did not connect for %s: %s",
+            self._serial_number,
+            self._device_name,
+            err_msg,
+        )
+        return False
+
+    def _connect_tcp(
+        self,
+        timeout: float | None = _DEFAULT_TCP_CONNECT_TIMEOUT_SECS,
+        poll_interval: float = _TCP_CONNECT_POLL_INTERVAL_SECS,
+    ) -> None:
+        """Connects the host ADB server to a TCP target (`adb connect <serial>`).
+
+        Args:
+            timeout: Maximum time in seconds to wait for `adb connect` to
+                succeed. Defaults to 10.0 seconds.
+            poll_interval: Interval in seconds between `adb connect` attempts.
+                Defaults to 1.0 second.
+
+        Raises:
+            adb_errors.AdbUnauthorizedError: If the device is unauthorized for
+                ADB connections.
+            adb_errors.AdbConnectionError: If connecting fails or times out.
+        """
+        if timeout is not None and timeout <= 0:
+            raise adb_errors.AdbConnectionError(
+                f"Timed out after {timeout}s connecting ADB over TCP to "
+                f"{self._device_name} ({self._serial_number})"
+            )
+        _LOGGER.info(
+            "Connecting ADB over TCP to %s (%s)...",
+            self._device_name,
+            self._serial_number,
+        )
+        self._last_tcp_connect_error = None
+        cmd_timeout = (
+            min(timeout, _DEFAULT_TCP_CONNECT_TIMEOUT_SECS)
+            if timeout is not None
+            else _DEFAULT_TCP_CONNECT_TIMEOUT_SECS
+        )
+        unauthorized_err: adb_errors.AdbUnauthorizedError | None = None
+
+        def _try_connect() -> bool:
+            nonlocal unauthorized_err
+            try:
+                return self._connect_tcp_once(timeout=cmd_timeout)
+            except adb_errors.AdbUnauthorizedError as err:
+                unauthorized_err = err
+                return True
+
+        try:
+            common.wait_for_state_sync(
+                state_fn=_try_connect,
+                expected_state=True,
+                timeout=timeout,
+                wait_time=poll_interval,
+            )
+        except errors.HoneydewTimeoutError as err:
+            last_err_suffix = (
+                f" (last error: {self._last_tcp_connect_error})"
+                if self._last_tcp_connect_error
+                else ""
+            )
+            raise adb_errors.AdbConnectionError(
+                f"Timed out after {timeout}s connecting ADB over TCP to "
+                f"{self._device_name} ({self._serial_number}){last_err_suffix}"
+            ) from err
+        if unauthorized_err is not None:
+            raise unauthorized_err
+
     def _reconnect_offline(self) -> None:
         """Runs `adb reconnect offline` to recover an offline ADB connection."""
         _LOGGER.warning(
@@ -515,6 +719,10 @@ class Adb:
                 timeout=10.0,
                 env=self._get_command_env(),
             )
+            if is_tcp_serial(self._serial_number):
+                self._connect_tcp()
+        except adb_errors.AdbUnauthorizedError:
+            raise
         except errors.HoneydewError as err:
             _LOGGER.warning(
                 "`adb reconnect offline` failed for %s: %s",
@@ -528,20 +736,34 @@ class Adb:
         self._restart_adbd()
         self._adb_server.restart()
         time.sleep(10)
+        if is_tcp_serial(self._serial_number):
+            self._connect_tcp(timeout=_TCP_RECONNECT_TIMEOUT_SECS)
         if self._is_root:
             _LOGGER.info(
                 "Restoring root privileges on %s after ADB recovery...",
                 self._device_name,
             )
             try:
-                for root_cmd in (["root"], ["wait-for-device"]):
-                    host_shell.run(
-                        cmd=self._build_adb_cmd(root_cmd, include_serial=True),
-                        capture_output=True,
-                        capture_error_in_output=True,
-                        timeout=30.0,
-                        env=self._get_command_env(),
-                    )
+                host_shell.run(
+                    cmd=self._build_adb_cmd(["root"], include_serial=True),
+                    capture_output=True,
+                    capture_error_in_output=True,
+                    timeout=30.0,
+                    env=self._get_command_env(),
+                )
+                if is_tcp_serial(self._serial_number):
+                    self._connect_tcp(timeout=_TCP_RECONNECT_TIMEOUT_SECS)
+                host_shell.run(
+                    cmd=self._build_adb_cmd(
+                        ["wait-for-device"], include_serial=True
+                    ),
+                    capture_output=True,
+                    capture_error_in_output=True,
+                    timeout=30.0,
+                    env=self._get_command_env(),
+                )
+            except adb_errors.AdbUnauthorizedError:
+                raise
             except errors.HoneydewError as err:
                 _LOGGER.warning(
                     "Failed to restore root privileges on %s after ADB recovery: %s",
@@ -552,6 +774,33 @@ class Adb:
         # process and/or restarting adbd as root.
         self._cache_adbd_pid()
 
+    def _verify_adb_tcp_support(self) -> None:
+        """Verifies that the ADB TCP serial host can be resolved locally.
+
+        Raises:
+            adb_errors.AdbConnectionError: If the TCP host cannot be resolved.
+        """
+        host, _, port_str = self._serial_number.rpartition(":")
+        if host.startswith("[") and host.endswith("]"):
+            host = host[1:-1]
+        host_without_scope = host.split("%", 1)[0]
+        try:
+            socket.getaddrinfo(
+                host_without_scope,
+                int(port_str),
+                type=socket.SOCK_STREAM,
+            )
+        except OSError as err:
+            raise adb_errors.AdbConnectionError(
+                f"ADB TCP serial '{self._serial_number}' on "
+                f"{self._device_name} could not be resolved: {err}"
+            ) from err
+        _LOGGER.info(
+            "TCP ADB serial '%s' detected for %s; skipping USB sysfs check.",
+            self._serial_number,
+            self._device_name,
+        )
+
     def verify_supported(self) -> None:
         """Verifies that ADB transport is supported by the Fuchsia device.
 
@@ -560,8 +809,25 @@ class Adb:
         NotSupportedError.
 
         Raises:
-            NotSupportedError: If ADB transport is not supported.
+            NotSupportedError: If ADB transport is not supported or if a TCP
+                ADB serial host cannot be resolved.
         """
+        # TCP endpoints (`<host>:<port>`) are not enumerable in host USB sysfs
+        # (`/sys/bus/usb/devices/*/serial`). For TCP targets, `verify_supported`
+        # runs before the isolated ADB server starts in `__init__`, validates
+        # that the TCP host can be resolved locally, and skips the USB sysfs
+        # check. Full TCP reachability and authentication are verified
+        # immediately afterwards by `self.check_connection()` (which runs
+        # `self._connect_tcp()`, `wait-for-device`, and
+        # `wait_for_boot_complete()`).
+        if is_tcp_serial(self._serial_number):
+            try:
+                self._verify_adb_tcp_support()
+                return
+            except errors.HoneydewError as err:
+                raise errors.NotSupportedError(
+                    f"ADB over TCP transport is not supported on {self._device_name}: {err}"
+                ) from err
         if not _check_adb_sysfs(self._serial_number):
             raise errors.NotSupportedError(
                 f"ADB transport is not supported on {self._device_name}"
@@ -622,12 +888,27 @@ class Adb:
                 self._device_name,
             )
             start_time: float = time.time()
-            self.run(["wait-for-device"], timeout=timeout, attempts=attempts)
+            remaining_timeout: float | None = timeout
+            # Establish or re-establish the TCP ADB connection before running
+            # `wait-for-device` (needed both during `__init__` and after a
+            # device reboot in `on_device_boot()`, which drops the TCP socket).
+            if is_tcp_serial(self._serial_number):
+                self._connect_tcp(timeout=remaining_timeout)
+                remaining_timeout = self._get_remaining_timeout(
+                    start_time=start_time,
+                    timeout=timeout,
+                    operation="connect_tcp",
+                )
+            self.run(
+                ["wait-for-device"],
+                timeout=remaining_timeout,
+                attempts=attempts,
+            )
 
-            remaining_timeout: float | None = self._get_remaining_timeout(
+            remaining_timeout = self._get_remaining_timeout(
                 start_time=start_time,
                 timeout=timeout,
-                operation="check_connection",
+                operation="wait-for-device",
             )
 
             self.wait_for_boot_complete(timeout=remaining_timeout)
@@ -739,6 +1020,12 @@ class Adb:
                         "not found",
                         "connection refused",
                         "cannot connect",
+                        "closed",
+                        "protocol fault",
+                        "connection reset",
+                        "no route to host",
+                        "network is unreachable",
+                        "connection timed out",
                     ]
                 )
                 if is_retriable and attempt < attempts:
@@ -754,6 +1041,26 @@ class Adb:
                             str(err),
                         )
                         self._recover_adb_server()
+                        attempt += 1
+                        continue
+                    elif is_tcp_serial(self._serial_number):
+                        _LOGGER.warning(
+                            "ADB command failed with connection error: %s. "
+                            "Attempting to reconnect ADB over TCP and retry...",
+                            str(err),
+                        )
+                        try:
+                            self._connect_tcp(
+                                timeout=_TCP_RECONNECT_TIMEOUT_SECS
+                            )
+                        except adb_errors.AdbUnauthorizedError:
+                            raise
+                        except errors.HoneydewError as connect_err:
+                            _LOGGER.warning(
+                                "Failed to reconnect ADB over TCP on %s: %s",
+                                self._device_name,
+                                connect_err,
+                            )
                         attempt += 1
                         continue
                 raise adb_errors.AdbCommandError(str(err)) from err
@@ -788,6 +1095,7 @@ class Adb:
         Raises:
             AdbTimeoutError: If the command times out.
             AdbCommandError: If the command fails.
+            AdbConnectionError: If reconnecting to a TCP target fails.
         """
         attempts = self._attempts if attempts is None else attempts
         _LOGGER.info("Enabling root-privileges on %s.", self._device_name)
@@ -796,6 +1104,14 @@ class Adb:
         remaining_timeout: float | None = self._get_remaining_timeout(
             start_time=start_time, timeout=timeout, operation="root"
         )
+        if is_tcp_serial(self._serial_number):
+            # `adb root` restarts the on-device adbd daemon as root, which drops
+            # the active TCP socket connection. Re-run `adb connect` so the host
+            # ADB server reconnects before `wait-for-device`.
+            self._connect_tcp(timeout=remaining_timeout)
+            remaining_timeout = self._get_remaining_timeout(
+                start_time=start_time, timeout=timeout, operation="root"
+            )
         self.run(
             ["wait-for-device"], timeout=remaining_timeout, attempts=attempts
         )
@@ -819,6 +1135,7 @@ class Adb:
         Raises:
             AdbTimeoutError: If the command times out.
             AdbCommandError: If the command fails.
+            AdbConnectionError: If reconnecting to a TCP target fails.
         """
         attempts = self._attempts if attempts is None else attempts
         _LOGGER.info("Disabling root-privileges on %s.", self._device_name)
@@ -827,6 +1144,14 @@ class Adb:
         remaining_timeout: float | None = self._get_remaining_timeout(
             start_time=start_time, timeout=timeout, operation="unroot"
         )
+        if is_tcp_serial(self._serial_number):
+            # `adb unroot` restarts the on-device adbd daemon as the shell user,
+            # which drops the active TCP socket connection. Re-run `adb connect`
+            # so the host ADB server reconnects before `wait-for-device`.
+            self._connect_tcp(timeout=remaining_timeout)
+            remaining_timeout = self._get_remaining_timeout(
+                start_time=start_time, timeout=timeout, operation="unroot"
+            )
         self.run(
             ["wait-for-device"], timeout=remaining_timeout, attempts=attempts
         )
@@ -1004,13 +1329,15 @@ class Adb:
         return value
 
     def wait_for_boot_complete(
-        self, timeout: float | None = None, poll_interval: float = 1.0
+        self,
+        timeout: float | None = _DEFAULT_WAIT_FOR_BOOT_COMPLETE_TIMEOUT_SECS,
+        poll_interval: float = 1.0,
     ) -> None:
         """Waits until `sys.boot_completed` returns '1'.
 
         Args:
             timeout: Maximum amount of time in seconds to wait for boot to complete.
-                Defaults to None (wait indefinitely).
+                Defaults to 300.0 seconds.
             poll_interval: Interval in seconds to wait between polling attempts.
                 Defaults to 1.0 second.
 

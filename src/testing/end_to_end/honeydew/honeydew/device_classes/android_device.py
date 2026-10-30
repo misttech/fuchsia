@@ -35,6 +35,12 @@ from honeydew.utils import properties
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
+_DEFAULT_TCP_ADB_HOST: str = "127.0.0.1"
+_DEFAULT_TCP_ADB_PORT: int = 5555
+_DEFAULT_TCP_ADB_SERIAL: str = (
+    f"{_DEFAULT_TCP_ADB_HOST}:{_DEFAULT_TCP_ADB_PORT}"
+)
+
 
 # TODO(b/564946370): Remove temporary wrapper once 'adb root' operations are
 # stable on USB.
@@ -116,6 +122,22 @@ class AndroidDevice(fuchsia_device.FuchsiaDevice):
         ffx_config_data: FfxConfigData,
         config: dict[str, Any] | None = None,
     ) -> None:
+        """Initializes AndroidDevice.
+
+        Args:
+            device_info: Device information.
+            ffx_config_data: Configuration that needs to be used while running
+                FFX commands.
+            config: Honeydew configuration dictionary, if any. Expected keys:
+                {
+                    "screen_size": str,  # e.g., "480x800"
+                    "transports": {
+                        "adb": {
+                            "use_adb_usb": bool,  # Prefer USB serial over IP
+                        }
+                    }
+                }
+        """
         self._screen_size_override: ui_types.Size | None = _parse_screen_size(
             (config or {}).get("screen_size")
         )
@@ -150,6 +172,68 @@ class AndroidDevice(fuchsia_device.FuchsiaDevice):
 
         return False
 
+    def _resolve_adb_serial(self, *, use_adb_usb: bool = True) -> str:
+        """Resolves the ADB serial identifier (USB serial or TCP `<ip>:<port>`) for the target.
+
+        Args:
+            use_adb_usb: Whether to connect to ADB over USB. When False, connects
+                to ADB over TCP instead of USB.
+
+        Returns:
+            The resolved ADB serial string.
+
+        Raises:
+            errors.NotSupportedError: If the ADB serial could not be resolved.
+        """
+        adb_serial: str | None = None
+        # ADB Over USB
+        if use_adb_usb is True:
+            adb_serial = self._device_info.serial_number
+            if adb_serial is None:
+                try:
+                    adb_serial = self.ffx.serial_number
+                except errors.HoneydewError as err:
+                    _LOGGER.debug(
+                        "Failed to get serial number from FFX for %s: %s",
+                        self.device_name,
+                        err,
+                    )
+                    adb_serial = None
+        # ADB Over TCP
+        else:
+            target_addr: custom_types.TargetAddr | None = (
+                self._device_info.address
+            )
+            if target_addr is None:
+                try:
+                    target_addr = self.ffx.get_target_address()
+                except errors.HoneydewError as err:
+                    _LOGGER.debug(
+                        "Failed to get target address from FFX for %s: %s",
+                        self.device_name,
+                        err,
+                    )
+                    target_addr = None
+            if isinstance(target_addr, custom_types.IpPort):
+                adb_serial = str(
+                    custom_types.IpPort(
+                        ip=target_addr.ip, port=_DEFAULT_TCP_ADB_PORT
+                    )
+                )
+            else:
+                adb_serial = _DEFAULT_TCP_ADB_SERIAL
+
+        if adb_serial is None:
+            _LOGGER.warning(
+                "ADB transport is not supported on %s as 'serial_number' was not provided and could not be retrieved",
+                self.device_name,
+            )
+            raise errors.NotSupportedError(
+                f"ADB transport is not supported on {self.device_name} "
+                f"as 'serial_number' was not provided and could not be retrieved"
+            )
+        return adb_serial
+
     @properties.Transport
     def adb(self) -> adb_transport.Adb:
         """Returns the ADB transport object configured to use su_root methods.
@@ -171,6 +255,7 @@ class AndroidDevice(fuchsia_device.FuchsiaDevice):
         enabled = True
         output_dir: Path | str | None = None
         attempts = adb_transport._DEFAULT_RUN_ATTEMPTS
+        use_adb_usb: bool = True
 
         if self._config:
             adb_config = self._config.get("transports", {}).get("adb", {})
@@ -181,6 +266,7 @@ class AndroidDevice(fuchsia_device.FuchsiaDevice):
             attempts = adb_config.get(
                 "attempts", adb_transport._DEFAULT_RUN_ATTEMPTS
             )
+            use_adb_usb = adb_config.get("use_adb_usb", use_adb_usb)
 
         if not output_dir and self._ffx_config_data.logs_dir:
             ffx_logs_path = Path(self._ffx_config_data.logs_dir)
@@ -216,31 +302,11 @@ class AndroidDevice(fuchsia_device.FuchsiaDevice):
                 f"ADB transport is disabled for '{self.device_name}' as it is connected via Pontis"
             )
 
-        serial_number: str | None = self._device_info.serial_number
-        if serial_number is None:
-            try:
-                serial_number = self.ffx.serial_number
-            except errors.HoneydewError as err:
-                _LOGGER.debug(
-                    "Failed to get serial number from FFX for %s: %s",
-                    self.device_name,
-                    err,
-                )
-                serial_number = None
-
-        if serial_number is None:
-            _LOGGER.warning(
-                "ADB transport is not supported on %s as 'serial_number' was not provided and could not be retrieved via FFX",
-                self.device_name,
-            )
-            raise errors.NotSupportedError(
-                f"ADB transport is not supported on {self.device_name} "
-                f"as 'serial_number' was not provided and could not be retrieved via FFX"
-            )
+        adb_serial: str = self._resolve_adb_serial(use_adb_usb=use_adb_usb)
 
         adb_obj: adb_transport.Adb = adb_transport.Adb(
             device_name=self.device_name,
-            serial_number=serial_number,
+            serial_number=adb_serial,
             run_isolated_server=run_isolated_server,
             output_dir=output_dir,
             vendor_keys_path=vendor_keys_path,

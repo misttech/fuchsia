@@ -547,6 +547,162 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
         self.ad_obj._device_info = device_info
 
     @mock.patch.object(
+        adb_transport.Adb,
+        "check_connection",
+        autospec=True,
+    )
+    @mock.patch.object(
+        adb_transport.Adb,
+        "verify_supported",
+        autospec=True,
+    )
+    @mock.patch.object(
+        ffx.FFX,
+        "get_target_address",
+        side_effect=ffx_errors.FfxCommandError("ffx error"),
+        autospec=True,
+    )
+    @mock.patch.object(
+        ffx.FFX,
+        "serial_number",
+        new_callable=mock.PropertyMock,
+    )
+    def test_adb_transport_use_adb_usb_false_defaults_to_tcp_serial(
+        self,
+        mock_ffx_serial_number: mock.Mock,
+        mock_get_target_address: mock.Mock,
+        mock_verify_supported: mock.Mock,
+        mock_check_connection: mock.Mock,
+    ) -> None:
+        """Test AndroidDevice.adb uses default TCP serial when use_adb_usb is False
+        without mutating _device_info.serial_number."""
+        orig_device_info: custom_types.DeviceInfo = self.ad_obj._device_info
+        orig_config = self.ad_obj._config
+        self.ad_obj._device_info = custom_types.DeviceInfo(
+            name=_INPUT_ARGS["device_name"],
+            serial_number=None,
+            address=None,
+            serial_socket=None,
+        )
+        self.ad_obj._config = {"transports": {"adb": {"use_adb_usb": False}}}
+        self.ad_obj.__dict__.pop("adb", None)
+
+        try:
+            adb_inst: adb_transport.Adb = self.ad_obj.adb
+            self.assertIsInstance(adb_inst, adb_transport.Adb)
+            self.assertEqual(adb_inst.serial_number, "127.0.0.1:5555")
+            self.assertIsNone(self.ad_obj._device_info.serial_number)
+            mock_get_target_address.assert_called()
+            mock_ffx_serial_number.assert_not_called()
+            mock_verify_supported.assert_called_once()
+            mock_check_connection.assert_called_once()
+        finally:
+            self.ad_obj.__dict__.pop("adb", None)
+            self.ad_obj._device_info = orig_device_info
+            self.ad_obj._config = orig_config
+
+    @mock.patch.object(
+        adb_transport.Adb,
+        "check_connection",
+        autospec=True,
+    )
+    @mock.patch.object(
+        adb_transport.Adb,
+        "verify_supported",
+        autospec=True,
+    )
+    @mock.patch.object(
+        ffx.FFX,
+        "get_target_address",
+        autospec=True,
+    )
+    @mock.patch.object(
+        ffx.FFX,
+        "serial_number",
+        new_callable=mock.PropertyMock,
+    )
+    def test_adb_transport_use_adb_usb_false_ffx_target_address_and_usb_serial_override(
+        self,
+        mock_ffx_serial_number: mock.Mock,
+        mock_get_target_address: mock.Mock,
+        mock_verify_supported: mock.Mock,
+        mock_check_connection: mock.Mock,
+    ) -> None:
+        """Test use_adb_usb=False overrides USB serial via FFX target address."""
+        orig_device_info: custom_types.DeviceInfo = self.ad_obj._device_info
+        orig_config = self.ad_obj._config
+        self.ad_obj._config = {"transports": {"adb": {"use_adb_usb": False}}}
+
+        try:
+            mock_get_target_address.return_value = (
+                custom_types.IpPort.create_using_ip_and_port("10.0.0.42:8022")
+            )
+            self.ad_obj.__dict__.pop("adb", None)
+            self.ad_obj._device_info = custom_types.DeviceInfo(
+                name=_INPUT_ARGS["device_name"],
+                serial_number="USB-HW-SERIAL-123",
+                address=None,
+                serial_socket=None,
+            )
+            adb_inst: adb_transport.Adb = self.ad_obj.adb
+            self.assertEqual(adb_inst.serial_number, "10.0.0.42:5555")
+            mock_get_target_address.assert_called()
+            mock_ffx_serial_number.assert_not_called()
+        finally:
+            self.ad_obj.__dict__.pop("adb", None)
+            self.ad_obj._device_info = orig_device_info
+            self.ad_obj._config = orig_config
+
+    @mock.patch.object(
+        adb_transport.Adb,
+        "check_connection",
+        autospec=True,
+    )
+    @mock.patch.object(
+        adb_transport.Adb,
+        "verify_supported",
+        autospec=True,
+    )
+    @mock.patch.object(
+        ffx.FFX,
+        "serial_number",
+        new_callable=mock.PropertyMock,
+    )
+    def test_adb_transport_use_adb_usb_false_uses_device_info_ip(
+        self,
+        mock_ffx_serial_number: mock.Mock,
+        mock_verify_supported: mock.Mock,
+        mock_check_connection: mock.Mock,
+    ) -> None:
+        """Test AndroidDevice.adb derives TCP serial from device_info.address IP when use_adb_usb is False."""
+        orig_device_info: custom_types.DeviceInfo = self.ad_obj._device_info
+        orig_config = self.ad_obj._config
+        self.ad_obj._config = {"transports": {"adb": {"use_adb_usb": False}}}
+
+        try:
+            for addr_str, expected_serial in (
+                ("192.168.42.10:8022", "192.168.42.10:5555"),
+                ("[fe80::1%eth0]:8022", "[fe80::1%eth0]:5555"),
+            ):
+                with self.subTest(addr=addr_str):
+                    self.ad_obj.__dict__.pop("adb", None)
+                    self.ad_obj._device_info = custom_types.DeviceInfo(
+                        name=_INPUT_ARGS["device_name"],
+                        serial_number=None,
+                        address=custom_types.IpPort.create_using_ip_and_port(
+                            addr_str
+                        ),
+                        serial_socket=None,
+                    )
+                    adb_inst: adb_transport.Adb = self.ad_obj.adb
+                    self.assertEqual(adb_inst.serial_number, expected_serial)
+                    mock_ffx_serial_number.assert_not_called()
+        finally:
+            self.ad_obj.__dict__.pop("adb", None)
+            self.ad_obj._device_info = orig_device_info
+            self.ad_obj._config = orig_config
+
+    @mock.patch.object(
         ffx.FFX,
         "serial_number",
         new_callable=mock.PropertyMock,
@@ -957,6 +1113,28 @@ class AndroidDeviceBaseCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.device.device_name, "fuchsia-emulator")
         self.assertIsNone(self.device._device_info.serial_number)
         self.assertIsNone(self.device._screen_size_override)
+
+    def test_init_use_adb_usb_config(self) -> None:
+        """Verifies use_adb_usb=False in config does not mutate DeviceInfo.serial_number."""
+        dev_info = custom_types.DeviceInfo(
+            name="fuchsia-device",
+            serial_number=None,
+            address=None,
+            serial_socket=None,
+        )
+        dev = TestAndroidDevice(
+            device_info=dev_info,
+            ffx_config_data=self.ffx_cfg,
+            config={"transports": {"adb": {"use_adb_usb": True}}},
+        )
+        self.assertIsNone(dev._device_info.serial_number)
+
+        dev_tcp = TestAndroidDevice(
+            device_info=dev_info,
+            ffx_config_data=self.ffx_cfg,
+            config={"transports": {"adb": {"use_adb_usb": False}}},
+        )
+        self.assertIsNone(dev_tcp._device_info.serial_number)
 
     def test_initialize_called_in_init_for_product_subclass(self) -> None:
         """Verifies __init__ calls initialize() and _product_setup()."""
