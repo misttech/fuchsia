@@ -1261,7 +1261,7 @@ pub fn sys_prctl(
             } else if arg2 == SECCOMP_MODE_FILTER as u64 {
                 return sys_seccomp(current_task, SECCOMP_SET_MODE_FILTER, 0, arg3.into());
             }
-            Ok(().into())
+            error!(EINVAL)
         }
         PR_GET_CHILD_SUBREAPER => {
             let addr = UserAddress::from(arg2);

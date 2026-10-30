@@ -122,15 +122,6 @@
                 "SingleStepTest.InstructionPointerAdvances",
                 "SingleStepTest.ConsecutiveSteps",
 
-                // TODO(https://fxbug.dev/491941184)
-                "SeccompTest.BpfJaWithSourceXRejected",
-                "SeccompTest.BpfLastInstNotRetRejected",
-                "SeccompTest.BpfMiscWithSourceXRejected",
-                "SeccompTest.BpfModRejected",
-                "SeccompTest.BpfNegWithSourceXRejected",
-                "SeccompTest.BpfStWithSourceXRejected",
-                "SeccompTest.BpfUnknownCodeUpperBitsRejected",
-
                 // TODO(https://fxbug.dev/498681252)
                 "PipeTest.PolloutFragmentation",
 

@@ -16,6 +16,7 @@
 #include <mutex>
 #include <thread>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <linux/audit.h>
 #include <linux/filter.h>
@@ -29,6 +30,7 @@
 #define SYS_SECCOMP 1
 #endif
 
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 namespace {
@@ -137,15 +139,21 @@ TEST(SeccompTest, FilterToStrictErrors) {
   });
 }
 
-// Checks for attempt to install null filter with FILTER, or non-null filter
-// with seccomp(SET_MODE_STRICT)
+// Checks for attempt to install null filter with FILTER, invalid mode with
+// prctl(PR_SET_SECCOMP), or non-null filter with seccomp(SET_MODE_STRICT)
 TEST(SeccompTest, BadArgs) {
   test_helper::ForkHelper helper;
   helper.OnlyWaitForForkedChildren();
   helper.RunInForkedProcess([] {
-    EXPECT_GE(0, prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0));
-    EXPECT_EQ(-1, prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, nullptr, nullptr, nullptr));
-    EXPECT_EQ(EFAULT, errno);
+    ASSERT_THAT(prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0), SyscallSucceeds());
+    EXPECT_THAT(prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, nullptr, nullptr, nullptr),
+                SyscallFailsWithErrno(EFAULT));
+
+    EXPECT_THAT(prctl(PR_SET_SECCOMP, SECCOMP_MODE_DISABLED, nullptr, nullptr, nullptr),
+                SyscallFailsWithErrno(EINVAL));
+
+    EXPECT_THAT(prctl(PR_SET_SECCOMP, PR_SET_SECCOMP, nullptr, nullptr, nullptr),
+                SyscallFailsWithErrno(EINVAL));
 
     sock_filter filter[] = {
         BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr)),
@@ -155,8 +163,8 @@ TEST(SeccompTest, BadArgs) {
         .len = ARRAY_SIZE(filter),
         .filter = filter,
     };
-    EXPECT_EQ(-1, syscall(__NR_seccomp, SECCOMP_SET_MODE_STRICT, 0, &prog));
-    EXPECT_EQ(EINVAL, errno);
+    EXPECT_THAT(syscall(__NR_seccomp, SECCOMP_SET_MODE_STRICT, 0, &prog),
+                SyscallFailsWithErrno(EINVAL));
   });
 }
 
@@ -1010,7 +1018,7 @@ TEST(SeccompTest, BpfStWithSourceXRejected) {
   test_helper::ForkHelper helper;
   helper.OnlyWaitForForkedChildren();
   helper.RunInForkedProcess([] {
-    EXPECT_GE(0, prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0));
+    ASSERT_THAT(prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0), SyscallSucceeds());
 
     sock_filter filter[] = {
         // BPF_ST | BPF_X.
@@ -1022,8 +1030,8 @@ TEST(SeccompTest, BpfStWithSourceXRejected) {
         .len = ARRAY_SIZE(filter),
         .filter = filter,
     };
-    EXPECT_EQ(-1, prctl(PR_SET_SECCOMP, PR_SET_SECCOMP, &prog, 0, 0));
-    EXPECT_EQ(EINVAL, errno);
+    EXPECT_THAT(prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog, 0, 0),
+                SyscallFailsWithErrno(EINVAL));
   });
 }
 

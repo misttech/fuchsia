@@ -14,10 +14,10 @@ use crate::vfs::{
 };
 use bstr::ByteSlice;
 use ebpf::{
-    BPF_A, BPF_ABS, BPF_IMM, BPF_IND, BPF_JA, BPF_JEQ, BPF_JGE, BPF_JGT, BPF_JMP, BPF_JSET, BPF_K,
-    BPF_LD, BPF_RET, BPF_SRC_MASK, BPF_ST, BPF_SUB_OP_MASK, BPF_W, BpfProgramContext, CbpfConfig,
-    EbpfProgram, MemoryId, NoMap, PointerOrigin, ProgramArgument, Type, bpf_addressing_mode,
-    bpf_class, bpf_size, convert_and_link_cbpf,
+    BPF_A, BPF_ABS, BPF_ALU, BPF_IMM, BPF_IND, BPF_JA, BPF_JEQ, BPF_JGE, BPF_JGT, BPF_JMP,
+    BPF_JSET, BPF_K, BPF_LD, BPF_MOD, BPF_RET, BPF_SRC_MASK, BPF_ST, BPF_SUB_OP_MASK, BPF_W,
+    BpfProgramContext, CbpfConfig, EbpfProgram, MemoryId, NoMap, PointerOrigin, ProgramArgument,
+    Type, bpf_addressing_mode, bpf_class, bpf_op, bpf_size, convert_and_link_cbpf,
 };
 use ebpf_api::SECCOMP_CBPF_CONFIG;
 use linux_uapi::AUDIT_SECCOMP;
@@ -213,6 +213,10 @@ impl SeccompFilter {
             }
             // 8 and 16 bits read and write are strictly forbidden.
             if (bpf_class(insn) == BPF_LD || bpf_class(insn) == BPF_ST) && bpf_size(insn) != BPF_W {
+                return error!(EINVAL);
+            }
+            // Modulo (BPF_MOD) is not supported in seccomp filters.
+            if bpf_class(insn) == BPF_ALU && bpf_op(insn) == BPF_MOD {
                 return error!(EINVAL);
             }
         }

@@ -65,7 +65,7 @@ pub fn bpf_addressing_mode(filter: &sock_filter) -> u8 {
 /// Modifiers for jumps and alu operations.  For example, a jump can
 /// be jeq, jtl, etc.  An ALU operation can be plus, minus, divide,
 /// etc.
-fn bpf_op(filter: &sock_filter) -> u8 {
+pub fn bpf_op(filter: &sock_filter) -> u8 {
     (filter.code & 0xf0) as u8
 }
 
@@ -162,6 +162,12 @@ fn cbpf_to_ebpf(
             Ok(())
         };
 
+        // Classic BPF instruction codes are 8-bit values stored in a 16-bit field; non-zero upper
+        // bits are invalid.
+        let Ok(code) = u8::try_from(bpf_instruction.code) else {
+            return Err(InvalidCbpfInstruction(bpf_instruction.code));
+        };
+
         match bpf_class(bpf_instruction) {
             BPF_ALU => match bpf_op(bpf_instruction) {
                 op @ (BPF_ADD | BPF_SUB | BPF_MUL | BPF_DIV | BPF_MOD | BPF_AND | BPF_OR
@@ -176,7 +182,7 @@ fn cbpf_to_ebpf(
                             return Err(InvalidCbpfInstruction(bpf_instruction.code));
                         }
                         ebpf_code.push(EbpfInstruction::new(
-                            bpf_instruction.code as u8,
+                            code,
                             REG_A,
                             0,
                             0,
@@ -204,16 +210,10 @@ fn cbpf_to_ebpf(
                             ebpf_code.push(EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0));
                         }
 
-                        ebpf_code.push(EbpfInstruction::new(
-                            bpf_instruction.code as u8,
-                            REG_A,
-                            REG_X,
-                            0,
-                            0,
-                        ));
+                        ebpf_code.push(EbpfInstruction::new(code, REG_A, REG_X, 0, 0));
                     };
                 }
-                BPF_NEG => {
+                BPF_NEG if bpf_src(bpf_instruction) == BPF_K => {
                     ebpf_code.push(EbpfInstruction::new(BPF_ALU | BPF_NEG, REG_A, REG_A, 0, 0));
                 }
                 _ => return Err(InvalidCbpfInstruction(bpf_instruction.code)),
@@ -313,7 +313,7 @@ fn cbpf_to_ebpf(
             }
             BPF_JMP => {
                 match bpf_op(bpf_instruction) {
-                    BPF_JA => {
+                    BPF_JA if bpf_src(bpf_instruction) == BPF_K => {
                         ebpf_code.push(EbpfInstruction::new(BPF_JMP | BPF_JA, 0, 0, -1, 0));
                         prep_patch(bpf_instruction.k as usize, ebpf_code.len() - 1)?;
                     }
@@ -370,7 +370,7 @@ fn cbpf_to_ebpf(
                 }
             }
             BPF_MISC => match bpf_op(bpf_instruction) {
-                BPF_TAX => {
+                BPF_TAX if bpf_src(bpf_instruction) == BPF_K => {
                     ebpf_code.push(EbpfInstruction::new(
                         BPF_ALU | BPF_MOV | BPF_X,
                         REG_X,
@@ -379,7 +379,7 @@ fn cbpf_to_ebpf(
                         0,
                     ));
                 }
-                BPF_TXA => {
+                BPF_TXA if bpf_src(bpf_instruction) == BPF_K => {
                     ebpf_code.push(EbpfInstruction::new(
                         BPF_ALU | BPF_MOV | BPF_X,
                         REG_A,
@@ -408,6 +408,9 @@ fn cbpf_to_ebpf(
                 ));
             }
             BPF_RET => {
+                if bpf_addressing_mode(bpf_instruction) != 0 {
+                    return Err(InvalidCbpfInstruction(bpf_instruction.code));
+                }
                 match bpf_rval(bpf_instruction) {
                     BPF_K => {
                         // We're returning a particular value instead of the contents of the
@@ -429,6 +432,14 @@ fn cbpf_to_ebpf(
             }
             _ => return Err(InvalidCbpfInstruction(bpf_instruction.code)),
         }
+    }
+
+    // Classic BPF programs must end with a `BPF_RET | BPF_K` or `BPF_RET | BPF_A` instruction.
+    match bpf_code.last() {
+        Some(last)
+            if last.code == (BPF_RET | BPF_K) as u16 || last.code == (BPF_RET | BPF_A) as u16 => {}
+        Some(last) => return Err(InvalidCbpfInstruction(last.code)),
+        None => return Err(InvalidCbpfInstruction(0)),
     }
 
     assert!(to_be_patched.is_empty());
@@ -583,6 +594,7 @@ mod tests {
                     sock_filter { code: (BPF_LDX | BPF_MEM) as u16, jt: 0, jf: 0, k: 15 },
                     sock_filter { code: BPF_ST as u16, jt: 0, jf: 0, k: 0 },
                     sock_filter { code: BPF_STX as u16, jt: 0, jf: 0, k: 15 },
+                    sock_filter { code: (BPF_RET | BPF_A) as u16, jt: 0, jf: 0, k: 0 },
                 ],
                 &TEST_CBPF_CONFIG
             ),
@@ -594,17 +606,58 @@ mod tests {
                 EbpfInstruction::new(BPF_LDX | BPF_MEM | BPF_W, 9, 10, -4, 0),
                 EbpfInstruction::new(BPF_STX | BPF_MEM | BPF_W, 10, 0, -64, 0),
                 EbpfInstruction::new(BPF_STX | BPF_MEM | BPF_W, 10, 9, -4, 0),
+                EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0),
             ]),
         );
 
         // BPF_MEM access out of bounds.
         assert_eq!(
             cbpf_to_ebpf(
-                &vec![sock_filter { code: (BPF_LD | BPF_MEM) as u16, jt: 0, jf: 0, k: 17 }],
+                &vec![
+                    sock_filter { code: (BPF_LD | BPF_MEM) as u16, jt: 0, jf: 0, k: 17 },
+                    sock_filter { code: (BPF_RET | BPF_A) as u16, jt: 0, jf: 0, k: 0 },
+                ],
                 &TEST_CBPF_CONFIG
             ),
             Err(EbpfError::InvalidCbpfScratchOffset(17)),
         );
+
+        // Empty program and programs not ending in BPF_RET | BPF_K or BPF_RET | BPF_A are rejected.
+        assert_eq!(cbpf_to_ebpf(&[], &TEST_CBPF_CONFIG), Err(EbpfError::InvalidCbpfInstruction(0)));
+        assert_eq!(
+            cbpf_to_ebpf(
+                &vec![
+                    sock_filter { code: (BPF_RET | BPF_K) as u16, jt: 0, jf: 0, k: 0 },
+                    sock_filter { code: (BPF_ALU | BPF_ADD | BPF_K) as u16, jt: 0, jf: 0, k: 1 },
+                ],
+                &TEST_CBPF_CONFIG
+            ),
+            Err(EbpfError::InvalidCbpfInstruction((BPF_ALU | BPF_ADD | BPF_K) as u16)),
+        );
+
+        // Instructions with non-zero upper 8 bits or invalid source/op bits are rejected.
+        for bad_code in [
+            0x0100 | (BPF_RET | BPF_K) as u16,
+            (BPF_ALU | BPF_NEG | BPF_X) as u16,
+            (BPF_JMP | BPF_JA | BPF_X) as u16,
+            (BPF_MISC | BPF_TAX | BPF_X) as u16,
+            (BPF_MISC | BPF_TXA | BPF_X) as u16,
+            (BPF_ST | BPF_X) as u16,
+            (BPF_STX | BPF_X) as u16,
+            (BPF_RET | BPF_X) as u16,
+            (BPF_RET | BPF_K | BPF_ABS) as u16,
+        ] {
+            assert_eq!(
+                cbpf_to_ebpf(
+                    &vec![
+                        sock_filter { code: bad_code, jt: 0, jf: 0, k: 0 },
+                        sock_filter { code: (BPF_RET | BPF_K) as u16, jt: 0, jf: 0, k: 0 },
+                    ],
+                    &TEST_CBPF_CONFIG
+                ),
+                Err(EbpfError::InvalidCbpfInstruction(bad_code)),
+            );
+        }
     }
 
     const BPF_ALU_ADD_K: u16 = (BPF_ALU | BPF_ADD | BPF_K) as u16;
