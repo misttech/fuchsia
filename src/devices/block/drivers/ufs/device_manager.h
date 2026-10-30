@@ -31,7 +31,8 @@ constexpr uint8_t kLowestActiveIcclevel = 0x00;
 constexpr uint8_t kHighestActiveIcclevel = 0x0f;
 
 // How long SuspendPower() waits for in-flight I/O to drain before giving up on the suspend.
-constexpr zx::duration kSuspendIoDrainTimeout = zx::sec(5);
+// Must exceed kCommandTimeout so an in-flight command is not outlived by the drain wait.
+constexpr zx::duration kSuspendIoDrainTimeout = kCommandTimeout + zx::sec(2);
 // Number of PHY/device power cycles attempted synchronously when resuming from PowerDown fails.
 // We cap synchronous retries at 3 because each attempt can take several seconds of UIC/UPIU
 // timeouts while Power Broker's SetLevel is outstanding, and the driver keeps retrying in the
@@ -43,6 +44,9 @@ constexpr zx::duration kUnavailableRetryDelay = zx::msec(10);
 // device to clear it per JEDEC JESD220. Kept at 500us because this wait is on the boot and
 // resume-from-PowerDown paths where a coarse polling interval adds avoidable resume latency.
 constexpr zx::duration kDeviceInitPollInterval = zx::usec(500);
+// Minimum available WriteBooster buffer threshold (4 = 40% remaining) below which a flush holds
+// off runtime sleep.
+constexpr uint32_t kWriteBoosterFlushThreshold = 4;
 
 enum class LinkState : uint8_t {
   kOff = 0,     // Power down / Disable
@@ -60,6 +64,13 @@ enum class WriteBoosterBufferType : uint8_t {
 enum class UserSpaceConfigurationOption : uint8_t {
   kUserSpaceReduction = 0x00,
   kPreserveUserSpace = 0x01,
+};
+
+// What EnterRuntimeSleep() should do about the WriteBooster buffer before the device sleeps.
+enum class WriteBoosterFlushState : uint8_t {
+  kNotNeeded,          // Enough buffer is available (or WriteBooster is disabled).
+  kNeeded,             // Below the flush threshold: enable fWBBufferFlushEn and hold off sleep.
+  kLifetimeExhausted,  // bWBBufferLifeTimeEst is exhausted: disable WriteBooster altogether.
 };
 
 struct PowerModeInfo {
@@ -129,6 +140,9 @@ class DeviceManager {
   // WriteBooster
   zx::result<> ConfigureWriteBooster(inspect::Node &wb_node);
   bool IsWriteBoosterEnabled() const { return is_write_booster_enabled_; }
+  // Reads the WriteBooster buffer attributes and reports whether a flush is needed before the
+  // device may enter runtime Sleep.
+  zx::result<WriteBoosterFlushState> QueryWriteBoosterFlushState();
 
   // Device power management.
   zx::result<> InitReferenceClock(inspect::Node &controller_node);
@@ -140,8 +154,14 @@ class DeviceManager {
 
   zx::result<> SuspendPower() TA_EXCL(power_lock_);
   zx::result<> ResumePower() TA_EXCL(power_lock_);
+  zx::result<> EnterRuntimeSleep() TA_EXCL(power_lock_);
+  zx::result<> ExitRuntimeSleep() TA_EXCL(power_lock_);
   zx::result<> FinishLinkRecovery() TA_EXCL(power_lock_);
 
+  bool IsRuntimeSleeping() const {
+    return runtime_sleeping_.load(std::memory_order_acquire) ||
+           runtime_sleep_in_progress_.load(std::memory_order_acquire);
+  }
   bool BeginLinkRecovery() TA_EXCL(power_lock_) {
     std::scoped_lock lock(power_lock_);
     while (suspend_in_progress_ || recovery_in_progress_) {
@@ -151,12 +171,15 @@ class DeviceManager {
       return false;
     }
     recovery_in_progress_ = true;
+    runtime_sleeping_.store(false, std::memory_order_release);
     return true;
   }
   void SetRecoveryInProgress(bool in_progress) TA_EXCL(power_lock_) {
     std::scoped_lock lock(power_lock_);
     recovery_in_progress_ = in_progress;
-    if (!in_progress) {
+    if (in_progress) {
+      runtime_sleeping_.store(false, std::memory_order_release);
+    } else {
       power_cv_.notify_all();
     }
   }
@@ -171,13 +194,9 @@ class DeviceManager {
 
   GeometryDescriptor &GetGeometryDescriptor() { return geometry_descriptor_; }
 
-  // This function is only used for the QEMU quirk case.
-  void SetCurrentPowerMode(UfsPowerMode power_mode) TA_EXCL(power_lock_) {
-    std::lock_guard<std::mutex> lock(power_lock_);
-    current_power_mode_ = power_mode;
-    current_power_condition_ = GetPowerModeInfo(power_mode).power_condition;
-    current_link_state_ = GetPowerModeInfo(power_mode).link_state;
-  }
+  // Updates the recorded power mode directly without bus traffic (used by the QEMU quirk
+  // during Init() and by Ufs::RecoverLink() when a failed recovery leaves the controller off).
+  void SetCurrentPowerMode(UfsPowerMode power_mode) TA_EXCL(power_lock_);
 
   uint8_t GetMaxLunCount() const { return max_lun_count_; }
 
@@ -230,16 +249,20 @@ class DeviceManager {
   };
   zx::result<> SuspendPowerLocked(bool power_down, UfsPowerMode target_power_mode,
                                   SuspendProgress &progress) TA_REQ(power_lock_);
+  zx::result<> ExitRuntimeSleepLocked(bool schedule_idle_timers) TA_REQ(power_lock_);
 
   zx::result<> SetExceptionEventControl(ExceptionEventControl control);
   zx::result<ExceptionEventStatus> GetExceptionEventStatus();
   zx::result<> EnableBackgroundOp();
-  zx::result<> DisableBackgroundOp();
+  zx::result<> DisableBackgroundOp(bool enable_urgent_bkops_exception = true);
   zx::result<BackgroundOpStatus> GetBackgroundOpStatus();
 
   zx::result<bool> IsWriteBoosterBufferLifeTimeLeft();
   zx::result<> EnableWriteBooster();
   zx::result<> DisableWriteBooster();
+  // Sets or clears the explicit buffer flush flag (fWBBufferFlushEn) and keeps
+  // is_write_booster_flush_enabled_ and its inspect mirror in sync; a no-op if already so.
+  zx::result<> SetWriteBoosterBufferFlush(bool enable);
 
   Ufs &controller_;
   TransferRequestProcessor &req_processor_;
@@ -287,13 +310,24 @@ class DeviceManager {
   scsi::PowerCondition current_power_condition_ TA_GUARDED(power_lock_) =
       scsi::PowerCondition::kIdle;
   LinkState current_link_state_ TA_GUARDED(power_lock_) = LinkState::kOff;
-  // Set for the duration of SuspendPower() so that IsResumed() reports false before the
-  // device/link state is actually changed: the I/O worker then skips submission attempts and the
-  // exception-event handler leaves the background-operation state to SuspendPower(). Keeping I/O
-  // off the hardware does not depend on it; that is RequestProcessor::BlockSlotAllocation().
+  // Set for the duration of SuspendPower() / EnterRuntimeSleep() so that IsResumed() reports
+  // false before the device/link state is actually changed: the I/O worker then skips submission
+  // attempts and the exception-event handler leaves the background-operation state to the power
+  // sequence. Keeping I/O off the hardware does not depend on it; that is
+  // RequestProcessor::BlockSlotAllocation().
   bool suspend_in_progress_ TA_GUARDED(power_lock_) = false;
+  // Set by Ufs::RecoverLink() (BeginLinkRecovery()) until RecoverLink() re-opens the request
+  // processor slot gates and calls SetRecoveryInProgress(false); suspend, resume and runtime wake
+  // wait for it on power_cv_.
   bool recovery_in_progress_ TA_GUARDED(power_lock_) = false;
+  // Set while Power Broker holds the device at its "off" level; a link recovery is not started
+  // underneath a system suspend.
   bool system_suspended_ TA_GUARDED(power_lock_) = false;
+  // Written under power_lock_ but read lock-free by IsRuntimeSleeping() on the I/O submission,
+  // admin UPIU, RPMB and key-slot paths, hence atomics; the release/acquire pairing orders the
+  // state change after the DME / START STOP UNIT traffic that produced it.
+  std::atomic<bool> runtime_sleeping_{false};
+  std::atomic<bool> runtime_sleep_in_progress_{false};
   std::condition_variable_any power_cv_;
   // Set once PowerDown has been downgraded to Sleep because of a power-on write-protected LU, so
   // the downgrade is only logged once.

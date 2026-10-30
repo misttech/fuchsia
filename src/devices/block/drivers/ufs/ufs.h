@@ -100,6 +100,8 @@ enum NotifyEvent {
   kPostResume,
   kLinkIdle,
   kLinkActive,
+  kEnterSleep,
+  kExitSleep,
 };
 
 // struct representing a pending block request for a logical unit
@@ -119,11 +121,17 @@ struct InspectProperties {
   inspect::UintProperty link_recovery_count;          // Incremented when RecoverLink() succeeds.
   inspect::UintProperty link_idle_count;              // Incremented when kLinkIdle is entered.
   inspect::UintProperty link_vote_error_count;        // Incremented when a PHY link vote fails.
-  inspect::BoolProperty link_idle;  // True while runtime link-idle votes are dropped.
+  inspect::BoolProperty link_idle;            // True while runtime link-idle votes are dropped.
+  inspect::UintProperty runtime_sleep_count;  // Incremented when runtime kSleep is entered.
+  inspect::BoolProperty runtime_sleeping;     // True while in runtime UFS_SLEEP_PWR_MODE.
   // Latency histograms (microseconds) of successful runtime link power transitions.
   inspect::ExponentialUintHistogram link_active_latency_us;  // LINK_IDLE -> ACTIVE PHY restore.
   inspect::ExponentialUintHistogram link_idle_latency_us;    // ACTIVE -> LINK_IDLE PHY vote.
   inspect::ExponentialUintHistogram ah8_exit_latency_us;     // ExitAutoHibernate(), to DP/UTRLRDY.
+  // Runtime device Sleep: EnterRuntimeSleep() from the first hardware step to the state change,
+  // ExitRuntimeSleepLocked() from the PHY wake vote to START STOP UNIT(Active) completing.
+  inspect::ExponentialUintHistogram runtime_sleep_enter_latency_us;
+  inspect::ExponentialUintHistogram runtime_sleep_wake_latency_us;
   // Controller
   inspect::UintProperty max_transfer_bytes;  // Set once by the init thread.
   inspect::UintProperty logical_unit_count;  // Set once by the init thread.
@@ -288,7 +296,7 @@ class Ufs : public fdf::DriverBase2, public fdf_power::Suspendable<Ufs>, public 
 
   zx_status_t WaitWithTimeout(fit::function<bool()> wait_for, zx::duration timeout,
                               const fbl::String &timeout_message,
-                              zx::duration granularity = zx::usec(1));
+                              zx::duration granularity = zx::usec(15));
 
   static zx::result<uint16_t> TranslateUfsLunToScsiLun(uint8_t ufs_lun);
   static zx::result<uint8_t> TranslateScsiLunToUfsLun(uint16_t scsi_lun);
@@ -352,18 +360,22 @@ class Ufs : public fdf::DriverBase2, public fdf_power::Suspendable<Ufs>, public 
     return link_idle_;
   }
   void SetLinkIdleTimeoutForTesting(zx::duration timeout) { link_idle_timeout_ = timeout; }
+  void SetRuntimeSleepTimeoutForTesting(zx::duration timeout) { runtime_sleep_timeout_ = timeout; }
 
   void ScheduleLinkRecovery() TA_EXCL(link_recovery_lock_);
   void RecoverLink() TA_EXCL(link_recovery_lock_);
   // Blocks until the RecoverLink() that is scheduled or in progress has run to completion (success
   // or terminal failure); returns ZX_OK at once if none is pending and ZX_ERR_TIMED_OUT after
-  // |timeout|. The caller re-checks IsResumed() for the outcome. Must not be called on
+  // |timeout|. Sets |*out_waited| (when non-null) to true if a recovery was pending or running on
+  // entry. The caller re-checks IsResumed() for the outcome. Must not be called on
   // exception_event_dispatcher_, which runs RecoverLink() itself.
-  zx_status_t WaitForLinkRecovery(zx::duration timeout) TA_EXCL(link_recovery_lock_);
+  zx_status_t WaitForLinkRecovery(zx::duration timeout, bool *out_waited = nullptr)
+      TA_EXCL(link_recovery_lock_);
   bool IsOnExceptionEventDispatcher() const {
     return exception_event_dispatcher_.get() != nullptr &&
            fdf::Dispatcher::GetCurrent()->get() == exception_event_dispatcher_.get();
   }
+  void ScheduleRuntimeWake();
 
   bool HasWellKnownLun(WellKnownLuns lun) {
     return well_known_lun_set_.find(lun) != well_known_lun_set_.end();
@@ -396,8 +408,10 @@ class Ufs : public fdf::DriverBase2, public fdf_power::Suspendable<Ufs>, public 
   // TEST UNIT READY so that the START STOP UNIT issued by ResumePower() and the first I/O to each
   // LU do not fail with ZX_ERR_UNAVAILABLE.
   zx::result<> ClearUnitAttentions();
+  zx_status_t ClearLunUnitAttention(uint16_t scsi_lun);
   zx::result<> ConfigureAutoHibernate();
   zx::result<> DisableAutoHibernate();
+  zx::result<> WakeFromRuntimeSleep();
 
   // Marks the UFSHCI register space as inaccessible (power domains/clocks gated). While set, the
   // interrupt handler and I/O paths must not touch controller registers. Setting it also waits for
@@ -606,11 +620,18 @@ class Ufs : public fdf::DriverBase2, public fdf_power::Suspendable<Ufs>, public 
   void ArmLinkIdleTimer(uint64_t generation) TA_EXCL(ah8_lock_);
   void HandleLinkIdleTimer(async_dispatcher_t *dispatcher, async::TaskBase *task,
                            zx_status_t status) TA_EXCL(ah8_lock_);
-  // Runs on exception_event_dispatcher_ only, as do the two fields below.
+  // Second idle stage: armed by HandleLinkIdleTimer() once the link is parked, enters device
+  // Sleep (DeviceManager::EnterRuntimeSleep()) if nothing has used the link since.
+  void HandleRuntimeSleepTimer(async_dispatcher_t *dispatcher, async::TaskBase *task,
+                               zx_status_t status) TA_EXCL(ah8_lock_);
+  // Runs on exception_event_dispatcher_ only, as do the fields below.
   async::TaskMethod<Ufs, &Ufs::HandleLinkIdleTimer> link_idle_task_{this};
+  async::TaskMethod<Ufs, &Ufs::HandleRuntimeSleepTimer> runtime_sleep_task_{this};
   uint64_t scheduled_link_idle_gen_ = 0;
+  uint64_t scheduled_runtime_sleep_gen_ = 0;
   uint32_t link_idle_rearm_count_ = 0;
   zx::duration link_idle_timeout_ = zx::msec(4);
+  zx::duration runtime_sleep_timeout_ = zx::msec(1000);
 
   // Link power lock. Guards the Auto-Hibern8 state and the runtime link-idle state below. The PHY
   // LINK_IDLE / ACTIVE votes (Notify(kLinkIdle/kLinkActive)) are issued while it is held so that a
@@ -647,6 +668,8 @@ class Ufs : public fdf::DriverBase2, public fdf_power::Suspendable<Ufs>, public 
   std::condition_variable_any link_recovery_cv_;
   uint64_t link_recoveries_scheduled_ TA_GUARDED(link_recovery_lock_) = 0;
   uint64_t link_recoveries_finished_ TA_GUARDED(link_recovery_lock_) = 0;
+  // Coalesces ScheduleRuntimeWake() posts while one is outstanding.
+  std::atomic<bool> runtime_wake_scheduled_{false};
   // Set once Init() has completed: UIC/fatal errors raised while the init thread still owns the
   // controller are left to the init path instead of scheduling RecoverLink() underneath it.
   std::atomic<bool> link_recovery_enabled_{false};
@@ -676,6 +699,12 @@ class Ufs : public fdf::DriverBase2, public fdf_power::Suspendable<Ufs>, public 
   std::mutex uic_lock_;
 
   bool crypto_supported_ = false;
+  bool auto_hibernation_supported_ = false;
+  // Reusable 1-page DMA buffer for small (<= 4 KiB) synchronous SCSI commands in
+  // ExecuteCommandSync(), serialized by sync_cmd_lock_.
+  std::mutex sync_cmd_lock_;
+  zx::vmo sync_cmd_vmo_;
+  fzl::VmoMapper sync_cmd_mapper_;
   fidl::WireSyncClient<fuchsia_hardware_inlineencryption::Controller> inline_encryption_client_;
 
   // UFSHCI 3.0 section 5.6: CRYPTOCAP.CFGC is 8 bits, but the driver (and the block server's

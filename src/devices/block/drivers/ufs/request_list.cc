@@ -6,6 +6,8 @@
 
 #include <lib/driver/logging/cpp/logger.h>
 
+#include "transfer_request_descriptor.h"
+
 namespace ufs {
 
 zx::result<RequestList> RequestList::Create(zx::unowned_bti bti, size_t entry_size,
@@ -33,14 +35,18 @@ zx::result<> RequestList::Init(zx::unowned_bti bti, size_t entry_size, uint8_t e
   }
   request_slots_.resize(entry_count);
 
-  // Allocate slots.
+  // Allocate slots. Task Management Request Descriptors (80B) contain the task management request
+  // and response UPIUs inline and do not use an external UTP Command Descriptor buffer.
   for (size_t i = 0; i < entry_count; ++i) {
     auto &slot = request_slots_[i];
     slot.Reset(SlotState::kFree);
-    zx::result<> result = IoBufferInit(bti, &slot.command_descriptor_io, kUtpCommandDescriptorSize);
-    if (result.is_error()) {
-      fdf::error("Failed to allocate memory for the Command Descriptor: {}", result);
-      return result.take_error();
+    if (entry_size == sizeof(TransferRequestDescriptor)) {
+      zx::result<> result =
+          IoBufferInit(bti, &slot.command_descriptor_io, kUtpCommandDescriptorSize);
+      if (result.is_error()) {
+        fdf::error("Failed to allocate memory for the Command Descriptor: {}", result);
+        return result.take_error();
+      }
     }
   }
 

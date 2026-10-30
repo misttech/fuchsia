@@ -9,7 +9,9 @@
 #include <lib/fit/defer.h>
 #include <lib/trace/event.h>
 
+#include <array>
 #include <optional>
+#include <span>
 #include <type_traits>
 #include <utility>
 
@@ -36,7 +38,7 @@ void WriteToUncachedDescriptor(T *dest, const T &src) {
 }
 
 void FillPrdt(PhysicalRegionDescriptionTableEntry *prdt,
-              const std::vector<zx_paddr_t> &buffer_physical_addresses, uint32_t prdt_count,
+              std::span<const zx_paddr_t> buffer_physical_addresses, uint32_t prdt_count,
               uint32_t data_length) {
   for (uint32_t i = 0; i < prdt_count; ++i) {
     // It only supports 4KB data buffers for each entry in the scatter-gather.
@@ -58,7 +60,7 @@ void FillPrdt(PhysicalRegionDescriptionTableEntry *prdt,
 template <>
 std::tuple<uint16_t, uint32_t> TransferRequestProcessor::PreparePrdt<ScsiCommandUpiu>(
     ScsiCommandUpiu &request, const uint8_t lun, const uint8_t slot,
-    const std::vector<zx_paddr_t> &buffer_phys, const uint16_t response_offset,
+    std::span<const zx_paddr_t> buffer_phys, const uint16_t response_offset,
     const uint16_t response_length) {
   const uint32_t data_transfer_length = std::min(request.GetTransferBytes(), kMaxPrdtDataLength);
 
@@ -257,7 +259,10 @@ void TransferRequestProcessor::SendRequestUsingSlot(
       request_slot.is_scsi_command = std::is_base_of_v<ScsiCommandUpiu, RequestType>;
       request_slot.response_upiu_offset = response_offset;
 
-      std::vector<zx_paddr_t> data_paddrs;
+      constexpr size_t kStackPaddrCapacity = 32;
+      std::array<zx_paddr_t, kStackPaddrCapacity> stack_paddrs{};
+      std::vector<zx_paddr_t> heap_paddrs;
+      std::span<zx_paddr_t> data_paddrs;
 
       if (dma_length > 0) {
         if (!request_slot.data_vmo->is_valid()) {
@@ -271,10 +276,16 @@ void TransferRequestProcessor::SendRequestUsingSlot(
 
           ZX_DEBUG_ASSERT(dma_length % kPageSize == 0);
 
-          data_paddrs.resize(dma_length / kPageSize, 0);
+          const size_t page_count = dma_length / kPageSize;
+          if (page_count <= kStackPaddrCapacity) {
+            data_paddrs = std::span<zx_paddr_t>(stack_paddrs.data(), page_count);
+          } else {
+            heap_paddrs.resize(page_count, 0);
+            data_paddrs = heap_paddrs;
+          }
           if (zx_status_t pin_status =
                   GetBti()->pin(option, *request_slot.data_vmo, dma_offset, dma_length,
-                                data_paddrs.data(), dma_length / kPageSize, &request_slot.pmt);
+                                data_paddrs.data(), page_count, &request_slot.pmt);
               pin_status != ZX_OK) {
             fdf::error("Failed to pin IO buffer: {}", zx_status_get_string(pin_status));
             status = pin_status;
@@ -381,7 +392,7 @@ zx_status_t TransferRequestProcessor::UpiuCompletion(uint8_t slot_num, RequestSl
   scsi::StatusMessage status_message;
   std::optional<std::reference_wrapper<scsi::FixedFormatSenseDataHeader>> sense_data = std::nullopt;
 
-  ResponseUpiu response(
+  AbstractResponseUpiu response(
       slots_.GetDescriptorBuffer<ResponseUpiu>(slot_num, request_slot.response_upiu_offset));
 
   zx::result<> request_result = zx::ok();
@@ -401,8 +412,8 @@ zx_status_t TransferRequestProcessor::UpiuCompletion(uint8_t slot_num, RequestSl
       // return a fixed format data record of exactly 18 bytes when sense data is present (with
       // additional_sense_length set to 10 / 0x0A), or 0 when no sense data is returned.
       if (sense_data_len == sizeof(scsi::FixedFormatSenseDataHeader)) {
-        auto *header =
-            reinterpret_cast<scsi::FixedFormatSenseDataHeader *>(response.GetSenseData());
+        auto *header = reinterpret_cast<scsi::FixedFormatSenseDataHeader *>(
+            response.GetData<ResponseUpiuData>()->sense_data);
         constexpr uint8_t kUfsFixedSenseDataAdditionalLength = 10;
         if (header->additional_sense_length == kUfsFixedSenseDataAdditionalLength) {
           sense_data = *header;
@@ -427,8 +438,7 @@ zx_status_t TransferRequestProcessor::UpiuCompletion(uint8_t slot_num, RequestSl
     request_result = controller_.ScsiComplete(status_message, sense_data);
   }
 
-  uint32_t doorbell = ReadDoorBellRegister();
-  if (completion_status == ZX_ERR_TIMED_OUT && (doorbell & (1u << slot_num))) {
+  if (completion_status == ZX_ERR_TIMED_OUT && (ReadDoorBellRegister() & (1u << slot_num))) {
     // Hardware still owns the slot; do not unpin PMT memory until hardware doorbell clears
     // or controller reset / task abort finishes.
     SetSlotStateLocked(slot_num, SlotState::kTimeout);
@@ -617,6 +627,26 @@ uint32_t TransferRequestProcessor::ProcessCompletionOfIoRequests() {
     }
   }
   return completion_count;
+}
+
+TransferRequestProcessor::IoSlotState TransferRequestProcessor::GetIoSlotState() {
+  std::scoped_lock lock(slot_lock_);
+  constexpr uint32_t kIoSlotsMask = (1u << kAdminCommandSlotNumber) - 1;
+  IoSlotState state;
+  state.has_allocated_slots = allocated_slots_mask_ != 0;
+  state.inflight_io_count =
+      static_cast<uint32_t>(std::popcount(allocated_slots_mask_ & kIoSlotsMask));
+  if (state.inflight_io_count != 0) {
+    ForEachAllocatedSlotLocked(
+        [&](uint8_t slot_num, RequestSlot &request_slot) {
+          if (request_slot.state == SlotState::kScheduled) {
+            state.earliest_timeout_deadline =
+                std::min(state.earliest_timeout_deadline, request_slot.deadline);
+          }
+        },
+        /*excluded_mask=*/(1u << kAdminCommandSlotNumber));
+  }
+  return state;
 }
 
 zx_time_t TransferRequestProcessor::GetEarliestTimeoutDeadline() {

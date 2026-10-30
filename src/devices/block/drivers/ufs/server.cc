@@ -17,6 +17,9 @@ namespace ufs {
 template <typename ResponseUpiu>
 fit::result<QueryErrorCode, ResponseUpiu> UfsServer::HandleQueryRequestUpiu(
     QueryRequestUpiu& request) {
+  if (controller_->WakeFromRuntimeSleep().is_error()) {
+    return fit::error(QueryErrorCode::kGeneralFailure);
+  }
   auto response = controller_->GetTransferRequestProcessor().SendQueryRequestUpiu(request);
   if (response.is_error()) {
     return fit::error(QueryErrorCode::kGeneralFailure);
@@ -317,6 +320,9 @@ zx::result<> ValidateSetCommand(uint16_t attribute, AttrSetType attr_set_type,
 
 zx::result<std::optional<uint32_t>> UfsServer::DispatchUicCommand(
     UicCommandOpcode opcode, SendUicCommandRequestView request) {
+  if (zx::result<> wake_res = controller_->WakeFromRuntimeSleep(); wake_res.is_error()) {
+    return wake_res.take_error();
+  }
   Ufs::ScopedAutoHibernateDisable ah8_guard(*controller_);
 
   const auto arg1 = UicCommandArgument1Reg::Get().FromValue(request->argument[0]);

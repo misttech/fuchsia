@@ -1745,7 +1745,10 @@ TEST_F(PowerTest, RuntimeLinkIdleAndWakeVotes) {
     mock_device_.GetUicCmdProcessor().Reset();
     mock_device_.GetRegisterMmioProcessor().Reset();
   });
+
+  // Configure a short link-idle timeout and long runtime-sleep timeout to isolate Tier 1.
   dut_->SetLinkIdleTimeoutForTesting(zx::msec(10));
+  dut_->SetRuntimeSleepTimeoutForTesting(zx::sec(60));
 
   // 1. While a guard is held the timer never votes idle, even with the link parked.
   {
@@ -1847,5 +1850,153 @@ TEST_F(PowerTest, RuntimeLinkIdleAndWakeVotes) {
   EXPECT_EQ(ReadUfsInspectUint(*dut_, "link_vote_error_count"), 0u);
 }
 
+// Verifies runtime device Sleep (`UFS_SLEEP_PWR_MODE` + link in Hibern8 + `kEnterSleep` platform
+// vote) after long idle, urgent BKOPS hold-off, wake-on-first-request (`kExitSleep`), and clean
+// transition from runtime Sleep to system PowerDown suspend.
+TEST_F(PowerTest, RuntimeDeviceSleepWakeAndSystemSuspend) {
+  TestUfs::SetSupportsPowerDownSuspend(true);
+  TestUfs::SetSupportsRuntimePowerManagement(true);
+  CapabilityReg::Get()
+      .ReadFrom(mock_device_.GetRegisters())
+      .set_auto_hibernation_support(true)
+      .WriteTo(mock_device_.GetRegisters());
+  ASSERT_NO_FATAL_FAILURE(StartDriver(/*supply_power_framework=*/true));
+
+  scsi::BlockDevice* block_device = nullptr;
+  while (true) {
+    {
+      std::scoped_lock lock(dut_->lock());
+      if (!dut_->block_devs().empty() && dut_->block_devs().contains(0) &&
+          !dut_->block_devs().at(0).empty()) {
+        block_device = dut_->block_devs().at(0).at(0).get();
+        break;
+      }
+    }
+    zx::nanosleep(zx::deadline_after(zx::msec(1)));
+  }
+
+  std::unique_ptr<block_client::RemoteBlockDevice> client;
+  EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync([&] {
+    auto client_end = driver_test().Connect<fuchsia_hardware_block_volume::Service::Volume>(
+        block_device->DeviceName().c_str());
+    ASSERT_OK(client_end);
+    auto remote_device_result =
+        block_client::RemoteBlockDevice::Create(std::move(client_end.value()));
+    ASSERT_OK(remote_device_result);
+    client = std::move(remote_device_result.value());
+  }));
+
+  libsync::Completion enter_sleep_called;
+  libsync::Completion exit_sleep_called;
+  std::atomic<uint32_t> enter_sleep_events{0};
+  std::atomic<uint32_t> exit_sleep_events{0};
+  auto reset_callback = fit::defer([&] {
+    libsync::Completion done;
+    if (dut_->exception_event_dispatcher().get() != nullptr &&
+        async::PostTask(dut_->exception_event_dispatcher().async_dispatcher(), [&] {
+          dut_->SetHostControllerCallback(Ufs::NotifyEventCallback);
+          done.Signal();
+        }) == ZX_OK) {
+      done.Wait();
+    } else {
+      dut_->SetHostControllerCallback(Ufs::NotifyEventCallback);
+    }
+  });
+  dut_->SetHostControllerCallback([&](NotifyEvent event, uint64_t data) -> zx::result<> {
+    if (event == NotifyEvent::kEnterSleep) {
+      enter_sleep_events.fetch_add(1);
+      enter_sleep_called.Signal();
+    } else if (event == NotifyEvent::kExitSleep) {
+      exit_sleep_events.fetch_add(1);
+      exit_sleep_called.Signal();
+    }
+    return Ufs::NotifyEventCallback(event, data);
+  });
+
+  // 1. Urgent BKOPS (`kRequiredPerformanceImpact`) must hold off runtime sleep and keep the device
+  //    Active.
+  mock_device_.SetAttribute(Attributes::bBackgroundOpStatus,
+                            static_cast<uint32_t>(BackgroundOpStatus::kRequiredPerformanceImpact));
+  dut_->SetLinkIdleTimeoutForTesting(zx::msec(5));
+  dut_->SetRuntimeSleepTimeoutForTesting(zx::msec(20));
+  ASSERT_OK(dut_->GetDeviceManager().EnterRuntimeSleep());
+  EXPECT_FALSE(dut_->GetDeviceManager().IsRuntimeSleeping());
+  EXPECT_EQ(dut_->GetDeviceManager().GetCurrentPowerMode(), UfsPowerMode::kActive);
+
+  // 2. Clear urgent BKOPS; the runtime sleep timer must transition the device to kSleep with
+  //    kEnterSleep notified while HCE remains enabled.
+  mock_device_.SetAttribute(Attributes::bBackgroundOpStatus,
+                            static_cast<uint32_t>(BackgroundOpStatus::kNotRequired));
+  enter_sleep_called.Reset();
+  dut_->ScheduleRuntimeIdleTimers();
+  EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync(
+      [&] { EXPECT_OK(enter_sleep_called.Wait(zx::sec(5))); }));
+  // Wait briefly for EnterRuntimeSleep() to finish setting UfsPowerMode::kSleep after Notify.
+  const zx::time sleep_deadline = zx::deadline_after(zx::sec(5));
+  while (dut_->GetDeviceManager().GetCurrentPowerMode() != UfsPowerMode::kSleep &&
+         zx::clock::get_monotonic() < sleep_deadline) {
+    zx::nanosleep(zx::deadline_after(zx::msec(1)));
+  }
+  EXPECT_EQ(dut_->GetDeviceManager().GetCurrentPowerMode(), UfsPowerMode::kSleep);
+  EXPECT_EQ(dut_->GetDeviceManager().GetCurrentLinkState(), LinkState::kHibernate);
+  EXPECT_TRUE(HostControllerEnableReg::Get()
+                  .ReadFrom(mock_device_.GetRegisters())
+                  .host_controller_enable());
+  EXPECT_GE(enter_sleep_events.load(), 1u);
+
+  // 3. Issuing a block I/O request while in runtime Sleep must automatically wake the link and
+  //    device (`kExitSleep` -> `DmeHibernateExit` -> `START STOP UNIT(kActive)`) and complete I/O.
+  dut_->SetLinkIdleTimeoutForTesting(zx::sec(60));
+  dut_->SetRuntimeSleepTimeoutForTesting(zx::sec(60));
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(ufs_mock_device::kMockBlockSize, 0, &vmo));
+  storage::Vmoid owned_vmoid;
+  EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync(
+      [&] { ASSERT_OK(client->BlockAttachVmo(vmo, &owned_vmoid)); }));
+
+  BlockFifoRequest request = {
+      .command = {.opcode = BLOCK_OPCODE_READ},
+      .vmoid = owned_vmoid.get(),
+      .length = 1,
+      .vmo_offset = 0,
+      .dev_offset = 0,
+  };
+  std::future<zx_status_t> tx_future =
+      std::async(std::launch::async, [&] { return client->FifoTransaction(&request, 1); });
+  while (tx_future.wait_for(std::chrono::milliseconds(10)) != std::future_status::ready) {
+    driver_test().runtime().RunUntilIdle();
+  }
+  ASSERT_OK(tx_future.get());
+  EXPECT_FALSE(dut_->GetDeviceManager().IsRuntimeSleeping());
+  EXPECT_EQ(dut_->GetDeviceManager().GetCurrentPowerMode(), UfsPowerMode::kActive);
+  EXPECT_GE(exit_sleep_events.load(), 1u);
+
+  // 4. Re-enter runtime Sleep and verify that a system suspend (`SetLevel(off)`) cleanly wakes
+  //    from runtime Sleep and transitions to `UfsPowerMode::kPowerDown`.
+  // The Power Broker's initial SetLevel(off) is ignored until the first "on" has been seen (see
+  // VerifyInitialOffIgnoredAndSuspend()); get that out of the way while the device is still Active,
+  // since IsResumed() is false by design once runtime Sleep has been entered.
+  SetPowerLevelSync(Ufs::kPowerLevelOn);
+  ASSERT_TRUE(dut_->IsResumed());
+
+  ASSERT_OK(dut_->GetDeviceManager().EnterRuntimeSleep());
+  ASSERT_TRUE(dut_->GetDeviceManager().IsRuntimeSleeping());
+  EXPECT_FALSE(dut_->IsResumed());
+
+  SetPowerLevelSync(Ufs::kPowerLevelOff);
+  EXPECT_FALSE(dut_->IsResumed());
+  EXPECT_FALSE(dut_->GetDeviceManager().IsRuntimeSleeping());
+  EXPECT_EQ(dut_->GetDeviceManager().GetCurrentPowerMode(), UfsPowerMode::kPowerDown);
+  EXPECT_EQ(dut_->GetDeviceManager().GetCurrentLinkState(), LinkState::kOff);
+
+  SetPowerLevelSync(Ufs::kPowerLevelOn);
+  EXPECT_TRUE(dut_->IsResumed());
+  EXPECT_EQ(dut_->GetDeviceManager().GetCurrentPowerMode(), UfsPowerMode::kActive);
+
+  EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync(
+      [&] { ASSERT_OK(client->BlockDetachVmo(std::move(owned_vmoid))); }));
+}
+
 }  // namespace
+
 }  // namespace ufs

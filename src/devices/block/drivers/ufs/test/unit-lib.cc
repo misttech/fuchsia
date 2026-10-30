@@ -102,6 +102,7 @@ void UfsTest::TearDown() {
     ASSERT_OK(result);
   }
   TestUfs::SetSupportsPowerDownSuspend(false);
+  TestUfs::SetSupportsRuntimePowerManagement(false);
   mock_device_.GetRegisterMmioProcessor().Reset();
   mock_device_.GetUicCmdProcessor().Reset();
   mock_device_.GetTransferRequestProcessor().Reset();

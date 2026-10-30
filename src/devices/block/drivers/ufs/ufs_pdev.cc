@@ -20,6 +20,8 @@ namespace {
 
 using fuchsia_hardware_ufs_phy::wire::PowerState;
 
+// TODO(https://fxbug.dev/578184694): Scale the active interconnect bandwidth vote from the
+// negotiated UniPro gear/lane rate instead of voting a fixed static ceiling.
 constexpr uint64_t kOperationalBandwidthBps = 1'000'000'000;  // 1 GB/s
 constexpr uint64_t kInactiveBandwidthBps = 0;
 constexpr uint32_t kInterconnectTagUfs = 'UFS ';
@@ -124,39 +126,84 @@ zx::result<> UfsPdev::PdevNotifyEventCallback(NotifyEvent event, uint64_t data) 
     case NotifyEvent::kLinkIdle:
       return SetPhyPowerState(PowerState::kLinkIdle);
     case NotifyEvent::kLinkActive:
+    case NotifyEvent::kExitSleep:
       return SetPhyPowerState(PowerState::kActive);
+    case NotifyEvent::kEnterSleep:
+      return SetPhyPowerState(PowerState::kHibernateSleep);
     default:
       return Ufs::NotifyEventCallback(event, data);
   }
 }
 
 zx::result<> UfsPdev::SetPhyPowerState(PowerState state) {
+  std::scoped_lock lock(power_state_lock_);
+  if (state == PowerState::kActive) {
+    // Restore the interconnect vote before ungating PHY clocks/rails, and still restore
+    // PowerState::kActive on the PHY even if SetBandwidth fails because callers
+    // (AcquireLinkActive, ExitRuntimeSleepLocked, ResumePower, RecoverLink) proceed directly to
+    // UFSHCI MMIO register accesses regardless of the notification status.
+    zx::result<> bw_res = SetBandwidthVoteLocked(true);
+    zx::result<> phy_res = CallPhySetPowerStateLocked(state);
+    return phy_res.is_error() ? phy_res : bw_res;
+  }
+
+  zx::result<> phy_res = CallPhySetPowerStateLocked(state);
+  const bool phy_transitioned = phy_res.is_ok();
+  if (phy_res.is_error() &&
+      (state != PowerState::kHibernateSleep || phy_res.status_value() != ZX_ERR_NOT_SUPPORTED)) {
+    return phy_res.take_error();
+  }
+  if (zx::result<> bw_res = SetBandwidthVoteLocked(false); bw_res.is_error()) {
+    // Failed runtime idle/sleep notifications leave the controller treating the link as active
+    // (e.g. HandleLinkIdleTimer() keeps link_idle_ = false, so subsequent I/O accesses UFSHCI
+    // MMIO without issuing Notify(kLinkActive)). Restore PowerState::kActive on the PHY before
+    // returning the error so auxiliary clocks and M-PHY rails are not left gated.
+    if (phy_transitioned && ufs_phy_.is_valid() &&
+        (state == PowerState::kLinkIdle || state == PowerState::kHibernateSleep)) {
+      if (zx::result<> rollback_res = CallPhySetPowerStateLocked(PowerState::kActive);
+          rollback_res.is_error()) {
+        fdf::error("Failed to roll back PHY to ACTIVE after SetBandwidth(false) failure: {}",
+                   rollback_res);
+      }
+    }
+    return bw_res.take_error();
+  }
+  return zx::ok();
+}
+
+zx::result<> UfsPdev::CallPhySetPowerStateLocked(PowerState state) {
   if (!ufs_phy_.is_valid()) {
     return zx::ok();
   }
   auto res = ufs_phy_->SetPowerState(state);
   if (!res.ok()) {
-    // A PHY built against an older protocol has no SetPowerState at all: that only rules out the
-    // optional runtime LINK_IDLE voting. PowerDown suspend / resume do need the call to succeed.
-    if (res.reason() == fidl::Reason::kUnknownMethod && state == PowerState::kLinkIdle) {
-      if (!runtime_power_state_unsupported_.exchange(true, std::memory_order_acq_rel)) {
-        fdf::info("PHY does not implement SetPowerState; disabling runtime link-idle voting");
+    // A PHY built against an older protocol has no SetPowerState at all: treat kActive as a no-op
+    // and disable optional runtime PHY power-state voting without failing Sleep bandwidth drops.
+    if (res.reason() == fidl::Reason::kUnknownMethod) {
+      if (state == PowerState::kActive) {
+        return zx::ok();
       }
-      return zx::error(ZX_ERR_NOT_SUPPORTED);
+      if (state == PowerState::kLinkIdle || state == PowerState::kHibernateSleep) {
+        if (!runtime_power_state_unsupported_.exchange(true, std::memory_order_acq_rel)) {
+          fdf::info("PHY does not implement SetPowerState; disabling runtime link-idle voting");
+        }
+        return zx::error(ZX_ERR_NOT_SUPPORTED);
+      }
     }
-    fdf::error("Failed to call SetPowerState({}): {}", static_cast<uint8_t>(state),
+    fdf::error("Failed to call SetPowerState({}): {}", fidl::ToUnderlying(state),
                res.status_string());
     return zx::error(res.status());
   }
   if (res->is_error()) {
-    if (res->error_value() == ZX_ERR_NOT_SUPPORTED && state == PowerState::kLinkIdle) {
+    if (res->error_value() == ZX_ERR_NOT_SUPPORTED &&
+        (state == PowerState::kLinkIdle || state == PowerState::kHibernateSleep)) {
       if (!runtime_power_state_unsupported_.exchange(true, std::memory_order_acq_rel)) {
         fdf::info("PHY does not implement PowerState {}; disabling runtime link-idle voting",
-                  static_cast<uint8_t>(state));
+                  fidl::ToUnderlying(state));
       }
       return zx::error(ZX_ERR_NOT_SUPPORTED);
     }
-    fdf::error("SetPowerState({}) returned error status: {}", static_cast<uint8_t>(state),
+    fdf::error("SetPowerState({}) returned error status: {}", fidl::ToUnderlying(state),
                zx_status_get_string(res->error_value()));
     return zx::error(res->error_value());
   }
@@ -164,7 +211,12 @@ zx::result<> UfsPdev::SetPhyPowerState(PowerState state) {
 }
 
 zx::result<> UfsPdev::SetBandwidthVote(bool enable) {
-  if (!interconnect_client_.is_valid()) {
+  std::scoped_lock lock(power_state_lock_);
+  return SetBandwidthVoteLocked(enable);
+}
+
+zx::result<> UfsPdev::SetBandwidthVoteLocked(bool enable) {
+  if (!interconnect_client_.is_valid() || enable == bandwidth_vote_active_) {
     return zx::ok();
   }
   const uint64_t bw = enable ? kOperationalBandwidthBps : kInactiveBandwidthBps;
@@ -185,14 +237,18 @@ zx::result<> UfsPdev::SetBandwidthVote(bool enable) {
                zx_status_get_string(result->error_value()));
     return zx::error(result->error_value());
   }
+  bandwidth_vote_active_ = enable;
   return zx::ok();
 }
 
 zx::result<> UfsPdev::PostSuspend() {
-  if (zx::result<> res = SetPhyPowerState(PowerState::kPowerDown); res.is_error()) {
-    return res.take_error();
+  std::scoped_lock lock(power_state_lock_);
+  zx::result<> phy_res = zx::ok();
+  if (supports_power_down_suspend_) {
+    phy_res = CallPhySetPowerStateLocked(PowerState::kPowerDown);
   }
-  return SetBandwidthVote(false);
+  zx::result<> bw_res = SetBandwidthVoteLocked(false);
+  return phy_res.is_error() ? phy_res : bw_res;
 }
 
 bool UfsPdev::QueryPowerDownSuspendSupport() {
@@ -218,10 +274,14 @@ bool UfsPdev::QueryPowerDownSuspendSupport() {
 }
 
 zx::result<> UfsPdev::PreResume() {
-  if (zx::result<> bw_res = SetBandwidthVote(true); bw_res.is_error()) {
+  std::scoped_lock lock(power_state_lock_);
+  if (zx::result<> bw_res = SetBandwidthVoteLocked(true); bw_res.is_error()) {
     return bw_res.take_error();
   }
-  return SetPhyPowerState(PowerState::kActive);
+  if (!supports_power_down_suspend_) {
+    return zx::ok();
+  }
+  return CallPhySetPowerStateLocked(PowerState::kActive);
 }
 
 // Triggers dynamic PHY calibration prior to UIC power mode / gear change
@@ -288,19 +348,7 @@ zx::result<fidl::ClientEnd<fuchsia_hardware_ufs_phy::Ufshci>> UfsPdev::StartUfsh
     ufshci_dispatcher_ = *std::move(dispatcher);
   }
 
-  // Wait for bind completion, because calls to ufs_phy_ depends on the UFSHCI server working.
-  libsync::Completion bind_completion;
-  zx_status_t status = async::PostTask(
-      ufshci_dispatcher_.async_dispatcher(),
-      [this, server_end = std::move(endpoints->server), &bind_completion]() mutable {
-        fidl::BindServer(ufshci_dispatcher_.async_dispatcher(), std::move(server_end), this);
-        bind_completion.Signal();
-      });
-  if (status != ZX_OK) {
-    fdf::error("Failed to post bind task: {}", zx_status_get_string(status));
-    return zx::error(status);
-  }
-  bind_completion.Wait();
+  fidl::BindServer(ufshci_dispatcher_.async_dispatcher(), std::move(endpoints->server), this);
 
   return zx::ok(std::move(endpoints->client));
 }

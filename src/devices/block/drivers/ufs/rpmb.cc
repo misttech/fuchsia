@@ -71,8 +71,9 @@ void UfsRpmbDevice::GetDeviceInfo(GetDeviceInfoCompleter::Sync& completer) {
   uint8_t reliable_write_sector_count = 1;
 
   auto& device_manager = ufs_parent_->GetDeviceManager();
-  auto rpmb_desc_res = device_manager.ReadRpmbUnitDescriptor();
-  if (rpmb_desc_res.is_ok()) {
+  if (zx::result<> wake = ufs_parent_->WakeFromRuntimeSleep(); wake.is_error()) {
+    fdf::warn("UfsRpmbDevice: Failed to wake from runtime sleep: {}", wake);
+  } else if (auto rpmb_desc_res = device_manager.ReadRpmbUnitDescriptor(); rpmb_desc_res.is_ok()) {
     const auto& rpmb_desc = rpmb_desc_res.value();
     uint64_t block_count = betoh64(rpmb_desc.qLogicalBlockCount);
     // bLogicalBlockSize is the exponent of 2
@@ -116,6 +117,10 @@ void UfsRpmbDevice::Request(RequestRequestView request, RequestCompleter::Sync& 
   // Since RPMB operations are low-throughput and typically used only during boot or
   // specific security events, serializing them is an acceptable trade-off to save memory.
   std::lock_guard<std::mutex> lock(lock_);
+  if (zx::result<> wake = ufs_parent_->WakeFromRuntimeSleep(); wake.is_error()) {
+    completer.Reply(wake.take_error());
+    return;
+  }
   const uint64_t page_size = zx_system_get_page_size();
   const uint8_t rpmb_lun = static_cast<uint8_t>(WellKnownLuns::kRpmb);
   const uint64_t tx_size = request->request.tx_frames.size;
