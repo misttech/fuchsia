@@ -1135,6 +1135,13 @@ pub struct InheritedProfileValues {
     pub critical_count: i32,
 }
 
+#[cold]
+#[inline(never)]
+#[track_caller]
+fn panic_inconsistent_ipv() -> ! {
+    panic!("inconsistent InheritedProfileValues");
+}
+
 impl InheritedProfileValues {
     /// Returns `true` if these values carry either some fair weight, some deadline utilization,
     /// or both.
@@ -1144,14 +1151,18 @@ impl InheritedProfileValues {
             || self.uncapped_utilization != SchedUtilization::from_raw(0)
     }
 
+    #[inline(always)]
     pub fn assert_consistency(&self) {
-        debug_assert!(self.total_weight >= SchedWeight::from_raw(0));
-        debug_assert!(self.uncapped_utilization >= SchedUtilization::from_raw(0));
-        debug_assert!(self.min_deadline > SchedDuration::from_raw(0));
-        debug_assert!(
-            self.uncapped_utilization == SchedUtilization::from_raw(0)
-                || self.min_deadline < SchedDuration::from_raw(i64::MAX)
-        );
+        if cfg!(debug_assertions) {
+            let ok = self.total_weight >= SchedWeight::from_raw(0)
+                && self.uncapped_utilization >= SchedUtilization::from_raw(0)
+                && self.min_deadline > SchedDuration::from_raw(0)
+                && (self.uncapped_utilization == SchedUtilization::from_raw(0)
+                    || self.min_deadline < SchedDuration::from_raw(i64::MAX));
+            if !ok {
+                panic_inconsistent_ipv();
+            }
+        }
     }
 }
 
@@ -1987,6 +1998,7 @@ impl WaitQueueInheritedSchedulerState {
     /// effective profile of any thread in the queue changes, either due to base
     /// profile changes or transitive propagation of upstream profile changes from
     /// owned wait queues that they own.
+    #[inline]
     pub fn get_effective_profile(&self) -> EffectiveProfile {
         let mut ep = EffectiveProfile {
             weight: SchedWeight::from_raw(0),
@@ -7994,17 +8006,17 @@ where
 /// - `owq` must point to a valid, initialized `OwnedWaitQueue` whose lock is
 ///   held exclusively by an active `ChainLockTransaction` (`TA_REQ(owq->get_lock())`)
 ///   and whose `inherited_scheduler_state_storage()` is non-null.
+#[inline]
+fn current_sched_time() -> SchedTime {
+    SchedTime::from_raw(crate::platform_rs::timer::current_mono_time().0)
+}
+
 unsafe fn pi_common_owq<F>(
     owq: *mut OwnedWaitQueue,
     update_dynamic_params: F,
     old_target_ep: Option<&EffectiveProfile>,
 ) where
-    F: FnOnce(
-        &mut WaitQueueInheritedSchedulerState,
-        &EffectiveProfile,
-        &EffectiveProfile,
-        SchedTime,
-    ),
+    F: FnOnce(&mut WaitQueueInheritedSchedulerState, &EffectiveProfile, &EffectiveProfile),
 {
     let _trace = local_ktrace_begin_scope!(COMMON, "Pi::Common(OwnedWaitQueue)");
     let old_ep = match old_target_ep {
@@ -8017,9 +8029,8 @@ unsafe fn pi_common_owq<F>(
     // SAFETY: `owq` is valid, locked exclusively by the caller, and has non-null
     // inherited scheduler state storage.
     let iss = unsafe { &mut *cpp_owq_get_inherited_state(owq) };
-    let now = SchedTime::from_raw(crate::platform_rs::timer::current_mono_time().0);
 
-    update_dynamic_params(iss, &old_ep, &new_ep, now);
+    update_dynamic_params(iss, &old_ep, &new_ep);
 
     if cfg!(debug_assertions) && iss.finish_time.raw_value() < 0 {
         panic_pi_negative_finish_time(iss.finish_time);
@@ -8040,7 +8051,7 @@ fn join_node_to_pi_graph_impl<U: PiNodeState, T: PiNodeState>(
     target: &mut T,
     target_old_ep: &EffectiveProfile,
     target_new_ep: &EffectiveProfile,
-    mono_now: SchedTime,
+    mono_now: impl FnOnce() -> SchedTime,
 ) {
     let upstream_ep = upstream.effective_profile();
 
@@ -8083,6 +8094,7 @@ fn join_node_to_pi_graph_impl<U: PiNodeState, T: PiNodeState>(
         // The target was already a deadline thread, then we need to recompute the
         // target's dynamic deadline parameters using the lag equation. Compute
         // the remaining periods of the target and upstream threads.
+        let mono_now = mono_now();
         let zero = SchedDuration::from_raw(0);
         let target_remaining_period = core::cmp::max(target.finish_time() - mono_now, zero);
         let upstream_remaining_period = core::cmp::max(upstream.finish_time() - mono_now, zero);
@@ -8145,7 +8157,7 @@ fn split_node_from_pi_graph_impl<U: PiNodeState, T: PiNodeState>(
     target: &mut T,
     target_old_ep: &EffectiveProfile,
     target_new_ep: &EffectiveProfile,
-    mono_now: SchedTime,
+    mono_now: impl FnOnce() -> SchedTime,
 ) {
     let upstream_ep = upstream.effective_profile();
 
@@ -8203,6 +8215,7 @@ fn split_node_from_pi_graph_impl<U: PiNodeState, T: PiNodeState>(
         // absolute deadlines are.
         if upstream_ep.is_deadline() {
             // Compute the time until absolute deadline of the target and upstream.
+            let mono_now = mono_now();
             let zero = SchedDuration::from_raw(0);
             let target_remaining_period = core::cmp::max(target.finish_time() - mono_now, zero);
             let upstream_remaining_period = core::cmp::max(upstream.finish_time() - mono_now, zero);
@@ -8380,7 +8393,7 @@ pub unsafe extern "C" fn rust_kernel_scheduler_pi_upstream_thread_base_profile_c
             .assert_dirty_state(EffectiveProfile::DIRTY_FLAG_CLEAN);
         pi_common_owq(
             target,
-            |target_iss, _target_old_ep, target_new_ep, _mono_now| {
+            |target_iss, _target_old_ep, target_new_ep| {
                 // Make sure the start and finish times are consistent with the bandwidth
                 // parameters of the deadline profile. Consistency in fair profiles is
                 // handled by `Scheduler::adjust_fair_bandwidth`.
@@ -8423,7 +8436,7 @@ pub unsafe extern "C" fn rust_kernel_scheduler_pi_join_thread_thread(
                 target_state,
                 target_old_ep,
                 target_new_ep,
-                mono_now,
+                || mono_now,
             );
         });
     }
@@ -8449,14 +8462,14 @@ pub unsafe extern "C" fn rust_kernel_scheduler_pi_join_thread_owq(
             .assert_dirty_state(EffectiveProfile::DIRTY_FLAG_CLEAN);
         pi_common_owq(
             target,
-            |target_iss, target_old_ep, target_new_ep, mono_now| {
+            |target_iss, target_old_ep, target_new_ep| {
                 let upstream_state = &*cpp_thread_get_scheduler_state(upstream.cast_mut());
                 join_node_to_pi_graph_impl(
                     upstream_state,
                     target_iss,
                     target_old_ep,
                     target_new_ep,
-                    mono_now,
+                    current_sched_time,
                 );
             },
             None,
@@ -8489,7 +8502,7 @@ pub unsafe extern "C" fn rust_kernel_scheduler_pi_join_owq_thread(
                 target_state,
                 target_old_ep,
                 target_new_ep,
-                mono_now,
+                || mono_now,
             );
         });
     }
@@ -8513,14 +8526,14 @@ pub unsafe extern "C" fn rust_kernel_scheduler_pi_join_owq_owq(
     unsafe {
         pi_common_owq(
             target,
-            |target_iss, target_old_ep, target_new_ep, mono_now| {
+            |target_iss, target_old_ep, target_new_ep| {
                 let upstream_iss = &*cpp_owq_get_inherited_state_const(upstream);
                 join_node_to_pi_graph_impl(
                     upstream_iss,
                     target_iss,
                     target_old_ep,
                     target_new_ep,
-                    mono_now,
+                    current_sched_time,
                 );
             },
             None,
@@ -8556,7 +8569,7 @@ pub unsafe extern "C" fn rust_kernel_scheduler_pi_split_thread_thread(
                 target_state,
                 target_old_ep,
                 target_new_ep,
-                mono_now,
+                || mono_now,
             );
         });
     }
@@ -8584,14 +8597,14 @@ pub unsafe extern "C" fn rust_kernel_scheduler_pi_split_thread_owq(
             .assert_dirty_state(EffectiveProfile::DIRTY_FLAG_CLEAN);
         pi_common_owq(
             target,
-            |target_iss, target_old_ep, target_new_ep, mono_now| {
+            |target_iss, target_old_ep, target_new_ep| {
                 let upstream_state = &mut *cpp_thread_get_scheduler_state(upstream);
                 split_node_from_pi_graph_impl(
                     upstream_state,
                     target_iss,
                     target_old_ep,
                     target_new_ep,
-                    mono_now,
+                    current_sched_time,
                 );
             },
             old_target_ep.as_ref(),
@@ -8623,7 +8636,7 @@ pub unsafe extern "C" fn rust_kernel_scheduler_pi_split_owq_thread(
                 target_state,
                 target_old_ep,
                 target_new_ep,
-                mono_now,
+                || mono_now,
             );
         });
     }
@@ -8649,14 +8662,14 @@ pub unsafe extern "C" fn rust_kernel_scheduler_pi_split_owq_owq(
     unsafe {
         pi_common_owq(
             target,
-            |target_iss, target_old_ep, target_new_ep, mono_now| {
+            |target_iss, target_old_ep, target_new_ep| {
                 let upstream_iss = &mut *cpp_owq_get_inherited_state(upstream);
                 split_node_from_pi_graph_impl(
                     upstream_iss,
                     target_iss,
                     target_old_ep,
                     target_new_ep,
-                    mono_now,
+                    current_sched_time,
                 );
             },
             old_target_ep.as_ref(),

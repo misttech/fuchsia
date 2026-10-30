@@ -528,10 +528,9 @@ impl WaitQueueCollection {
     /// The current minimum inheritable relative deadline of the set of blocked threads.
     #[inline]
     pub(crate) fn min_inheritable_relative_deadline(&self) -> SchedDuration {
-        if self.threads.is_empty() {
+        let Some(root_thread) = self.threads.root_cursor().get() else {
             return SchedDuration::from_raw(i64::MAX);
-        }
-        let root_thread = self.threads.root_cursor().get().expect("non-empty tree has a root");
+        };
         // SAFETY: The root thread is a member of this collection and, by the safety invariant,
         // the queue lock is held, which is the only lock `subtree_min_deadline` is written under
         // while the thread is in the tree.
@@ -578,6 +577,7 @@ impl WaitQueueCollection {
     ///   `blocked_threads_tree_sort_key` equal to [`PRIMARY_KEY_ZERO`] and `subtree_min_deadline`
     ///   equal to `DurationMono::INFINITE` when `debug_assertions` are enabled), and remains valid
     ///   and alive until it is removed from this collection.
+    #[inline]
     pub(crate) unsafe fn insert(&mut self, thread: &mut ChainLockProof<'_, Thread>) {
         wq_trace_depth(self, self.count() + 1);
 
@@ -608,6 +608,7 @@ impl WaitQueueCollection {
     ///   `WaitQueueCollection` and all threads currently in `self`.
     /// - Every node currently in `self` points to a valid, live [`Thread`].
     /// - `thread.owner()` is currently a member of `self`.
+    #[inline]
     pub(crate) unsafe fn remove(&mut self, thread: &mut ChainLockProof<'_, Thread>) {
         wq_trace_depth(self, self.count() - 1);
 
@@ -1124,7 +1125,7 @@ impl WaitQueueBase {
     /// - If `guard.owner().magic() == OWNED_MAGIC`, `guard.owner()` is the base subobject of a
     ///   live [`OwnedWaitQueue`](crate::kernel::owned_wait_queue::OwnedWaitQueue) with provenance
     ///   over the full `OwnedWaitQueue`.
-    #[inline]
+    #[inline(always)]
     pub unsafe fn unblock_thread(
         mut guard: OwnerGuard<'_, Self>,
         mut t_guard: OwnerGuard<'_, Thread>,
@@ -1163,8 +1164,9 @@ impl WaitQueueBase {
                 // Get the effective profile of the owned wait queue before propagation,
                 // which will recompute the effective profile of the queue. This is
                 // necessary for the scheduler PI logic to determine how the wait queue's
-                // effective profile changed.
-                let old_target_ep = owq_proof.get_effective_profile();
+                // effective profile changed when the queue has deadline pressure.
+                let old_target_ep =
+                    owq_proof.has_deadline_pressure().then(|| owq_proof.get_effective_profile());
                 // SAFETY: `t_proof.owner()` was just dequeued from `owq`, and the caller
                 // guarantees all downstream locks in the PI graph are held by the finalized
                 // transaction.
@@ -1174,7 +1176,7 @@ impl WaitQueueBase {
                         &mut owq_proof,
                         REMOVE_SINGLE_EDGE_OP,
                         ForceInheritance::No,
-                        Some(&old_target_ep),
+                        old_target_ep.as_ref(),
                         clt_token,
                         preempt_disabled_token,
                     );
@@ -1343,6 +1345,7 @@ impl WaitQueueBase {
                 let Some(wq_ptr) = t_proof.wait_queue_state().blocking_wait_queue(t_proof.token())
                 else {
                     debug_assert!(t_proof.state() == ThreadStateKind::Ready);
+                    thread_guard.release();
                     return DONE.into();
                 };
                 debug_assert!(
@@ -1363,6 +1366,7 @@ impl WaitQueueBase {
                 if unsafe { OwnedWaitQueue::lock_pi_chain_from_thread(&mut t_proof, token) }
                     == ChainLockResult::Backoff
                 {
+                    thread_guard.release();
                     return Action::Backoff.into();
                 }
             }

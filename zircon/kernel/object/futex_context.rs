@@ -248,6 +248,7 @@ impl ThreadDispatcher {
 struct WakeHook;
 
 impl IWakeRequeueHook for WakeHook {
+    #[inline]
     fn on_wake_or_requeue(&mut self, t: &mut ChainLockProof<'_, Thread>) {
         let t = ThreadPtr::from(t.owner());
         // Why is this safe?  Because there are two places that a blocking
@@ -289,6 +290,7 @@ struct RequeueHook<'a, 'b> {
 }
 
 impl IWakeRequeueHook for RequeueHook<'_, '_> {
+    #[inline]
     fn on_wake_or_requeue(&mut self, t: &mut ChainLockProof<'_, Thread>) {
         let t = ThreadPtr::from(t.owner());
         // SAFETY: `t` is a valid `ThreadPtr` whose ChainLock is held by the caller.

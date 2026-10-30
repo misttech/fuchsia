@@ -25,7 +25,6 @@ use crate::kernel::wait_queue::{
     ForceInheritance, Interruptible, ResourceOwnership, WaitQueueBase, WaitQueueCollection,
     WaitQueueLockClass, assert_in_wait_queue,
 };
-use crate::platform_rs::timer::{InstantMono, current_mono_time};
 use core::convert::Infallible;
 use core::ffi::c_void;
 use core::mem::{align_of, offset_of, size_of};
@@ -142,27 +141,35 @@ struct ChainLengthTracker<const OPTIONS: u32 = DEFAULT_CHAIN_LENGTH_TRACKER_OPT>
     nodes_visited: u32,
 }
 
+#[cold]
+#[inline(never)]
+fn panic_chain_length_exceeded(visited: u32) -> ! {
+    panic!("visited {}", visited);
+}
+
 impl<const OPTIONS: u32> ChainLengthTracker<OPTIONS> {
-    #[inline]
+    #[inline(always)]
     fn new() -> Self {
         Self { nodes_visited: 0 }
     }
 
-    #[inline]
+    #[inline(always)]
     fn node_visited(&mut self) {
         if OPTIONS != ChainLengthTrackerOpt::NONE {
-            self.nodes_visited += 1;
+            self.nodes_visited = self.nodes_visited.wrapping_add(1);
         }
 
         if (OPTIONS & ChainLengthTrackerOpt::ENFORCE_LENGTH_GUARD) != ChainLengthTrackerOpt::NONE {
             const MAX_CHAIN_LEN: u32 = 2048;
-            assert!(self.nodes_visited <= MAX_CHAIN_LEN, "visited {}", self.nodes_visited);
+            if self.nodes_visited > MAX_CHAIN_LEN {
+                panic_chain_length_exceeded(self.nodes_visited);
+            }
         }
     }
 }
 
 impl<const OPTIONS: u32> Drop for ChainLengthTracker<OPTIONS> {
-    #[inline]
+    #[inline(always)]
     fn drop(&mut self) {
         if (OPTIONS & ChainLengthTrackerOpt::ENFORCE_LENGTH_GUARD) != ChainLengthTrackerOpt::NONE {
             // Note, the only real reason that this is an accurate max at all is
@@ -170,10 +177,7 @@ impl<const OPTIONS: u32> Drop for ChainLengthTracker<OPTIONS> {
             // (although there is no real good way to annotate that fact).  When we
             // finally remove the thread lock, we are going to need to do better than
             // this.
-            let old = MAX_PI_CHAIN_TRAVERSE.value_curr_cpu();
-            if i64::from(self.nodes_visited) > old {
-                MAX_PI_CHAIN_TRAVERSE.set(u64::from(self.nodes_visited));
-            }
+            MAX_PI_CHAIN_TRAVERSE.max(i64::from(self.nodes_visited));
         }
     }
 }
@@ -503,6 +507,7 @@ pub trait IWakeRequeueHook {
     ///
     /// `allow` may be called multiple times for the same thread during a locking operation if the
     /// code needs to back off and attempt to lock the set of threads to be woken multiple times.
+    #[inline]
     fn allow(&mut self, _t: &Thread) -> bool {
         true
     }
@@ -511,6 +516,7 @@ pub trait IWakeRequeueHook {
     /// point, all of the threads to wake have been identified and successfully locked. This hook
     /// is called _just_ before the thread is removed from its queue, and either unblocked (wake
     /// operation) or moved to a different queue (requeue).
+    #[inline]
     fn on_wake_or_requeue(&mut self, _t: &mut ChainLockProof<'_, Thread>) {}
 }
 
@@ -978,12 +984,16 @@ impl PinnedDrop for OwnedWaitQueue {
 impl ChainLockProof<'_, OwnedWaitQueue> {
     /// Re-expresses this proof as one for the embedded [`WaitQueueBase`] (same lock instance).
     /// `self` is unusable while the returned proof lives.
+    #[inline(always)]
     pub(crate) fn as_base(&mut self) -> ChainLockProof<'_, WaitQueueBase> {
         let base: &WaitQueueBase = self.owner();
-        self.retag(base)
+        // SAFETY: `self` proves `self.owner().lock()` (which is `base.lock()`) is held, and the
+        // unique borrow of `self` prevents concurrent use of `self` while the returned proof lives.
+        unsafe { ChainLockProof::assume_held_unchecked(base) }
     }
 
     /// Returns the collection of blocked threads.
+    #[inline(always)]
     pub(crate) fn collection(&self) -> &WaitQueueCollection {
         // SAFETY: `self` proves `owner().lock()` (which is `owner().base.lock()`) is held, and
         // that lock guards `base.collection`.
@@ -998,6 +1008,7 @@ impl ChainLockProof<'_, OwnedWaitQueue> {
     /// `base.collection` and `inherited_scheduler_state_storage` (including restoring them
     /// before this queue's lock is released, after the transient states which that invariant
     /// permits).
+    #[inline(always)]
     pub(crate) unsafe fn collection_mut(&mut self) -> &mut WaitQueueCollection {
         let (queue, token) = self.split_mut();
         // SAFETY: As in `collection`; the unique borrow of `self` ensures no other reference to
@@ -1006,6 +1017,7 @@ impl ChainLockProof<'_, OwnedWaitQueue> {
     }
 
     /// Returns the current owner of this queue, if any.
+    #[inline(always)]
     pub(crate) fn owner_thread(&self) -> Option<ThreadPtr> {
         // SAFETY: `self` proves `owner().lock()` is held, and that lock guards `owner`.
         *unsafe { self.owner().owner.get(self.token()) }
@@ -1020,6 +1032,7 @@ impl ChainLockProof<'_, OwnedWaitQueue> {
     /// - Any owner stored must point to a live [`Thread`] whose `owned_wait_queues_` list
     ///   contains this queue.
     /// - `owner` must be `None` when the queue is dropped.
+    #[inline(always)]
     pub(crate) unsafe fn owner_thread_mut(&mut self) -> &mut Option<ThreadPtr> {
         let (queue, token) = self.split_mut();
         // SAFETY: As in `owner_thread`; the unique borrow of `self` ensures no other reference to
@@ -1028,6 +1041,7 @@ impl ChainLockProof<'_, OwnedWaitQueue> {
     }
 
     /// Returns the location of the inherited scheduler state storage, if any.
+    #[inline(always)]
     pub(crate) fn inherited_scheduler_state_storage(
         &self,
     ) -> Option<NonNull<WaitQueueInheritedSchedulerState>> {
@@ -1045,6 +1059,7 @@ impl ChainLockProof<'_, OwnedWaitQueue> {
     /// the `inherited_scheduler_state_storage` of a [`Thread`] currently blocked in
     /// `base.collection`, apart from the transient states which that invariant permits while this
     /// queue's lock is held).
+    #[inline(always)]
     pub(crate) unsafe fn inherited_scheduler_state_storage_mut(
         &mut self,
     ) -> &mut Option<NonNull<WaitQueueInheritedSchedulerState>> {
@@ -1086,6 +1101,17 @@ impl ChainLockProof<'_, OwnedWaitQueue> {
         self.owner_thread()
     }
 
+    /// Returns `true` if this wait queue currently has inherited deadline utilization pressure.
+    #[inline]
+    pub(crate) fn has_deadline_pressure(&self) -> bool {
+        self.inherited_scheduler_state_storage().is_some_and(|iss_ptr| {
+            // SAFETY: By the `inherited_scheduler_state_storage` safety invariant, `iss_ptr`
+            // points to the storage of a thread blocked in this queue, which is guarded by this
+            // queue's lock (held per `self`) and is not mutated while `self` is borrowed.
+            unsafe { (*iss_ptr.as_ptr()).ipvs.uncapped_utilization > SchedUtilization::from_raw(0) }
+        })
+    }
+
     /// Gets the effective profile of this `OwnedWaitQueue`.
     ///
     /// The effective profile of an `OwnedWaitQueue` is the composition of the effective profiles
@@ -1093,6 +1119,7 @@ impl ChainLockProof<'_, OwnedWaitQueue> {
     /// change as threads are added to or removed from the queue or when the effective profile of
     /// any thread in the queue changes, either due to base profile changes or transitive
     /// propagation of upstream profile changes from owned wait queues that they own.
+    #[inline]
     pub fn get_effective_profile(&self) -> EffectiveProfile {
         match self.inherited_scheduler_state_storage() {
             Some(iss_ptr) => {
@@ -1145,6 +1172,7 @@ impl ChainLockProof<'_, OwnedWaitQueue> {
     /// # Safety
     ///
     /// The caller must ensure that `t.owner()` was just removed from `self.owner()`'s collection.
+    #[inline]
     pub(crate) unsafe fn update_sched_state_storage_thread_removed(
         &mut self,
         t: &mut ChainLockProof<'_, Thread>,
@@ -1191,6 +1219,7 @@ impl ChainLockProof<'_, OwnedWaitQueue> {
     /// # Safety
     ///
     /// The caller must ensure that `t.owner()` was just added to `self.owner()`'s collection.
+    #[inline]
     unsafe fn update_sched_state_storage_thread_added(
         &mut self,
         t: &mut ChainLockProof<'_, Thread>,
@@ -1218,6 +1247,7 @@ impl ChainLockProof<'_, OwnedWaitQueue> {
     /// The caller must ensure that this queue is not destroyed while it has an owner (the
     /// `OwnedWaitQueue` ownership invariant, checked by `teardown`), since `owner`'s
     /// `owned_wait_queues_` list holds a raw pointer to it.
+    #[inline]
     unsafe fn set_owner(&mut self, owner: &mut ChainLockProof<'_, Thread>) {
         // If we are adding an owner to this OWQ, we should be able to assert that
         // it does not currently have one.
@@ -1239,6 +1269,7 @@ impl ChainLockProof<'_, OwnedWaitQueue> {
     /// # Safety
     ///
     /// The caller must ensure that `owner` is the current owner of this queue.
+    #[inline]
     unsafe fn reset_owner(&mut self, owner: &mut ChainLockProof<'_, Thread>) {
         debug_assert!(same_thread(self.owner_thread(), Some(owner.owner())));
         // SAFETY: `self.owner()` is a member of `owner`'s `owned_wait_queues_` list (it is the
@@ -1393,6 +1424,7 @@ impl OwnedWaitQueue {
     /// operations.  Snapshots and returns the combination of a thread's currently
     /// inherited profile values along with its base profile, which should be the
     /// profile pressure it is transmitting to the next node in the graph.
+    #[inline(always)]
     fn snapshot_thread_ipv(
         thread_proof: &ChainLockProof<'_, Thread>,
         force_inheritance: ForceInheritance,
@@ -1563,6 +1595,7 @@ impl OwnedWaitQueue {
     /// The caller must ensure that `owq`'s lock is held by the active transaction, that no other
     /// proof or guard for `owq` is used during the call, and that neither `old_ipv` nor `new_ipv`
     /// refers to `owq`'s inherited scheduler state storage.
+    #[inline]
     unsafe fn apply_ipv_delta_to_owq(
         old_ipv: Option<&InheritedProfileValues>,
         new_ipv: Option<&InheritedProfileValues>,
@@ -1598,6 +1631,13 @@ impl OwnedWaitQueue {
         iss.ipvs.assert_consistency();
     }
 
+    #[cold]
+    #[inline(never)]
+    #[track_caller]
+    fn panic_missing_owq_iss() -> ! {
+        panic!("OwnedWaitQueue has inherited scheduler state storage");
+    }
+
     /// Begin a propagation operation starting from an upstream thread, and going
     /// through a downstream owned wait queue.  Only for use during edge add/remove
     /// operations. Base profile changes call `finish_propagate` directly when
@@ -1615,6 +1655,7 @@ impl OwnedWaitQueue {
     /// `downstream_node` are held by the active transaction, and that no proofs or guards for
     /// those nodes are used during the call. (The locks of `upstream_node` and `downstream_node`
     /// themselves are proven held by their proofs.)
+    #[inline(always)]
     pub(crate) unsafe fn begin_propagate_thread_owq<Op: PropagateOpTag>(
         upstream_node: &mut ChainLockProof<'_, Thread>,
         downstream_node: &mut ChainLockProof<'_, OwnedWaitQueue>,
@@ -1629,6 +1670,50 @@ impl OwnedWaitQueue {
 
         let ipv_snapshot = Self::snapshot_thread_ipv(upstream_node, force_inheritance);
 
+        // Fast path for the common case of a fair thread blocking in or unblocking from an
+        // unowned wait queue (such as a standard non-PI futex): update the queue's inherited
+        // profile values in place without entering the multi-hop `finish_propagate` loop.
+        if ipv_snapshot.uncapped_utilization == SchedUtilization::from_raw(0)
+            && downstream_node.owner_thread().is_none()
+        {
+            if ipv_snapshot.total_weight == SchedWeight::from_raw(0) {
+                return;
+            }
+            // Callers insert the thread into `downstream_node` before `AddSingleEdge`,
+            // so `count()` must be non-zero. Conversely, callers dequeue the thread
+            // before `RemoveSingleEdge`, so `count()` is legitimately 0 when the last
+            // waiter leaves (while `inherited_scheduler_state_storage` stays valid
+            // until propagation finishes).
+            if Op::OP == PropagateOp::AddSingleEdge {
+                debug_assert!(downstream_node.count() > 0);
+            }
+            let Some(owq_iss_nn) = downstream_node.inherited_scheduler_state_storage() else {
+                Self::panic_missing_owq_iss();
+            };
+            let owq_iss = owq_iss_nn.as_ptr();
+            let min_deadline = downstream_node.collection().min_inheritable_relative_deadline();
+            // SAFETY: `owq_iss` is `downstream_node`'s storage, guarded by `downstream_node`'s
+            // lock (proven held by `downstream_node`), with no other references live.
+            unsafe {
+                (*owq_iss).ipvs.assert_consistency();
+                if Op::OP == PropagateOp::RemoveSingleEdge {
+                    (*owq_iss).ipvs.total_weight -= ipv_snapshot.total_weight;
+                    (*owq_iss).ipvs.critical_count -= ipv_snapshot.critical_count;
+                } else {
+                    (*owq_iss).ipvs.total_weight += ipv_snapshot.total_weight;
+                    (*owq_iss).ipvs.critical_count += ipv_snapshot.critical_count;
+                }
+                (*owq_iss).ipvs.min_deadline = min_deadline;
+                (*owq_iss).ipvs.assert_consistency();
+                if (*owq_iss).ipvs.uncapped_utilization == SchedUtilization::from_raw(0) {
+                    (*owq_iss).assert_dynamic_parameters_are_reset();
+                }
+            }
+            let mut len_tracker = ChainLengthTracker::<DEFAULT_CHAIN_LENGTH_TRACKER_OPT>::new();
+            len_tracker.node_visited();
+            return;
+        }
+
         // `finish_propagate` walks the chain using the nodes' locks directly. The unique borrows
         // of `upstream_node` and `downstream_node` keep those proofs unused during the call.
         let upstream_node: &Thread = upstream_node.owner();
@@ -1638,12 +1723,45 @@ impl OwnedWaitQueue {
         // locked by the active transaction, and no proofs or guards for those nodes are used
         // during the call.
         unsafe {
+            Self::begin_propagate_thread_owq_slow(
+                upstream_node,
+                downstream_node,
+                &ipv_snapshot,
+                op,
+                force_inheritance,
+                old_target_ep,
+                clt_token,
+                preempt_disabled_token,
+            );
+        }
+    }
+
+    /// Out-of-line slow path for [`Self::begin_propagate_thread_owq`] when deadline pressure is
+    /// present or `downstream_node` has an owner thread.
+    ///
+    /// # Safety
+    ///
+    /// Same as [`Self::finish_propagate`] for `upstream_node` and `downstream_node`.
+    #[allow(clippy::too_many_arguments)]
+    #[inline(never)]
+    unsafe fn begin_propagate_thread_owq_slow<Op: PropagateOpTag>(
+        upstream_node: &Thread,
+        downstream_node: &OwnedWaitQueue,
+        ipv_snapshot: &InheritedProfileValues,
+        op: Op,
+        force_inheritance: ForceInheritance,
+        old_target_ep: Option<&EffectiveProfile>,
+        clt_token: &ChainLockTransactionToken,
+        preempt_disabled_token: &PreemptDisabledToken,
+    ) {
+        // SAFETY: Forwarded from the caller.
+        unsafe {
             if Op::OP == PropagateOp::RemoveSingleEdge {
                 Self::finish_propagate(
                     upstream_node,
                     downstream_node,
                     None,
-                    Some(&ipv_snapshot),
+                    Some(ipv_snapshot),
                     op,
                     force_inheritance,
                     old_target_ep,
@@ -1654,7 +1772,7 @@ impl OwnedWaitQueue {
                 Self::finish_propagate(
                     upstream_node,
                     downstream_node,
-                    Some(&ipv_snapshot),
+                    Some(ipv_snapshot),
                     None,
                     op,
                     force_inheritance,
@@ -1929,11 +2047,13 @@ impl OwnedWaitQueue {
                 unsafe { (*owq_iss).ipvs.assert_consistency() };
                 // SAFETY: As above.
                 let utilization_before = unsafe { (*owq_iss).ipvs.uncapped_utilization };
-                let old_owq_ep = match old_target_ep {
-                    Some(old_target_ep) => *old_target_ep,
-                    // SAFETY: `owq_iter`'s lock is held as part of the locked PI chain.
-                    None => unsafe { assume_locked(owq_iter) }.get_effective_profile(),
-                };
+                let old_owq_ep = (utilization_before != SchedUtilization::from_raw(0)).then(|| {
+                    match old_target_ep {
+                        Some(old_target_ep) => *old_target_ep,
+                        // SAFETY: `owq_iter`'s lock is held as part of the locked PI chain.
+                        None => unsafe { assume_locked(owq_iter) }.get_effective_profile(),
+                    }
+                });
                 // SAFETY: `owq_iter`'s lock is held, and neither `lost_ipv` nor `added_ipv`
                 // refers to `owq_iter`'s storage (they refer to snapshots or to the storage of
                 // the upstream queue, which is never `owq_iter`).
@@ -1964,7 +2084,7 @@ impl OwnedWaitQueue {
                                 upstream_node,
                                 owq_iter,
                                 force_inheritance,
-                                Some(&old_owq_ep),
+                                old_owq_ep.as_ref(),
                                 clt_token,
                                 preempt_disabled_token,
                             );
@@ -1981,7 +2101,7 @@ impl OwnedWaitQueue {
                                 upstream_node,
                                 owq_iter,
                                 force_inheritance,
-                                Some(&old_owq_ep),
+                                old_owq_ep.as_ref(),
                                 clt_token,
                                 preempt_disabled_token,
                             );
@@ -2130,6 +2250,7 @@ impl OwnedWaitQueue {
     ///   `start.owner()`'s PI chain are already held.
     /// - If this call returns [`ChainLockResult::Ok`], any downstream locks acquired in
     ///   `start.owner()`'s PI chain are properly unlocked before ending the transaction.
+    #[inline]
     pub unsafe fn lock_pi_chain_from_thread(
         start: &mut ChainLockProof<'_, Thread>,
         clt_token: &ChainLockTransactionToken,
@@ -2166,6 +2287,7 @@ impl OwnedWaitQueue {
     ///   [`Self::lock_pi_chain`] for an `OwnedWaitQueue`).
     /// - If this call returns [`ChainLockResult::Ok`], any downstream locks acquired in
     ///   `start.owner()`'s PI chain are properly unlocked before ending the transaction.
+    #[inline]
     pub unsafe fn lock_pi_chain_from_wait_queue(
         start: &mut ChainLockProof<'_, WaitQueueBase>,
         clt_token: &ChainLockTransactionToken,
@@ -2198,6 +2320,7 @@ impl OwnedWaitQueue {
     ///   `start.owner()`'s PI chain are already held.
     /// - If this call returns [`ChainLockResult::Ok`], any downstream locks acquired in
     ///   `start.owner()`'s PI chain are properly unlocked before ending the transaction.
+    #[inline]
     pub unsafe fn lock_pi_chain(
         start: &mut ChainLockProof<'_, Self>,
         clt_token: &ChainLockTransactionToken,
@@ -2437,6 +2560,7 @@ impl OwnedWaitQueue {
         //
         // `thread`'s lock must be held by the active transaction, with no other proof or guard for
         // `thread` used during the call.
+        #[inline]
         unsafe fn blocking_wait_queue_of(thread: &Thread) -> Option<NonNull<WaitQueueBase>> {
             // SAFETY: Forwarded from the caller.
             let thread_proof = unsafe { assume_locked(thread) };
@@ -2702,6 +2826,7 @@ impl ChainLockProof<'_, OwnedWaitQueue> {
     ///   release the acquired locks via [`OwnedWaitQueue::block_and_assign_owner_locked`] or
     ///   [`OwnedWaitQueue::cancel_baao_operation_locked`] without intervening mutations to the
     ///   queue or locks.
+    #[inline]
     pub(crate) unsafe fn try_lock_for_baao_operation_locked<'a>(
         &mut self,
         current_thread: &'a Thread,
@@ -3157,10 +3282,10 @@ impl ChainLockProof<'_, OwnedWaitQueue> {
     ///   `unblock_list` via [`Self::wake_threads_locked`] on `self.owner()` before ending the
     ///   transaction (and must not drop `unblock_list` while non-empty).
     #[must_use]
-    pub(crate) unsafe fn lock_for_wake_operation_locked(
+    pub(crate) unsafe fn lock_for_wake_operation_locked<H: IWakeRequeueHook + ?Sized>(
         &mut self,
         max_wake: u32,
-        wake_hooks: &mut dyn IWakeRequeueHook,
+        wake_hooks: &mut H,
         unblock_list: Pin<&mut ThreadUnblockList>,
         clt_token: &ChainLockTransactionToken,
     ) -> bool {
@@ -3182,16 +3307,9 @@ impl ChainLockProof<'_, OwnedWaitQueue> {
 
         // Lock as many threads as we can, moving them out of our wait collection
         // and onto a temporary unblock list as we go.
-        let now = current_mono_time();
         // SAFETY: Forwarded from the caller.
         let locked = unsafe {
-            self.lock_and_make_waiter_list_locked(
-                now,
-                max_wake,
-                wake_hooks,
-                unblock_list,
-                clt_token,
-            )
+            self.lock_and_make_waiter_list_locked(max_wake, wake_hooks, unblock_list, clt_token)
         };
 
         // If we failed to lock the set of threads to wake, then we need to back off
@@ -3223,11 +3341,10 @@ impl ChainLockProof<'_, OwnedWaitQueue> {
     ///
     /// The caller must ensure that the transaction is not finalized, that no waiter thread locks
     /// are held, and that `res` is empty.
-    unsafe fn lock_and_make_waiter_list_locked(
+    unsafe fn lock_and_make_waiter_list_locked<H: IWakeRequeueHook + ?Sized>(
         &mut self,
-        now: InstantMono,
         max_count: u32,
-        hooks: &mut dyn IWakeRequeueHook,
+        hooks: &mut H,
         mut res: Pin<&mut ThreadUnblockList>,
         clt_token: &ChainLockTransactionToken,
     ) -> bool {
@@ -3235,13 +3352,7 @@ impl ChainLockProof<'_, OwnedWaitQueue> {
         // them back into the collection before returning.
         // SAFETY: Forwarded from the caller.
         let locked = unsafe {
-            self.try_lock_and_make_waiter_list_locked(
-                now,
-                max_count,
-                hooks,
-                res.as_mut(),
-                clt_token,
-            )
+            self.try_lock_and_make_waiter_list_locked(max_count, hooks, res.as_mut(), clt_token)
         };
         if locked {
             for t in res.iter() {
@@ -3268,13 +3379,15 @@ impl ChainLockProof<'_, OwnedWaitQueue> {
     /// The caller must ensure that the transaction is not finalized, that no waiter thread locks
     /// are held, and that the lists in `ret` are empty.
     #[allow(clippy::too_many_arguments)]
-    unsafe fn lock_and_make_wake_requeue_thread_lists_locked(
+    unsafe fn lock_and_make_wake_requeue_thread_lists_locked<
+        WH: IWakeRequeueHook + ?Sized,
+        RH: IWakeRequeueHook + ?Sized,
+    >(
         &mut self,
-        now: InstantMono,
         max_wake_count: u32,
-        wake_hooks: &mut dyn IWakeRequeueHook,
+        wake_hooks: &mut WH,
         max_requeue_count: u32,
-        requeue_hooks: &mut dyn IWakeRequeueHook,
+        requeue_hooks: &mut RH,
         ret: Pin<&mut WakeRequeueThreadDetails>,
         clt_token: &ChainLockTransactionToken,
     ) -> bool {
@@ -3283,7 +3396,6 @@ impl ChainLockProof<'_, OwnedWaitQueue> {
         // SAFETY: Forwarded from the caller.
         if !unsafe {
             self.try_lock_and_make_waiter_list_locked(
-                now,
                 max_wake_count,
                 wake_hooks,
                 ret.wake_threads.as_mut(),
@@ -3300,7 +3412,6 @@ impl ChainLockProof<'_, OwnedWaitQueue> {
         // SAFETY: Forwarded from the caller.
         if !unsafe {
             self.try_lock_and_make_waiter_list_locked(
-                now,
                 max_requeue_count,
                 requeue_hooks,
                 ret.requeue_threads.as_mut(),
@@ -3341,11 +3452,10 @@ impl ChainLockProof<'_, OwnedWaitQueue> {
     /// The caller must ensure that the transaction is not finalized, that no waiter thread locks
     /// are held, that `list` is empty on entry, and that on success, the threads moved onto `list`
     /// are returned to the collection before this queue's lock is released.
-    unsafe fn try_lock_and_make_waiter_list_locked(
+    unsafe fn try_lock_and_make_waiter_list_locked<H: IWakeRequeueHook + ?Sized>(
         &mut self,
-        _now: InstantMono,
         max_count: u32,
-        hooks: &mut dyn IWakeRequeueHook,
+        hooks: &mut H,
         mut list: Pin<&mut ThreadUnblockList>,
         clt_token: &ChainLockTransactionToken,
     ) -> bool {
@@ -3668,10 +3778,10 @@ impl ChainLockProof<'_, OwnedWaitQueue> {
     /// - The active transaction has been finalized via
     ///   [`ChainLockTransaction::finalize`](crate::kconcurrent::ChainLockTransaction::finalize).
     /// - If `option == WakeOption::AssignOwner`, `threads` contains at most one thread.
-    pub(crate) unsafe fn wake_threads_locked(
+    pub(crate) unsafe fn wake_threads_locked<H: IWakeRequeueHook + ?Sized>(
         &mut self,
         mut threads: Pin<&mut ThreadUnblockList>,
-        wake_hooks: &mut dyn IWakeRequeueHook,
+        wake_hooks: &mut H,
         option: WakeOption,
         force_inheritance: ForceInheritance,
         clt_token: &ChainLockTransactionToken,
@@ -3715,7 +3825,8 @@ impl ChainLockProof<'_, OwnedWaitQueue> {
 
                 // Remove this thread from our collection, then remove its contributions to
                 // our IPVs.
-                let old_target_ep = self.get_effective_profile();
+                let old_target_ep =
+                    self.has_deadline_pressure().then(|| self.get_effective_profile());
                 // SAFETY: `t` is blocked in this queue, and the storage is updated below.
                 unsafe { self.as_base().dequeue(&mut t_proof, Ok(())) };
                 // SAFETY: `t` was just removed from this queue, and the caller guarantees that the
@@ -3726,7 +3837,7 @@ impl ChainLockProof<'_, OwnedWaitQueue> {
                         self,
                         REMOVE_SINGLE_EDGE_OP,
                         force_inheritance,
-                        Some(&old_target_ep),
+                        old_target_ep.as_ref(),
                         clt_token,
                         preempt_disabled_token,
                     );
@@ -3791,10 +3902,11 @@ impl OwnedWaitQueue {
     ///   `unblock_list` via [`ChainLockProof::wake_threads_locked`] on `self` and release the
     ///   returned [`OwnerGuard`] before ending the transaction (and must not drop `unblock_list`
     ///   while non-empty).
-    pub(crate) unsafe fn lock_for_wake_operation_or_backoff<'a>(
+    #[inline]
+    pub(crate) unsafe fn lock_for_wake_operation_or_backoff<'a, H: IWakeRequeueHook + ?Sized>(
         &'a self,
         max_wake: u32,
-        wake_hooks: &mut dyn IWakeRequeueHook,
+        wake_hooks: &mut H,
         unblock_list: Pin<&mut ThreadUnblockList>,
         clt_token: &'a ChainLockTransactionToken,
     ) -> Option<OwnerGuard<'a, Self>> {
@@ -3833,14 +3945,18 @@ impl OwnedWaitQueue {
     /// [`Self::wake_and_requeue_internal`]. On failure (`None`), the contents of
     /// `requeue_locking_details_out` are unspecified (but its lists are empty).
     #[allow(clippy::too_many_arguments)]
-    unsafe fn lock_for_requeue_operation_or_backoff<'a>(
+    unsafe fn lock_for_requeue_operation_or_backoff<
+        'a,
+        WH: IWakeRequeueHook + ?Sized,
+        RH: IWakeRequeueHook + ?Sized,
+    >(
         &'a self,
         requeue_target: &'a OwnedWaitQueue,
         new_requeue_target_owner: Option<&Thread>,
         max_wake: u32,
         max_requeue: u32,
-        wake_hooks: &mut dyn IWakeRequeueHook,
-        requeue_hooks: &mut dyn IWakeRequeueHook,
+        wake_hooks: &mut WH,
+        requeue_hooks: &mut RH,
         requeue_locking_details_out: Pin<&mut RequeueLockingDetails>,
         clt_token: &'a ChainLockTransactionToken,
     ) -> Option<(OwnerGuard<'a, Self>, OwnerGuard<'a, Self>)> {
@@ -3928,7 +4044,6 @@ impl OwnedWaitQueue {
             // SAFETY: Forwarded from the caller.
             let locked = unsafe {
                 guard.proof().lock_and_make_wake_requeue_thread_lists_locked(
-                    current_mono_time(),
                     max_wake,
                     wake_hooks,
                     max_requeue,
@@ -4144,6 +4259,7 @@ impl OwnedWaitQueue {
     ///   release the acquired locks via [`Self::block_and_assign_owner_locked`] or
     ///   [`Self::cancel_baao_operation_locked`] without intervening mutations to the queue or
     ///   locks.
+    #[inline]
     pub unsafe fn lock_for_baao_operation_or_backoff<'a>(
         &'a self,
         current_thread: &'a Thread,
@@ -4152,13 +4268,8 @@ impl OwnedWaitQueue {
     ) -> Option<(BAAOLockingDetails, OwnerGuard<'a, Self>, OwnerGuard<'a, Thread>)> {
         assert_transaction_active(clt_token);
         debug_assert_lock_not_held(self.lock());
-        debug_assert_lock_not_held(current_thread.lock());
-        debug_assert!(core::ptr::eq(
-            current_thread.as_raw(),
-            // SAFETY: Multi-threading is initialized when blocking a thread.
-            unsafe { ThreadPtr::current() }.as_raw()
-        ));
-        // Start by locking this queue.
+        // Start by locking this queue (`try_lock_for_baao_operation_locked` checks `current_thread`
+        // and its lock immediately afterwards).
         let mut guard = OwnerGuard::new(self, clt_token);
 
         // Now try to lock the rest of the things we need to lock, adjusting the
@@ -4276,6 +4387,7 @@ impl OwnedWaitQueue {
                 proof.owner_thread().filter(|_| proof.is_empty())
             };
             let Some(owner) = owner else {
+                guard.release();
                 return DONE.into();
             };
 
@@ -4286,6 +4398,7 @@ impl OwnedWaitQueue {
             // lock is held.
             let owner: &Thread = unsafe { owner.as_ref() };
             let Some(mut owner_guard) = OwnerGuard::acquire_or_backoff(owner, token) else {
+                guard.release();
                 return Action::Backoff.into();
             };
 
@@ -4295,6 +4408,7 @@ impl OwnedWaitQueue {
             // which has been held since).
             unsafe { guard.proof().reset_owner(&mut owner_guard.proof()) };
             owner_guard.release();
+            guard.release();
 
             DONE.into()
         };
@@ -4418,7 +4532,8 @@ impl OwnedWaitQueue {
         ));
         debug_assert!(guard.owner().magic() == OWNED_MAGIC);
         debug_assert!(current_thread.state() == ThreadStateKind::Running);
-        let active_clt = ChainLockTransaction::active_ref(clt_token);
+        let active_clt =
+            (!cfg!(lk_debuglevel = "0")).then(|| ChainLockTransaction::active_ref(clt_token));
         let current_thread_ptr = Some(ThreadPtr::from(current_thread.owner()));
 
         let this: *const WaitQueueBase = {
@@ -4557,7 +4672,9 @@ impl OwnedWaitQueue {
                 // Now drop our lock and get out.  We should be holding only the current
                 // thread's lock as we exit.
                 guard.release();
-                active_clt.assert_num_locks_held(1);
+                if let Some(active_clt) = active_clt {
+                    active_clt.assert_num_locks_held(1);
+                }
                 return Err(res);
             }
 
@@ -4622,7 +4739,9 @@ impl OwnedWaitQueue {
             // (however, it may be with a different lock token).
             let this: *const WaitQueueBase = core::ptr::from_ref(guard.owner()).cast();
             guard.release();
-            active_clt.assert_num_locks_held(1);
+            if let Some(active_clt) = active_clt {
+                active_clt.assert_num_locks_held(1);
+            }
             this
         };
 
@@ -4647,8 +4766,10 @@ impl OwnedWaitQueue {
         // transaction, `this` was captured before releasing the queue lock, and the caller
         // upholds the blocking preconditions.
         let res = unsafe { WaitQueueBase::block_etc_postamble(this, t, deadline, clt_token) };
-        debug_assert!(ChainLockTransaction::active() == Some(NonNull::from(active_clt)));
-        active_clt.assert_num_locks_held(1);
+        if let Some(active_clt) = active_clt {
+            debug_assert!(ChainLockTransaction::active() == Some(NonNull::from(active_clt)));
+            active_clt.assert_num_locks_held(1);
+        }
         res
     }
 
@@ -4725,10 +4846,10 @@ impl OwnedWaitQueue {
 
     /// Wakes up to the specified number of threads from the wait queue, removing any current queue
     /// owner in the process.
-    pub fn wake_threads(
+    pub fn wake_threads<H: IWakeRequeueHook + ?Sized>(
         &self,
         wake_count: u32,
-        wake_hooks: &mut dyn IWakeRequeueHook,
+        wake_hooks: &mut H,
     ) -> WakeThreadsResult {
         assert_no_transaction_active();
         let mut result = WakeThreadsResult::default();
@@ -4742,7 +4863,7 @@ impl OwnedWaitQueue {
             if let Some(mut guard) = unsafe {
                 self.lock_for_wake_operation_or_backoff(
                     wake_count,
-                    &mut *wake_hooks,
+                    wake_hooks,
                     threads.as_mut(),
                     token,
                 )
@@ -4753,7 +4874,7 @@ impl OwnedWaitQueue {
                 result = unsafe {
                     guard.proof().wake_threads_locked(
                         threads.as_mut(),
-                        &mut *wake_hooks,
+                        wake_hooks,
                         WakeOption::None,
                         ForceInheritance::No,
                         token,
@@ -4775,9 +4896,9 @@ impl OwnedWaitQueue {
 
     /// Attempts to wake exactly one thread, and assigns ownership of the queue to the woken thread
     /// (if any).
-    pub fn wake_thread_and_assign_owner(
+    pub fn wake_thread_and_assign_owner<H: IWakeRequeueHook + ?Sized>(
         &self,
-        wake_hooks: &mut dyn IWakeRequeueHook,
+        wake_hooks: &mut H,
     ) -> WakeThreadsResult {
         assert_no_transaction_active();
         let mut result = WakeThreadsResult::default();
@@ -4789,12 +4910,7 @@ impl OwnedWaitQueue {
             // SAFETY: The transaction holds no locks and `threads` is empty. On success, the
             // locks are processed by `wake_threads_locked` and `guard.release()`.
             if let Some(mut guard) = unsafe {
-                self.lock_for_wake_operation_or_backoff(
-                    1,
-                    &mut *wake_hooks,
-                    threads.as_mut(),
-                    token,
-                )
+                self.lock_for_wake_operation_or_backoff(1, wake_hooks, threads.as_mut(), token)
             } {
                 ChainLockTransaction::finalize(token);
                 // SAFETY: `threads` was populated by `lock_for_wake_operation_or_backoff` with
@@ -4802,7 +4918,7 @@ impl OwnedWaitQueue {
                 result = unsafe {
                     guard.proof().wake_threads_locked(
                         threads.as_mut(),
-                        &mut *wake_hooks,
+                        wake_hooks,
                         WakeOption::AssignOwner,
                         ForceInheritance::No,
                         token,
@@ -4845,14 +4961,14 @@ impl OwnedWaitQueue {
     ///   thread after its lock has already been released by `scheduler::unblock`, which would be
     ///   a data race (and violates the safety contract of `wake_threads_locked`).
     #[allow(clippy::too_many_arguments)]
-    pub fn wake_and_requeue(
+    pub fn wake_and_requeue<WH: IWakeRequeueHook + ?Sized, RH: IWakeRequeueHook + ?Sized>(
         &self,
         requeue_target: &OwnedWaitQueue,
         new_requeue_owner: Option<&Thread>,
         wake_count: u32,
         requeue_count: u32,
-        wake_hooks: &mut dyn IWakeRequeueHook,
-        requeue_hooks: &mut dyn IWakeRequeueHook,
+        wake_hooks: &mut WH,
+        requeue_hooks: &mut RH,
         wake_option: WakeOption,
     ) -> WakeThreadsResult {
         assert_no_transaction_active();
@@ -4878,8 +4994,8 @@ impl OwnedWaitQueue {
                     new_requeue_owner,
                     wake_count,
                     requeue_count,
-                    &mut *wake_hooks,
-                    &mut *requeue_hooks,
+                    wake_hooks,
+                    requeue_hooks,
                     details.as_mut(),
                     token,
                 )
@@ -4892,8 +5008,8 @@ impl OwnedWaitQueue {
                         guard,
                         requeue_target_guard,
                         details.as_mut(),
-                        &mut *wake_hooks,
-                        &mut *requeue_hooks,
+                        wake_hooks,
+                        requeue_hooks,
                         wake_option,
                         token,
                         &preempt_disabled,
@@ -4934,12 +5050,15 @@ impl OwnedWaitQueue {
     /// a preceding successful call to [`Self::lock_for_requeue_operation_or_backoff`] in the
     /// current transaction, with no intervening mutations, and that the transaction is finalized.
     #[allow(clippy::too_many_arguments)]
-    unsafe fn wake_and_requeue_internal(
+    unsafe fn wake_and_requeue_internal<
+        WH: IWakeRequeueHook + ?Sized,
+        RH: IWakeRequeueHook + ?Sized,
+    >(
         mut guard: OwnerGuard<'_, Self>,
         mut requeue_target_guard: OwnerGuard<'_, Self>,
         details: Pin<&mut RequeueLockingDetails>,
-        wake_hooks: &mut dyn IWakeRequeueHook,
-        requeue_hooks: &mut dyn IWakeRequeueHook,
+        wake_hooks: &mut WH,
+        requeue_hooks: &mut RH,
         wake_option: WakeOption,
         clt_token: &ChainLockTransactionToken,
         preempt_disabled_token: &PreemptDisabledToken,
@@ -5034,7 +5153,10 @@ impl OwnedWaitQueue {
                 requeue_hooks.on_wake_or_requeue(&mut t_proof);
 
                 // Actually move the thread from this to the requeue_target.
-                let old_target_ep = guard.proof().get_effective_profile();
+                let old_target_ep = {
+                    let proof = guard.proof();
+                    proof.has_deadline_pressure().then(|| proof.get_effective_profile())
+                };
                 // SAFETY: `t` is blocked in this queue, and the storage is updated below.
                 unsafe { guard.proof().collection_mut().remove(&mut t_proof) };
                 // SAFETY: `t` was just removed from this queue's collection.
@@ -5049,7 +5171,7 @@ impl OwnedWaitQueue {
                         &mut guard.proof(),
                         REMOVE_SINGLE_EDGE_OP,
                         ForceInheritance::No,
-                        Some(&old_target_ep),
+                        old_target_ep.as_ref(),
                         clt_token,
                         preempt_disabled_token,
                     );
