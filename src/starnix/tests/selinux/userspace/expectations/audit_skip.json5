@@ -1,6 +1,7 @@
 {
     "audit-skip": [
         // These tests do not produce any useful audit logs.
+        "NetlinkAuditTest.AvcHexEscapesComm",
         "NetlinkAuditTest.ChildDaemonReadsParentsMessageFromNewSocket",
         "NetlinkAuditTest.DeregisterInexistentAuditDaemon",
         "NetlinkAuditTest.ForkedChildReadsParentsQueuedMessage",

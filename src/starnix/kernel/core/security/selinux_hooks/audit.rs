@@ -249,10 +249,11 @@ pub(super) fn audit_decision(
             // Gather details about the calling task.
             let pid = current_task.get_pid();
             let command = current_task.command();
+            let command = hex_escape(command.comm_name());
 
             let is_permissive = result.permissive as u8;
 
-            format!("avc: {decision} {{ {permission_names} }} for pid={pid} comm=\"{command}\"{audit_data} scontext={scontext} tcontext={tcontext} tclass={tclass} permissive={is_permissive}")
+            format!("avc: {decision} {{ {permission_names} }} for pid={pid} comm={command}{audit_data} scontext={scontext} tcontext={tcontext} tclass={tclass} permissive={is_permissive}")
         }
     );
 }
@@ -302,11 +303,11 @@ impl Display for Auditable<'_> {
                 write!(f, " path={}", hex_escape(&path))
             }
             Auditable::SockOptArguments(level, optname) => {
-                write!(f, " level={}, optname={}", level, optname)
+                write!(f, " level={} optname={}", level, optname)
             }
             Auditable::None => Ok(()),
             Auditable::Task(task) => {
-                write!(f, " pid={}, comm={}", task.get_pid(), task.command())
+                write!(f, " pid={} comm={}", task.get_pid(), hex_escape(task.command().comm_name()))
             }
         }
     }
@@ -318,13 +319,13 @@ struct EscapedString<'a> {
 
 impl<'a> Display for EscapedString<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), Error> {
-        // SELinux escapes strings containing spaces or control characters, to prevent userspace
-        // being able to construct names that confuse audit-log parsing tooling.
+        // SELinux escapes strings containing spaces, quotes, or control characters, to prevent
+        // userspace being able to construct names that confuse audit-log parsing tooling.
         // Additionally enforcing that strings are valid UTF-8 encoded allows non-UTF-8 strings to
         // be expressed losslessy (via hex escaping) rather than being formatted lossily by `bstr`.
         let maybe_utf8 = str::from_utf8(self.value).ok();
         if let Some(utf8) = maybe_utf8 {
-            if utf8.find(|c| c <= ' ').is_none() {
+            if utf8.find(|c| c <= ' ' || c == '"' || c == '\x7f').is_none() {
                 return write!(f, "\"{}\"", BStr::new(self.value));
             }
         }
@@ -334,4 +335,25 @@ impl<'a> Display for EscapedString<'a> {
 
 fn hex_escape<'a>(value: &'a [u8]) -> EscapedString<'a> {
     EscapedString { value }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::hex_escape;
+
+    #[::fuchsia::test]
+    fn hex_escape_printable_ascii() {
+        assert_eq!(hex_escape(b"normal_name-1.0").to_string(), "\"normal_name-1.0\"");
+        assert_eq!(hex_escape(b"").to_string(), "\"\"");
+    }
+
+    #[::fuchsia::test]
+    fn hex_escape_spaces_quotes_and_control_chars() {
+        assert_eq!(hex_escape(b"has space").to_string(), "686173207370616365");
+        assert_eq!(hex_escape(b"has\"quote").to_string(), "6861732271756F7465");
+        assert_eq!(hex_escape(b"has\nnewline").to_string(), "6861730A6E65776C696E65");
+        assert_eq!(hex_escape(b"has\x01ctrl").to_string(), "686173016374726C");
+        assert_eq!(hex_escape(b"has\x7fdel").to_string(), "6861737F64656C");
+        assert_eq!(hex_escape(b"invalid\xffutf8").to_string(), "696E76616C6964FF75746638");
+    }
 }

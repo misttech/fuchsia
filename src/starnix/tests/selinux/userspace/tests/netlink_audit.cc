@@ -6,6 +6,7 @@
 #include <lib/fit/defer.h>
 #include <lib/fit/function.h>
 #include <lib/fit/result.h>
+#include <sys/prctl.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -214,6 +215,84 @@ TEST(NetlinkAuditTest, SocketCreateDenied) {
     EXPECT_THAT(socket(AF_NETLINK, SOCK_RAW, NETLINK_AUDIT), SyscallFailsWithErrno(EACCES))
         << "Netlink socket open should fail";
   }));
+}
+
+std::string ReadNextAvcMessage(int fd) {
+  char buf[NETLINK_BUF_SIZE]{};
+  while (true) {
+    auto recv_res = ReceiveNetlinkMessage(fd, buf, sizeof(buf));
+    if (recv_res.is_error()) {
+      ADD_FAILURE() << "ReceiveNetlinkMessage failed: " << strerror(recv_res.error_value());
+      return "";
+    }
+    if (recv_res.value() < static_cast<int>(NLMSG_HDRLEN)) {
+      ADD_FAILURE() << "Short netlink message: " << recv_res.value();
+      return "";
+    }
+    auto* nlh = reinterpret_cast<struct nlmsghdr*>(buf);
+    if (nlh->nlmsg_type == AUDIT_AVC) {
+      std::string msg(static_cast<char*>(NLMSG_DATA(nlh)),
+                      static_cast<char*>(NLMSG_DATA(nlh)) + (recv_res.value() - NLMSG_HDRLEN));
+      if (msg.find("scontext=test_u:test_r:audit_netlink_restricted_test_t:s0") !=
+          std::string::npos) {
+        return msg;
+      }
+    }
+  }
+}
+
+TEST(NetlinkAuditTest, AvcHexEscapesComm) {
+  struct EscapeCase {
+    const char* comm;
+    const char* expected_comm_field;
+  };
+
+  constexpr EscapeCase kCases[] = {
+      {
+          .comm = "normal_name-1.0",
+          .expected_comm_field = " comm=\"normal_name-1.0\" ",
+      },
+      {
+          .comm = "has space",
+          .expected_comm_field = " comm=686173207370616365 ",
+      },
+      {
+          .comm = "has\"quote",
+          .expected_comm_field = " comm=6861732271756F7465 ",
+      },
+      {
+          .comm = "has\nnewline",
+          .expected_comm_field = " comm=6861730A6E65776C696E65 ",
+      },
+      {
+          .comm = "has\x01"
+                  "ctrl",
+          .expected_comm_field = " comm=686173016374726C ",
+      },
+      {
+          .comm = "has\x7f"
+                  "del",
+          .expected_comm_field = " comm=6861737F64656C ",
+      },
+  };
+
+  fbl::unique_fd audit_fd = OpenNetlinkAuditSocket();
+  ASSERT_TRUE(audit_fd.is_valid());
+  ASSERT_TRUE(RegisterAsAuditDaemon(audit_fd.get()).is_ok());
+  auto unregister = fit::defer([&] { EXPECT_TRUE(UnregisterAuditDaemon(audit_fd.get()).is_ok()); });
+
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
+  for (const auto& test_case : kCases) {
+    ASSERT_TRUE(RunSubprocessAs("test_u:test_r:audit_netlink_restricted_test_t:s0", [&] {
+      ASSERT_THAT(prctl(PR_SET_NAME, test_case.comm, 0, 0, 0), SyscallSucceeds());
+      EXPECT_THAT(socket(AF_NETLINK, SOCK_RAW, NETLINK_AUDIT), SyscallFailsWithErrno(EACCES));
+    }));
+
+    std::string avc = ReadNextAvcMessage(audit_fd.get());
+    EXPECT_NE(avc.find(test_case.expected_comm_field), std::string::npos)
+        << "Expected '" << test_case.expected_comm_field << "' in AVC log: " << avc;
+  }
 }
 
 struct SendTestParam {
