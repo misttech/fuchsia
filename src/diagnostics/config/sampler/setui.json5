@@ -254,6 +254,33 @@
                 },
                 {
                     event_codes: [
+                        "Accessibility",
+                        "AlreadySubscribed",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/Accessibility/AlreadySubscribed:count",
+                },
+                {
+                    event_codes: [
+                        "Accessibility",
+                        "MaximumInputDevicesReached",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/Accessibility/MaximumInputDevicesReached:count",
+                },
+                {
+                    event_codes: [
+                        "Accessibility",
+                        "Cancelled",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/Accessibility/Cancelled:count",
+                },
+                {
+                    event_codes: [
                         "Audio",
                         "OkSome",
                     ],
@@ -404,6 +431,33 @@
                     metric_name: "request_responses",
                     metric_type: "Occurrence",
                     selector: "core/setui_service:root/response_counts/Audio/TimeoutError:count",
+                },
+                {
+                    event_codes: [
+                        "Audio",
+                        "AlreadySubscribed",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/Audio/AlreadySubscribed:count",
+                },
+                {
+                    event_codes: [
+                        "Audio",
+                        "MaximumInputDevicesReached",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/Audio/MaximumInputDevicesReached:count",
+                },
+                {
+                    event_codes: [
+                        "Audio",
+                        "Cancelled",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/Audio/Cancelled:count",
                 },
                 {
                     event_codes: [
@@ -560,6 +614,33 @@
                 },
                 {
                     event_codes: [
+                        "AudioPolicy",
+                        "AlreadySubscribed",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/AudioPolicy/AlreadySubscribed:count",
+                },
+                {
+                    event_codes: [
+                        "AudioPolicy",
+                        "MaximumInputDevicesReached",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/AudioPolicy/MaximumInputDevicesReached:count",
+                },
+                {
+                    event_codes: [
+                        "AudioPolicy",
+                        "Cancelled",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/AudioPolicy/Cancelled:count",
+                },
+                {
+                    event_codes: [
                         "Display",
                         "OkSome",
                     ],
@@ -710,6 +791,33 @@
                     metric_name: "request_responses",
                     metric_type: "Occurrence",
                     selector: "core/setui_service:root/response_counts/Display/TimeoutError:count",
+                },
+                {
+                    event_codes: [
+                        "Display",
+                        "AlreadySubscribed",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/Display/AlreadySubscribed:count",
+                },
+                {
+                    event_codes: [
+                        "Display",
+                        "MaximumInputDevicesReached",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/Display/MaximumInputDevicesReached:count",
+                },
+                {
+                    event_codes: [
+                        "Display",
+                        "Cancelled",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/Display/Cancelled:count",
                 },
                 {
                     event_codes: [
@@ -866,6 +974,33 @@
                 },
                 {
                     event_codes: [
+                        "DoNotDisturb",
+                        "AlreadySubscribed",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/DoNotDisturb/AlreadySubscribed:count",
+                },
+                {
+                    event_codes: [
+                        "DoNotDisturb",
+                        "MaximumInputDevicesReached",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/DoNotDisturb/MaximumInputDevicesReached:count",
+                },
+                {
+                    event_codes: [
+                        "DoNotDisturb",
+                        "Cancelled",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/DoNotDisturb/Cancelled:count",
+                },
+                {
+                    event_codes: [
                         "FactoryReset",
                         "OkSome",
                     ],
@@ -1016,6 +1151,33 @@
                     metric_name: "request_responses",
                     metric_type: "Occurrence",
                     selector: "core/setui_service:root/response_counts/FactoryReset/TimeoutError:count",
+                },
+                {
+                    event_codes: [
+                        "FactoryReset",
+                        "AlreadySubscribed",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/FactoryReset/AlreadySubscribed:count",
+                },
+                {
+                    event_codes: [
+                        "FactoryReset",
+                        "MaximumInputDevicesReached",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/FactoryReset/MaximumInputDevicesReached:count",
+                },
+                {
+                    event_codes: [
+                        "FactoryReset",
+                        "Cancelled",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/FactoryReset/Cancelled:count",
                 },
                 {
                     event_codes: [
@@ -1172,6 +1334,33 @@
                 },
                 {
                     event_codes: [
+                        "Input",
+                        "AlreadySubscribed",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/Input/AlreadySubscribed:count",
+                },
+                {
+                    event_codes: [
+                        "Input",
+                        "MaximumInputDevicesReached",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/Input/MaximumInputDevicesReached:count",
+                },
+                {
+                    event_codes: [
+                        "Input",
+                        "Cancelled",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/Input/Cancelled:count",
+                },
+                {
+                    event_codes: [
                         "Intl",
                         "OkSome",
                     ],
@@ -1322,6 +1511,33 @@
                     metric_name: "request_responses",
                     metric_type: "Occurrence",
                     selector: "core/setui_service:root/response_counts/Intl/TimeoutError:count",
+                },
+                {
+                    event_codes: [
+                        "Intl",
+                        "AlreadySubscribed",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/Intl/AlreadySubscribed:count",
+                },
+                {
+                    event_codes: [
+                        "Intl",
+                        "MaximumInputDevicesReached",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/Intl/MaximumInputDevicesReached:count",
+                },
+                {
+                    event_codes: [
+                        "Intl",
+                        "Cancelled",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/Intl/Cancelled:count",
                 },
                 {
                     event_codes: [
@@ -1478,6 +1694,33 @@
                 },
                 {
                     event_codes: [
+                        "Light",
+                        "AlreadySubscribed",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/Light/AlreadySubscribed:count",
+                },
+                {
+                    event_codes: [
+                        "Light",
+                        "MaximumInputDevicesReached",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/Light/MaximumInputDevicesReached:count",
+                },
+                {
+                    event_codes: [
+                        "Light",
+                        "Cancelled",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/Light/Cancelled:count",
+                },
+                {
+                    event_codes: [
                         "NightMode",
                         "OkSome",
                     ],
@@ -1628,6 +1871,33 @@
                     metric_name: "request_responses",
                     metric_type: "Occurrence",
                     selector: "core/setui_service:root/response_counts/NightMode/TimeoutError:count",
+                },
+                {
+                    event_codes: [
+                        "NightMode",
+                        "AlreadySubscribed",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/NightMode/AlreadySubscribed:count",
+                },
+                {
+                    event_codes: [
+                        "NightMode",
+                        "MaximumInputDevicesReached",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/NightMode/MaximumInputDevicesReached:count",
+                },
+                {
+                    event_codes: [
+                        "NightMode",
+                        "Cancelled",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/NightMode/Cancelled:count",
                 },
                 {
                     event_codes: [
@@ -1784,6 +2054,33 @@
                 },
                 {
                     event_codes: [
+                        "Privacy",
+                        "AlreadySubscribed",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/Privacy/AlreadySubscribed:count",
+                },
+                {
+                    event_codes: [
+                        "Privacy",
+                        "MaximumInputDevicesReached",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/Privacy/MaximumInputDevicesReached:count",
+                },
+                {
+                    event_codes: [
+                        "Privacy",
+                        "Cancelled",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/Privacy/Cancelled:count",
+                },
+                {
+                    event_codes: [
                         "Setup",
                         "OkSome",
                     ],
@@ -1934,6 +2231,33 @@
                     metric_name: "request_responses",
                     metric_type: "Occurrence",
                     selector: "core/setui_service:root/response_counts/Setup/TimeoutError:count",
+                },
+                {
+                    event_codes: [
+                        "Setup",
+                        "AlreadySubscribed",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/Setup/AlreadySubscribed:count",
+                },
+                {
+                    event_codes: [
+                        "Setup",
+                        "MaximumInputDevicesReached",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/Setup/MaximumInputDevicesReached:count",
+                },
+                {
+                    event_codes: [
+                        "Setup",
+                        "Cancelled",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/Setup/Cancelled:count",
                 },
                 {
                     event_codes: [
@@ -2090,6 +2414,33 @@
                 },
                 {
                     event_codes: [
+                        "Keyboard",
+                        "AlreadySubscribed",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/Keyboard/AlreadySubscribed:count",
+                },
+                {
+                    event_codes: [
+                        "Keyboard",
+                        "MaximumInputDevicesReached",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/Keyboard/MaximumInputDevicesReached:count",
+                },
+                {
+                    event_codes: [
+                        "Keyboard",
+                        "Cancelled",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/Keyboard/Cancelled:count",
+                },
+                {
+                    event_codes: [
                         "LightSensor",
                         "OkSome",
                     ],
@@ -2240,6 +2591,33 @@
                     metric_name: "request_responses",
                     metric_type: "Occurrence",
                     selector: "core/setui_service:root/response_counts/LightSensor/TimeoutError:count",
+                },
+                {
+                    event_codes: [
+                        "LightSensor",
+                        "AlreadySubscribed",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/LightSensor/AlreadySubscribed:count",
+                },
+                {
+                    event_codes: [
+                        "LightSensor",
+                        "MaximumInputDevicesReached",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/LightSensor/MaximumInputDevicesReached:count",
+                },
+                {
+                    event_codes: [
+                        "LightSensor",
+                        "Cancelled",
+                    ],
+                    metric_name: "request_responses",
+                    metric_type: "Occurrence",
+                    selector: "core/setui_service:root/response_counts/LightSensor/Cancelled:count",
                 },
                 {
                     event_codes: [

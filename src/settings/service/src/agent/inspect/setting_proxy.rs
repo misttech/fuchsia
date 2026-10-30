@@ -374,7 +374,10 @@ mod tests {
     use super::*;
     use diagnostics_assertions::{TreeAssertion, assert_data_tree};
     use futures::channel::mpsc;
-    use settings_common::inspect::event::RequestType;
+    use settings_common::inspect::event::{HangingGetObserver, RequestType, UsagePublisher};
+    use settings_common::inspect::listener_logger::ListenerInspectLogger;
+    use settings_display::types::DisplayInfo;
+    use std::rc::Rc;
     use zx::MonotonicInstant;
 
     // Verifies that request + response pairs with the same value and request type are grouped
@@ -740,11 +743,27 @@ mod tests {
         });
         let _ = done_rx.next().await;
 
+        // A Watch dropped before receiving a value is counted under Cancelled, which Sampler
+        // forwards from response_counts/<Setting>/Cancelled.
+        clock::mock::set(MonotonicInstant::from_nanos(400));
+        let logger = Rc::new(ListenerInspectLogger::with_inspector(&inspector));
+        let publisher = UsagePublisher::<DisplayInfo>::new(tx.clone(), logger);
+        let observer = HangingGetObserver::new(
+            publisher.request("WatchDisplayInfo".to_string(), RequestType::Get),
+            (),
+        );
+        let _ = done_rx.next().await;
+        drop(observer);
+        let _ = done_rx.next().await;
+
         assert_data_tree!(inspector, root: contains {
             response_counts: {
                 "Display": {
                     "OkNone": {
                         count: 4u64,
+                    },
+                    "Cancelled": {
+                        count: 1u64,
                     },
                 },
             },
