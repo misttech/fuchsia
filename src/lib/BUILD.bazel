@@ -23,6 +23,7 @@ test_suite(
         "//src/lib/stdbind:stdbind-rs_test",
         "//src/lib/testing/temp_test_env:lib_test",
         "//src/lib/transfer_manifest:transfer_manifest_test",
+        "//src/lib/zxc/tests:zxc_host_unittests",
     ],
 )
 
@@ -36,6 +37,8 @@ test_suite(
         "//src/lib/backoff:backoff_tests",
         "//src/lib/callback:callback_tests",
         "//src/lib/cstringify:cstringify-test",
+        "//src/lib/debug/test:backtrace-request-integration-test-pkg",
+        "//src/lib/debug/test:backtrace-request-test-pkg",
         "//src/lib/error/clonable_error:clonable_error_tests",
         "//src/lib/fable:fable-lib-unit-tests",
         "//src/lib/fidl/llcpp/tests/conformance:fidl_llcpp_manual_conformance_tests",
@@ -48,5 +51,6 @@ test_suite(
         "//src/lib/rust_url:rust_url_unittests",
         "//src/lib/ui/carnelian:carnelian-tests",
         "//src/lib/watch_handler:watch-handler-tests",
+        "//src/lib/zxc/tests:zxc-tests",
     ],
 )

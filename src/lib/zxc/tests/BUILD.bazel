@@ -1,0 +1,50 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_test.bzl", "fx_cc_test")
+load("//build/bazel/rules/host_tests:host_cc_test.bzl", "host_cc_test")
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+load("//build/bazel/rules/testing:fx_unittest_component.bzl", "fx_unittest_component")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_test(
+    name = "zxc_unittests",
+    srcs = ["result_tests.cc"],
+    tags = ["manual"],
+    deps = [
+        "//zircon/system/ulib/zx",
+        "//zircon/system/ulib/zxtest",
+    ],
+)
+
+fx_unittest_component(
+    name = "zxc-tests-component",
+    binary = ":zxc_unittests",
+    component_name = "zxc-tests",
+)
+
+fx_package(
+    name = "zxc-tests-package",
+    package_name = "zxc-tests",
+    test_components = [":zxc-tests-component"],
+)
+
+fx_test(
+    name = "zxc-tests",
+    environments = ["//build/testing/environments:emu_env"],
+    package = ":zxc-tests-package",
+    visibility = ["//src/lib:__pkg__"],
+)
+
+host_cc_test(
+    name = "zxc_host_unittests",
+    srcs = ["result_tests.cc"],
+    visibility = ["//src/lib:__pkg__"],
+    deps = [
+        "//zircon/system/ulib/zx",
+        "//zircon/system/ulib/zxtest",
+    ],
+)
