@@ -16,31 +16,6 @@
 
 namespace acpi_lite::testing {
 
-// Every address just translates to 0.
-class NullPhysMemReader : public PhysMemReader {
- public:
-  zx::result<const void*> PhysToPtr(uintptr_t phys, size_t length) override {
-    return zx::error(ZX_ERR_OUT_OF_RANGE);
-  }
-};
-
-// Every address translates to a valid but empty page.
-class EmptyPhysMemReader : public PhysMemReader {
- public:
-  EmptyPhysMemReader() { empty_data_ = std::make_unique<uint8_t[]>(kMaxSupportedSize); }
-
-  zx::result<const void*> PhysToPtr(uintptr_t phys, size_t length) override {
-    if (length >= kMaxSupportedSize) {
-      return zx::error(ZX_ERR_OUT_OF_RANGE);
-    }
-    return zx::success(empty_data_.get());
-  }
-
- private:
-  static constexpr size_t kMaxSupportedSize = 16 * 1024;  // 16 kiB
-  std::unique_ptr<uint8_t[]> empty_data_;
-};
-
 // Emulate access of tables specified in an AcpiTableSet.
 class FakePhysMemReader : public PhysMemReader {
  public:

@@ -6,7 +6,6 @@
 
 #include "legacy-boot-shim.h"
 
-#include <lib/acpi_lite.h>
 #include <lib/boot-shim/boot-shim.h>
 #include <lib/fit/defer.h>
 #include <lib/memalloc/pool.h>

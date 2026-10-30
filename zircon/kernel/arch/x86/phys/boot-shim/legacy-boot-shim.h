@@ -7,7 +7,6 @@
 #ifndef ZIRCON_KERNEL_ARCH_X86_PHYS_BOOT_SHIM_LEGACY_BOOT_SHIM_H_
 #define ZIRCON_KERNEL_ARCH_X86_PHYS_BOOT_SHIM_LEGACY_BOOT_SHIM_H_
 
-#include <lib/acpi_lite.h>
 #include <lib/boot-shim/acpi.h>
 #include <lib/boot-shim/boot-shim.h>
 #include <lib/boot-shim/pool-mem-config.h>

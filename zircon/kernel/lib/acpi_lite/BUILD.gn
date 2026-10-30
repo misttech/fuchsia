@@ -15,13 +15,10 @@ static_library("acpi_lite") {
 
   sources = [
     "acpi_lite.cc",
-    "apic.cc",
     "debug_port.cc",
-    "numa.cc",
-    "structures.cc",
     "test_data.cc",
   ]
-  deps = [ "//zircon/system/ulib/pretty" ]
+  deps = []
 
   # These bits are needed for both Zircon proper and phys environments.
   if (is_kernel) {
@@ -35,9 +32,6 @@ static_library("acpi_lite") {
 library_headers("headers") {
   headers = [
     "lib/acpi_lite.h",
-    "lib/acpi_lite/numa.h",
-    "lib/acpi_lite/zircon.h",
-    "lib/acpi_lite/apic.h",
     "lib/acpi_lite/debug_port.h",
     "lib/acpi_lite/internal.h",
     "lib/acpi_lite/structures.h",

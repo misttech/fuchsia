@@ -44,14 +44,6 @@ class BinaryReader {
     return BinaryReader(reinterpret_cast<const uint8_t*>(header), header->size());
   }
 
-  // Construct a BinaryReader from a class with a size() method, skipping the header T.
-  template <typename T>
-  static BinaryReader FromPayloadOfStruct(const T* header) {
-    BinaryReader result(reinterpret_cast<const uint8_t*>(header), header->size());
-    result.buffer_ = result.buffer_.subspan(sizeof(T));
-    return result;
-  }
-
   // Read a fixed-length structure.
   template <typename T>
   const T* ReadFixedLength() {
@@ -104,28 +96,9 @@ class BinaryReader {
     return true;
   }
 
-  // Return true if all the bytes of the reader have been consumed.
-  inline bool empty() const { return buffer_.empty(); }
-
  private:
   std::span<const uint8_t> buffer_;
 };
-
-// Convert a pointer to type |Src| to a pointer of type |Dest|, ensuring that the size of |Src|
-// is valid.
-//
-// We require that the type |Dest| has a field |header| at offset 0 of type |Src|.
-template <typename Dest, typename Src>
-const Dest* Downcast(const Src* src) {
-  static_assert(offsetof(Dest, header) == 0,
-                "Expected field |header| to be first field in struct.");
-  static_assert(std::is_same_v<decltype(Dest::header), Src>,
-                "Expected |Dest::header| type to match |Src|.");
-  if (src->size() < sizeof(Dest)) {
-    return nullptr;
-  }
-  return reinterpret_cast<const Dest*>(src);
-}
 
 // A "packed" type wraps a plain type, but instructs the compiler to treat it as unaligned data.
 template <typename T>

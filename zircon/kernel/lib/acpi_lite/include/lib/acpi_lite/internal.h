@@ -20,10 +20,8 @@ namespace acpi_lite {
 #endif
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
 inline constexpr uint32_t HostToBe32(uint32_t x) { return x; }
-inline constexpr uint32_t BeToHost32(uint32_t x) { return x; }
 #else
 inline constexpr uint32_t HostToBe32(uint32_t x) { return __builtin_bswap32(x); }
-inline constexpr uint32_t BeToHost32(uint32_t x) { return __builtin_bswap32(x); }
 #endif
 
 }  // namespace acpi_lite

@@ -4,7 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#include <lib/acpi_lite/testing/test_data.h>
 #include <lib/boot-shim/testing/test-helper.h>
 #include <lib/uart/ns8250.h>
 #include <stdio.h>

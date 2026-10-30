@@ -44,9 +44,6 @@ class AcpiParser final : public AcpiParserInterface {
 
   uint64_t rsdp_pa() const { return rsdp_addr_; }
 
-  // Print tables to debug output.
-  void DumpTables() const;
-
   // |AcpiParserInterface| implementation.
   inline size_t num_tables() const final { return num_tables_; }
   const AcpiSdtHeader* GetTableAtIndex(size_t index) const final;
@@ -56,23 +53,21 @@ class AcpiParser final : public AcpiParserInterface {
   //
   // |reader| and |sdt| must outlive the created instance.
   AcpiParser(PhysMemReader& reader, zx_paddr_t rsdp_addr, const AcpiRsdt* rsdt,
-             const AcpiXsdt* xsdt, size_t num_tables, zx_paddr_t root_table_addr)
+             const AcpiXsdt* xsdt, size_t num_tables)
       : reader_(&reader),
         rsdt_(rsdt),
         xsdt_(xsdt),
         num_tables_(num_tables),
-        root_table_addr_(root_table_addr),
         rsdp_addr_(rsdp_addr) {}
 
   // Get the physical address of the given table, or return 0 if the table does not exist.
   zx_paddr_t GetTablePhysAddr(size_t index) const;
 
-  PhysMemReader* reader_;       // Owned elsewhere. Non-null.
-  const AcpiRsdt* rsdt_;        // Owned elsewhere. May be null.
-  const AcpiXsdt* xsdt_;        // Owned elsewhere. May be null.
-  size_t num_tables_;           // Number of top level tables
-  zx_paddr_t root_table_addr_;  // Physical address of the root table.
-  zx_paddr_t rsdp_addr_;        // Physical address of the RSDP.
+  PhysMemReader* reader_;  // Owned elsewhere. Non-null.
+  const AcpiRsdt* rsdt_;   // Owned elsewhere. May be null.
+  const AcpiXsdt* xsdt_;   // Owned elsewhere. May be null.
+  size_t num_tables_;      // Number of top level tables
+  zx_paddr_t rsdp_addr_;   // Physical address of the RSDP.
 };
 
 // Get the first table matching the given signature. Return nullptr if no table found.
@@ -101,22 +96,6 @@ class PhysMemReader {
   virtual ~PhysMemReader() = default;
   virtual zx::result<const void*> PhysToPtr(uintptr_t phys, size_t length) = 0;
 };
-
-//
-// Functions below exposed for testing.
-//
-
-// Ensure the checksum of the given block of code is valid.
-bool AcpiChecksumValid(const void* buf, size_t len);
-
-// Calculate a checksum of the given range of memory.
-uint8_t AcpiChecksum(const void* _buf, size_t len);
-
-// Validate the RSDT / XSDT tables.
-zx::result<const AcpiRsdt*> ValidateRsdt(PhysMemReader& reader, uint32_t rsdt_pa,
-                                         size_t* num_tables);
-zx::result<const AcpiXsdt*> ValidateXsdt(PhysMemReader& reader, uint64_t xsdt_pa,
-                                         size_t* num_tables);
 
 }  // namespace acpi_lite
 

@@ -70,7 +70,6 @@ if (toolchain_environment == "kernel.phys") {
       ":stdout",
       "..:legacy-boot",
       "//src/lib/zbitl",
-      "//zircon/kernel/lib/acpi_lite",
       "//zircon/kernel/lib/arch",
       "//zircon/kernel/lib/boot-options",
       "//zircon/kernel/lib/ktl",
@@ -131,7 +130,6 @@ test("legacy-boot-shim-tests") {
   defines = [ "UART_ALL_DRIVERS=1" ]
   sources = [ "legacy-boot-shim-tests.cc" ]
   deps = [
-    "//zircon/kernel/lib/acpi_lite",
     "//zircon/kernel/phys/lib/boot-shim",
     "//zircon/kernel/phys/lib/boot-shim:boot-shim-test",
     "//zircon/system/ulib/zxtest",

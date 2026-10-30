@@ -14,10 +14,7 @@
 namespace acpi_lite::testing {
 
 // Fake AcpiParser instances for different real-life hardware.
-FakeAcpiParser PixelbookEveAcpiParser();
 FakeAcpiParser PixelbookAtlasAcpiParser();
-FakeAcpiParser Z840AcpiParser();
-FakeAcpiParser Sys2970wxAcpiParser();
 
 // Fake PhysMemReader instances for different real-life hardware.
 FakePhysMemReader QemuPhysMemReader();

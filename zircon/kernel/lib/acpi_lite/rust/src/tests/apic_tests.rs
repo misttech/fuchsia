@@ -78,16 +78,6 @@ fn test_enumerate_interrupt_overrides() {
     assert_eq!(global_sys_interrupt, 2);
 
     assert_eq!(items[1].source, 9);
-    // C++ code had: ACPI_MADT_FLAG_TRIGGER_MASK | ACPI_MADT_FLAG_POLARITY_HIGH
-    // Wait, in structures.h:
-    // #define ACPI_MADT_FLAG_TRIGGER_LEVEL 0b1100
-    // In apic_test.cc:
-    // EXPECT_EQ_PACKED(ACPI_MADT_FLAG_TRIGGER_MASK | ACPI_MADT_FLAG_POLARITY_HIGH, collector.items[1].flags);
-    // Wait, in my apic_tests.rs I use ACPI_MADT_FLAG_TRIGGER_LEVEL | ACPI_MADT_FLAG_POLARITY_HIGH ?
-    // Actually, ACPI_MADT_FLAG_TRIGGER_MASK is 0b1100, which is same as ACPI_MADT_FLAG_TRIGGER_LEVEL.
-    // In my structures.rs:
-    // pub const ACPI_MADT_FLAG_TRIGGER_LEVEL: u16 = 0b1100;
-    // pub const ACPI_MADT_FLAG_TRIGGER_MASK: u16 = 0b1100;
     let flags = items[1].flags;
     assert_eq!(flags, ACPI_MADT_FLAG_TRIGGER_MASK | ACPI_MADT_FLAG_POLARITY_HIGH);
     let global_sys_interrupt = items[1].global_sys_interrupt;

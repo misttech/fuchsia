@@ -10,14 +10,30 @@
 #include <zircon/assert.h>
 #include <zircon/compiler.h>
 
-#include <pretty/hexdump.h>
-
 #include "debug.h"
-
-#define LOCAL_TRACE 0
 
 namespace acpi_lite {
 namespace {
+
+uint8_t AcpiChecksum(const void* _buf, size_t len) {
+  uint8_t c = 0;
+
+  const uint8_t* buf = static_cast<const uint8_t*>(_buf);
+  for (size_t i = 0; i < len; i++) {
+    c = static_cast<uint8_t>(c + buf[i]);
+  }
+
+  // The checksum is valid if the sum of bytes mod 256 == 0.
+  //
+  // We return "-c" here. This doesn't change a valid checksum, and allows
+  // code calculating checksums to use to code:
+  //
+  //   foo.checksum = AcpiChecksum(&foo, sizeof(foo));
+  //
+  return static_cast<uint8_t>(-c);
+}
+
+bool AcpiChecksumValid(const void* buf, size_t len) { return AcpiChecksum(buf, len) == 0; }
 
 // Map a variable-length structure into memory.
 //
@@ -164,36 +180,6 @@ zx::result<RootSystemTableDetails> FindRootTables(PhysMemReader& physmem_reader,
   return zx::error(ZX_ERR_NOT_FOUND);
 }
 
-}  // namespace
-
-bool AcpiChecksumValid(const void* buf, size_t len) {
-#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
-  // If we are fuzzing, calculate by don't verify checksums.
-  AcpiChecksum(buf, len);
-  return true;
-#else
-  return AcpiChecksum(buf, len) == 0;
-#endif
-}
-
-uint8_t AcpiChecksum(const void* _buf, size_t len) {
-  uint8_t c = 0;
-
-  const uint8_t* buf = static_cast<const uint8_t*>(_buf);
-  for (size_t i = 0; i < len; i++) {
-    c = static_cast<uint8_t>(c + buf[i]);
-  }
-
-  // The checksum is valid if the sum of bytes mod 256 == 0.
-  //
-  // We return "-c" here. This doesn't change a valid checksum, and allows
-  // code calculating checksums to use to code:
-  //
-  //   foo.checksum = AcpiChecksum(&foo, sizeof(foo));
-  //
-  return static_cast<uint8_t>(-c);
-}
-
 zx::result<const AcpiRsdt*> ValidateRsdt(PhysMemReader& reader, uint32_t rsdt_pa,
                                          size_t* num_tables) {
   // Map in the RSDT.
@@ -253,6 +239,8 @@ zx::result<const AcpiXsdt*> ValidateXsdt(PhysMemReader& reader, uint64_t xsdt_pa
   return xsdt;
 }
 
+}  // namespace
+
 zx_paddr_t AcpiParser::GetTablePhysAddr(size_t index) const {
   if (index >= num_tables_) {
     return 0;
@@ -306,7 +294,7 @@ zx::result<AcpiParser> AcpiParser::Init(PhysMemReader& physmem_reader, zx_paddr_
   }
 
   // Validate the tables.
-  auto parser = [&]() -> zx::result<AcpiParser> {
+  return [&]() -> zx::result<AcpiParser> {
     // If an XSDT table exists, try using it first.
     if (root_tables.value().xsdt_address != 0) {
       size_t num_tables = 0;
@@ -317,8 +305,7 @@ zx::result<AcpiParser> AcpiParser::Init(PhysMemReader& physmem_reader, zx_paddr_
                   root_tables.value().xsdt_address);
         return zx::success(AcpiParser(physmem_reader,
                                       static_cast<zx_paddr_t>(root_tables.value().rsdp_address),
-                                      /*rsdt=*/nullptr, xsdt.value(), num_tables,
-                                      static_cast<zx_paddr_t>(root_tables.value().xsdt_address)));
+                                      /*rsdt=*/nullptr, xsdt.value(), num_tables));
       }
       LOG_DEBUG("ACPI LITE: Invalid XSDT table at physical address %#" PRIx64 "\n",
                 root_tables.value().xsdt_address);
@@ -332,9 +319,9 @@ zx::result<AcpiParser> AcpiParser::Init(PhysMemReader& physmem_reader, zx_paddr_
       if (rsdt.is_ok()) {
         LOG_DEBUG("ACPI LITE: Found valid RSDT table at physical address %#" PRIx32 "\n",
                   root_tables.value().rsdt_address);
-        return zx::success(AcpiParser(
-            physmem_reader, static_cast<zx_paddr_t>(root_tables.value().rsdp_address), rsdt.value(),
-            /*xsdt=*/nullptr, num_tables, root_tables.value().rsdt_address));
+        return zx::success(AcpiParser(physmem_reader,
+                                      static_cast<zx_paddr_t>(root_tables.value().rsdp_address),
+                                      rsdt.value(), /*xsdt=*/nullptr, num_tables));
       }
       LOG_DEBUG("ACPI LITE: Invalid RSDT table at physical address %#" PRIx32 "\n",
                 root_tables.value().rsdt_address);
@@ -343,36 +330,6 @@ zx::result<AcpiParser> AcpiParser::Init(PhysMemReader& physmem_reader, zx_paddr_
     // Nothing found.
     return zx::error(ZX_ERR_NOT_FOUND);
   }();
-
-  if (LOCAL_TRACE && parser.is_ok()) {
-    parser.value().DumpTables();
-  }
-
-  return parser;
-}
-
-void AcpiParser::DumpTables() const {
-  printf("root table at paddr %#" PRIxPTR ":\n", root_table_addr_);
-  if (xsdt_ != nullptr) {
-    hexdump(xsdt_, xsdt_->header.length);
-  } else {
-    ZX_DEBUG_ASSERT(rsdt_ != nullptr);
-    hexdump(rsdt_, rsdt_->header.length);
-  }
-
-  // walk the table list
-  for (size_t i = 0; i < num_tables_; i++) {
-    const auto header = GetTableAtIndex(i);
-    if (!header) {
-      continue;
-    }
-
-    char name[AcpiSignature::kAsciiLength + 1];
-    header->sig.WriteToBuffer(name);
-    printf("table %zu: '%s' at paddr %#" PRIxPTR ", len %" PRIu32 "\n", i, name,
-           GetTablePhysAddr(i), header->length);
-    hexdump(header, header->length);
-  }
 }
 
 }  // namespace acpi_lite
