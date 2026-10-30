@@ -1,0 +1,25 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "cpp",
+    testonly = True,
+    hdrs = [
+        "internal/sync_proxy_base.h",
+        "sync_proxy.h",
+    ],
+    includes = ["../../../../.."],
+    public_configs = ["//sdk/config"],  # For bazel2gn.
+    visibility = ["//sdk/lib/async_patterns/testing/next/cpp/tests:__pkg__"],
+    deps = [
+        "//sdk/lib/async:async-cpp",
+        "//sdk/lib/async_patterns/testing/cpp",
+        "//sdk/lib/fit",
+    ],
+    alwayslink = True,
+)
