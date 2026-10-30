@@ -1,0 +1,24 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "stack",
+    testonly = True,
+    srcs = ["stack-test.cc"],
+    # NOTE: This assumes is_gcc=false in Bazel.
+    copts = [
+        "-fstack-protector-all",
+    ] + select({
+        "@platforms//cpu:arm64": ["-fsanitize=shadow-call-stack"],
+        "//conditions:default": [],
+    }),  # @bazel2gn:raw_overwrite:[ ":stack_config" ]
+    implementation_deps = ["//zircon/system/ulib/zxtest"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//zircon/system/utest/core:__pkg__"],
+    alwayslink = True,
+)

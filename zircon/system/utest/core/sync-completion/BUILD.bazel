@@ -1,0 +1,25 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "sync-completion",
+    testonly = True,
+    srcs = [
+        "completion.cc",
+        "completion_wrapper.cc",
+    ],
+    copts = ["-D_ALL_SOURCE"],  # @bazel2gn:raw_overwrite:[ "//build/config:all_source" ]
+    implementation_deps = [
+        "//zircon/system/ulib/sync",
+        "//zircon/system/ulib/sync:sync-cpp",
+        "//zircon/system/ulib/zxtest",
+    ],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//zircon/system/utest/core:__pkg__"],
+    alwayslink = True,
+)
