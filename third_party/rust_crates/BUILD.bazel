@@ -41,6 +41,7 @@ package_group(
     packages = [
         "//src/lib/async-utils",
         "//src/starnix/kernel/core",
+        "//src/starnix/modules/overlayfs",
         "//src/storage/ext4",
 
         # Not enforced, matching visibility.gni.

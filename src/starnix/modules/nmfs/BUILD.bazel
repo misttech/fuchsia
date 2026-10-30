@@ -1,0 +1,121 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "nmfs",
+    srcs = [
+        "fs.rs",
+        "lib.rs",
+        "manager.rs",
+    ],
+    crate_name = "starnix_modules_nmfs",
+    crate_root = "lib.rs",
+    edition = "2024",
+    lint_config = "//src/starnix/build:kernel_library_config",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:serde_repr",
+    ],
+    visibility = ["//src/starnix/modules:__subpackages__"],
+    deps = [
+        "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
+        "//sdk/fidl/fuchsia.net.policy.properties:fuchsia.net.policy.properties_rust",
+        "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_rust",
+        "//sdk/rust/zx",
+        "//src/lib/diagnostics/inspect/derive",
+        "//src/lib/diagnostics/inspect/rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-component",
+        "//src/starnix/kernel/core",
+        "//src/starnix/lib/starnix_logging",
+        "//src/starnix/lib/starnix_sync",
+        "//src/starnix/lib/starnix_types",
+        "//src/starnix/lib/starnix_uapi",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:bstr",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+rustc_test(
+    name = "starnix_modules_nmfs_lib_test",
+    crate = ":nmfs",
+    lint_config = "//src/starnix/config:starnix_clippy_lints_test",
+    # TODO(https://fxbug.dev/42059075): Re-enable starnix in these environments.
+    tags = [
+        "exclude_toolchain_tags=asan",
+        "exclude_toolchain_tags=hwasan",
+    ],
+    deps = [
+        "//src/connectivity/lib/net-declare",
+        "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+fx_packaged_binary(
+    name = "nmfs_test_packaged_bin",
+    testonly = True,
+    binary = ":starnix_modules_nmfs_lib_test",
+    binary_name = "starnix_modules_nmfs_lib_test",
+)
+
+fx_component_manifest(
+    name = "starnix-nmfs-tests-manifest",
+    testonly = True,
+    component_name = "starnix-nmfs-tests",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/starnix:unit_test.shard.cml",
+    ],
+    manifest = "meta/starnix_nmfs_tests.cml",
+)
+
+fx_test_component(
+    name = "starnix-nmfs-tests-component",
+    compiled_manifest = ":starnix-nmfs-tests-manifest",
+    component_name = "starnix-nmfs-tests",
+    test_type = "starnix",
+    deps = [
+        ":nmfs_test_packaged_bin",
+        # In GN, //src/starnix/kernel/vdso is a resource() propagated through
+        # //src/starnix/kernel/core's deps.
+        "//src/starnix/kernel/vdso",
+    ],
+)
+
+fx_package(
+    name = "starnix-nmfs-tests-package",
+    package_name = "starnix-nmfs-tests",
+    test_components = [":starnix-nmfs-tests-component"],
+)
+
+fx_test(
+    name = "starnix-nmfs-tests",
+    # Tests exercise failure cases, so ERROR logs are expected.
+    max_log_severity = "ERROR",
+    package = ":starnix-nmfs-tests-package",
+)

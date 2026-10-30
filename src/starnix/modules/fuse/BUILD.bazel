@@ -1,0 +1,33 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "fuse",
+    srcs = ["lib.rs"],
+    crate_name = "starnix_modules_fuse",
+    crate_root = "lib.rs",
+    edition = "2024",
+    lint_config = "//src/starnix/build:kernel_library_config",
+    visibility = ["//src/starnix/modules:__subpackages__"],
+    deps = [
+        "//sdk/rust/zx",
+        "//src/lib/fuchsia-rcu",
+        "//src/starnix/kernel/core",
+        "//src/starnix/lib/linux_uapi",
+        "//src/starnix/lib/starnix_lifecycle",
+        "//src/starnix/lib/starnix_logging",
+        "//src/starnix/lib/starnix_sync",
+        "//src/starnix/lib/starnix_syscalls",
+        "//src/starnix/lib/starnix_types",
+        "//src/starnix/lib/starnix_uapi",
+        "//src/starnix/lib/syncio",
+        "//third_party/rust_crates/vendor:bitflags",
+        "//third_party/rust_crates/vendor:static_assertions",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
