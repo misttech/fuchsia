@@ -229,19 +229,19 @@
               "type": "string",
               "value": {
                 "kind": "literal",
-                "value": "hlcpp,dart,go,rust",
-                "expression": "\"hlcpp,dart,go,rust\"",
+                "value": "hlcpp,dart,rust",
+                "expression": "\"hlcpp,dart,rust\"",
                 "literal": {
                   "kind": "string",
-                  "value": "hlcpp,dart,go,rust",
-                  "expression": "\"hlcpp,dart,go,rust\""
+                  "value": "hlcpp,dart,rust",
+                  "expression": "\"hlcpp,dart,rust\""
                 }
               },
               "location": {
                 "filename": "../../tools/fidl/fidlc/testdata/handles.test.fidl",
                 "line": 58,
                 "column": 20,
-                "length": 20
+                "length": 17
               }
             }
           ],
@@ -249,7 +249,7 @@
             "filename": "../../tools/fidl/fidlc/testdata/handles.test.fidl",
             "line": 58,
             "column": 1,
-            "length": 40
+            "length": 37
           }
         }
       ],

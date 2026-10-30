@@ -8,7 +8,7 @@
 ## **PROTOCOLS**
 
 ## Allowed {#Allowed}
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=108)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=98)*
 
 
 ### Denied {#Allowed.Denied}
@@ -34,11 +34,11 @@
 </table>
 
 ## ContainsAllowed {#ContainsAllowed}
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=140)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=130)*
 
 
 ## Denied {#Denied}
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=94)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=84)*
 
 
 ### ShouldNeverAppearInAnyBinding {#Denied.ShouldNeverAppearInAnyBinding}
@@ -72,7 +72,7 @@
 
 
 ## DenyEachBinding {#DenyEachBinding}
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=47)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=44)*
 
 
 ### OnlyDenyCpp {#DenyEachBinding.OnlyDenyCpp}
@@ -131,36 +131,6 @@
             <td><code>payload</code></td>
             <td>
                 <code><a class='link' href='#DenyEachBinding_OnlyDenyDart_Result'>DenyEachBinding_OnlyDenyDart_Result</a></code>
-            </td>
-        </tr>
-</table>
-
-### OnlyDenyGo {#DenyEachBinding.OnlyDenyGo}
-
-
-
-
-#### Request {#DenyEachBinding.OnlyDenyGo_Request}
-
-<table>
-    <tr><th>Name</th><th>Type</th></tr>
-        <tr>
-            <td><code>a</code></td>
-            <td>
-                <code>bool</code>
-            </td>
-        </tr>
-</table>
-
-
-#### Response {#DenyEachBinding.OnlyDenyGo_Response}
-
-<table>
-    <tr><th>Name</th><th>Type</th></tr>
-        <tr>
-            <td><code>payload</code></td>
-            <td>
-                <code><a class='link' href='#DenyEachBinding_OnlyDenyGo_Result'>DenyEachBinding_OnlyDenyGo_Result</a></code>
             </td>
         </tr>
 </table>
@@ -256,7 +226,7 @@
 </table>
 
 ## ImportsSameNameContext {#ImportsSameNameContext}
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=151)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=141)*
 
 
 ### AlwaysAppearsInImportingLibrary {#ImportsSameNameContext.AlwaysAppearsInImportingLibrary}
@@ -298,14 +268,14 @@
 
 
 ## OnlyCppAndDeps {#OnlyCppAndDeps}
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=40)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=37)*
 
 
 
 ## **STRUCTS**
 
 ### Allowed_Denied_Response  {#Allowed_Denied_Response data-text="Allowed_Denied_Response"}
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=110)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=100)*
 
 <table>
     <tr><th>Field</th><th>Type</th><th>Description</th><th>Default</th></tr>
@@ -336,7 +306,7 @@
 </table>
 
 ### DeniedAnonymous  {#DeniedAnonymous data-text="DeniedAnonymous"}
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=124)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=114)*
 
 <table>
     <tr><th>Field</th><th>Type</th><th>Description</th><th>Default</th></tr>
@@ -367,7 +337,7 @@
 </table>
 
 ### DenyEachBinding_OnlyDenyCpp_Response  {#DenyEachBinding_OnlyDenyCpp_Response data-text="DenyEachBinding_OnlyDenyCpp_Response"}
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=51)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=48)*
 
 <table>
     <tr><th>Field</th><th>Type</th><th>Description</th><th>Default</th></tr>
@@ -382,7 +352,7 @@
 </table>
 
 ### DenyEachBinding_OnlyDenyDart_Response  {#DenyEachBinding_OnlyDenyDart_Response data-text="DenyEachBinding_OnlyDenyDart_Response"}
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=58)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=55)*
 
 <table>
     <tr><th>Field</th><th>Type</th><th>Description</th><th>Default</th></tr>
@@ -396,23 +366,8 @@
         </tr>
 </table>
 
-### DenyEachBinding_OnlyDenyGo_Response  {#DenyEachBinding_OnlyDenyGo_Response data-text="DenyEachBinding_OnlyDenyGo_Response"}
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=65)*
-
-<table>
-    <tr><th>Field</th><th>Type</th><th>Description</th><th>Default</th></tr>
-        <tr id="DenyEachBinding_OnlyDenyGo_Response.b">
-            <td><code>b</code></td>
-            <td>
-                <code>int32</code>
-            </td>
-            <td></td>
-            <td>No default</td>
-        </tr>
-</table>
-
 ### DenyEachBinding_OnlyDenyPython_Response  {#DenyEachBinding_OnlyDenyPython_Response data-text="DenyEachBinding_OnlyDenyPython_Response"}
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=72)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=62)*
 
 <table>
     <tr><th>Field</th><th>Type</th><th>Description</th><th>Default</th></tr>
@@ -427,7 +382,7 @@
 </table>
 
 ### DenyEachBinding_OnlyDenyRust_Response  {#DenyEachBinding_OnlyDenyRust_Response data-text="DenyEachBinding_OnlyDenyRust_Response"}
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=79)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=69)*
 
 <table>
     <tr><th>Field</th><th>Type</th><th>Description</th><th>Default</th></tr>
@@ -442,7 +397,7 @@
 </table>
 
 ### DenyEachBinding_OnlyDenySyzkaller_Response  {#DenyEachBinding_OnlyDenySyzkaller_Response data-text="DenyEachBinding_OnlyDenySyzkaller_Response"}
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=86)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=76)*
 
 <table>
     <tr><th>Field</th><th>Type</th><th>Description</th><th>Default</th></tr>
@@ -457,7 +412,7 @@
 </table>
 
 ### MemberOnlyAppearsInImportingLibrary  {#MemberOnlyAppearsInImportingLibrary data-text="MemberOnlyAppearsInImportingLibrary"}
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=146)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=136)*
 
 <table>
     <tr><th>Field</th><th>Type</th><th>Description</th><th>Default</th></tr>
@@ -472,7 +427,7 @@
 </table>
 
 ### OnlyAppearsInImportingLibrary  {#OnlyAppearsInImportingLibrary data-text="OnlyAppearsInImportingLibrary"}
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=145)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=135)*
 
 <table>
     <tr><th>Field</th><th>Type</th><th>Description</th><th>Default</th></tr>
@@ -486,13 +441,8 @@
         </tr>
 </table>
 
-### OnlyGo  {#OnlyGo data-text="OnlyGo"}
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=23)*
-
-&lt;EMPTY&gt;
-
 ### ShouldNeverAppearInAnyBinding1  {#ShouldNeverAppearInAnyBinding1 data-text="ShouldNeverAppearInAnyBinding1"}
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=96)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=86)*
 
 <table>
     <tr><th>Field</th><th>Type</th><th>Description</th><th>Default</th></tr>
@@ -507,7 +457,7 @@
 </table>
 
 ### ShouldNeverAppearInAnyBinding4  {#ShouldNeverAppearInAnyBinding4 data-text="ShouldNeverAppearInAnyBinding4"}
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=111)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=101)*
 
 <table>
     <tr><th>Field</th><th>Type</th><th>Description</th><th>Default</th></tr>
@@ -522,7 +472,7 @@
 </table>
 
 ### ShouldNeverAppearInAnyBinding7  {#ShouldNeverAppearInAnyBinding7 data-text="ShouldNeverAppearInAnyBinding7"}
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=125)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=115)*
 
 <table>
     <tr><th>Field</th><th>Type</th><th>Description</th><th>Default</th></tr>
@@ -559,7 +509,7 @@ Type: <code>uint32</code>
 ### OnlyPython  {#OnlyPython data-text="OnlyPython"}
 
 
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=26)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=23)*
 
 <table>
     <tr><th>Ordinal</th><th>Field</th><th>Type</th><th>Description</th></tr>
@@ -568,7 +518,7 @@ Type: <code>uint32</code>
 ### OnlyRust  {#OnlyRust data-text="OnlyRust"}
 
 
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=29)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=26)*
 
 <table>
     <tr><th>Ordinal</th><th>Field</th><th>Type</th><th>Description</th></tr>
@@ -577,7 +527,7 @@ Type: <code>uint32</code>
 ### ShouldNeverAppearInAnyBinding2  {#ShouldNeverAppearInAnyBinding2 data-text="ShouldNeverAppearInAnyBinding2"}
 
 
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=99)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=89)*
 
 <table>
     <tr><th>Ordinal</th><th>Field</th><th>Type</th><th>Description</th></tr>
@@ -594,7 +544,7 @@ Type: <code>uint32</code>
 ### ShouldNeverAppearInAnyBinding5  {#ShouldNeverAppearInAnyBinding5 data-text="ShouldNeverAppearInAnyBinding5"}
 
 
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=114)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=104)*
 
 <table>
     <tr><th>Ordinal</th><th>Field</th><th>Type</th><th>Description</th></tr>
@@ -611,7 +561,7 @@ Type: <code>uint32</code>
 ### ShouldNeverAppearInAnyBinding8  {#ShouldNeverAppearInAnyBinding8 data-text="ShouldNeverAppearInAnyBinding8"}
 
 
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=128)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=118)*
 
 <table>
     <tr><th>Ordinal</th><th>Field</th><th>Type</th><th>Description</th></tr>
@@ -629,7 +579,7 @@ Type: <code>uint32</code>
 ## **UNIONS**
 
 ### Allowed_Denied_Result [strict](/fuchsia-src/reference/fidl/language/language.md#strict-vs-flexible){:.fidl-attribute}  {#Allowed_Denied_Result data-text="Allowed_Denied_Result"}
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=110)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=100)*
 <table>
     <tr><th>Ordinal</th><th>Variant</th><th>Type</th><th>Description</th></tr>
         <tr id="Allowed_Denied_Result.response">
@@ -651,7 +601,7 @@ Type: <code>uint32</code>
 </table>
 
 ### DenyEachBinding_OnlyDenyCpp_Result [strict](/fuchsia-src/reference/fidl/language/language.md#strict-vs-flexible){:.fidl-attribute}  {#DenyEachBinding_OnlyDenyCpp_Result data-text="DenyEachBinding_OnlyDenyCpp_Result"}
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=51)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=48)*
 <table>
     <tr><th>Ordinal</th><th>Variant</th><th>Type</th><th>Description</th></tr>
         <tr id="DenyEachBinding_OnlyDenyCpp_Result.response">
@@ -673,7 +623,7 @@ Type: <code>uint32</code>
 </table>
 
 ### DenyEachBinding_OnlyDenyDart_Result [strict](/fuchsia-src/reference/fidl/language/language.md#strict-vs-flexible){:.fidl-attribute}  {#DenyEachBinding_OnlyDenyDart_Result data-text="DenyEachBinding_OnlyDenyDart_Result"}
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=58)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=55)*
 <table>
     <tr><th>Ordinal</th><th>Variant</th><th>Type</th><th>Description</th></tr>
         <tr id="DenyEachBinding_OnlyDenyDart_Result.response">
@@ -694,30 +644,8 @@ Type: <code>uint32</code>
         </tr>
 </table>
 
-### DenyEachBinding_OnlyDenyGo_Result [strict](/fuchsia-src/reference/fidl/language/language.md#strict-vs-flexible){:.fidl-attribute}  {#DenyEachBinding_OnlyDenyGo_Result data-text="DenyEachBinding_OnlyDenyGo_Result"}
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=65)*
-<table>
-    <tr><th>Ordinal</th><th>Variant</th><th>Type</th><th>Description</th></tr>
-        <tr id="DenyEachBinding_OnlyDenyGo_Result.response">
-<td><h3 id="DenyEachBinding_OnlyDenyGo_Result.response" class="add-link hide-from-toc">1</h3></td>
-            <td><code>response</code></td>
-            <td>
-                <code><a class='link' href='#DenyEachBinding_OnlyDenyGo_Response'>DenyEachBinding_OnlyDenyGo_Response</a></code>
-            </td>
-            <td></td>
-        </tr>
-        <tr id="DenyEachBinding_OnlyDenyGo_Result.err">
-<td><h3 id="DenyEachBinding_OnlyDenyGo_Result.err" class="add-link hide-from-toc">2</h3></td>
-            <td><code>err</code></td>
-            <td>
-                <code>uint32</code>
-            </td>
-            <td></td>
-        </tr>
-</table>
-
 ### DenyEachBinding_OnlyDenyPython_Result [strict](/fuchsia-src/reference/fidl/language/language.md#strict-vs-flexible){:.fidl-attribute}  {#DenyEachBinding_OnlyDenyPython_Result data-text="DenyEachBinding_OnlyDenyPython_Result"}
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=72)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=62)*
 <table>
     <tr><th>Ordinal</th><th>Variant</th><th>Type</th><th>Description</th></tr>
         <tr id="DenyEachBinding_OnlyDenyPython_Result.response">
@@ -739,7 +667,7 @@ Type: <code>uint32</code>
 </table>
 
 ### DenyEachBinding_OnlyDenyRust_Result [strict](/fuchsia-src/reference/fidl/language/language.md#strict-vs-flexible){:.fidl-attribute}  {#DenyEachBinding_OnlyDenyRust_Result data-text="DenyEachBinding_OnlyDenyRust_Result"}
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=79)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=69)*
 <table>
     <tr><th>Ordinal</th><th>Variant</th><th>Type</th><th>Description</th></tr>
         <tr id="DenyEachBinding_OnlyDenyRust_Result.response">
@@ -761,7 +689,7 @@ Type: <code>uint32</code>
 </table>
 
 ### DenyEachBinding_OnlyDenySyzkaller_Result [strict](/fuchsia-src/reference/fidl/language/language.md#strict-vs-flexible){:.fidl-attribute}  {#DenyEachBinding_OnlyDenySyzkaller_Result data-text="DenyEachBinding_OnlyDenySyzkaller_Result"}
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=86)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=76)*
 <table>
     <tr><th>Ordinal</th><th>Variant</th><th>Type</th><th>Description</th></tr>
         <tr id="DenyEachBinding_OnlyDenySyzkaller_Result.response">
@@ -783,7 +711,7 @@ Type: <code>uint32</code>
 </table>
 
 ### OnlyLlcpp [strict](/fuchsia-src/reference/fidl/language/language.md#strict-vs-flexible){:.fidl-attribute}  {#OnlyLlcpp data-text="OnlyLlcpp"}
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=32)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=29)*
 <table>
     <tr><th>Ordinal</th><th>Variant</th><th>Type</th><th>Description</th></tr>
         <tr id="OnlyLlcpp.x">
@@ -797,7 +725,7 @@ Type: <code>uint32</code>
 </table>
 
 ### ShouldNeverAppearInAnyBinding3 [flexible](/fuchsia-src/reference/fidl/language/language.md#strict-vs-flexible){:.fidl-attribute}  {#ShouldNeverAppearInAnyBinding3 data-text="ShouldNeverAppearInAnyBinding3"}
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=102)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=92)*
 <table>
     <tr><th>Ordinal</th><th>Variant</th><th>Type</th><th>Description</th></tr>
         <tr id="ShouldNeverAppearInAnyBinding3.a">
@@ -811,7 +739,7 @@ Type: <code>uint32</code>
 </table>
 
 ### ShouldNeverAppearInAnyBinding6 [flexible](/fuchsia-src/reference/fidl/language/language.md#strict-vs-flexible){:.fidl-attribute}  {#ShouldNeverAppearInAnyBinding6 data-text="ShouldNeverAppearInAnyBinding6"}
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=117)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=107)*
 <table>
     <tr><th>Ordinal</th><th>Variant</th><th>Type</th><th>Description</th></tr>
         <tr id="ShouldNeverAppearInAnyBinding6.a">
@@ -825,7 +753,7 @@ Type: <code>uint32</code>
 </table>
 
 ### ShouldNeverAppearInAnyBinding9 [flexible](/fuchsia-src/reference/fidl/language/language.md#strict-vs-flexible){:.fidl-attribute}  {#ShouldNeverAppearInAnyBinding9 data-text="ShouldNeverAppearInAnyBinding9"}
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=131)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=121)*
 <table>
     <tr><th>Ordinal</th><th>Variant</th><th>Type</th><th>Description</th></tr>
         <tr id="ShouldNeverAppearInAnyBinding9.a">
@@ -874,7 +802,7 @@ Type: <code>uint32</code>
 
 ### OnlyHlcpp {#OnlyHlcpp data-text="OnlyHlcpp"}
 
-*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=43)*
+*Defined in [test.bindingsdenylist/example.test.fidl](https://cs.opensource.google/fuchsia/fuchsia/+/main:tools/fidl/fidlc/testdata/bindings_denylist/example.test.fidl;l=40)*
 <table>
     <tr><th>Name</th><th>Type</th><th>Transport</th></tr>
 </table>

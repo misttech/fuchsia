@@ -2937,324 +2937,6 @@ pub mod natural {
 
     #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
-    pub struct DenyEachBindingOnlyDenyGoRequest {
-        pub a: bool,
-    }
-
-    unsafe impl<___E> ::fidl_next::Encode<crate::wire::DenyEachBindingOnlyDenyGoRequest, ___E>
-        for DenyEachBindingOnlyDenyGoRequest
-    where
-        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-    {
-        const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<
-            Self,
-            crate::wire::DenyEachBindingOnlyDenyGoRequest,
-        > = unsafe {
-            ::fidl_next::CopyOptimization::enable_if(
-                true && <bool as ::fidl_next::Encode<bool, ___E>>::COPY_OPTIMIZATION.is_enabled(),
-            )
-        };
-
-        #[inline]
-        fn encode(
-            self,
-            encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<crate::wire::DenyEachBindingOnlyDenyGoRequest>,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::munge! {
-                let crate::wire::DenyEachBindingOnlyDenyGoRequest {
-                    a,
-
-                } = out_;
-            }
-
-            ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
-
-            let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(a.as_mut_ptr()) };
-
-            Ok(())
-        }
-    }
-
-    unsafe impl<'a, ___E> ::fidl_next::Encode<crate::wire::DenyEachBindingOnlyDenyGoRequest, ___E>
-        for &'a DenyEachBindingOnlyDenyGoRequest
-    where
-        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-    {
-        #[inline]
-        fn encode(
-            self,
-            encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<crate::wire::DenyEachBindingOnlyDenyGoRequest>,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::munge! {
-                let crate::wire::DenyEachBindingOnlyDenyGoRequest {
-                    a,
-
-                } = out_;
-            }
-
-            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
-
-            let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(a.as_mut_ptr()) };
-
-            Ok(())
-        }
-    }
-
-    unsafe impl<___E>
-        ::fidl_next::EncodeOption<
-            ::fidl_next::wire::Box<'static, crate::wire::DenyEachBindingOnlyDenyGoRequest>,
-            ___E,
-        > for DenyEachBindingOnlyDenyGoRequest
-    where
-        ___E: ::fidl_next::Encoder + ?Sized,
-        DenyEachBindingOnlyDenyGoRequest:
-            ::fidl_next::Encode<crate::wire::DenyEachBindingOnlyDenyGoRequest, ___E>,
-    {
-        #[inline]
-        fn encode_option(
-            this: ::core::option::Option<Self>,
-            encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::Box<'static, crate::wire::DenyEachBindingOnlyDenyGoRequest>,
-            >,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::Box::encode_present(out);
-            } else {
-                ::fidl_next::wire::Box::encode_absent(out);
-            }
-
-            Ok(())
-        }
-    }
-
-    unsafe impl<'a, ___E>
-        ::fidl_next::EncodeOption<
-            ::fidl_next::wire::Box<'static, crate::wire::DenyEachBindingOnlyDenyGoRequest>,
-            ___E,
-        > for &'a DenyEachBindingOnlyDenyGoRequest
-    where
-        ___E: ::fidl_next::Encoder + ?Sized,
-        &'a DenyEachBindingOnlyDenyGoRequest:
-            ::fidl_next::Encode<crate::wire::DenyEachBindingOnlyDenyGoRequest, ___E>,
-    {
-        #[inline]
-        fn encode_option(
-            this: ::core::option::Option<Self>,
-            encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::Box<'static, crate::wire::DenyEachBindingOnlyDenyGoRequest>,
-            >,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::Box::encode_present(out);
-            } else {
-                ::fidl_next::wire::Box::encode_absent(out);
-            }
-
-            Ok(())
-        }
-    }
-
-    impl ::fidl_next::FromWire<crate::wire::DenyEachBindingOnlyDenyGoRequest>
-        for DenyEachBindingOnlyDenyGoRequest
-    {
-        const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<
-            crate::wire::DenyEachBindingOnlyDenyGoRequest,
-            Self,
-        > = unsafe {
-            ::fidl_next::CopyOptimization::enable_if(
-                true && <bool as ::fidl_next::FromWire<bool>>::COPY_OPTIMIZATION.is_enabled(),
-            )
-        };
-
-        #[inline]
-        fn from_wire(wire: crate::wire::DenyEachBindingOnlyDenyGoRequest) -> Self {
-            Self { a: ::fidl_next::FromWire::from_wire(wire.a) }
-        }
-    }
-
-    impl<'a> ::fidl_next::FromWire<&'a crate::wire::DenyEachBindingOnlyDenyGoRequest>
-        for DenyEachBindingOnlyDenyGoRequest
-    {
-        #[inline]
-        fn from_wire(wire: &'a crate::wire::DenyEachBindingOnlyDenyGoRequest) -> Self {
-            Self { a: ::fidl_next::FromWire::from_wire(&wire.a) }
-        }
-    }
-
-    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    #[repr(C)]
-    pub struct DenyEachBindingOnlyDenyGoResponse {
-        pub b: i32,
-    }
-
-    unsafe impl<___E> ::fidl_next::Encode<crate::wire::DenyEachBindingOnlyDenyGoResponse, ___E>
-        for DenyEachBindingOnlyDenyGoResponse
-    where
-        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-    {
-        const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<
-            Self,
-            crate::wire::DenyEachBindingOnlyDenyGoResponse,
-        > = unsafe {
-            ::fidl_next::CopyOptimization::enable_if(
-            true
-
-                && <
-                    i32 as ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-        )
-        };
-
-        #[inline]
-        fn encode(
-            self,
-            encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<crate::wire::DenyEachBindingOnlyDenyGoResponse>,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::munge! {
-                let crate::wire::DenyEachBindingOnlyDenyGoResponse {
-                    b,
-
-                } = out_;
-            }
-
-            ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
-
-            let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(b.as_mut_ptr()) };
-
-            Ok(())
-        }
-    }
-
-    unsafe impl<'a, ___E> ::fidl_next::Encode<crate::wire::DenyEachBindingOnlyDenyGoResponse, ___E>
-        for &'a DenyEachBindingOnlyDenyGoResponse
-    where
-        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-    {
-        #[inline]
-        fn encode(
-            self,
-            encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<crate::wire::DenyEachBindingOnlyDenyGoResponse>,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::munge! {
-                let crate::wire::DenyEachBindingOnlyDenyGoResponse {
-                    b,
-
-                } = out_;
-            }
-
-            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
-
-            let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(b.as_mut_ptr()) };
-
-            Ok(())
-        }
-    }
-
-    unsafe impl<___E>
-        ::fidl_next::EncodeOption<
-            ::fidl_next::wire::Box<'static, crate::wire::DenyEachBindingOnlyDenyGoResponse>,
-            ___E,
-        > for DenyEachBindingOnlyDenyGoResponse
-    where
-        ___E: ::fidl_next::Encoder + ?Sized,
-        DenyEachBindingOnlyDenyGoResponse:
-            ::fidl_next::Encode<crate::wire::DenyEachBindingOnlyDenyGoResponse, ___E>,
-    {
-        #[inline]
-        fn encode_option(
-            this: ::core::option::Option<Self>,
-            encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::Box<'static, crate::wire::DenyEachBindingOnlyDenyGoResponse>,
-            >,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::Box::encode_present(out);
-            } else {
-                ::fidl_next::wire::Box::encode_absent(out);
-            }
-
-            Ok(())
-        }
-    }
-
-    unsafe impl<'a, ___E>
-        ::fidl_next::EncodeOption<
-            ::fidl_next::wire::Box<'static, crate::wire::DenyEachBindingOnlyDenyGoResponse>,
-            ___E,
-        > for &'a DenyEachBindingOnlyDenyGoResponse
-    where
-        ___E: ::fidl_next::Encoder + ?Sized,
-        &'a DenyEachBindingOnlyDenyGoResponse:
-            ::fidl_next::Encode<crate::wire::DenyEachBindingOnlyDenyGoResponse, ___E>,
-    {
-        #[inline]
-        fn encode_option(
-            this: ::core::option::Option<Self>,
-            encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::Box<'static, crate::wire::DenyEachBindingOnlyDenyGoResponse>,
-            >,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::Box::encode_present(out);
-            } else {
-                ::fidl_next::wire::Box::encode_absent(out);
-            }
-
-            Ok(())
-        }
-    }
-
-    impl ::fidl_next::FromWire<crate::wire::DenyEachBindingOnlyDenyGoResponse>
-        for DenyEachBindingOnlyDenyGoResponse
-    {
-        const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<
-            crate::wire::DenyEachBindingOnlyDenyGoResponse,
-            Self,
-        > = unsafe {
-            ::fidl_next::CopyOptimization::enable_if(
-                true && <i32 as ::fidl_next::FromWire<::fidl_next::wire::Int32>>::COPY_OPTIMIZATION
-                    .is_enabled(),
-            )
-        };
-
-        #[inline]
-        fn from_wire(wire: crate::wire::DenyEachBindingOnlyDenyGoResponse) -> Self {
-            Self { b: ::fidl_next::FromWire::from_wire(wire.b) }
-        }
-    }
-
-    impl<'a> ::fidl_next::FromWire<&'a crate::wire::DenyEachBindingOnlyDenyGoResponse>
-        for DenyEachBindingOnlyDenyGoResponse
-    {
-        #[inline]
-        fn from_wire(wire: &'a crate::wire::DenyEachBindingOnlyDenyGoResponse) -> Self {
-            Self { b: ::fidl_next::FromWire::from_wire(&wire.b) }
-        }
-    }
-
-    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    #[repr(C)]
     pub struct DenyEachBindingOnlyDenyPythonRequest {
         pub a: bool,
     }
@@ -4668,8 +4350,6 @@ pub mod natural {
             Self::from(*wire)
         }
     }
-
-    pub type OnlyGo = ();
 
     #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum OnlyLlcpp {
@@ -6598,155 +6278,6 @@ pub mod wire {
         type Natural = crate::natural::DenyEachBindingOnlyDenyDartResponse;
     }
 
-    /// The wire type corresponding to [`DenyEachBindingOnlyDenyGoRequest`].
-    #[derive(Clone, Debug)]
-    #[repr(C)]
-    pub struct DenyEachBindingOnlyDenyGoRequest {
-        pub a: bool,
-    }
-
-    static_assertions::const_assert_eq!(std::mem::size_of::<DenyEachBindingOnlyDenyGoRequest>(), 1);
-    static_assertions::const_assert_eq!(
-        std::mem::align_of::<DenyEachBindingOnlyDenyGoRequest>(),
-        1
-    );
-
-    static_assertions::const_assert_eq!(
-        std::mem::offset_of!(DenyEachBindingOnlyDenyGoRequest, a),
-        0
-    );
-
-    impl ::fidl_next::Constrained for DenyEachBindingOnlyDenyGoRequest {
-        type Constraint = ();
-
-        fn validate(
-            _: ::fidl_next::Slot<'_, Self>,
-            _: Self::Constraint,
-        ) -> Result<(), ::fidl_next::ValidationError> {
-            Ok(())
-        }
-    }
-
-    unsafe impl ::fidl_next::Wire for DenyEachBindingOnlyDenyGoRequest {
-        type Narrowed<'de> = DenyEachBindingOnlyDenyGoRequest;
-
-        #[inline]
-        fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
-            ::fidl_next::munge! {
-                let Self {
-                    a,
-
-                } = &mut *out_;
-            }
-
-            ::fidl_next::Wire::zero_padding(a);
-        }
-    }
-
-    unsafe impl<___D> ::fidl_next::Decode<___D> for DenyEachBindingOnlyDenyGoRequest
-    where
-        ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-    {
-        fn decode(
-            slot_: ::fidl_next::Slot<'_, Self>,
-            decoder_: &mut ___D,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
-            ::fidl_next::munge! {
-                let Self {
-                    mut a,
-
-                } = slot_;
-            }
-
-            let _field = a.as_mut();
-
-            ::fidl_next::Decode::decode(a.as_mut(), decoder_, ())?;
-
-            Ok(())
-        }
-    }
-
-    impl ::fidl_next::IntoNatural for DenyEachBindingOnlyDenyGoRequest {
-        type Natural = crate::natural::DenyEachBindingOnlyDenyGoRequest;
-    }
-
-    /// The wire type corresponding to [`DenyEachBindingOnlyDenyGoResponse`].
-    #[derive(Clone, Debug)]
-    #[repr(C)]
-    pub struct DenyEachBindingOnlyDenyGoResponse {
-        pub b: ::fidl_next::wire::Int32,
-    }
-
-    static_assertions::const_assert_eq!(
-        std::mem::size_of::<DenyEachBindingOnlyDenyGoResponse>(),
-        4
-    );
-    static_assertions::const_assert_eq!(
-        std::mem::align_of::<DenyEachBindingOnlyDenyGoResponse>(),
-        4
-    );
-
-    static_assertions::const_assert_eq!(
-        std::mem::offset_of!(DenyEachBindingOnlyDenyGoResponse, b),
-        0
-    );
-
-    impl ::fidl_next::Constrained for DenyEachBindingOnlyDenyGoResponse {
-        type Constraint = ();
-
-        fn validate(
-            _: ::fidl_next::Slot<'_, Self>,
-            _: Self::Constraint,
-        ) -> Result<(), ::fidl_next::ValidationError> {
-            Ok(())
-        }
-    }
-
-    unsafe impl ::fidl_next::Wire for DenyEachBindingOnlyDenyGoResponse {
-        type Narrowed<'de> = DenyEachBindingOnlyDenyGoResponse;
-
-        #[inline]
-        fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
-            ::fidl_next::munge! {
-                let Self {
-                    b,
-
-                } = &mut *out_;
-            }
-
-            ::fidl_next::Wire::zero_padding(b);
-        }
-    }
-
-    unsafe impl<___D> ::fidl_next::Decode<___D> for DenyEachBindingOnlyDenyGoResponse
-    where
-        ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-    {
-        fn decode(
-            slot_: ::fidl_next::Slot<'_, Self>,
-            decoder_: &mut ___D,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
-            ::fidl_next::munge! {
-                let Self {
-                    mut b,
-
-                } = slot_;
-            }
-
-            let _field = b.as_mut();
-
-            ::fidl_next::Decode::decode(b.as_mut(), decoder_, ())?;
-
-            Ok(())
-        }
-    }
-
-    impl ::fidl_next::IntoNatural for DenyEachBindingOnlyDenyGoResponse {
-        type Natural = crate::natural::DenyEachBindingOnlyDenyGoResponse;
-    }
-
     /// The wire type corresponding to [`DenyEachBindingOnlyDenyPythonRequest`].
     #[derive(Clone, Debug)]
     #[repr(C)]
@@ -7421,9 +6952,6 @@ pub mod wire {
     impl ::fidl_next::IntoNatural for OnlyDart {
         type Natural = crate::natural::OnlyDart;
     }
-
-    /// The wire type corresponding to [`OnlyGo`].
-    pub type OnlyGo = ::fidl_next::wire::Unit;
 
     /// The wire type corresponding to [`OnlyLlcpp`].
     #[repr(transparent)]
@@ -8861,122 +8389,6 @@ pub mod generic {
         }
     }
 
-    /// The generic type corresponding to [`DenyEachBindingOnlyDenyGoRequest`].
-    pub struct DenyEachBindingOnlyDenyGoRequest<T0> {
-        pub a: T0,
-    }
-
-    unsafe impl<___E, T0> ::fidl_next::Encode<crate::wire::DenyEachBindingOnlyDenyGoRequest, ___E>
-        for DenyEachBindingOnlyDenyGoRequest<T0>
-    where
-        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<bool, ___E>,
-    {
-        #[inline]
-        fn encode(
-            self,
-            encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<crate::wire::DenyEachBindingOnlyDenyGoRequest>,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::munge! {
-                let crate::wire::DenyEachBindingOnlyDenyGoRequest {
-                    a,
-
-                } = out_;
-            }
-
-            ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
-
-            Ok(())
-        }
-    }
-
-    unsafe impl<'a, ___E, T0>
-        ::fidl_next::Encode<crate::wire::DenyEachBindingOnlyDenyGoRequest, ___E>
-        for &'a DenyEachBindingOnlyDenyGoRequest<T0>
-    where
-        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        &'a T0: ::fidl_next::Encode<bool, ___E>,
-    {
-        #[inline]
-        fn encode(
-            self,
-            encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<crate::wire::DenyEachBindingOnlyDenyGoRequest>,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::munge! {
-                let crate::wire::DenyEachBindingOnlyDenyGoRequest {
-                    a,
-
-                } = out_;
-            }
-
-            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
-
-            Ok(())
-        }
-    }
-
-    /// The generic type corresponding to [`DenyEachBindingOnlyDenyGoResponse`].
-    pub struct DenyEachBindingOnlyDenyGoResponse<T0> {
-        pub b: T0,
-    }
-
-    unsafe impl<___E, T0> ::fidl_next::Encode<crate::wire::DenyEachBindingOnlyDenyGoResponse, ___E>
-        for DenyEachBindingOnlyDenyGoResponse<T0>
-    where
-        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
-    {
-        #[inline]
-        fn encode(
-            self,
-            encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<crate::wire::DenyEachBindingOnlyDenyGoResponse>,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::munge! {
-                let crate::wire::DenyEachBindingOnlyDenyGoResponse {
-                    b,
-
-                } = out_;
-            }
-
-            ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
-
-            Ok(())
-        }
-    }
-
-    unsafe impl<'a, ___E, T0>
-        ::fidl_next::Encode<crate::wire::DenyEachBindingOnlyDenyGoResponse, ___E>
-        for &'a DenyEachBindingOnlyDenyGoResponse<T0>
-    where
-        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
-    {
-        #[inline]
-        fn encode(
-            self,
-            encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<crate::wire::DenyEachBindingOnlyDenyGoResponse>,
-            _: (),
-        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::munge! {
-                let crate::wire::DenyEachBindingOnlyDenyGoResponse {
-                    b,
-
-                } = out_;
-            }
-
-            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
-
-            Ok(())
-        }
-    }
-
     /// The generic type corresponding to [`DenyEachBindingOnlyDenyPythonRequest`].
     pub struct DenyEachBindingOnlyDenyPythonRequest<T0> {
         pub a: T0,
@@ -9463,9 +8875,6 @@ pub mod generic {
             Ok(())
         }
     }
-
-    /// The generic type corresponding to [`OnlyGo`].
-    pub type OnlyGo = ();
 }
 
 pub use self::natural::*;
@@ -10303,8 +9712,6 @@ pub mod deny_each_binding {
 
         pub use crate::natural::DenyEachBindingOnlyDenyDartRequest;
 
-        pub use crate::natural::DenyEachBindingOnlyDenyGoRequest;
-
         pub use crate::natural::DenyEachBindingOnlyDenyPythonRequest;
 
         pub use crate::natural::DenyEachBindingOnlyDenyRustRequest;
@@ -10314,8 +9721,6 @@ pub mod deny_each_binding {
         pub use crate::natural::DenyEachBindingOnlyDenyCppResponse;
 
         pub use crate::natural::DenyEachBindingOnlyDenyDartResponse;
-
-        pub use crate::natural::DenyEachBindingOnlyDenyGoResponse;
 
         pub use crate::natural::DenyEachBindingOnlyDenyPythonResponse;
 
@@ -10399,47 +9804,6 @@ pub mod deny_each_binding {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for OnlyDenyDart {
-        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
-
-        fn respond_err(response: ___R) -> Self::Output {
-            ::core::result::Result::Err(response)
-        }
-    }
-
-    pub struct OnlyDenyGo;
-
-    impl ::fidl_next::Method for OnlyDenyGo {
-        const ORDINAL: u64 = 7311125300308839833;
-        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
-            ::fidl_next::protocol::Flexibility::Strict;
-
-        type Protocol = crate::DenyEachBinding;
-
-        type Request = crate::wire::DenyEachBindingOnlyDenyGoRequest;
-    }
-
-    impl ::fidl_next::TwoWayMethod for OnlyDenyGo {
-        type Response = ::fidl_next::wire::Result<
-            'static,
-            crate::wire::DenyEachBindingOnlyDenyGoResponse,
-            ::fidl_next::wire::Uint32,
-        >;
-    }
-
-    impl<___R> ::fidl_next::Respond<___R> for OnlyDenyGo {
-        type Output = ::core::result::Result<
-            crate::generic::DenyEachBindingOnlyDenyGoResponse<___R>,
-            ::fidl_next::never::Never,
-        >;
-
-        fn respond(response: ___R) -> Self::Output {
-            ::core::result::Result::Ok(crate::generic::DenyEachBindingOnlyDenyGoResponse {
-                b: response,
-            })
-        }
-    }
-
-    impl<___R> ::fidl_next::RespondErr<___R> for OnlyDenyGo {
         type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
@@ -10648,35 +10012,6 @@ pub mod deny_each_binding {
                 ))
             }
 
-            pub fn only_deny_go(
-                &self,
-
-                a: impl ::fidl_next::Encode<bool, <___T as ::fidl_next::Transport>::SendBuffer>,
-            ) -> ::fidl_next::TwoWayFuture<'_, super::OnlyDenyGo, ___T>
-            where
-                <___T as ::fidl_next::Transport>::SendBuffer:
-                    ::fidl_next::encoder::InternalHandleEncoder,
-            {
-                self.only_deny_go_with(crate::generic::DenyEachBindingOnlyDenyGoRequest { a })
-            }
-
-            pub fn only_deny_go_with<___R>(
-                &self,
-                request: ___R,
-            ) -> ::fidl_next::TwoWayFuture<'_, super::OnlyDenyGo, ___T>
-            where
-                ___R: ::fidl_next::Encode<
-                        crate::wire::DenyEachBindingOnlyDenyGoRequest,
-                        <___T as ::fidl_next::Transport>::SendBuffer,
-                    >,
-            {
-                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
-                    7311125300308839833,
-                    <super::OnlyDenyGo as ::fidl_next::Method>::FLEXIBILITY,
-                    request,
-                ))
-            }
-
             pub fn only_deny_python(
                 &self,
 
@@ -10836,14 +10171,6 @@ pub trait DenyEachBindingLocalServerHandler<
         responder: ::fidl_next::Responder<deny_each_binding::OnlyDenyDart, ___T>,
     ) -> impl ::core::future::Future<Output = ()>;
 
-    fn only_deny_go(
-        &mut self,
-
-        request: ::fidl_next::Request<deny_each_binding::OnlyDenyGo, ___T>,
-
-        responder: ::fidl_next::Responder<deny_each_binding::OnlyDenyGo, ___T>,
-    ) -> impl ::core::future::Future<Output = ()>;
-
     fn only_deny_python(
         &mut self,
 
@@ -10878,10 +10205,6 @@ where
             Constraint = (),
         >,
     for<'de> crate::wire::DenyEachBindingOnlyDenyDartRequest: ::fidl_next::Decode<
-            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
-            Constraint = (),
-        >,
-    for<'de> crate::wire::DenyEachBindingOnlyDenyGoRequest: ::fidl_next::Decode<
             <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
             Constraint = (),
         >,
@@ -10948,23 +10271,6 @@ where
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
                         ordinal: 8446571910689294295,
-                        error,
-                    }),
-                }
-            }
-
-            7311125300308839833 => {
-                let responder = ::fidl_next::Responder::from_untyped(responder);
-
-                match ::fidl_next::AsDecoderExt::into_decoded(message) {
-                    Ok(decoded) => {
-                        handler
-                            .only_deny_go(::fidl_next::Request::from_decoded(decoded), responder)
-                            .await;
-                        Ok(())
-                    }
-                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
-                        ordinal: 7311125300308839833,
                         error,
                     }),
                 }
@@ -11081,14 +10387,6 @@ pub trait DenyEachBindingServerHandler<
         responder: ::fidl_next::Responder<deny_each_binding::OnlyDenyDart, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
-    fn only_deny_go(
-        &mut self,
-
-        request: ::fidl_next::Request<deny_each_binding::OnlyDenyGo, ___T>,
-
-        responder: ::fidl_next::Responder<deny_each_binding::OnlyDenyGo, ___T>,
-    ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
-
     fn only_deny_python(
         &mut self,
 
@@ -11123,10 +10421,6 @@ where
             Constraint = (),
         >,
     for<'de> crate::wire::DenyEachBindingOnlyDenyDartRequest: ::fidl_next::Decode<
-            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
-            Constraint = (),
-        >,
-    for<'de> crate::wire::DenyEachBindingOnlyDenyGoRequest: ::fidl_next::Decode<
             <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
             Constraint = (),
         >,
@@ -11193,23 +10487,6 @@ where
                     }
                     Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
                         ordinal: 8446571910689294295,
-                        error,
-                    }),
-                }
-            }
-
-            7311125300308839833 => {
-                let responder = ::fidl_next::Responder::from_untyped(responder);
-
-                match ::fidl_next::AsDecoderExt::into_decoded(message) {
-                    Ok(decoded) => {
-                        handler
-                            .only_deny_go(::fidl_next::Request::from_decoded(decoded), responder)
-                            .await;
-                        Ok(())
-                    }
-                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
-                        ordinal: 7311125300308839833,
                         error,
                     }),
                 }
@@ -11312,16 +10589,6 @@ where
         responder: ::fidl_next::Responder<deny_each_binding::OnlyDenyDart, ___T>,
     ) {
         ___H::only_deny_dart(&mut self.0, request, responder).await
-    }
-
-    async fn only_deny_go(
-        &mut self,
-
-        request: ::fidl_next::Request<deny_each_binding::OnlyDenyGo, ___T>,
-
-        responder: ::fidl_next::Responder<deny_each_binding::OnlyDenyGo, ___T>,
-    ) {
-        ___H::only_deny_go(&mut self.0, request, responder).await
     }
 
     async fn only_deny_python(

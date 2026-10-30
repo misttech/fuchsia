@@ -30,18 +30,6 @@ struct fidl::ostream::Formatter<::test_bindingsdenylist::DenyEachBindingOnlyDeny
   static std::ostream& Format(std::ostream& os, const ::test_bindingsdenylist::DenyEachBindingOnlyDenyDartResult& value);
 };
 template <>
-struct fidl::ostream::Formatter<::test_bindingsdenylist::DenyEachBindingOnlyDenyGoRequest> {
-  static std::ostream& Format(std::ostream& os, const ::test_bindingsdenylist::DenyEachBindingOnlyDenyGoRequest& value);
-};
-template <>
-struct fidl::ostream::Formatter<::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResponse> {
-  static std::ostream& Format(std::ostream& os, const ::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResponse& value);
-};
-template <>
-struct fidl::ostream::Formatter<::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResult> {
-  static std::ostream& Format(std::ostream& os, const ::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResult& value);
-};
-template <>
 struct fidl::ostream::Formatter<::test_bindingsdenylist::DenyEachBindingOnlyDenyPythonRequest> {
   static std::ostream& Format(std::ostream& os, const ::test_bindingsdenylist::DenyEachBindingOnlyDenyPythonRequest& value);
 };
@@ -95,12 +83,6 @@ std::ostream& operator<<(std::ostream& os, const ::test_bindingsdenylist::DenyEa
 std::ostream& operator<<(std::ostream& os, const ::test_bindingsdenylist::DenyEachBindingOnlyDenyDartResponse& value);
 
 std::ostream& operator<<(std::ostream& os, const ::test_bindingsdenylist::DenyEachBindingOnlyDenyDartResult& value);
-
-std::ostream& operator<<(std::ostream& os, const ::test_bindingsdenylist::DenyEachBindingOnlyDenyGoRequest& value);
-
-std::ostream& operator<<(std::ostream& os, const ::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResponse& value);
-
-std::ostream& operator<<(std::ostream& os, const ::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResult& value);
 
 std::ostream& operator<<(std::ostream& os, const ::test_bindingsdenylist::DenyEachBindingOnlyDenyPythonRequest& value);
 

@@ -51,36 +51,6 @@ struct WireTypeForNaturalType<::test_bindingsdenylist::DenyEachBindingOnlyDenyDa
 };
 
 template <>
-struct WireNaturalConversionTraits<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoRequest, ::test_bindingsdenylist::DenyEachBindingOnlyDenyGoRequest> {
-  static ::test_bindingsdenylist::DenyEachBindingOnlyDenyGoRequest ToNatural(::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoRequest src);
-  static ::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoRequest ToWire(fidl::AnyArena& arena, ::test_bindingsdenylist::DenyEachBindingOnlyDenyGoRequest src);
-};
-
-template <>
-struct NaturalTypeForWireType<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoRequest> {
-  using type = ::test_bindingsdenylist::DenyEachBindingOnlyDenyGoRequest;
-};
-template <>
-struct WireTypeForNaturalType<::test_bindingsdenylist::DenyEachBindingOnlyDenyGoRequest> {
-  using type = ::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoRequest;
-};
-
-template <>
-struct WireNaturalConversionTraits<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResponse, ::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResponse> {
-  static ::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResponse ToNatural(::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResponse src);
-  static ::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResponse ToWire(fidl::AnyArena& arena, ::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResponse src);
-};
-
-template <>
-struct NaturalTypeForWireType<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResponse> {
-  using type = ::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResponse;
-};
-template <>
-struct WireTypeForNaturalType<::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResponse> {
-  using type = ::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResponse;
-};
-
-template <>
 struct WireNaturalConversionTraits<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyPythonRequest, ::test_bindingsdenylist::DenyEachBindingOnlyDenyPythonRequest> {
   static ::test_bindingsdenylist::DenyEachBindingOnlyDenyPythonRequest ToNatural(::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyPythonRequest src);
   static ::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyPythonRequest ToWire(fidl::AnyArena& arena, ::test_bindingsdenylist::DenyEachBindingOnlyDenyPythonRequest src);
@@ -243,27 +213,6 @@ struct WireTypeForNaturalType<::test_bindingsdenylist::DenyEachBindingOnlyDenyDa
 };
 
 template <>
-struct WireNaturalConversionTraits<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResult, ::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResult> {
-  static ::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResult ToNatural(::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResult src);
-  static ::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResult ToWire(fidl::AnyArena& arena, ::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResult src);
-};
-
-template <>
-struct WireNaturalConversionTraits<::fidl::WireOptional<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResult>, std::unique_ptr<::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResult>> {
-  static std::unique_ptr<::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResult> ToNatural(::fidl::WireOptional<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResult> src);
-  static ::fidl::WireOptional<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResult> ToWire(fidl::AnyArena& arena, std::unique_ptr<::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResult> src);
-};
-
-template <>
-struct NaturalTypeForWireType<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResult> {
-  using type = ::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResult;
-};
-template <>
-struct WireTypeForNaturalType<::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResult> {
-  using type = ::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResult;
-};
-
-template <>
 struct WireNaturalConversionTraits<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyPythonResult, ::test_bindingsdenylist::DenyEachBindingOnlyDenyPythonResult> {
   static ::test_bindingsdenylist::DenyEachBindingOnlyDenyPythonResult ToNatural(::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyPythonResult src);
   static ::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyPythonResult ToWire(fidl::AnyArena& arena, ::test_bindingsdenylist::DenyEachBindingOnlyDenyPythonResult src);
@@ -341,21 +290,6 @@ struct NaturalTypeForWireType<::fidl::WireResponse<::test_bindingsdenylist::Deny
 template <>
 struct WireTypeForNaturalType<::fidl::Response<::test_bindingsdenylist::DenyEachBinding::OnlyDenyDart>> {
   using type = ::fidl::WireResponse<::test_bindingsdenylist::DenyEachBinding::OnlyDenyDart>;
-};
-
-template <>
-struct WireNaturalConversionTraits<::fidl::WireResponse<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo>, ::fidl::Response<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo>> {
-  static ::fidl::Response<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo> ToNatural(::fidl::WireResponse<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo> src);
-  static ::fidl::WireResponse<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo> ToWire(fidl::AnyArena& arena, ::fidl::Response<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo> src);
-};
-
-template <>
-struct NaturalTypeForWireType<::fidl::WireResponse<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo>> {
-  using type = ::fidl::Response<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo>;
-};
-template <>
-struct WireTypeForNaturalType<::fidl::Response<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo>> {
-  using type = ::fidl::WireResponse<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo>;
 };
 
 template <>

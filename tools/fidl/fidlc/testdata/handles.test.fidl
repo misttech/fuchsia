@@ -55,7 +55,7 @@ type Handles = resource struct {
 @transport("Driver")
 closed protocol DriverProtocol {};
 
-@bindings_denylist("hlcpp,dart,go,rust")
+@bindings_denylist("hlcpp,dart,rust")
 type FdfHandles = resource struct {
     fdf_channel_handle fdf.handle:CHANNEL;
 

@@ -36,11 +36,6 @@ class WireTestBase<::test_bindingsdenylist::DenyEachBinding> : public ::fidl::Wi
       OnlyDenyDartCompleter::Sync& completer) override {
     NotImplemented_("OnlyDenyDart", completer);
   }
-  virtual void OnlyDenyGo(
-      ::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoRequest* request,
-      OnlyDenyGoCompleter::Sync& completer) override {
-    NotImplemented_("OnlyDenyGo", completer);
-  }
   virtual void OnlyDenyPython(
       ::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyPythonRequest* request,
       OnlyDenyPythonCompleter::Sync& completer) override {

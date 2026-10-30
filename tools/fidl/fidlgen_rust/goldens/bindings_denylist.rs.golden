@@ -332,7 +332,6 @@ impl fidl::endpoints::ProtocolMarker for DenyEachBindingMarker {
 }
 pub type DenyEachBindingOnlyDenyCppResult = Result<i32, u32>;
 pub type DenyEachBindingOnlyDenyDartResult = Result<i32, u32>;
-pub type DenyEachBindingOnlyDenyGoResult = Result<i32, u32>;
 pub type DenyEachBindingOnlyDenyPythonResult = Result<i32, u32>;
 pub type DenyEachBindingOnlyDenySyzkallerResult = Result<i32, u32>;
 
@@ -343,9 +342,6 @@ pub trait DenyEachBindingProxyInterface: Send + Sync {
     type OnlyDenyDartResponseFut: std::future::Future<Output = Result<DenyEachBindingOnlyDenyDartResult, fidl::Error>>
         + Send;
     fn r#only_deny_dart(&self, a: bool) -> Self::OnlyDenyDartResponseFut;
-    type OnlyDenyGoResponseFut: std::future::Future<Output = Result<DenyEachBindingOnlyDenyGoResult, fidl::Error>>
-        + Send;
-    fn r#only_deny_go(&self, a: bool) -> Self::OnlyDenyGoResponseFut;
     type OnlyDenyPythonResponseFut: std::future::Future<Output = Result<DenyEachBindingOnlyDenyPythonResult, fidl::Error>>
         + Send;
     fn r#only_deny_python(&self, a: bool) -> Self::OnlyDenyPythonResponseFut;
@@ -435,26 +431,6 @@ impl DenyEachBindingSynchronousProxy {
         Ok(_response.map(|x| x.b))
     }
     // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyDart:end
-
-    // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyGo
-    pub fn r#only_deny_go(
-        &self,
-        mut a: bool,
-        ___deadline: zx::MonotonicInstant,
-    ) -> Result<DenyEachBindingOnlyDenyGoResult, fidl::Error> {
-        let _response = self.client.send_query::<
-            DenyEachBindingOnlyDenyGoRequest,
-            fidl::encoding::ResultType<DenyEachBindingOnlyDenyGoResponse, u32>,
-            DenyEachBindingMarker,
-        >(
-            (a,),
-            0x657655b981478d99,
-            fidl::encoding::DynamicFlags::empty(),
-            ___deadline,
-        )?;
-        Ok(_response.map(|x| x.b))
-    }
-    // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyGo:end
 
     // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyPython
     pub fn r#only_deny_python(
@@ -577,16 +553,6 @@ impl DenyEachBindingProxy {
         DenyEachBindingProxyInterface::r#only_deny_dart(self, a)
     }
 
-    pub fn r#only_deny_go(
-        &self,
-        mut a: bool,
-    ) -> fidl::client::QueryResponseFut<
-        DenyEachBindingOnlyDenyGoResult,
-        fidl::encoding::DefaultFuchsiaResourceDialect,
-    > {
-        DenyEachBindingProxyInterface::r#only_deny_go(self, a)
-    }
-
     pub fn r#only_deny_python(
         &self,
         mut a: bool,
@@ -664,34 +630,6 @@ impl DenyEachBindingProxyInterface for DenyEachBindingProxy {
         )
     }
     // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyDart:end
-
-    type OnlyDenyGoResponseFut = fidl::client::QueryResponseFut<
-        DenyEachBindingOnlyDenyGoResult,
-        fidl::encoding::DefaultFuchsiaResourceDialect,
-    >;
-    // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyGo
-    fn r#only_deny_go(&self, mut a: bool) -> Self::OnlyDenyGoResponseFut {
-        fn _decode(
-            mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
-        ) -> Result<DenyEachBindingOnlyDenyGoResult, fidl::Error> {
-            let _response = fidl::client::decode_transaction_body::<
-                fidl::encoding::ResultType<DenyEachBindingOnlyDenyGoResponse, u32>,
-                fidl::encoding::DefaultFuchsiaResourceDialect,
-                0x657655b981478d99,
-            >(_buf?)?;
-            Ok(_response.map(|x| x.b))
-        }
-        self.client.send_query_and_decode::<
-            DenyEachBindingOnlyDenyGoRequest,
-            DenyEachBindingOnlyDenyGoResult,
-        >(
-            (a,),
-            0x657655b981478d99,
-            fidl::encoding::DynamicFlags::empty(),
-            _decode,
-        )
-    }
-    // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyGo:end
 
     type OnlyDenyPythonResponseFut = fidl::client::QueryResponseFut<
         DenyEachBindingOnlyDenyPythonResult,
@@ -912,24 +850,6 @@ impl futures::Stream for DenyEachBindingRequestStream {
                             },
                         })
                     }
-                    0x657655b981478d99 => {
-                        header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
-                        let mut req = fidl::new_empty!(
-                            DenyEachBindingOnlyDenyGoRequest,
-                            fidl::encoding::DefaultFuchsiaResourceDialect
-                        );
-                        fidl::encoding::Decoder::<fidl::encoding::DefaultFuchsiaResourceDialect>::decode_into::<DenyEachBindingOnlyDenyGoRequest>(&header, _body_bytes, handles, &mut req)?;
-                        let control_handle =
-                            DenyEachBindingControlHandle { inner: this.inner.clone() };
-                        Ok(DenyEachBindingRequest::OnlyDenyGo {
-                            a: req.a,
-
-                            responder: DenyEachBindingOnlyDenyGoResponder {
-                                control_handle: std::mem::ManuallyDrop::new(control_handle),
-                                tx_id: header.tx_id,
-                            },
-                        })
-                    }
                     0x29c852a00c5a1982 => {
                         header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                         let mut req = fidl::new_empty!(
@@ -981,7 +901,6 @@ impl futures::Stream for DenyEachBindingRequestStream {
 pub enum DenyEachBindingRequest {
     OnlyDenyCpp { a: bool, responder: DenyEachBindingOnlyDenyCppResponder },
     OnlyDenyDart { a: bool, responder: DenyEachBindingOnlyDenyDartResponder },
-    OnlyDenyGo { a: bool, responder: DenyEachBindingOnlyDenyGoResponder },
     OnlyDenyPython { a: bool, responder: DenyEachBindingOnlyDenyPythonResponder },
     OnlyDenySyzkaller { a: bool, responder: DenyEachBindingOnlyDenySyzkallerResponder },
 }
@@ -999,15 +918,6 @@ impl DenyEachBindingRequest {
     #[allow(irrefutable_let_patterns)]
     pub fn into_only_deny_dart(self) -> Option<(bool, DenyEachBindingOnlyDenyDartResponder)> {
         if let DenyEachBindingRequest::OnlyDenyDart { a, responder } = self {
-            Some((a, responder))
-        } else {
-            None
-        }
-    }
-
-    #[allow(irrefutable_let_patterns)]
-    pub fn into_only_deny_go(self) -> Option<(bool, DenyEachBindingOnlyDenyGoResponder)> {
-        if let DenyEachBindingRequest::OnlyDenyGo { a, responder } = self {
             Some((a, responder))
         } else {
             None
@@ -1039,7 +949,6 @@ impl DenyEachBindingRequest {
         match *self {
             DenyEachBindingRequest::OnlyDenyCpp { .. } => "only_deny_cpp",
             DenyEachBindingRequest::OnlyDenyDart { .. } => "only_deny_dart",
-            DenyEachBindingRequest::OnlyDenyGo { .. } => "only_deny_go",
             DenyEachBindingRequest::OnlyDenyPython { .. } => "only_deny_python",
             DenyEachBindingRequest::OnlyDenySyzkaller { .. } => "only_deny_syzkaller",
         }
@@ -1214,71 +1123,6 @@ impl DenyEachBindingOnlyDenyDartResponder {
             0x75384066a26d87d7,
             fidl::encoding::DynamicFlags::empty(),
         )
-    }
-}
-
-#[must_use = "FIDL methods require a response to be sent"]
-#[derive(Debug)]
-pub struct DenyEachBindingOnlyDenyGoResponder {
-    control_handle: std::mem::ManuallyDrop<DenyEachBindingControlHandle>,
-    tx_id: u32,
-}
-
-/// Set the the channel to be shutdown (see [`DenyEachBindingControlHandle::shutdown`])
-/// if the responder is dropped without sending a response, so that the client
-/// doesn't hang. To prevent this behavior, call `drop_without_shutdown`.
-impl std::ops::Drop for DenyEachBindingOnlyDenyGoResponder {
-    fn drop(&mut self) {
-        self.control_handle.shutdown();
-        // Safety: drops once, never accessed again
-        unsafe { std::mem::ManuallyDrop::drop(&mut self.control_handle) };
-    }
-}
-
-impl fidl::endpoints::Responder for DenyEachBindingOnlyDenyGoResponder {
-    type ControlHandle = DenyEachBindingControlHandle;
-
-    fn control_handle(&self) -> &DenyEachBindingControlHandle {
-        &self.control_handle
-    }
-
-    fn drop_without_shutdown(mut self) {
-        // Safety: drops once, never accessed again due to mem::forget
-        unsafe { std::mem::ManuallyDrop::drop(&mut self.control_handle) };
-        // Prevent Drop from running (which would shut down the channel)
-        std::mem::forget(self);
-    }
-}
-
-impl DenyEachBindingOnlyDenyGoResponder {
-    /// Sends a response to the FIDL transaction.
-    ///
-    /// Sets the channel to shutdown if an error occurs.
-    pub fn send(self, mut result: Result<i32, u32>) -> Result<(), fidl::Error> {
-        let _result = self.send_raw(result);
-        if _result.is_err() {
-            self.control_handle.shutdown();
-        }
-        self.drop_without_shutdown();
-        _result
-    }
-
-    /// Similar to "send" but does not shutdown the channel if an error occurs.
-    pub fn send_no_shutdown_on_err(self, mut result: Result<i32, u32>) -> Result<(), fidl::Error> {
-        let _result = self.send_raw(result);
-        self.drop_without_shutdown();
-        _result
-    }
-
-    fn send_raw(&self, mut result: Result<i32, u32>) -> Result<(), fidl::Error> {
-        self.control_handle
-            .inner
-            .send::<fidl::encoding::ResultType<DenyEachBindingOnlyDenyGoResponse, u32>>(
-                result.map(|b| (b,)),
-                self.tx_id,
-                0x657655b981478d99,
-                fidl::encoding::DynamicFlags::empty(),
-            )
     }
 }
 

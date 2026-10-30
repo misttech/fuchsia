@@ -36,10 +36,6 @@ struct DenyEachBindingOnlyDenyDartRequest;
 
 struct DenyEachBindingOnlyDenyDartResponse;
 
-struct DenyEachBindingOnlyDenyGoRequest;
-
-struct DenyEachBindingOnlyDenyGoResponse;
-
 struct DenyEachBindingOnlyDenyPythonRequest;
 
 struct DenyEachBindingOnlyDenyPythonResponse;
@@ -60,8 +56,6 @@ class OnlyLlcpp;
 
 class DenyEachBindingOnlyDenyDartResult;
 
-class DenyEachBindingOnlyDenyGoResult;
-
 class DenyEachBindingOnlyDenyPythonResult;
 
 class DenyEachBindingOnlyDenyRustResult;
@@ -73,14 +67,6 @@ struct DenyEachBindingOnlyDenyDartRequest {
 };
 
 struct DenyEachBindingOnlyDenyDartResponse {
-  int32_t b = {};
-};
-
-struct DenyEachBindingOnlyDenyGoRequest {
-  bool a = {};
-};
-
-struct DenyEachBindingOnlyDenyGoResponse {
   int32_t b = {};
 };
 
@@ -200,55 +186,6 @@ class DenyEachBindingOnlyDenyDartResult {
 
   static void SizeAndOffsetAssertionHelper();
   ::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyDartResult::Ordinal ordinal_;
-  FIDL_ALIGNDECL
-  ::fidl::UntypedEnvelope envelope_;
-};
-
-class DenyEachBindingOnlyDenyGoResult {
- public:
-  using Response = test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResponse;
-
-  DenyEachBindingOnlyDenyGoResult();
-
-  DenyEachBindingOnlyDenyGoResult(const DenyEachBindingOnlyDenyGoResult&) = default;
-  DenyEachBindingOnlyDenyGoResult& operator=(const DenyEachBindingOnlyDenyGoResult&) = default;
-  DenyEachBindingOnlyDenyGoResult(DenyEachBindingOnlyDenyGoResult&&) = default;
-  DenyEachBindingOnlyDenyGoResult& operator=(DenyEachBindingOnlyDenyGoResult&&) = default;
-
-  enum class Tag : fidl_xunion_tag_t {
-    kResponse = 1,  // 0x1
-    kErr = 2,       // 0x2
-  };
-
-  bool has_invalid_tag() const;
-
-  bool is_response() const;
-
-  static DenyEachBindingOnlyDenyGoResult WithResponse(::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResponse val);
-
-  ::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResponse& response();
-
-  const ::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResponse& response() const;
-
-  bool is_err() const;
-
-  static DenyEachBindingOnlyDenyGoResult WithErr(uint32_t val);
-
-  uint32_t& err();
-
-  const uint32_t& err() const;
-
-  ::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResult::Tag Which() const;
-
- private:
-  enum class Ordinal : fidl_xunion_tag_t {
-    Invalid = 0,
-    kResponse = 1,  // 0x1
-    kErr = 2,       // 0x2
-  };
-
-  static void SizeAndOffsetAssertionHelper();
-  ::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResult::Ordinal ordinal_;
   FIDL_ALIGNDECL
   ::fidl::UntypedEnvelope envelope_;
 };
@@ -466,70 +403,6 @@ struct ::fidl::internal::WireCodingTraits<::test_bindingsdenylist::wire::DenyEac
 
   static void Encode(
       internal::WireEncoder* encoder, ::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyDartResponse* value, ::fidl::internal::WirePosition position, RecursionDepth<IsRecursive> recursion_depth);
-  static void Decode(
-      internal::WireDecoder* decoder, ::fidl::internal::WirePosition position, RecursionDepth<IsRecursive> recursion_depth);
-};
-
-template <>
-struct TypeTraits<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoRequest> {
-  static constexpr uint32_t kMaxNumHandles = 0;
-  static constexpr uint32_t kMaxDepth = 0;
-  static constexpr uint32_t kPrimarySize = 1;
-  [[maybe_unused]]
-  static constexpr uint32_t kMaxOutOfLine = 0;
-  static constexpr bool kHasFlexibleEnvelope = false;
-  static constexpr bool kHasPointer = false;
-};
-
-template <>
-struct IsFidlType<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoRequest> : public std::true_type {};
-template <>
-struct IsWire<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoRequest> : public std::true_type {};
-template <>
-struct IsStruct<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoRequest> : public std::true_type {};
-
-template <bool IsRecursive>
-struct ::fidl::internal::WireCodingTraits<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoRequest, ::fidl::internal::WireCodingConstraintEmpty, IsRecursive> {
-  static constexpr size_t kInlineSize = 1;
-  static constexpr auto kMembers = std::make_tuple(::fidl::internal::WireStructMemberCodingInfo<bool, fidl::internal::WireCodingConstraintEmpty, IsRecursive>());
-  static constexpr bool kHasPadding = false;
-  using Base = WireStructCodingTraitsBase<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoRequest, ::fidl::internal::WireCodingConstraintEmpty, IsRecursive>;
-  static constexpr bool kIsMemcpyCompatible = Base::kIsMemcpyCompatible;
-
-  static void Encode(
-      internal::WireEncoder* encoder, ::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoRequest* value, ::fidl::internal::WirePosition position, RecursionDepth<IsRecursive> recursion_depth);
-  static void Decode(
-      internal::WireDecoder* decoder, ::fidl::internal::WirePosition position, RecursionDepth<IsRecursive> recursion_depth);
-};
-
-template <>
-struct TypeTraits<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResponse> {
-  static constexpr uint32_t kMaxNumHandles = 0;
-  static constexpr uint32_t kMaxDepth = 0;
-  static constexpr uint32_t kPrimarySize = 4;
-  [[maybe_unused]]
-  static constexpr uint32_t kMaxOutOfLine = 0;
-  static constexpr bool kHasFlexibleEnvelope = false;
-  static constexpr bool kHasPointer = false;
-};
-
-template <>
-struct IsFidlType<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResponse> : public std::true_type {};
-template <>
-struct IsWire<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResponse> : public std::true_type {};
-template <>
-struct IsStruct<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResponse> : public std::true_type {};
-
-template <bool IsRecursive>
-struct ::fidl::internal::WireCodingTraits<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResponse, ::fidl::internal::WireCodingConstraintEmpty, IsRecursive> {
-  static constexpr size_t kInlineSize = 4;
-  static constexpr auto kMembers = std::make_tuple(::fidl::internal::WireStructMemberCodingInfo<int32_t, fidl::internal::WireCodingConstraintEmpty, IsRecursive>());
-  static constexpr bool kHasPadding = false;
-  using Base = WireStructCodingTraitsBase<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResponse, ::fidl::internal::WireCodingConstraintEmpty, IsRecursive>;
-  static constexpr bool kIsMemcpyCompatible = Base::kIsMemcpyCompatible;
-
-  static void Encode(
-      internal::WireEncoder* encoder, ::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResponse* value, ::fidl::internal::WirePosition position, RecursionDepth<IsRecursive> recursion_depth);
   static void Decode(
       internal::WireDecoder* decoder, ::fidl::internal::WirePosition position, RecursionDepth<IsRecursive> recursion_depth);
 };
@@ -855,39 +728,6 @@ struct ::fidl::internal::WireCodingTraits<::test_bindingsdenylist::wire::DenyEac
 template <bool IsRecursive>
 struct ::fidl::internal::WireCodingTraits<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyDartResult, ::fidl::internal::WireCodingConstraintEmpty, IsRecursive>
     : public ::fidl::internal::WireCodingTraits<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyDartResult, ::fidl::internal::WireCodingConstraintUnion<false>, IsRecursive> {};
-
-template <>
-struct TypeTraits<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResult> {
-  static constexpr uint32_t kMaxNumHandles = 0;
-  static constexpr uint32_t kMaxDepth = 1;
-  static constexpr uint32_t kPrimarySize = 16;
-  [[maybe_unused]]
-  static constexpr uint32_t kMaxOutOfLine = 0;
-  static constexpr bool kHasFlexibleEnvelope = false;
-  static constexpr bool kHasPointer = true;
-};
-
-template <>
-struct IsFidlType<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResult> : public std::true_type {};
-template <>
-struct IsWire<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResult> : public std::true_type {};
-template <>
-struct IsUnion<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResult> : public std::true_type {};
-
-template <typename Constraint, bool IsRecursive>
-struct ::fidl::internal::WireCodingTraits<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResult, Constraint, IsRecursive> {
-  static constexpr size_t kInlineSize = 16;
-  static constexpr bool kIsMemcpyCompatible = false;
-
-  static void Encode(internal::WireEncoder* encoder, ::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResult* value, ::fidl::internal::WirePosition position, RecursionDepth<IsRecursive> recursion_depth);
-
-  static void Decode(internal::WireDecoder* decoder, ::fidl::internal::WirePosition position, RecursionDepth<IsRecursive> recursion_depth);
-};
-
-// Top-level union.
-template <bool IsRecursive>
-struct ::fidl::internal::WireCodingTraits<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResult, ::fidl::internal::WireCodingConstraintEmpty, IsRecursive>
-    : public ::fidl::internal::WireCodingTraits<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyGoResult, ::fidl::internal::WireCodingConstraintUnion<false>, IsRecursive> {};
 
 template <>
 struct TypeTraits<::test_bindingsdenylist::wire::DenyEachBindingOnlyDenyPythonResult> {

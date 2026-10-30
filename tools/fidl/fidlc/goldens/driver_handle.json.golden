@@ -221,19 +221,19 @@
               "type": "string",
               "value": {
                 "kind": "literal",
-                "value": "rust, cpp, hlcpp, dart, go",
-                "expression": "\"rust, cpp, hlcpp, dart, go\"",
+                "value": "rust, cpp, hlcpp, dart",
+                "expression": "\"rust, cpp, hlcpp, dart\"",
                 "literal": {
                   "kind": "string",
-                  "value": "rust, cpp, hlcpp, dart, go",
-                  "expression": "\"rust, cpp, hlcpp, dart, go\""
+                  "value": "rust, cpp, hlcpp, dart",
+                  "expression": "\"rust, cpp, hlcpp, dart\""
                 }
               },
               "location": {
                 "filename": "../../tools/fidl/fidlc/testdata/driver_handle.test.fidl",
                 "line": 23,
                 "column": 20,
-                "length": 28
+                "length": 24
               }
             }
           ],
@@ -241,7 +241,7 @@
             "filename": "../../tools/fidl/fidlc/testdata/driver_handle.test.fidl",
             "line": 23,
             "column": 1,
-            "length": 48
+            "length": 44
           }
         }
       ],
@@ -305,19 +305,19 @@
               "type": "string",
               "value": {
                 "kind": "literal",
-                "value": "rust, cpp, hlcpp, dart, go",
-                "expression": "\"rust, cpp, hlcpp, dart, go\"",
+                "value": "rust, cpp, hlcpp, dart",
+                "expression": "\"rust, cpp, hlcpp, dart\"",
                 "literal": {
                   "kind": "string",
-                  "value": "rust, cpp, hlcpp, dart, go",
-                  "expression": "\"rust, cpp, hlcpp, dart, go\""
+                  "value": "rust, cpp, hlcpp, dart",
+                  "expression": "\"rust, cpp, hlcpp, dart\""
                 }
               },
               "location": {
                 "filename": "../../tools/fidl/fidlc/testdata/driver_handle.test.fidl",
                 "line": 12,
                 "column": 20,
-                "length": 28
+                "length": 24
               }
             }
           ],
@@ -325,7 +325,7 @@
             "filename": "../../tools/fidl/fidlc/testdata/driver_handle.test.fidl",
             "line": 12,
             "column": 1,
-            "length": 48
+            "length": 44
           }
         }
       ],
@@ -450,19 +450,19 @@
               "type": "string",
               "value": {
                 "kind": "literal",
-                "value": "rust, cpp, hlcpp, dart, go",
-                "expression": "\"rust, cpp, hlcpp, dart, go\"",
+                "value": "rust, cpp, hlcpp, dart",
+                "expression": "\"rust, cpp, hlcpp, dart\"",
                 "literal": {
                   "kind": "string",
-                  "value": "rust, cpp, hlcpp, dart, go",
-                  "expression": "\"rust, cpp, hlcpp, dart, go\""
+                  "value": "rust, cpp, hlcpp, dart",
+                  "expression": "\"rust, cpp, hlcpp, dart\""
                 }
               },
               "location": {
                 "filename": "../../tools/fidl/fidlc/testdata/driver_handle.test.fidl",
                 "line": 17,
                 "column": 20,
-                "length": 28
+                "length": 24
               }
             }
           ],
@@ -470,7 +470,7 @@
             "filename": "../../tools/fidl/fidlc/testdata/driver_handle.test.fidl",
             "line": 17,
             "column": 1,
-            "length": 48
+            "length": 44
           }
         }
       ],

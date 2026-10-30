@@ -28,10 +28,6 @@ class TestBase<::test_bindingsdenylist::DenyEachBinding> : public ::fidl::Server
                             OnlyDenyDartCompleter::Sync& completer) {
     NotImplemented_("OnlyDenyDart", completer);
   }
-  virtual void OnlyDenyGo(OnlyDenyGoRequest& request,
-                          OnlyDenyGoCompleter::Sync& completer) {
-    NotImplemented_("OnlyDenyGo", completer);
-  }
   virtual void OnlyDenyPython(OnlyDenyPythonRequest& request,
                               OnlyDenyPythonCompleter::Sync& completer) {
     NotImplemented_("OnlyDenyPython", completer);

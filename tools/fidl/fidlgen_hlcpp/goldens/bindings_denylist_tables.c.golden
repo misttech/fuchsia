@@ -5,7 +5,6 @@
 #include <lib/fidl/internal.h>
 
 const struct FidlCodedStruct test_bindingsdenylist_DenyEachBinding_OnlyDenyDart_ResponseTable;
-const struct FidlCodedStruct test_bindingsdenylist_DenyEachBinding_OnlyDenyGo_ResponseTable;
 const struct FidlCodedStruct test_bindingsdenylist_DenyEachBinding_OnlyDenyPython_ResponseTable;
 const struct FidlCodedStruct test_bindingsdenylist_DenyEachBinding_OnlyDenyRust_ResponseTable;
 const struct FidlCodedStruct test_bindingsdenylist_DenyEachBinding_OnlyDenySyzkaller_ResponseTable;
@@ -28,27 +27,6 @@ const struct FidlCodedStruct test_bindingsdenylist_DenyEachBindingOnlyDenyDartRe
     .is_empty = kFidlEmpty_IsNotEmpty,
     .size_v2 = 1,
     .elements = Fields56test_bindingsdenylist_DenyEachBindingOnlyDenyDartRequest,
-    .element_count = 1,
-};
-
-static const struct FidlStructElement Fields54test_bindingsdenylist_DenyEachBindingOnlyDenyGoRequest[] = {
-    {
-        .field = {
-            .header = {
-                .element_type = kFidlStructElementType_Field,
-                .is_resource = kFidlIsResource_NotResource,
-            },
-            .offset_v2 = 0,
-            .field_type = (const fidl_type_t*)&fidl_internal_kBoolTable,
-        },
-    },
-};
-const struct FidlCodedStruct test_bindingsdenylist_DenyEachBindingOnlyDenyGoRequestTable = {
-    .tag = kFidlTypeStruct,
-    .name = "test.bindingsdenylist/DenyEachBindingOnlyDenyGoRequest",
-    .is_empty = kFidlEmpty_IsNotEmpty,
-    .size_v2 = 1,
-    .elements = Fields54test_bindingsdenylist_DenyEachBindingOnlyDenyGoRequest,
     .element_count = 1,
 };
 
@@ -118,15 +96,6 @@ const struct FidlCodedStruct test_bindingsdenylist_DenyEachBindingOnlyDenySyzkal
 const struct FidlCodedStruct test_bindingsdenylist_DenyEachBinding_OnlyDenyDart_ResponseTable = {
     .tag = kFidlTypeStruct,
     .name = "test.bindingsdenylist/DenyEachBinding_OnlyDenyDart_Response",
-    .is_empty = kFidlEmpty_IsNotEmpty,
-    .size_v2 = 4,
-    .elements = NULL,
-    .element_count = 0,
-};
-
-const struct FidlCodedStruct test_bindingsdenylist_DenyEachBinding_OnlyDenyGo_ResponseTable = {
-    .tag = kFidlTypeStruct,
-    .name = "test.bindingsdenylist/DenyEachBinding_OnlyDenyGo_Response",
     .is_empty = kFidlEmpty_IsNotEmpty,
     .size_v2 = 4,
     .elements = NULL,
@@ -222,29 +191,6 @@ const struct FidlCodedUnion test_bindingsdenylist_DenyEachBinding_OnlyDenyDart_R
     .is_resource = kFidlIsResource_NotResource,
     .nullable = kFidlNullability_Nullable,
     .fields = Fields57test_bindingsdenylist_DenyEachBinding_OnlyDenyDart_Result,
-    .field_count = 2,
-};
-
-static const struct FidlUnionField Fields55test_bindingsdenylist_DenyEachBinding_OnlyDenyGo_Result[] = {
-    {.type = (const fidl_type_t*)&test_bindingsdenylist_DenyEachBinding_OnlyDenyGo_ResponseTable},
-    {.type = (const fidl_type_t*)&fidl_internal_kUint32Table},
-};
-const struct FidlCodedUnion test_bindingsdenylist_DenyEachBinding_OnlyDenyGo_ResultTable = {
-    .tag = kFidlTypeUnion,
-    .name = "test.bindingsdenylist/DenyEachBinding_OnlyDenyGo_Result",
-    .strictness = kFidlStrictness_Strict,
-    .is_resource = kFidlIsResource_NotResource,
-    .nullable = kFidlNullability_Nonnullable,
-    .fields = Fields55test_bindingsdenylist_DenyEachBinding_OnlyDenyGo_Result,
-    .field_count = 2,
-};
-const struct FidlCodedUnion test_bindingsdenylist_DenyEachBinding_OnlyDenyGo_ResultNullableRefTable = {
-    .tag = kFidlTypeUnion,
-    .name = "test.bindingsdenylist/DenyEachBinding_OnlyDenyGo_Result",
-    .strictness = kFidlStrictness_Strict,
-    .is_resource = kFidlIsResource_NotResource,
-    .nullable = kFidlNullability_Nullable,
-    .fields = Fields55test_bindingsdenylist_DenyEachBinding_OnlyDenyGo_Result,
     .field_count = 2,
 };
 

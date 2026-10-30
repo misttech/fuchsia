@@ -23,9 +23,6 @@ class DenyEachBinding_TestBase : public ::test::bindingsdenylist::DenyEachBindin
   void OnlyDenyDart(bool a, OnlyDenyDartCallback callback) override {
     NotImplemented_("OnlyDenyDart");
   }
-  void OnlyDenyGo(bool a, OnlyDenyGoCallback callback) override {
-    NotImplemented_("OnlyDenyGo");
-  }
   void OnlyDenyPython(bool a, OnlyDenyPythonCallback callback) override {
     NotImplemented_("OnlyDenyPython");
   }

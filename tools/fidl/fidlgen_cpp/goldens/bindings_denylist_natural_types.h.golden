@@ -28,10 +28,6 @@ class DenyEachBindingOnlyDenyDartRequest;
 
 class DenyEachBindingOnlyDenyDartResponse;
 
-class DenyEachBindingOnlyDenyGoRequest;
-
-class DenyEachBindingOnlyDenyGoResponse;
-
 class DenyEachBindingOnlyDenyPythonRequest;
 
 class DenyEachBindingOnlyDenyPythonResponse;
@@ -51,8 +47,6 @@ class OnlyAppearsInImportingLibrary;
 class OnlyLlcpp;
 
 class DenyEachBindingOnlyDenyDartResult;
-
-class DenyEachBindingOnlyDenyGoResult;
 
 class DenyEachBindingOnlyDenyPythonResult;
 
@@ -255,157 +249,6 @@ class DenyEachBindingOnlyDenyDartResult {
 
   static size_t TagToIndex(::fidl::internal::NaturalDecoder* decoder, ::test_bindingsdenylist::DenyEachBindingOnlyDenyDartResult::Tag tag);
   static std::optional<::test_bindingsdenylist::DenyEachBindingOnlyDenyDartResult::Tag> IndexToTag(size_t index);
-};
-
-class DenyEachBindingOnlyDenyGoRequest {
- private:
-  struct Storage_;
-
- public:
-  DenyEachBindingOnlyDenyGoRequest(Storage_ storage) noexcept;
-  DenyEachBindingOnlyDenyGoRequest(bool a) noexcept;
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdefaulted-function-deleted"
-  // Default constructs a |DenyEachBindingOnlyDenyGoRequest| only if all of its members are default constructible.
-  DenyEachBindingOnlyDenyGoRequest() = default;
-#pragma clang diagnostic pop
-
-  DenyEachBindingOnlyDenyGoRequest(DenyEachBindingOnlyDenyGoRequest&&) noexcept = default;
-  DenyEachBindingOnlyDenyGoRequest& operator=(DenyEachBindingOnlyDenyGoRequest&&) noexcept = default;
-  DenyEachBindingOnlyDenyGoRequest(const DenyEachBindingOnlyDenyGoRequest& other) noexcept;
-  DenyEachBindingOnlyDenyGoRequest& operator=(const DenyEachBindingOnlyDenyGoRequest& other) noexcept;
-
-  bool operator==(const DenyEachBindingOnlyDenyGoRequest& other) const noexcept;
-  bool operator!=(const DenyEachBindingOnlyDenyGoRequest& other) const noexcept;
-
-  bool
-  a() const;
-
-  bool& a();
-
-  // Setter for a.
-  //
-
-  DenyEachBindingOnlyDenyGoRequest& a(bool value);
-
-  DenyEachBindingOnlyDenyGoRequest(::fidl::internal::DefaultConstructPossiblyInvalidObjectTag);
-
- private:
-  struct Storage_ final {
-    bool a = {};
-  };
-
-  Storage_ storage_;
-  Storage_ CloneStorage_() const;
-
-  friend struct ::fidl::internal::NaturalStructCodingTraits<::test_bindingsdenylist::DenyEachBindingOnlyDenyGoRequest, 1>;
-  friend struct ::fidl::internal::MemberVisitor<::test_bindingsdenylist::DenyEachBindingOnlyDenyGoRequest>;
-  static constexpr auto kMembers = std::make_tuple(::fidl::internal::NaturalStructMember<Storage_, bool, fidl::internal::NaturalCodingConstraintEmpty>{
-      &Storage_::a, 0});
-  static constexpr auto kPadding = std::make_tuple();
-};
-
-class DenyEachBindingOnlyDenyGoResponse {
- private:
-  struct Storage_;
-
- public:
-  DenyEachBindingOnlyDenyGoResponse(Storage_ storage) noexcept;
-  DenyEachBindingOnlyDenyGoResponse(int32_t b) noexcept;
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdefaulted-function-deleted"
-  // Default constructs a |DenyEachBindingOnlyDenyGoResponse| only if all of its members are default constructible.
-  DenyEachBindingOnlyDenyGoResponse() = default;
-#pragma clang diagnostic pop
-
-  DenyEachBindingOnlyDenyGoResponse(DenyEachBindingOnlyDenyGoResponse&&) noexcept = default;
-  DenyEachBindingOnlyDenyGoResponse& operator=(DenyEachBindingOnlyDenyGoResponse&&) noexcept = default;
-  DenyEachBindingOnlyDenyGoResponse(const DenyEachBindingOnlyDenyGoResponse& other) noexcept;
-  DenyEachBindingOnlyDenyGoResponse& operator=(const DenyEachBindingOnlyDenyGoResponse& other) noexcept;
-
-  bool operator==(const DenyEachBindingOnlyDenyGoResponse& other) const noexcept;
-  bool operator!=(const DenyEachBindingOnlyDenyGoResponse& other) const noexcept;
-
-  int32_t
-  b() const;
-
-  int32_t& b();
-
-  // Setter for b.
-  //
-
-  DenyEachBindingOnlyDenyGoResponse& b(int32_t value);
-
-  DenyEachBindingOnlyDenyGoResponse(::fidl::internal::DefaultConstructPossiblyInvalidObjectTag);
-
- private:
-  struct Storage_ final {
-    int32_t b = {};
-  };
-
-  Storage_ storage_;
-  Storage_ CloneStorage_() const;
-
-  friend struct ::fidl::internal::NaturalStructCodingTraits<::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResponse, 4>;
-  friend struct ::fidl::internal::MemberVisitor<::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResponse>;
-  static constexpr auto kMembers = std::make_tuple(::fidl::internal::NaturalStructMember<Storage_, int32_t, fidl::internal::NaturalCodingConstraintEmpty>{
-      &Storage_::b, 0});
-  static constexpr auto kPadding = std::make_tuple();
-};
-
-class DenyEachBindingOnlyDenyGoResult {
- private:
-  using Storage_ =
-      std::variant<
-          std::monostate, ::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResponse, uint32_t>;
-
- public:
-  // TODO: share union tag types between wire & natural.
-  enum class Tag : fidl_xunion_tag_t {
-    kResponse = 1,  // 0x1
-    kErr = 2,       // 0x2
-  };
-
-  DenyEachBindingOnlyDenyGoResult(DenyEachBindingOnlyDenyGoResult&& other) noexcept;
-  DenyEachBindingOnlyDenyGoResult& operator=(DenyEachBindingOnlyDenyGoResult&& other) noexcept;
-  DenyEachBindingOnlyDenyGoResult(const DenyEachBindingOnlyDenyGoResult& other) noexcept;
-  DenyEachBindingOnlyDenyGoResult& operator=(const DenyEachBindingOnlyDenyGoResult& other) noexcept;
-  bool operator==(const DenyEachBindingOnlyDenyGoResult& other) const noexcept;
-  bool operator!=(const DenyEachBindingOnlyDenyGoResult& other) const noexcept;
-
-  ::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResult::Tag Which() const;
-  static DenyEachBindingOnlyDenyGoResult WithResponse(::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResponse val);
-  const ::fidl::internal::UnionMemberView<1, Storage_> response() const;
-  ::fidl::internal::UnionMemberView<1, Storage_> response();
-
-  // Sets the union to hold the response member.
-  //
-
-  DenyEachBindingOnlyDenyGoResult& response(::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResponse value);
-  static DenyEachBindingOnlyDenyGoResult WithErr(uint32_t val);
-  const ::fidl::internal::UnionMemberView<2, Storage_> err() const;
-  ::fidl::internal::UnionMemberView<2, Storage_> err();
-
-  // Sets the union to hold the err member.
-  //
-
-  DenyEachBindingOnlyDenyGoResult& err(uint32_t value);
-
-  DenyEachBindingOnlyDenyGoResult(::fidl::internal::DefaultConstructPossiblyInvalidObjectTag);
-
- private:
-  std::shared_ptr<Storage_> storage_;
-  std::shared_ptr<Storage_> CloneStorage_() const;
-  friend struct ::fidl::internal::NaturalUnionCodingTraits<::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResult>;
-  static constexpr auto kMembers = std::make_tuple(
-      ::fidl::internal::NaturalUnionMember<::fidl::internal::NaturalCodingConstraintEmpty>(), ::fidl::internal::NaturalUnionMember<fidl::internal::NaturalCodingConstraintEmpty>(), ::fidl::internal::NaturalUnionMember<fidl::internal::NaturalCodingConstraintEmpty>());
-
-  explicit DenyEachBindingOnlyDenyGoResult(std::shared_ptr<Storage_> storage);
-
-  static size_t TagToIndex(::fidl::internal::NaturalDecoder* decoder, ::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResult::Tag tag);
-  static std::optional<::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResult::Tag> IndexToTag(size_t index);
 };
 
 class DenyEachBindingOnlyDenyPythonRequest {
@@ -999,42 +842,6 @@ template <>
 struct internal::NaturalCodingTraits<::test_bindingsdenylist::DenyEachBindingOnlyDenyDartResponse, ::fidl::internal::NaturalCodingConstraintEmpty> final
     : public ::fidl::internal::NaturalStructCodingTraits<::test_bindingsdenylist::DenyEachBindingOnlyDenyDartResponse, 4> {};
 template <>
-struct IsFidlType<::test_bindingsdenylist::DenyEachBindingOnlyDenyGoRequest> : public std::true_type {};
-
-template <>
-struct TypeTraits<::test_bindingsdenylist::DenyEachBindingOnlyDenyGoRequest> {
-  static constexpr uint32_t kMaxNumHandles = 0;
-  static constexpr uint32_t kMaxDepth = 0;
-  static constexpr uint32_t kPrimarySize = 1;
-  static constexpr uint32_t kMaxOutOfLine = 0;
-  static constexpr bool kHasPointer = false;
-};
-
-template <>
-struct IsStruct<::test_bindingsdenylist::DenyEachBindingOnlyDenyGoRequest> : public std::true_type {};
-
-template <>
-struct internal::NaturalCodingTraits<::test_bindingsdenylist::DenyEachBindingOnlyDenyGoRequest, ::fidl::internal::NaturalCodingConstraintEmpty> final
-    : public ::fidl::internal::NaturalStructCodingTraits<::test_bindingsdenylist::DenyEachBindingOnlyDenyGoRequest, 1> {};
-template <>
-struct IsFidlType<::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResponse> : public std::true_type {};
-
-template <>
-struct TypeTraits<::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResponse> {
-  static constexpr uint32_t kMaxNumHandles = 0;
-  static constexpr uint32_t kMaxDepth = 0;
-  static constexpr uint32_t kPrimarySize = 4;
-  static constexpr uint32_t kMaxOutOfLine = 0;
-  static constexpr bool kHasPointer = false;
-};
-
-template <>
-struct IsStruct<::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResponse> : public std::true_type {};
-
-template <>
-struct internal::NaturalCodingTraits<::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResponse, ::fidl::internal::NaturalCodingConstraintEmpty> final
-    : public ::fidl::internal::NaturalStructCodingTraits<::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResponse, 4> {};
-template <>
 struct IsFidlType<::test_bindingsdenylist::DenyEachBindingOnlyDenyPythonRequest> : public std::true_type {};
 
 template <>
@@ -1215,24 +1022,6 @@ struct IsUnion<::test_bindingsdenylist::DenyEachBindingOnlyDenyDartResult> : pub
 template <>
 struct internal::NaturalCodingTraits<::test_bindingsdenylist::DenyEachBindingOnlyDenyDartResult, ::fidl::internal::NaturalCodingConstraintEmpty> final
     : public ::fidl::internal::NaturalUnionCodingTraits<::test_bindingsdenylist::DenyEachBindingOnlyDenyDartResult> {};
-template <>
-struct IsFidlType<::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResult> : public std::true_type {};
-
-template <>
-struct TypeTraits<::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResult> {
-  static constexpr uint32_t kMaxNumHandles = 0;
-  static constexpr uint32_t kMaxDepth = 1;
-  static constexpr uint32_t kPrimarySize = 16;
-  static constexpr uint32_t kMaxOutOfLine = 0;
-  static constexpr bool kHasPointer = true;
-};
-
-template <>
-struct IsUnion<::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResult> : public std::true_type {};
-
-template <>
-struct internal::NaturalCodingTraits<::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResult, ::fidl::internal::NaturalCodingConstraintEmpty> final
-    : public ::fidl::internal::NaturalUnionCodingTraits<::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResult> {};
 template <>
 struct IsFidlType<::test_bindingsdenylist::DenyEachBindingOnlyDenyPythonResult> : public std::true_type {};
 

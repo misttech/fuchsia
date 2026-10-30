@@ -141,19 +141,19 @@
               "type": "string",
               "value": {
                 "kind": "literal",
-                "value": "hlcpp, llcpp, go, dart",
-                "expression": "\"hlcpp, llcpp, go, dart\"",
+                "value": "hlcpp, llcpp, dart",
+                "expression": "\"hlcpp, llcpp, dart\"",
                 "literal": {
                   "kind": "string",
-                  "value": "hlcpp, llcpp, go, dart",
-                  "expression": "\"hlcpp, llcpp, go, dart\""
+                  "value": "hlcpp, llcpp, dart",
+                  "expression": "\"hlcpp, llcpp, dart\""
                 }
               },
               "location": {
                 "filename": "../../tools/fidl/fidlc/testdata/imported_const_values/example.test.fidl",
                 "line": 15,
                 "column": 20,
-                "length": 24
+                "length": 20
               }
             }
           ],
@@ -161,7 +161,7 @@
             "filename": "../../tools/fidl/fidlc/testdata/imported_const_values/example.test.fidl",
             "line": 15,
             "column": 1,
-            "length": 44
+            "length": 40
           }
         }
       ],
@@ -233,19 +233,19 @@
               "type": "string",
               "value": {
                 "kind": "literal",
-                "value": "hlcpp, llcpp, go, dart",
-                "expression": "\"hlcpp, llcpp, go, dart\"",
+                "value": "hlcpp, llcpp, dart",
+                "expression": "\"hlcpp, llcpp, dart\"",
                 "literal": {
                   "kind": "string",
-                  "value": "hlcpp, llcpp, go, dart",
-                  "expression": "\"hlcpp, llcpp, go, dart\""
+                  "value": "hlcpp, llcpp, dart",
+                  "expression": "\"hlcpp, llcpp, dart\""
                 }
               },
               "location": {
                 "filename": "../../tools/fidl/fidlc/testdata/imported_const_values/example.test.fidl",
                 "line": 19,
                 "column": 20,
-                "length": 24
+                "length": 20
               }
             }
           ],
@@ -253,7 +253,7 @@
             "filename": "../../tools/fidl/fidlc/testdata/imported_const_values/example.test.fidl",
             "line": 19,
             "column": 1,
-            "length": 44
+            "length": 40
           }
         }
       ],

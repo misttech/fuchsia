@@ -132,18 +132,6 @@ struct ::fidl::internal::NaturalMethodTypes<::test_bindingsdenylist::DenyEachBin
 };
 
 template <>
-struct ::fidl::internal::NaturalMethodTypes<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo> {
-  using Request = ::test_bindingsdenylist::DenyEachBindingOnlyDenyGoRequest;
-
-  using Response = ::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResult;
-
-  using Completer = fidl::Completer<::fidl::internal::NaturalCompleterBase<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo>>;
-  using ResultCallback =
-      ::fit::callback<void(::fidl::Result<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo>&)>;
-  using DomainError = uint32_t;
-};
-
-template <>
 struct ::fidl::internal::NaturalMethodTypes<::test_bindingsdenylist::DenyEachBinding::OnlyDenyPython> {
   using Request = ::test_bindingsdenylist::DenyEachBindingOnlyDenyPythonRequest;
 
@@ -198,30 +186,6 @@ template <>
 class ::fidl::Result<::test_bindingsdenylist::DenyEachBinding::OnlyDenyDart> final : public ::fit::result<::fidl::ErrorsIn<::test_bindingsdenylist::DenyEachBinding::OnlyDenyDart>, ::test_bindingsdenylist::DenyEachBindingOnlyDenyDartResponse> {
  public:
   using ::fit::result<::fidl::ErrorsIn<::test_bindingsdenylist::DenyEachBinding::OnlyDenyDart>, ::test_bindingsdenylist::DenyEachBindingOnlyDenyDartResponse>::result;
-
- protected:
-  Result() = default;
-};
-
-template <>
-class ::fidl::Response<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo> final : public ::fit::result<uint32_t, ::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResponse> {
- public:
-  using ::fit::result<uint32_t, ::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResponse>::result;
-  Response(::fit::result<uint32_t, ::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResponse> v);
-  Response() = delete;
-};
-template <>
-class ::fidl::internal::ResponseMessageConverter<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo> {
-  using DomainObject = ::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResult;
-
- public:
-  static DomainObject IntoDomainObject(const ::fidl::Response<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo>& m);
-};
-
-template <>
-class ::fidl::Result<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo> final : public ::fit::result<::fidl::ErrorsIn<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo>, ::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResponse> {
- public:
-  using ::fit::result<::fidl::ErrorsIn<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo>, ::test_bindingsdenylist::DenyEachBindingOnlyDenyGoResponse>::result;
 
  protected:
   Result() = default;
@@ -305,8 +269,6 @@ class ::fidl::internal::NaturalClientImpl<::test_bindingsdenylist::DenyEachBindi
   using NaturalClientBase::NaturalClientBase;
   ::fidl::internal::NaturalThenable<::test_bindingsdenylist::DenyEachBinding::OnlyDenyDart> OnlyDenyDart(const ::fidl::Request<::test_bindingsdenylist::DenyEachBinding::OnlyDenyDart>& request) const;
 
-  ::fidl::internal::NaturalThenable<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo> OnlyDenyGo(const ::fidl::Request<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo>& request) const;
-
   ::fidl::internal::NaturalThenable<::test_bindingsdenylist::DenyEachBinding::OnlyDenyPython> OnlyDenyPython(const ::fidl::Request<::test_bindingsdenylist::DenyEachBinding::OnlyDenyPython>& request) const;
 
   ::fidl::internal::NaturalThenable<::test_bindingsdenylist::DenyEachBinding::OnlyDenyRust> OnlyDenyRust(const ::fidl::Request<::test_bindingsdenylist::DenyEachBinding::OnlyDenyRust>& request) const;
@@ -322,11 +284,6 @@ class ::fidl::internal::NaturalSyncClientImpl<::test_bindingsdenylist::DenyEachB
 
   ::fidl::Result<::test_bindingsdenylist::DenyEachBinding::OnlyDenyDart> OnlyDenyDart(const ::fidl::Request<::test_bindingsdenylist::DenyEachBinding::OnlyDenyDart>& request);
   // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyDart:end
-
-  // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyGo
-
-  ::fidl::Result<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo> OnlyDenyGo(const ::fidl::Request<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo>& request);
-  // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyGo:end
 
   // api-coverage-fidl-name:test.bindingsdenylist/DenyEachBinding.OnlyDenyPython
 
@@ -403,15 +360,6 @@ class ::fidl::internal::NaturalCompleterBase<::test_bindingsdenylist::DenyEachBi
 };
 
 template <>
-class ::fidl::internal::NaturalCompleterBase<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo> : public ::fidl::CompleterBase {
- public:
-  void Reply(const ::fidl::Response<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo>& response);
-
- protected:
-  using ::fidl::CompleterBase::CompleterBase;
-};
-
-template <>
 class ::fidl::internal::NaturalCompleterBase<::test_bindingsdenylist::DenyEachBinding::OnlyDenyPython> : public ::fidl::CompleterBase {
  public:
   void Reply(const ::fidl::Response<::test_bindingsdenylist::DenyEachBinding::OnlyDenyPython>& response);
@@ -454,12 +402,6 @@ class ::fidl::Server<::test_bindingsdenylist::DenyEachBinding> : public ::fidl::
 
   virtual void OnlyDenyDart(OnlyDenyDartRequest& request,
                             OnlyDenyDartCompleter::Sync& completer) = 0;
-
-  using OnlyDenyGoRequest = ::fidl::Request<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo>;
-  using OnlyDenyGoCompleter = ::fidl::internal::NaturalCompleter<::test_bindingsdenylist::DenyEachBinding::OnlyDenyGo>;
-
-  virtual void OnlyDenyGo(OnlyDenyGoRequest& request,
-                          OnlyDenyGoCompleter::Sync& completer) = 0;
 
   using OnlyDenyPythonRequest = ::fidl::Request<::test_bindingsdenylist::DenyEachBinding::OnlyDenyPython>;
   using OnlyDenyPythonCompleter = ::fidl::internal::NaturalCompleter<::test_bindingsdenylist::DenyEachBinding::OnlyDenyPython>;
