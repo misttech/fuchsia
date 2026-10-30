@@ -764,6 +764,7 @@ multiconst!(zx_thread_state_topic_t, [
     // No 3 at the moment.
     ZX_THREAD_STATE_DEBUG_REGS         = 4;
     ZX_THREAD_STATE_SINGLE_STEP        = 5;
+    ZX_THREAD_STATE_ARM64_SVE          = 6;
 ]);
 
 // Possible values for "kind" in zx_vcpu_read_state and zx_vcpu_write_state.
@@ -1745,6 +1746,19 @@ impl From<&zx_restricted_state_t> for zx_thread_state_general_regs_t {
         }
     }
 }
+
+#[cfg(target_arch = "aarch64")]
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable, IntoBytes, KnownLayout))]
+pub struct zx_arm64_thread_state_sve_regs_t {
+    pub p: [u16; 16],
+    pub ffr: u16,
+}
+#[cfg(target_arch = "aarch64")]
+const_assert_eq!(core::mem::size_of::<zx_arm64_thread_state_sve_regs_t>(), 34);
+#[cfg(target_arch = "aarch64")]
+const_assert_eq!(core::mem::align_of::<zx_arm64_thread_state_sve_regs_t>(), 2);
 
 #[cfg(target_arch = "aarch64")]
 multiconst!(u64, [
@@ -3644,6 +3658,22 @@ mod test {
             value: 333, \
             error_bound: 444 }";
         assert_eq!(alloc::format!("{:?}", test_struct), expectation);
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[test]
+    fn arm64_sve_regs_layout() {
+        assert_eq!(core::mem::size_of::<zx_arm64_thread_state_sve_regs_t>(), 34);
+        assert_eq!(core::mem::align_of::<zx_arm64_thread_state_sve_regs_t>(), 2);
+        assert_eq!(core::mem::offset_of!(zx_arm64_thread_state_sve_regs_t, p), 0);
+        assert_eq!(core::mem::offset_of!(zx_arm64_thread_state_sve_regs_t, ffr), 32);
+
+        let a = zx_arm64_thread_state_sve_regs_t { p: [1; 16], ffr: 0x00ff };
+        let b = zx_arm64_thread_state_sve_regs_t { p: [1; 16], ffr: 0x00ff };
+        let c = zx_arm64_thread_state_sve_regs_t { ffr: 0x000f, ..a };
+
+        assert_eq!(a, b);
+        assert_ne!(a, c);
     }
 }
 
