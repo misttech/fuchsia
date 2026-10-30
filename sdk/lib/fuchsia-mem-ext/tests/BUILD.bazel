@@ -1,0 +1,24 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_test.bzl", "fx_cc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_test(
+    name = "fuchsia-mem-ext-test",
+    srcs = ["fuchsia-mem-ext-tests.cc"],
+    deps = [
+        "//sdk/lib/fuchsia-mem-ext",
+        "//zircon/system/ulib/fbl",
+        "//zircon/system/ulib/zxtest",
+    ],
+)
+
+fx_unittest_package(
+    name = "fuchsia-mem-ext-test-package",
+    unit_tests = [":fuchsia-mem-ext-test"],
+    visibility = ["//sdk/lib:__pkg__"],
+)
