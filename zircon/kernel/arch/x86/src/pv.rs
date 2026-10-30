@@ -438,11 +438,6 @@ pub extern "C" fn rust_pv_clock_init() -> zx_status_t {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rust_pveoi_init_all() {
-    PvEoi::init_all();
-}
-
-#[unsafe(no_mangle)]
 pub extern "C" fn rust_pveoi_enable_real_msr() {
     let mut msr_access = RealMsrAccess {};
     PvEoi::get().enable(&mut msr_access);

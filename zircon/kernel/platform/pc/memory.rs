@@ -21,24 +21,8 @@ const LOCAL_TRACE: u32 = 0;
 /// # Safety
 ///
 /// Must only be called once during single-threaded early boot with the physical memory map from
-/// physboot. If `count > 0`, `ranges` must point to a valid array of `count` `memalloc::Range`
-/// elements for the duration of this call.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_pc_mem_init(ranges: *const Range, count: usize) {
-    // SAFETY: Caller guarantees `ranges` points to `count` valid `Range` elements when `count > 0`.
-    let ranges = unsafe { zr::slice_from_raw_parts(ranges, count) };
-    // SAFETY: Caller guarantees single-threaded early-boot preconditions and a valid physical
-    // memory map from physboot.
-    unsafe { pc_mem_init(ranges) };
-}
-
-/// Discover the basic memory map.
-///
-/// # Safety
-///
-/// Must only be called once during single-threaded early boot with the physical memory map from
 /// physboot.
-pub unsafe fn pc_mem_init(ranges: &[Range]) {
+pub(super) unsafe fn pc_mem_init(ranges: &[Range]) {
     // SAFETY: Called once during single-threaded early boot after command-line parsing.
     unsafe { pmm::pmm_checker_init_from_cmdline() };
 

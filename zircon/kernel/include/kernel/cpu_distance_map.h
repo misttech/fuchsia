@@ -208,4 +208,14 @@ class CpuDistanceMap {
   ktl::unique_ptr<Entry[]> entries_{};
 };
 
+extern "C" {
+
+using CpuDistanceCallback = uint32_t (*)(cpu_num_t from_id, cpu_num_t to_id, void* ctx);
+
+void cpp_cpu_distance_map_init(size_t cpu_count, CpuDistanceCallback cb, void* ctx);
+void cpp_cpu_distance_map_set_distance_threshold(uint32_t threshold);
+void cpp_cpu_distance_map_dump();
+
+}  // extern "C"
+
 #endif  // ZIRCON_KERNEL_INCLUDE_KERNEL_CPU_DISTANCE_MAP_H_

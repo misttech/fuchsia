@@ -15,7 +15,6 @@ source_set("pc") {
     "efi_expected.cc",
     "platform.cc",
     "power.cc",
-    "smbios.cc",
     "timer.cc",
     "uart.cc",
   ]
@@ -23,30 +22,16 @@ source_set("pc") {
   deps = [
     ":platform_pc",
     "//sdk/lib/zbi-format",
-    "//src/lib/zbitl",
     "//zircon/kernel/arch/x86:headers",
     "//zircon/kernel/dev/hw_rng/intel_rng",
     "//zircon/kernel/dev/interrupt",
     "//zircon/kernel/lib/arch",
-    "//zircon/kernel/lib/boot-options",
-    "//zircon/kernel/lib/cbuf",
-    "//zircon/kernel/lib/console",
-    "//zircon/kernel/lib/debuglog",
     "//zircon/kernel/lib/efi",
-    "//zircon/kernel/lib/fbl",
-    "//zircon/kernel/lib/init",
     "//zircon/kernel/lib/ktl",
-    "//zircon/kernel/lib/lockdep",
-    "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/root_resource_filter",
-    "//zircon/kernel/lib/smbios",
-    "//zircon/kernel/lib/topology",
     "//zircon/kernel/phys/handoff",
-    "//zircon/kernel/phys/lib/memalloc:range",
     "//zircon/kernel/platform:headers",
-    "//zircon/system/ulib/explicit-memory",
     "//zircon/system/ulib/uart",
-    "//zircon/third_party/ulib/cksum",
   ]
 }
 
@@ -54,9 +39,6 @@ library_headers("headers") {
   headers = []
 
   public_deps = [
-    # <platform/pc/smbios.h> has #include <lib/smbios/smbios.h>.
-    "//zircon/kernel/lib/smbios:headers",
-
     # <ktl/optional.h> in uart.h.
     "//zircon/kernel/lib/ktl:headers",
   ]
@@ -85,6 +67,7 @@ kernel_rust_mod("platform_pc") {
     "timer.rs",
   ]
   deps = [
+    "//sdk/rust/zbi",
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
     "//src/lib/kprint",

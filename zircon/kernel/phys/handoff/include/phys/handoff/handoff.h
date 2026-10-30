@@ -451,6 +451,7 @@ const PhysHandoff* cpp_phys_handoff_get();
 
 // Accessors for individual PhysHandoff fields, for Rust callers that cannot see
 // through the PhysHandoffSpan and stdbind::optional templates.
+const uint8_t* cpp_phys_handoff_crashlog(size_t* size);
 uint8_t* cpp_phys_handoff_nvram(size_t* size);
 const zbi_topology_node_t* cpp_phys_handoff_cpu_topology(size_t* count);
 const memalloc::Range* cpp_phys_handoff_memory(size_t* count);

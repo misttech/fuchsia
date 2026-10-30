@@ -96,18 +96,6 @@ void x86_syscall_process_pending_signals(struct syscall_regs_t* gregs);
 
 }  // extern C
 
-/* @brief Register all of the CPUs in the system
- *
- * Must be called only once.
- *
- * @param apic_ids A list of all APIC IDs in the system.  The BP should be in
- *        the list.
- * @param num_cpus The number of entries in the apic_ids list.
- */
-inline void x86_init_smp(uint32_t* apic_ids, uint32_t num_cpus) {
-  rust_x86_init_smp(apic_ids, num_cpus);
-}
-
 /* @brief Bring all of the specified APs up and hand them over to the kernel
  *
  * This function must not be called before x86_init_smp.

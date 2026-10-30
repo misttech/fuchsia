@@ -69,20 +69,22 @@ impl<'a> StringTable<'a> {
         self.data.is_empty() || (self.data.len() == 2 && self.data[0] == 0 && self.data[1] == 0)
     }
 
-    /// Retrieves the string at 1-based index `idx`.
+    /// Retrieves the null-terminated C string at 1-based index `idx`.
     ///
-    /// If `idx == 0`, returns `Ok("<null>")` indicating an unassigned string field.
+    /// If `idx == 0`, returns `Ok(c"<null>")` indicating an unassigned string field.
     /// Returns `Err(Status::NOT_FOUND)` if `idx` exceeds the available strings in the table.
-    /// Returns `Err(Status::IO_DATA_INTEGRITY)` on corrupt data or invalid UTF-8.
-    pub fn get_string(&self, mut idx: usize) -> Result<&str, Status> {
+    /// Returns `Err(Status::IO_DATA_INTEGRITY)` on corrupt data.
+    pub fn get_c_str(&self, mut idx: usize) -> Result<&'a core::ffi::CStr, Status> {
         if idx == 0 {
-            return Ok("<null>");
+            return Ok(c"<null>");
         }
 
         let mut i = 0;
         while i < self.data.len() {
             let remaining = &self.data[i..];
-            let len = remaining.iter().position(|&b| b == 0).unwrap_or(remaining.len());
+            let Some(len) = remaining.iter().position(|&b| b == 0) else {
+                return Err(Status::IO_DATA_INTEGRITY);
+            };
 
             if len == 0 {
                 if i != 0 {
@@ -98,8 +100,8 @@ impl<'a> StringTable<'a> {
             }
 
             if idx == 1 {
-                let str_bytes = &self.data[i..i + len];
-                return core::str::from_utf8(str_bytes).map_err(|_| Status::IO_DATA_INTEGRITY);
+                return core::ffi::CStr::from_bytes_with_nul(&self.data[i..=i + len])
+                    .map_err(|_| Status::IO_DATA_INTEGRITY);
             }
 
             idx -= 1;
@@ -109,9 +111,24 @@ impl<'a> StringTable<'a> {
         Err(Status::NOT_FOUND)
     }
 
+    /// Convenience version of `get_c_str` that returns `c"<missing string>"` on error,
+    /// matching C++ `GetString(size_t idx, const char** out)`.
+    pub fn get_c_str_or_default(&self, idx: usize) -> &'a core::ffi::CStr {
+        self.get_c_str(idx).unwrap_or(c"<missing string>")
+    }
+
+    /// Retrieves the UTF-8 string at 1-based index `idx`.
+    ///
+    /// If `idx == 0`, returns `Ok("<null>")` indicating an unassigned string field.
+    /// Returns `Err(Status::NOT_FOUND)` if `idx` exceeds the available strings in the table.
+    /// Returns `Err(Status::IO_DATA_INTEGRITY)` on corrupt data or invalid UTF-8.
+    pub fn get_string(&self, idx: usize) -> Result<&'a str, Status> {
+        self.get_c_str(idx)?.to_str().map_err(|_| Status::IO_DATA_INTEGRITY)
+    }
+
     /// Convenience version of `get_string` that returns `"<missing string>"` on error,
     /// matching C++ `GetString(size_t idx)`.
-    pub fn get_string_or_default(&self, idx: usize) -> &str {
+    pub fn get_string_or_default(&self, idx: usize) -> &'a str {
         self.get_string(idx).unwrap_or("<missing string>")
     }
 

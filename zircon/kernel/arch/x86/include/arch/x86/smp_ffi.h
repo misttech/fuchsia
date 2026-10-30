@@ -13,9 +13,8 @@
 
 __BEGIN_CDECLS
 
-// TODO(https://fxbug.dev/540178114): Remove once callers in arch/x86/mp.cc and
-// platform/pc/platform.cc are ported to Rust.
-void rust_x86_init_smp(uint32_t* apic_ids, uint32_t num_cpus);
+// TODO(https://fxbug.dev/540178114): Remove once caller in arch/x86/mp.cc is
+// ported to Rust.
 zx_status_t rust_x86_bringup_aps(uint32_t* apic_ids, uint32_t count);
 
 __END_CDECLS

@@ -278,8 +278,8 @@ impl<'a> EntryPoint<'a> {
     ///
     /// # Safety
     ///
-    /// `ep_start` must point to valid mapped memory containing at least `size_of::<EntryPoint2_1>()`
-    /// (0x1f) bytes or `size_of::<EntryPoint3_0>()` (0x18) bytes.
+    /// `ep_start` must point to valid mapped memory containing at least
+    /// `size_of::<EntryPoint2_1>()` (0x1f) bytes or `size_of::<EntryPoint3_0>()` (0x18) bytes.
     pub unsafe fn create(ep_start: usize) -> Result<EntryPoint<'static>, Status> {
         if ep_start == 0 {
             return Err(Status::INVALID_ARGS);
@@ -355,15 +355,17 @@ impl<'a> EntryPoint<'a> {
     }
 
     /// Walks the known SMBIOS structures within the provided `struct_table` slice.
-    /// The callback will be called once for each structure found.
+    /// The callback will be called once for each structure found, passing the specification
+    /// version, the parsed header, the raw formatted bytes (`hdr.length` bytes starting with the
+    /// header), and the trailing string table.
     ///
     /// Return values from the callback:
     /// - `Err(Status::STOP)`: aborted and returns `Ok(())`
     /// - `Ok(())` or `Err(Status::NEXT)`: walk continues to the next structure
     /// - Any other error: walk is aborted and returns the error
-    pub fn walk_structs<F>(&self, struct_table: &[u8], mut cb: F) -> Result<(), Status>
+    pub fn walk_structs<'b, F>(&self, struct_table: &'b [u8], mut cb: F) -> Result<(), Status>
     where
-        F: FnMut(SpecVersion, &Header, &StringTable<'_>) -> Result<(), Status>,
+        F: FnMut(SpecVersion, &'b Header, &'b [u8], &StringTable<'b>) -> Result<(), Status>,
     {
         let mut idx = 0usize;
         let mut curr = 0usize;
@@ -382,11 +384,12 @@ impl<'a> EntryPoint<'a> {
                 return Ok(());
             }
 
+            let raw_bytes = &struct_table[curr..curr + hdr_len];
             let max_struct_len = core::cmp::max(table_len - curr, self.max_struct_size() as usize);
 
             let st = StringTable::init(hdr, max_struct_len, &struct_table[curr..])?;
 
-            let status = cb(self.version(), hdr, &st);
+            let status = cb(self.version(), hdr, raw_bytes, &st);
             match status {
                 Ok(()) => {}
                 Err(Status::STOP) => return Ok(()),
@@ -411,17 +414,21 @@ impl<'a> EntryPoint<'a> {
     /// # Safety
     ///
     /// `struct_table_virt` must point to valid mapped memory containing at least
-    /// `struct_table_length()` bytes.
-    pub unsafe fn walk_structs_raw<F>(&self, struct_table_virt: usize, cb: F) -> Result<(), Status>
+    /// `struct_table_length()` bytes that remains mapped and immutable for lifetime `'b`.
+    pub unsafe fn walk_structs_raw<'b, F>(
+        &self,
+        struct_table_virt: usize,
+        cb: F,
+    ) -> Result<(), Status>
     where
-        F: FnMut(SpecVersion, &Header, &StringTable<'_>) -> Result<(), Status>,
+        F: FnMut(SpecVersion, &'b Header, &'b [u8], &StringTable<'b>) -> Result<(), Status>,
     {
         let len = self.struct_table_length() as usize;
         if struct_table_virt == 0 || len == 0 {
             return Err(Status::INVALID_ARGS);
         }
 
-        // SAFETY: Caller guarantees struct_table_virt is mapped with at least len bytes.
+        // SAFETY: Caller guarantees struct_table_virt is mapped with at least len bytes for `'b`.
         let slice = unsafe {
             let ptr = core::ptr::with_exposed_provenance::<u8>(struct_table_virt);
             core::slice::from_raw_parts(ptr, len)

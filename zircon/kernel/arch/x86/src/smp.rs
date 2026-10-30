@@ -37,7 +37,7 @@ const MB: usize = 1024 * 1024;
 /// The caller must ensure that `apic_ids` points to a live (not freed) allocation of `num_cpus`
 /// valid APIC IDs (including the bootstrap processor) and that this function is called once during
 /// single-threaded boot.
-pub(super) unsafe fn x86_init_smp(apic_ids: *mut u32, num_cpus: u32) {
+pub unsafe fn x86_init_smp(apic_ids: *mut u32, num_cpus: u32) {
     assert!(num_cpus >= 1 && num_cpus <= u32::from(u8::MAX));
     // SAFETY: Caller guarantees `apic_ids` points to `num_cpus` valid APIC IDs.
     let status = unsafe { x86_allocate_ap_structures(apic_ids, num_cpus as u8) };
@@ -64,7 +64,7 @@ pub(super) unsafe fn x86_init_smp(apic_ids: *mut u32, num_cpus: u32) {
 /// `count` valid `u32` elements (when `count > 0`), that `x86_init_smp` has already been called,
 /// and that this function is called in a thread context where blocking (`thread::sleep_relative`)
 /// is permitted.
-pub(super) unsafe fn x86_bringup_aps(apic_ids: *const u32, count: u32) -> Result<(), Status> {
+pub unsafe fn x86_bringup_aps(apic_ids: *const u32, count: u32) -> Result<(), Status> {
     static APS_STILL_BOOTING: AtomicU32 = AtomicU32::new(0);
 
     // if being asked to bring up 0 cpus, move on

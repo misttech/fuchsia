@@ -46,7 +46,7 @@ pub mod pv;
 pub mod registers;
 pub mod restricted;
 mod restricted_ffi;
-mod smp;
+pub mod smp;
 mod smp_ffi;
 mod spinlock;
 mod spinlock_ffi;

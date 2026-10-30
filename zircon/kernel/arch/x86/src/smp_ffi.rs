@@ -7,7 +7,7 @@
 use core::ffi::c_int;
 use zx_types::{ZX_OK, zx_status_t};
 
-use super::smp::{x86_bringup_aps, x86_init_smp};
+use super::smp::x86_bringup_aps;
 
 unsafe extern "C" {
     #[link_name = "x86_secondary_cpu_long_mode_entry"]
@@ -38,18 +38,6 @@ unsafe extern "C" {
     /// The caller must ensure that this function is called once during single-threaded SMP
     /// initialization before secondary CPUs are brought online.
     pub(super) fn lk_init_secondary_cpus(secondary_cpu_count: u32);
-}
-
-/// FFI entry point for [`x86_init_smp`].
-///
-/// # Safety
-///
-/// The caller must ensure that `apic_ids` points to a live (not freed) allocation of `num_cpus`
-/// valid APIC IDs and that this function is called once during single-threaded boot.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_x86_init_smp(apic_ids: *mut u32, num_cpus: u32) {
-    // SAFETY: Caller upholds the `x86_init_smp` preconditions.
-    unsafe { x86_init_smp(apic_ids, num_cpus) };
 }
 
 /// FFI entry point for [`x86_bringup_aps`].

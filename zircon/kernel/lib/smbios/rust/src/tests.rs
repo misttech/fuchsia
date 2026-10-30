@@ -135,9 +135,10 @@ fn test_walk_structs() {
     let mut tables_seen = [false; 2];
 
     let entry = EntryPoint::from(&ep);
-    let result = entry.walk_structs(&structs, |version, hdr, _st| {
+    let result = entry.walk_structs(&structs, |version, hdr, raw_bytes, _st| {
         assert_eq!(version.major_ver, ep.major_ver);
         assert_eq!(version.minor_ver, ep.minor_ver);
+        assert_eq!(raw_bytes.len(), usize::from(hdr.length));
         match hdr.r#type {
             StructType::BIOS_INFO | StructType::SYSTEM_INFO => {
                 let idx = hdr.r#type.0 as usize;
@@ -160,9 +161,10 @@ fn test_walk_structs_v3() {
     let mut tables_seen = [false; 2];
 
     let entry = EntryPoint::from(&ep);
-    let result = entry.walk_structs(&structs, |version, hdr, _st| {
+    let result = entry.walk_structs(&structs, |version, hdr, raw_bytes, _st| {
         assert_eq!(version.major_ver, ep.major_ver);
         assert_eq!(version.minor_ver, ep.minor_ver);
+        assert_eq!(raw_bytes.len(), usize::from(hdr.length));
         match hdr.r#type {
             StructType::BIOS_INFO | StructType::SYSTEM_INFO => {
                 let idx = hdr.r#type.0 as usize;
@@ -184,7 +186,7 @@ fn test_walk_structs_early_stop() {
     let (ep, structs) = create_fake_smbios();
 
     let entry = EntryPoint::from(&ep);
-    let result = entry.walk_structs(&structs, |_version, hdr, _st| match hdr.r#type {
+    let result = entry.walk_structs(&structs, |_version, hdr, _raw_bytes, _st| match hdr.r#type {
         StructType::BIOS_INFO => Err(zx_status::Status::STOP),
         StructType::SYSTEM_INFO => panic!("Iterator saw SystemInfo after early stop"),
         _ => panic!("Saw unexpected header type: {:?}", hdr.r#type),
@@ -198,7 +200,7 @@ fn test_get_string() {
     let (ep, structs) = create_fake_smbios();
 
     let entry = EntryPoint::from(&ep);
-    let result = entry.walk_structs(&structs, |_version, hdr, st| {
+    let result = entry.walk_structs(&structs, |_version, hdr, _raw_bytes, st| {
         match hdr.r#type {
             StructType::BIOS_INFO => {
                 assert_eq!(st.get_string(0), Ok("<null>"));
@@ -209,12 +211,20 @@ fn test_get_string() {
                 assert_eq!(st.get_string_or_default(1), BIOS_STRING1);
                 assert_eq!(st.get_string_or_default(2), BIOS_STRING2);
                 assert_eq!(st.get_string_or_default(3), "<missing string>");
+                assert_eq!(st.get_c_str(0), Ok(c"<null>"));
+                assert_eq!(st.get_c_str(1).unwrap().to_bytes(), BIOS_STRING1.as_bytes());
+                assert_eq!(st.get_c_str(2).unwrap().to_bytes(), BIOS_STRING2.as_bytes());
+                assert_eq!(st.get_c_str(3), Err(zx_status::Status::NOT_FOUND));
+                assert_eq!(st.get_c_str_or_default(0), c"<null>");
+                assert_eq!(st.get_c_str_or_default(3), c"<missing string>");
             }
             StructType::SYSTEM_INFO => {
                 assert_eq!(st.get_string(0), Ok("<null>"));
                 assert_eq!(st.get_string(1), Err(zx_status::Status::NOT_FOUND));
                 assert_eq!(st.get_string_or_default(0), "<null>");
                 assert_eq!(st.get_string_or_default(1), "<missing string>");
+                assert_eq!(st.get_c_str_or_default(0), c"<null>");
+                assert_eq!(st.get_c_str_or_default(1), c"<missing string>");
             }
             _ => panic!("Saw unexpected header type: {:?}", hdr.r#type),
         }
@@ -325,7 +335,7 @@ fn test_walk_structs_invalid_hdr_length() {
     let entry = EntryPoint::from(&ep);
     // Set header length less than size_of::<Header>() (4)
     structs[1] = 2; // header.length = 2
-    let result = entry.walk_structs(&structs, |_ver, _hdr, _st| Ok(()));
+    let result = entry.walk_structs(&structs, |_ver, _hdr, _raw_bytes, _st| Ok(()));
     assert_eq!(result, Err(zx_status::Status::IO_DATA_INTEGRITY));
 }
 
@@ -440,13 +450,13 @@ fn test_dump_methods() {
     out.clear();
     let entry = EntryPoint::from(&ep);
     entry
-        .walk_structs(&structs, |_ver, hdr, st| {
+        .walk_structs(&structs, |_ver, hdr, raw_bytes, st| {
             st.dump(&mut out).unwrap();
             if hdr.r#type == StructType::BIOS_INFO {
-                let bios = BiosInformationStruct2_0::ref_from_prefix(structs.as_slice()).unwrap().0;
-                bios.dump(&mut out, st, &structs).unwrap();
+                let bios = BiosInformationStruct2_0::ref_from_prefix(raw_bytes).unwrap().0;
+                bios.dump(&mut out, st, raw_bytes).unwrap();
             } else if hdr.r#type == StructType::SYSTEM_INFO {
-                let sys = SystemInformationStruct2_1::ref_from_prefix(&structs[34..]).unwrap().0;
+                let sys = SystemInformationStruct2_1::ref_from_prefix(raw_bytes).unwrap().0;
                 sys.dump(&mut out, st).unwrap();
             }
             Ok(())
@@ -466,9 +476,10 @@ fn test_walk_structs_raw() {
     let addr = structs.as_ptr() as usize;
 
     let mut count = 0;
-    // SAFETY: `addr` points to the valid `structs` buffer which has at least `struct_table_length()` bytes.
+    // SAFETY: `addr` points to the valid `structs` buffer which has at least
+    // `struct_table_length()` bytes.
     let res = unsafe {
-        entry.walk_structs_raw(addr, |_ver, _hdr, _st| {
+        entry.walk_structs_raw(addr, |_ver, _hdr, _raw_bytes, _st| {
             count += 1;
             Ok(())
         })

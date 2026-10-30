@@ -20,22 +20,10 @@ use smbios::{
 };
 use zerocopy::FromBytes;
 use zx_status::Status;
-use zx_types::zx_status_t;
 
 unsafe extern "C" {
     fn printf(format: *const core::ffi::c_char, ...) -> core::ffi::c_int;
 }
-
-/// Callback type for walking SMBIOS structures across the FFI boundary.
-pub type RustSmbiosWalkCallback = unsafe extern "C" fn(
-    major: u8,
-    minor: u8,
-    docrev: u8,
-    hdr: *const Header,
-    str_table_start: *const core::ffi::c_char,
-    str_table_len: usize,
-    ctx: *mut core::ffi::c_void,
-) -> zx_status_t;
 
 /// Holds the global SMBIOS state.
 #[derive(Debug, Default)]
@@ -108,8 +96,7 @@ fn find_entry_point() -> Result<(NonNull<u8>, EntryPointVersion), Status> {
 }
 
 /// Initializes the SMBIOS subsystem.
-#[unsafe(no_mangle)]
-pub extern "C" fn pc_init_smbios() {
+pub(super) fn pc_init_smbios() {
     // SAFETY: Initialization is serialized with respect to any other access.
     unsafe {
         SMBIOS_STATE.init(probe_smbios());
@@ -197,9 +184,14 @@ fn probe_smbios() -> SmbiosState {
 }
 
 /// Walks the known SMBIOS structures. `cb` will be called once for each structure found.
-pub fn walk_structs<F>(cb: F) -> Result<(), Status>
+pub(super) fn walk_structs<F>(cb: F) -> Result<(), Status>
 where
-    F: FnMut(SpecVersion, &Header, &StringTable<'_>) -> Result<(), Status>,
+    F: FnMut(
+        SpecVersion,
+        &'static Header,
+        &'static [u8],
+        &StringTable<'static>,
+    ) -> Result<(), Status>,
 {
     let state = SMBIOS_STATE.get();
 
@@ -209,7 +201,8 @@ where
                 return Err(Status::NOT_SUPPORTED);
             };
             let entry = EntryPoint::from(ep2_1);
-            // SAFETY: `struct_base` points to mapped structure table of `struct_len` bytes.
+            // SAFETY: `struct_base` points to the permanently mapped structure table of
+            // `struct_len` bytes in the kernel address space (`'static`).
             unsafe { entry.walk_structs_raw(state.struct_base, cb) }
         }
         Some(EntryPointVersion::V3_0) | Some(EntryPointVersion::Unknown) | None => {
@@ -218,53 +211,13 @@ where
     }
 }
 
-/// Walks the SMBIOS structures across the FFI boundary.
-///
-/// # Safety
-///
-/// `cb` must be a valid function pointer with the expected C ABI.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_smbios_walk_structs(
-    cb: RustSmbiosWalkCallback,
-    ctx: *mut core::ffi::c_void,
-) -> zx_status_t {
-    let res = walk_structs(|ver, hdr, st| {
-        let (str_table_start, str_table_len) = if st.length() > 0 {
-            // String table in memory starts immediately after the formatted struct header:
-            // SAFETY: `hdr` points to the structure within mapped struct table; string table follows `hdr + hdr.length`.
-            let ptr = unsafe {
-                (hdr as *const Header as *const core::ffi::c_char).add(hdr.length as usize)
-            };
-            (ptr, st.length())
-        } else {
-            (core::ptr::null(), 0)
-        };
-
-        // SAFETY: `cb` is called with valid structure and string table pointers.
-        let status_raw = unsafe {
-            cb(
-                ver.major_ver,
-                ver.minor_ver,
-                ver.docrev_ver,
-                hdr as *const Header,
-                str_table_start,
-                str_table_len,
-                ctx,
-            )
-        };
-
-        Status::ok(status_raw)
-    });
-
-    Status::result_into_raw(res)
-}
-
 /// Callback for debug dumping SMBIOS structures.
-fn debug_struct_walk(ver: SpecVersion, hdr: &Header, st: &StringTable<'_>) -> Result<(), Status> {
-    // SAFETY: `hdr` points to a structure within the valid mapped structure table.
-    let raw_bytes = unsafe {
-        core::slice::from_raw_parts(hdr as *const Header as *const u8, hdr.length as usize)
-    };
+fn debug_struct_walk(
+    ver: SpecVersion,
+    hdr: &'static Header,
+    raw_bytes: &'static [u8],
+    st: &StringTable<'static>,
+) -> Result<(), Status> {
     let mut writer = debug::dprintf::KernelConsoleWriter;
 
     match hdr.r#type {
@@ -339,7 +292,8 @@ unsafe extern "C" fn cmd_smbios(argc: i32, argv: *const CmdArgs, _flags: u32) ->
         return usage();
     }
 
-    // SAFETY: The console framework guarantees `args[1].arg_str` is a valid null-terminated C string.
+    // SAFETY: The console framework guarantees `args[1].arg_str` is a valid null-terminated C
+    // string.
     let cmd = unsafe { core::ffi::CStr::from_ptr(args[1].arg_str) };
     if cmd.to_bytes() == b"dump" {
         if let Err(status) = walk_structs(debug_struct_walk) {

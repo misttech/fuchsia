@@ -61,11 +61,6 @@ extern "C" {
 // This function should only be called by CPU 0.
 zx_status_t rust_pv_clock_init();
 
-// Initialize all PvEoi instances.
-//
-// Must be called from a context in which blocking is allowed.
-void rust_pveoi_init_all();
-
 // Enable PV_EOI for the current CPU. After it is enabled, callers may use Eoi() rather than
 // access a local APIC register if desired.
 //
