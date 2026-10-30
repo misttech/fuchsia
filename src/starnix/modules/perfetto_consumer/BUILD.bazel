@@ -1,0 +1,42 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# TODO(https://fxbug.dev/42059075): Re-enable starnix in these environments.
+# @bazel2gn:raw_attribute:with_unit_tests = true
+# @bazel2gn:raw_attribute:exclude_toolchain_tags = [ "asan", "hwasan" ]
+# @bazel2gn:raw_attribute:test_deps = [ "//src/lib/fuchsia", "//zircon/system/ulib/trace-test-utils" ]
+rustc_library(
+    name = "perfetto_consumer",
+    srcs = [
+        "atrace.rs",
+        "blob_sink.rs",
+        "lib.rs",
+        "packet_forwarder.rs",
+        "testing.rs",
+    ],
+    crate_name = "starnix_modules_perfetto_consumer",
+    crate_root = "lib.rs",
+    edition = "2024",
+    lint_config = "//src/starnix/build:kernel_library_config",
+    visibility = ["//src/starnix/modules:__pkg__"],
+    deps = [
+        "//sdk/rust/zx",
+        "//src/lib/trace/rust:trace",
+        "//src/lib/trace/rust:trace-observer",
+        "//src/performance/lib/fxt/rust",
+        "//src/starnix/kernel/core",
+        "//src/starnix/lib/starnix_logging",
+        "//src/starnix/lib/starnix_uapi",
+        "//src/starnix/modules/perfetto_consumer/lib/perfetto",
+        "//src/starnix/modules/perfetto_consumer/lib/perfetto:perfetto_protos",
+        "//src/starnix/modules/perfetto_consumer/lib/perfetto:perfetto_trace_protos",
+        "//src/starnix/modules/perfetto_consumer/lib/perfetto/trace_decoder",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
