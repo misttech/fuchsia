@@ -35,7 +35,7 @@ rustc_library(
         "//src/connectivity/bluetooth/lib/async-helpers",
         "//src/lib/async-utils",
         "//src/lib/diagnostics/inspect/derive",
-        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",  # @bazel2gn:path_overwrite://src/lib/diagnostics/inspect/rust
+        "//src/lib/diagnostics/inspect/rust",
         "//src/lib/fidl/rust/fidl",
         "//src/lib/fuchsia-async",
         "//src/lib/fuchsia-sync",

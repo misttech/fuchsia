@@ -24,7 +24,7 @@ rustc_library(
     ],
     deps = [
         "//src/lib/diagnostics/inspect/derive",
-        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",  # @bazel2gn:path_overwrite://src/lib/diagnostics/inspect/rust
+        "//src/lib/diagnostics/inspect/rust",
         "//src/lib/fuchsia-sync",
         "//third_party/rust_crates/vendor:futures",
     ],

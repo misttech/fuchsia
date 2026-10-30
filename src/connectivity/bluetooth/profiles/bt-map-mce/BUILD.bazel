@@ -39,7 +39,7 @@ rustc_binary(
         "//src/connectivity/bluetooth/lib/bt-obex/objects",
         "//src/connectivity/bluetooth/lib/fuchsia-bluetooth",
         "//src/connectivity/bluetooth/lib/profile-client",
-        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",  # @bazel2gn:path_overwrite://src/lib/diagnostics/inspect/rust
+        "//src/lib/diagnostics/inspect/rust",
         "//src/lib/fidl/rust/fidl",
         "//src/lib/fuchsia",
         "//src/lib/fuchsia-async",
