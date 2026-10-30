@@ -1,0 +1,20 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# TODO(https://fxbug.dev/454452299): Migrate the `:bin` benchmark binary
+# from BUILD.gn once Bazel fidl_library() generates the `_rust_next`
+# bindings it depends on.
+fidl_library(
+    name = "fidl",
+    srcs = ["benchmark.test.fidl"],
+    excluded_checks = [
+        "string-bounds-not-specified",
+        "vector-bounds-not-specified",
+    ],
+    library_name = "test.benchmark",
+)
