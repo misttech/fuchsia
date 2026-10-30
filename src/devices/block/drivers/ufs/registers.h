@@ -239,8 +239,8 @@ class HostUicErrorCodeDataLinkLayerReg
   }
 };
 
-// UECDL error code bit for a PA_INIT error (UniPro DL_ErrorPAInit): the Data Link layer was
-// re-initialized, so in-flight frames are lost and the host controller must be reset.
+// UECDL error code bit for a PA_INIT error (UniPro DL_ErrorPAInit), indicating that the Data Link
+// layer was re-initialized (JESD220E section 8.3.2).
 constexpr uint32_t kUicDataLinkLayerErrorPaInit = 1u << 13u;
 
 // UFSHCI Specification Version 3.0, section 5.3.7

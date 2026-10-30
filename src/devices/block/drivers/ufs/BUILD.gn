@@ -212,6 +212,7 @@ test("ufs-unit-tests-bin") {
     "test/uic-test.cc",
     "test/unit-lib.cc",
     "ufs_pci.cc",
+    "ufs_pdev.cc",
   ]
   deps = [
            ":ufs-common",

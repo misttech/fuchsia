@@ -65,7 +65,7 @@ class UfsPdev : public Ufs, public fidl::Server<fuchsia_hardware_ufs_phy::Ufshci
   fidl::WireSyncClient<fuchsia_hardware_ufs_phy::UfsPhy> ufs_phy_;
   fidl::WireSyncClient<fuchsia_hardware_interconnect::Path> interconnect_client_;
   // Serializes composite PHY power-state and interconnect bandwidth-vote transitions across
-  // link-idle, runtime-sleep, system suspend/resume, link recovery, and driver teardown.
+  // link-idle, runtime-sleep, system suspend/resume, and driver teardown.
   // Strict leaf lock: must never acquire any other lock while held.
   std::mutex power_state_lock_;
   bool bandwidth_vote_active_ TA_GUARDED(power_state_lock_) = false;

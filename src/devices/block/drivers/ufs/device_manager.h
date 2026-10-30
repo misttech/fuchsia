@@ -36,7 +36,7 @@ constexpr zx::duration kSuspendIoDrainTimeout = kCommandTimeout + zx::sec(2);
 // Number of PHY/device power cycles attempted synchronously when resuming from PowerDown fails.
 // We cap synchronous retries at 3 because each attempt can take several seconds of UIC/UPIU
 // timeouts while Power Broker's SetLevel is outstanding, and the driver keeps retrying in the
-// background afterwards (see Ufs::RetryResume()). Ufs::RecoverLink() uses the same cap.
+// background afterwards (see Ufs::RetryResume()).
 constexpr int kMaxPowerDownResumeAttempts = 3;
 // Pause between retries of a SCSI command that was answered with UNIT ATTENTION / NOT READY.
 constexpr zx::duration kUnavailableRetryDelay = zx::msec(10);
@@ -156,46 +156,23 @@ class DeviceManager {
   zx::result<> ResumePower() TA_EXCL(power_lock_);
   zx::result<> EnterRuntimeSleep() TA_EXCL(power_lock_);
   zx::result<> ExitRuntimeSleep() TA_EXCL(power_lock_);
-  zx::result<> FinishLinkRecovery() TA_EXCL(power_lock_);
 
   bool IsRuntimeSleeping() const {
     return runtime_sleeping_.load(std::memory_order_acquire) ||
            runtime_sleep_in_progress_.load(std::memory_order_acquire);
   }
-  bool BeginLinkRecovery() TA_EXCL(power_lock_) {
-    std::scoped_lock lock(power_lock_);
-    while (suspend_in_progress_ || recovery_in_progress_) {
-      power_cv_.wait(power_lock_);
-    }
-    if (system_suspended_) {
-      return false;
-    }
-    recovery_in_progress_ = true;
-    runtime_sleeping_.store(false, std::memory_order_release);
-    return true;
-  }
-  void SetRecoveryInProgress(bool in_progress) TA_EXCL(power_lock_) {
-    std::scoped_lock lock(power_lock_);
-    recovery_in_progress_ = in_progress;
-    if (in_progress) {
-      runtime_sleeping_.store(false, std::memory_order_release);
-    } else {
-      power_cv_.notify_all();
-    }
-  }
 
   bool IsResumed() TA_EXCL(power_lock_) {
     std::lock_guard<std::mutex> lock(power_lock_);
-    return !suspend_in_progress_ && !recovery_in_progress_ &&
-           current_power_mode_ == UfsPowerMode::kActive &&
+    return !suspend_in_progress_ && current_power_mode_ == UfsPowerMode::kActive &&
            current_power_condition_ == scsi::PowerCondition::kActive &&
            current_link_state_ == LinkState::kActive;
   }
 
   GeometryDescriptor &GetGeometryDescriptor() { return geometry_descriptor_; }
 
-  // Updates the recorded power mode directly without bus traffic (used by the QEMU quirk
-  // during Init() and by Ufs::RecoverLink() when a failed recovery leaves the controller off).
+  // Updates the recorded power mode directly without bus traffic (used by the QEMU quirk during
+  // Init()).
   void SetCurrentPowerMode(UfsPowerMode power_mode) TA_EXCL(power_lock_);
 
   uint8_t GetMaxLunCount() const { return max_lun_count_; }
@@ -316,12 +293,7 @@ class DeviceManager {
   // sequence. Keeping I/O off the hardware does not depend on it; that is
   // RequestProcessor::BlockSlotAllocation().
   bool suspend_in_progress_ TA_GUARDED(power_lock_) = false;
-  // Set by Ufs::RecoverLink() (BeginLinkRecovery()) until RecoverLink() re-opens the request
-  // processor slot gates and calls SetRecoveryInProgress(false); suspend, resume and runtime wake
-  // wait for it on power_cv_.
-  bool recovery_in_progress_ TA_GUARDED(power_lock_) = false;
-  // Set while Power Broker holds the device at its "off" level; a link recovery is not started
-  // underneath a system suspend.
+  // Set while Power Broker holds the device at its "off" level.
   bool system_suspended_ TA_GUARDED(power_lock_) = false;
   // Written under power_lock_ but read lock-free by IsRuntimeSleeping() on the I/O submission,
   // admin UPIU, RPMB and key-slot paths, hence atomics; the release/acquire pairing orders the

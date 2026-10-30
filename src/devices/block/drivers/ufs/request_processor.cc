@@ -13,23 +13,6 @@
 
 namespace ufs {
 
-namespace {
-
-// Releases a slot's DMA buffer. Without |unpin| the PMT handle is closed without zx_pmt_unpin(),
-// which leaves the pages quarantined on the BTI; see RequestProcessor::AbortInflightRequests().
-zx_status_t ReleasePmt(zx::pmt &pmt, bool unpin) {
-  if (!pmt.is_valid()) {
-    return ZX_OK;
-  }
-  if (!unpin) {
-    pmt.reset();
-    return ZX_OK;
-  }
-  return pmt.unpin();
-}
-
-}  // namespace
-
 template <typename Processor, typename Descriptor>
 zx::result<std::unique_ptr<Processor>> RequestProcessor::Create(Ufs &ufs, zx::unowned_bti bti,
                                                                 const fdf::MmioView mmio,
@@ -104,9 +87,9 @@ zx::result<uint8_t> RequestProcessor::ReserveSlot() {
   return zx::error(ZX_ERR_NO_RESOURCES);
 }
 
-zx::result<> RequestProcessor::ClearSlotLocked(RequestSlot &request_slot, bool unpin) {
+zx::result<> RequestProcessor::ClearSlotLocked(RequestSlot &request_slot) {
   if (request_slot.pmt.is_valid()) {
-    zx_status_t status = ReleasePmt(request_slot.pmt, unpin);
+    zx_status_t status = request_slot.pmt.unpin();
     if (status != ZX_OK) {
       fdf::error("Failed to unpin IO buffer: {}", zx_status_get_string(status));
       request_slot.result = status;
@@ -168,48 +151,14 @@ zx::result<> RequestProcessor::BlockSlotAllocation(zx::duration drain_timeout) {
   return zx::ok();
 }
 
-void RequestProcessor::SetSlotAllocationBlocked(bool blocked) {
+void RequestProcessor::UnblockSlotAllocation() {
   std::scoped_lock lock(slot_lock_);
-  slot_allocation_blocked_ = blocked;
+  slot_allocation_blocked_ = false;
 }
-
-void RequestProcessor::UnblockSlotAllocation() { SetSlotAllocationBlocked(false); }
 
 bool RequestProcessor::HasAllocatedSlots() const {
   std::scoped_lock lock(slot_lock_);
   return allocated_slots_mask_ != 0;
-}
-
-void RequestProcessor::AbortInflightRequests(zx_status_t abort_status, bool unpin) {
-  std::vector<fit::callback<void(zx_status_t)>> callbacks;
-  {
-    std::scoped_lock lock(slot_lock_);
-    uint32_t mask = allocated_slots_mask_;
-    while (mask != 0) {
-      const uint8_t slot_num = static_cast<uint8_t>(std::countr_zero(mask));
-      mask &= mask - 1;
-      RequestSlot &slot = slots_.GetSlot(slot_num);
-      if (slot.completion_cb) {
-        callbacks.push_back(std::move(slot.completion_cb));
-        if (zx::result<> res = ClearSlotLocked(slot, unpin); res.is_error()) {
-          fdf::error("Failed to clear aborted slot[{}]: {}", slot_num, res);
-        }
-      } else if (slot.state == SlotState::kScheduled) {
-        [[maybe_unused]] zx_status_t status = ReleasePmt(slot.pmt, unpin);
-        slot.result = abort_status;
-        sync_completion_signal(&slot.complete);
-      } else {
-        if (zx::result<> res = ClearSlotLocked(slot, unpin); res.is_error()) {
-          fdf::error("Failed to clear aborted slot[{}]: {}", slot_num, res);
-        }
-      }
-    }
-  }
-  for (auto &cb : callbacks) {
-    if (cb) {
-      cb(abort_status);
-    }
-  }
 }
 
 void RequestProcessor::RingRequestDoorbellLocked(uint8_t slot_num) {

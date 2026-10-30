@@ -140,7 +140,7 @@ zx::result<> UfsPdev::SetPhyPowerState(PowerState state) {
   if (state == PowerState::kActive) {
     // Restore the interconnect vote before ungating PHY clocks/rails, and still restore
     // PowerState::kActive on the PHY even if SetBandwidth fails because callers
-    // (AcquireLinkActive, ExitRuntimeSleepLocked, ResumePower, RecoverLink) proceed directly to
+    // (AcquireLinkActive, ExitRuntimeSleepLocked, ResumePower) proceed directly to
     // UFSHCI MMIO register accesses regardless of the notification status.
     zx::result<> bw_res = SetBandwidthVoteLocked(true);
     zx::result<> phy_res = CallPhySetPowerStateLocked(state);

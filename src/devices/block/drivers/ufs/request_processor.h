@@ -76,17 +76,8 @@ class RequestProcessor {
   // admin UPIUs. Returns ZX_ERR_TIMED_OUT if the allocated slots do not drain within
   // |drain_timeout|; allocation stays blocked in that case as well.
   zx::result<> BlockSlotAllocation(zx::duration drain_timeout) TA_EXCL(slot_lock_);
-  // Sets or clears the ReserveSlot() gate without waiting for allocated slots to drain; link
-  // recovery uses it because it aborts the in-flight requests itself.
-  void SetSlotAllocationBlocked(bool blocked) TA_EXCL(slot_lock_);
   void UnblockSlotAllocation() TA_EXCL(slot_lock_);
   bool HasAllocatedSlots() const TA_EXCL(slot_lock_);
-
-  // Aborts all in-flight and reserved slots once the host controller has been stopped, completing
-  // their requests with |abort_status|. With |unpin| set the DMA buffers are unpinned; pass false
-  // when HCE did not clear (the controller may still DMA into them): the PMT handles are then
-  // closed without zx_pmt_unpin() so that the BTI quarantines the pages instead of reusing them.
-  void AbortInflightRequests(zx_status_t abort_status, bool unpin) TA_EXCL(slot_lock_);
 
  protected:
   zx::unowned_bti &GetBti() { return bti_; }
@@ -98,8 +89,7 @@ class RequestProcessor {
   // Get the number of the free slot and mark it as |SlotState::kReserved|.
   zx::result<uint8_t> ReserveSlot() TA_EXCL(slot_lock_);
   zx::result<> ClearSlot(RequestSlot &request_slot) TA_EXCL(slot_lock_);
-  // Releases the slot's DMA buffer (see AbortInflightRequests() for |unpin|) and frees the slot.
-  zx::result<> ClearSlotLocked(RequestSlot &request_slot, bool unpin = true) TA_REQ(slot_lock_);
+  zx::result<> ClearSlotLocked(RequestSlot &request_slot) TA_REQ(slot_lock_);
   void ReclaimTimedOutSlotsLocked() TA_REQ(slot_lock_);
 
   template <typename Callback>

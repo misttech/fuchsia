@@ -1067,7 +1067,7 @@ zx::result<> DeviceManager::SuspendPower() {
 
   {
     std::lock_guard<std::mutex> lock(power_lock_);
-    while (suspend_in_progress_ || recovery_in_progress_) {
+    while (suspend_in_progress_) {
       power_cv_.wait(power_lock_);
     }
 
@@ -1108,17 +1108,7 @@ zx::result<> DeviceManager::SuspendPower() {
     const bool already_at_target = current_power_mode_ == locked_target_mode &&
                                    current_power_condition_ == locked_target_condition &&
                                    current_link_state_ == locked_target_link;
-    // A failed Ufs::RecoverLink() leaves the host controller disabled in
-    // UfsPowerMode::kPowerDown (LinkState::kOff). When SuspendPower() targets kSleep
-    // (!SupportsPowerDownSuspend(), a power-on write-protected LU, or programmed inline
-    // encryption keys), the hardware cannot enter kSleep without first re-initializing the
-    // controller and link; adopt the existing kPowerDown state so system_suspended_ is recorded
-    // and the next ResumePower() takes ReinitAfterPowerDown().
-    const bool already_powered_down =
-        current_power_mode_ == UfsPowerMode::kPowerDown &&
-        current_power_condition_ == GetPowerModeInfo(UfsPowerMode::kPowerDown).power_condition &&
-        current_link_state_ == LinkState::kOff;
-    if (already_at_target || already_powered_down) {
+    if (already_at_target) {
       runtime_sleeping_.store(false, std::memory_order_release);
       properties_.runtime_sleeping.Set(false);
       system_suspended_ = true;
@@ -1126,7 +1116,6 @@ zx::result<> DeviceManager::SuspendPower() {
       properties_.b_current_power_mode.Set(std::to_underlying(current_power_mode_));
       properties_.power_condition.Set(std::to_underlying(current_power_condition_));
       properties_.link_state.Set(std::to_underlying(current_link_state_));
-      req_processor_.SetSlotAllocationBlocked(true);
       return zx::ok();
     }
 
@@ -1226,14 +1215,11 @@ zx::result<> DeviceManager::SuspendPowerLocked(bool power_down, UfsPowerMode tar
   if (auto result = dme_hibernate_enter_command.SendCommand(); result.is_error()) {
     properties_.auto_hibern8_error_count.Add(1);
     controller_.DumpErrorRegisters();
-    // Restore Active power condition to match the state expected by the I/O path. A device that
-    // answers this SCSI round trip still has a working link, so the failed suspend is reported to
-    // Power Broker (which retries) without resetting the controller; only a link that does not
-    // answer the rollback either is handed to RecoverLink().
+    // Restore Active power condition to match the state expected by the I/O path before reporting
+    // the failed suspend to Power Broker.
     if (zx::result<> active = SetPowerCondition(scsi::PowerCondition::kActive); active.is_error()) {
       fdf::error("Failed to restore Active power condition after hibernate-enter failure: {}",
                  active);
-      controller_.ScheduleLinkRecovery();
     }
     return result.take_error();
   }
@@ -1294,7 +1280,7 @@ zx::result<> DeviceManager::ResumePower() {
   bool device_only = false;
   {
     std::lock_guard<std::mutex> lock(power_lock_);
-    while (suspend_in_progress_ || recovery_in_progress_) {
+    while (suspend_in_progress_) {
       power_cv_.wait(power_lock_);
     }
 
@@ -1325,10 +1311,7 @@ zx::result<> DeviceManager::ResumePower() {
 
   const zx::time resume_start = zx::clock::get_monotonic();
   if (from_power_down) {
-    // Recover from failed link startup or device init after PowerDown with a full controller
-    // reset. When PowerDown suspend is not supported (e.g. Ufs::RecoverLink() failed and left the
-    // controller stopped in kPowerDown without powering down the PHY), skip kPreResume and
-    // kPostSuspend and re-initialize the controller directly.
+    // Recover from failed link startup or device init after PowerDown with a full controller reset.
     const bool power_cycle_phy = controller_.SupportsPowerDownSuspend();
     zx::result<> reinit_result = zx::ok();
     for (int attempt = 1; attempt <= kMaxPowerDownResumeAttempts; ++attempt) {
@@ -1397,9 +1380,6 @@ zx::result<> DeviceManager::ResumePower() {
     if (auto result = dme_hibernate_exit_command.SendCommand(); result.is_error()) {
       properties_.auto_hibern8_error_count.Add(1);
       controller_.DumpErrorRegisters();
-      system_suspended_ = false;
-      properties_.power_suspended.Set(false);
-      controller_.ScheduleLinkRecovery();
       return result.take_error();
     }
     current_link_state_ = target_link_state;
@@ -1464,7 +1444,7 @@ zx::result<> DeviceManager::EnterRuntimeSleep() {
     if (current_power_mode_ != UfsPowerMode::kActive ||
         current_power_condition_ != scsi::PowerCondition::kActive ||
         current_link_state_ != LinkState::kActive || system_suspended_ || suspend_in_progress_ ||
-        recovery_in_progress_ || runtime_sleeping_.load(std::memory_order_acquire)) {
+        runtime_sleeping_.load(std::memory_order_acquire)) {
       return zx::ok();
     }
     suspend_in_progress_ = true;
@@ -1566,7 +1546,7 @@ zx::result<> DeviceManager::EnterRuntimeSleep() {
 
     if (current_power_mode_ != UfsPowerMode::kActive ||
         current_power_condition_ != scsi::PowerCondition::kActive ||
-        current_link_state_ != LinkState::kActive || system_suspended_ || recovery_in_progress_) {
+        current_link_state_ != LinkState::kActive || system_suspended_) {
       unblock_and_kick_io();
       return zx::ok();
     }
@@ -1595,17 +1575,21 @@ zx::result<> DeviceManager::EnterRuntimeSleep() {
     if (auto result = dme_hibernate_enter_command.SendCommand(); result.is_error()) {
       properties_.auto_hibern8_error_count.Add(1);
       controller_.DumpErrorRegisters();
-      // This was an opportunistic transition: if the device answers the rollback (a SCSI round
-      // trip) and Auto-Hibern8 can be re-armed, the link demonstrably works and the failure is
-      // only logged and counted. Only a link that does not answer the rollback either is wedged
-      // and handed to RecoverLink().
-      const bool rolled_back = SetPowerCondition(scsi::PowerCondition::kActive).is_ok() &&
-                               controller_.ConfigureAutoHibernate().is_ok();
-      std::ignore = EnableBackgroundOp();
-      unblock_and_kick_io();
-      if (!rolled_back) {
-        controller_.ScheduleLinkRecovery();
+      if (zx::result<> active = SetPowerCondition(scsi::PowerCondition::kActive);
+          active.is_error()) {
+        fdf::error(
+            "Failed to restore Active power condition after runtime sleep "
+            "hibernate-enter failure: {}",
+            active);
       }
+      if (zx::result<> ah8 = controller_.ConfigureAutoHibernate(); ah8.is_error()) {
+        fdf::warn("Failed to re-enable auto-hibernate after failed runtime sleep: {}", ah8);
+      }
+      if (zx::result<> bkops = EnableBackgroundOp(); bkops.is_error()) {
+        fdf::warn("Failed to re-enable background operations after failed runtime sleep: {}",
+                  bkops);
+      }
+      unblock_and_kick_io();
       return result.take_error();
     }
 
@@ -1638,7 +1622,7 @@ zx::result<> DeviceManager::ExitRuntimeSleep() {
   zx::result<> result = zx::ok();
   {
     std::scoped_lock lock(power_lock_);
-    while (suspend_in_progress_ || recovery_in_progress_) {
+    while (suspend_in_progress_) {
       power_cv_.wait(power_lock_);
     }
     result = ExitRuntimeSleepLocked(/*schedule_idle_timers=*/true);
@@ -1655,23 +1639,23 @@ zx::result<> DeviceManager::ExitRuntimeSleepLocked(bool schedule_idle_timers) {
   }
 
   const zx::time wake_start = zx::clock::get_monotonic();
-  if (zx::result<> result = controller_.Notify(NotifyEvent::kExitSleep, 0); result.is_error()) {
-    fdf::warn("ExitSleep platform notification failed on runtime wake: {}", result);
-  }
+  if (current_link_state_ != LinkState::kActive) {
+    if (zx::result<> result = controller_.Notify(NotifyEvent::kExitSleep, 0); result.is_error()) {
+      fdf::warn("ExitSleep platform notification failed on runtime wake: {}", result);
+    }
 
-  DmeHibernateExitCommand dme_hibernate_exit_command(controller_);
-  if (auto result = dme_hibernate_exit_command.SendCommand(); result.is_error()) {
-    properties_.auto_hibern8_error_count.Add(1);
-    controller_.DumpErrorRegisters();
-    controller_.ScheduleLinkRecovery();
-    return result.take_error();
-  }
+    DmeHibernateExitCommand dme_hibernate_exit_command(controller_);
+    if (auto result = dme_hibernate_exit_command.SendCommand(); result.is_error()) {
+      properties_.auto_hibern8_error_count.Add(1);
+      controller_.DumpErrorRegisters();
+      return result.take_error();
+    }
 
-  current_link_state_ = LinkState::kActive;
-  properties_.link_state.Set(std::to_underlying(current_link_state_));
+    current_link_state_ = LinkState::kActive;
+    properties_.link_state.Set(std::to_underlying(current_link_state_));
+  }
 
   if (zx::result<> result = SetPowerCondition(scsi::PowerCondition::kActive); result.is_error()) {
-    controller_.ScheduleLinkRecovery();
     return result.take_error();
   }
 
@@ -1695,33 +1679,6 @@ zx::result<> DeviceManager::ExitRuntimeSleepLocked(bool schedule_idle_timers) {
     if (controller_.GetPendingCommandsCount() == 0) {
       controller_.ScheduleRuntimeIdleTimers();
     }
-  }
-  return zx::ok();
-}
-
-zx::result<> DeviceManager::FinishLinkRecovery() {
-  std::scoped_lock lock(power_lock_);
-  runtime_sleeping_.store(false, std::memory_order_release);
-  if (zx::result<> result = SetPowerCondition(scsi::PowerCondition::kActive); result.is_error()) {
-    return result.take_error();
-  }
-
-  current_link_state_ = LinkState::kActive;
-  current_power_mode_ = UfsPowerMode::kActive;
-  current_power_condition_ = scsi::PowerCondition::kActive;
-  // Leave recovery_in_progress_ set until Ufs::RecoverLink() re-opens the request processor slot
-  // gates and calls SetRecoveryInProgress(false), so a concurrent SuspendPower() waiting on
-  // power_cv_ cannot close the slot gate first and have RecoverLink() re-open it afterwards.
-  properties_.runtime_sleeping.Set(false);
-  properties_.b_current_power_mode.Set(std::to_underlying(current_power_mode_));
-  properties_.power_condition.Set(std::to_underlying(current_power_condition_));
-  properties_.link_state.Set(std::to_underlying(current_link_state_));
-
-  if (zx::result<> result = EnableBackgroundOp(); result.is_error()) {
-    fdf::warn("Failed to re-enable background operations after link recovery: {}", result);
-  }
-  if (zx::result<> result = controller_.ConfigureAutoHibernate(); result.is_error()) {
-    fdf::warn("Failed to re-enable auto-hibernate after link recovery: {}", result);
   }
   return zx::ok();
 }
