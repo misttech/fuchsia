@@ -71,6 +71,7 @@ if (is_fuchsia) {
     deps = [ "//src/lib/fuchsia" ]
   }
 }
+
 fuchsia_unittest_package("component-v1-time-unittests") {
   package_name = "component-v1-time-unittests-gn"
   component_name = "component-v1-time-unittests"

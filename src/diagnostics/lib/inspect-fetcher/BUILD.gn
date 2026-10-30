@@ -60,6 +60,7 @@ rustc_library("inspect-fetcher") {
     "//third_party/rust_crates:serde_json",
   ]
 }
+
 rustc_test("inspect-fetcher_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -72,6 +73,7 @@ rustc_test("inspect-fetcher_test") {
            "//third_party/rust_crates:serde_json",
          ] + [ "//src/lib/fuchsia" ]
 }
+
 fuchsia_unittest_package("inspect-fetcher-test") {
   package_name = "inspect-fetcher-test-gn"
   component_name = "inspect-fetcher-test"

@@ -36,6 +36,7 @@ library_headers("headers") {
   public = [ "include/lib/test-exceptions/exception-catcher.h" ]
   public_deps = [ "//zircon/system/ulib/zx" ]
 }
+
 static_library("test-exceptions") {
   testonly = true
   sources = [ "exception-catcher.cc" ]

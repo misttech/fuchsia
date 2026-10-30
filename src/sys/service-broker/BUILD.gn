@@ -72,6 +72,7 @@ rustc_library("lib") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_test("lib_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -94,10 +95,12 @@ rustc_test("lib_test") {
       ] + [ "//src/lib/fuchsia" ]
   output_name = "service_broker_lib_test"
 }
+
 fuchsia_unittest_component("service-broker-unittests-component") {
   deps = [ ":lib_test" ]
   component_name = "service-broker-unittests"
 }
+
 fuchsia_test_package("service-broker-unittests-package") {
   package_name = "service-broker-unittests-gn"
   test_components = [ ":service-broker-unittests-component" ]

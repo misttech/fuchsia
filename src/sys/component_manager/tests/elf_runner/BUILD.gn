@@ -69,12 +69,14 @@ rustc_test("elf_runner_test_bin") {
     "//src/sys/lib/component-events",
   ]
 }
+
 rustc_binary("args_reporter_bin") {
   sources = [ "args_reporter.rs" ]
   output_name = "args_reporter"
   source_root = "args_reporter.rs"
   edition = "2024"
 }
+
 rustc_binary("no_args_reporter_bin") {
   sources = [ "no_args_reporter.rs" ]
   output_name = "no_args_reporter"

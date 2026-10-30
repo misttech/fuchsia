@@ -100,6 +100,7 @@ if (is_fuchsia) {
     configs += [ "//build/config/rust/lints:deny_unused_results" ]
   }
 }
+
 fuchsia_unittest_package("bt-avdtp-tests") {
   package_name = "bt-avdtp-tests-gn"
   component_name = "bt-avdtp-tests"

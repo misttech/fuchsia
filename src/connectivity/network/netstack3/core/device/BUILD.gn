@@ -131,6 +131,7 @@ rustc_library("netstack3-device") {
            "//src/connectivity/network/netstack3/core/trace:netstack3-trace",
          ]
 }
+
 rustc_library("netstack3-device-testutils") {
   testonly = true
   sources = _COMMON_SRCS
@@ -153,6 +154,7 @@ rustc_library("netstack3-device-testutils") {
            "//src/connectivity/network/netstack3/core/trace:netstack3-trace-testutils",
          ]
 }
+
 rustc_library("netstack3-device-benchmarks") {
   testonly = true
   sources = _COMMON_SRCS
@@ -173,6 +175,7 @@ rustc_library("netstack3-device-benchmarks") {
            "//src/connectivity/network/netstack3/core/trace:netstack3-trace-testutils",
          ]
 }
+
 rustc_library("netstack3-device-instrumented") {
   sources = _COMMON_SRCS
   configs += _COMMON_BUILD_FLAGS
@@ -216,6 +219,7 @@ if (is_host) {
            ]
   }
 }
+
 rustc_test("netstack3-device-instrumented_test") {
   sources = _COMMON_SRCS
   configs += _COMMON_BUILD_FLAGS
@@ -231,6 +235,7 @@ rustc_test("netstack3-device-instrumented_test") {
            "//third_party/rust_crates:test-case",
          ]
 }
+
 fuchsia_unittest_package("netstack3-core-device-test") {
   package_name = "netstack3-core-device-test-gn"
   component_name = "netstack3-core-device-test"

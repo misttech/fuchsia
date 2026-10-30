@@ -45,6 +45,7 @@ fidl("fuchsia.wlan.policy") {
     "//zircon/vdso/zx",
   ]
 }
+
 measure_tape("measure_tape_for_scan_result") {
   fidls = [ "//sdk/fidl/fuchsia.wlan.policy" ]
   target_binding = "rust"

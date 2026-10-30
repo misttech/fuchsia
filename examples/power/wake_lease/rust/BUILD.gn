@@ -77,6 +77,7 @@ rustc_library("wake_lease_rust") {
     "//third_party/rust_crates:anyhow",
   ]
 }
+
 rustc_test("wake_lease_rust_integration_test") {
   sources = [ "src/wake_lease_integration_test.rs" ]
   source_root = "src/wake_lease_integration_test.rs"

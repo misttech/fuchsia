@@ -64,14 +64,17 @@ static_library("aarch64_assembly") {
   sources = [ "src/aarch64_asm.S" ]
   deps = [ "//src/starnix/lib/asm_utils" ]
 }
+
 static_library("x64_assembly") {
   sources = [ "src/x86_64_asm.S" ]
   deps = [ "//src/starnix/lib/asm_utils" ]
 }
+
 static_library("riscv64_assembly") {
   sources = [ "src/riscv64_asm.S" ]
   deps = [ "//src/starnix/lib/asm_utils" ]
 }
+
 rustc_library("lib") {
   sources = []
   sources += [ "src/lib.rs" ]
@@ -104,6 +107,7 @@ rustc_library("lib") {
     deps += [ "//sdk/rust/zx" ]
   }
 }
+
 rustc_binary("bin") {
   sources = [ "src/benchmark.rs" ]
   output_name = "extended_pstate_bench"

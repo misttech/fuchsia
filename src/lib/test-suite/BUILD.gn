@@ -32,6 +32,7 @@ measure_tape("measure_tape_for_case") {
   target_binding = "hlcpp"
   target_types = [ "fuchsia.test/Case" ]
 }
+
 source_set("test_suite_lib") {
   sources = [ "test_suite.cc" ]
   public = [ "test_suite.h" ]

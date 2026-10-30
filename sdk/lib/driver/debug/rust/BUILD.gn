@@ -46,6 +46,7 @@ rustc_library("rust") {
     "//third_party/rust_crates:futures",
   ]
 }
+
 rustc_test("driver_debug_lib_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -58,6 +59,7 @@ rustc_test("driver_debug_lib_test") {
            "//third_party/rust_crates:futures",
          ] + [ "//src/lib/fuchsia-async" ]
 }
+
 fuchsia_unittest_package("driver_debug_tests") {
   package_name = "driver_debug_tests-gn"
   component_name = "driver_debug_tests"

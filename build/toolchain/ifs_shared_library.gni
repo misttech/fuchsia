@@ -336,6 +336,7 @@ template("ifs_shared_library") {
           _clang_cpu = translation.clang
         }
       }
+
       group("$stub_target.$cpu") {
         forward_variables_from(invoker,
                                [

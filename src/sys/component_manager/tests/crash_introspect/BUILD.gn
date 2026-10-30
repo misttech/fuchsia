@@ -68,26 +68,31 @@ rustc_binary("report_then_panic_on_start_bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 fuchsia_component_manifest("report_then_panic_on_start-manifest") {
   component_name = "report_then_panic_on_start"
   manifest = "meta/report_then_panic_on_start.cml"
 }
+
 fuchsia_component("report_then_panic_on_start") {
   check_includes = false
   cm_label = ":report_then_panic_on_start-manifest"
   component_name = "report_then_panic_on_start"
   deps = [ ":report_then_panic_on_start_bin" ]
 }
+
 rustc_binary("panic_on_start_bin") {
   sources = [ "panic_on_start.rs" ]
   output_name = "panic_on_start"
   source_root = "panic_on_start.rs"
   edition = "2024"
 }
+
 fuchsia_component_manifest("panic_on_start-manifest") {
   component_name = "panic_on_start"
   manifest = "meta/panic_on_start.cml"
 }
+
 fuchsia_component("panic_on_start") {
   cm_label = ":panic_on_start-manifest"
   component_name = "panic_on_start"
@@ -99,6 +104,7 @@ fuchsia_component("panic_on_start") {
   ]
   deps = [ ":panic_on_start_bin" ]
 }
+
 rustc_test("crash_introspect_test_bin") {
   sources = [ "crash_introspect_test.rs" ]
   output_name = "crash_introspect_test"

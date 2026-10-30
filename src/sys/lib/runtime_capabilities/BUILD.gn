@@ -115,6 +115,7 @@ rustc_library("runtime_capabilities") {
     ]
   }
 }
+
 rustc_test("runtime_capabilities_test") {
   sources = []
   sources += [
@@ -190,6 +191,7 @@ rustc_test("runtime_capabilities_test") {
     "//third_party/rust_crates:test-case",
   ]
 }
+
 fuchsia_unittest_package("runtime_capabilities-unittests") {
   package_name = "runtime_capabilities-unittests-gn"
   component_name = "runtime_capabilities-unittests"

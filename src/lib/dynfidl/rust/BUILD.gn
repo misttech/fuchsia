@@ -70,6 +70,7 @@ rustc_library("dynfidl") {
   ]
   deps = [ "//src/lib/fidl/rust_constants" ]
 }
+
 group("rust") {
   public_deps = [ ":dynfidl" ]
   visibility = [

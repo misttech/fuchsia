@@ -91,15 +91,18 @@ rustc_binary("bin") {
     "//third_party/rust_crates:serde_json",
   ]
 }
+
 fuchsia_component_manifest("fake_factory_items_manifest") {
   component_name = "fake_factory_items"
   manifest = "meta/fake_factory_items.cml"
 }
+
 fuchsia_component("fake_factory_items_comp") {
   cm_label = ":fake_factory_items_manifest"
   component_name = "fake_factory_items"
   deps = [ ":bin" ]
 }
+
 rustc_test("fake_factory_items_test") {
   sources = [ "tests/fake_factory_items_test.rs" ]
   source_root = "tests/fake_factory_items_test.rs"

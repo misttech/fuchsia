@@ -49,6 +49,7 @@ rustc_library("seq_lock") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
 fuchsia_unittest_package("seq_lock_tests") {
   package_name = "seq_lock_tests-gn"
   component_name = "seq_lock_tests"

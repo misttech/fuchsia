@@ -68,6 +68,7 @@ rustc_test("routing_integration_test_bin") {
     "//src/sys/component_manager/tests/fidl:components_rust",
   ]
 }
+
 expect_includes("trigger_shard") {
   includes = [ "meta/trigger.shard.cml" ]
 }

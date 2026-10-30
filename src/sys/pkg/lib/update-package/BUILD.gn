@@ -43,6 +43,7 @@ rust_proto_library("ota_manifest_proto") {
   sources = [ "src/ota_manifest.proto" ]
   packages = [ "fuchsia.update.manifest" ]
 }
+
 rustc_library("update-package") {
   sources = []
   sources += [

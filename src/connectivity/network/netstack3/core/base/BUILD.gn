@@ -172,6 +172,7 @@ rustc_library("netstack3-base") {
   deps = _COMMON_DEPS +
          [ "//src/connectivity/network/netstack3/core/sync:netstack3-sync" ]
 }
+
 rustc_library("netstack3-base-testutils") {
   testonly = true
   sources = _COMMON_SRCS
@@ -189,6 +190,7 @@ rustc_library("netstack3-base-testutils") {
   ]
   deps = _COMMON_DEPS + _TESTUTILS_DEPS + [ "//src/connectivity/network/netstack3/core/sync:netstack3-sync-testutils" ]
 }
+
 rustc_library("netstack3-base-benchmarks") {
   testonly = true
   sources = _COMMON_SRCS
@@ -204,6 +206,7 @@ rustc_library("netstack3-base-benchmarks") {
   ]
   deps = _COMMON_DEPS + _TESTUTILS_DEPS + [ "//src/connectivity/network/netstack3/core/sync:netstack3-sync-testutils" ]
 }
+
 rustc_library("netstack3-base-instrumented") {
   sources = _COMMON_SRCS
   configs += _COMMON_BUILD_FLAGS

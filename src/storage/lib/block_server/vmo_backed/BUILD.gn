@@ -86,6 +86,7 @@ rustc_library("vmo_backed_block_server") {
   ]
   deps = _VMO_BACKED_BLOCK_SERVER_DEPS
 }
+
 rustc_library("test_vmo_backed_block_server") {
   testonly = true
   sources = [
@@ -109,6 +110,7 @@ rustc_library("test_vmo_backed_block_server") {
            "//third_party/rust_crates:rand",
          ]
 }
+
 rustc_test("test_vmo_backed_block_server_test") {
   sources = [
     "src/data_for_testing.rs",
@@ -126,6 +128,7 @@ rustc_test("test_vmo_backed_block_server_test") {
          ] + [ "//src/lib/fuchsia" ]
   features = [ "for-testing" ]
 }
+
 fuchsia_unittest_package("test_vmo_backed_block_server_tests") {
   package_name = "test_vmo_backed_block_server_tests-gn"
   component_name = "test_vmo_backed_block_server_tests"

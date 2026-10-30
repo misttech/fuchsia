@@ -49,12 +49,14 @@ rustc_library("fuchsiaperf") {
   visibility = [ "//*" ]
   deps = [ "//third_party/rust_crates:serde" ]
 }
+
 rustc_test("fuchsiaperf_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
   deps = [ "//third_party/rust_crates:serde" ] +
          [ "//third_party/rust_crates:serde_json" ]
 }
+
 fuchsia_unittest_package("fuchsiaperf_tests") {
   package_name = "fuchsiaperf_tests-gn"
   component_name = "fuchsiaperf_tests"

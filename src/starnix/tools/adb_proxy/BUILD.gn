@@ -61,6 +61,7 @@ rustc_library("server") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_binary("bin") {
   sources = [ "src/main.rs" ]
   output_name = "adb_proxy"

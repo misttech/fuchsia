@@ -40,10 +40,12 @@ rustc_binary("bin") {
     "//third_party/rust_crates:futures",
   ]
 }
+
 fuchsia_component_manifest("echo-client-manifest") {
   component_name = "echo_client"
   manifest = "meta/client.cml"
 }
+
 fuchsia_component("echo-client") {
   cm_label = ":echo-client-manifest"
   component_name = "echo_client"

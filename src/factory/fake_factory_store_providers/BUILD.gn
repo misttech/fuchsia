@@ -94,60 +94,73 @@ rustc_binary("bin") {
     "//third_party/rust_crates:serde_json",
   ]
 }
+
 fuchsia_component_manifest("fake_alpha_manifest") {
   component_name = "fake_alpha"
   manifest = "meta/fake_alpha.cml"
 }
+
 fuchsia_component("fake_alpha_comp") {
   cm_label = ":fake_alpha_manifest"
   component_name = "fake_alpha"
   deps = [ ":bin" ]
 }
+
 fuchsia_component_manifest("fake_cast_manifest") {
   component_name = "fake_cast"
   manifest = "meta/fake_cast.cml"
 }
+
 fuchsia_component("fake_cast_comp") {
   cm_label = ":fake_cast_manifest"
   component_name = "fake_cast"
   deps = [ ":bin" ]
 }
+
 fuchsia_component_manifest("fake_misc_manifest") {
   component_name = "fake_misc"
   manifest = "meta/fake_misc.cml"
 }
+
 fuchsia_component("fake_misc_comp") {
   cm_label = ":fake_misc_manifest"
   component_name = "fake_misc"
   deps = [ ":bin" ]
 }
+
 fuchsia_component_manifest("fake_playready_manifest") {
   component_name = "fake_playready"
   manifest = "meta/fake_playready.cml"
 }
+
 fuchsia_component("fake_playready_comp") {
   cm_label = ":fake_playready_manifest"
   component_name = "fake_playready"
   deps = [ ":bin" ]
 }
+
 fuchsia_component_manifest("fake_weave_manifest") {
   component_name = "fake_weave"
   manifest = "meta/fake_weave.cml"
 }
+
 fuchsia_component("fake_weave_comp") {
   cm_label = ":fake_weave_manifest"
   component_name = "fake_weave"
   deps = [ ":bin" ]
 }
+
 fuchsia_component_manifest("fake_widevine_manifest") {
   component_name = "fake_widevine"
   manifest = "meta/fake_widevine.cml"
 }
+
 fuchsia_component("fake_widevine_comp") {
   cm_label = ":fake_widevine_manifest"
   component_name = "fake_widevine"
   deps = [ ":bin" ]
 }
+
 rustc_test("fake_factory_store_providers_test") {
   sources = [ "tests/fake_factory_store_providers_test.rs" ]
   source_root = "tests/fake_factory_store_providers_test.rs"

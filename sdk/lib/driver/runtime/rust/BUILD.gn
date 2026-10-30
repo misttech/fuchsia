@@ -75,6 +75,7 @@ rustc_library("rust") {
     "//sdk/lib/driver/runtime/rust/core",
   ]
 }
+
 rustc_test("rust_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -86,6 +87,7 @@ rustc_test("rust_test") {
   output_name = "fdf_lib_test"
   lint_config = "//build/config/rust/lints:clippy_warn_all"
 }
+
 fuchsia_unittest_package("fdf_rust_tests") {
   package_name = "fdf_rust_tests-gn"
   component_name = "fdf_rust_tests"

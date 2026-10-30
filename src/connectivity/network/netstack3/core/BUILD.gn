@@ -370,6 +370,7 @@ rustc_library("netstack3-core") {
   deps = _COMMON_DEPS + _CORE_DEPS
   assert_no_deps = _ALL_CORE_CRATES - _CORE_DEPS
 }
+
 rustc_library("netstack3-core-instrumented") {
   sources = _COMMON_SRCS
   configs += _COMMON_BUILD_FLAGS + [ ":no_lock_order_except_debug_device" ]
@@ -384,6 +385,7 @@ rustc_library("netstack3-core-instrumented") {
   deps = _COMMON_DEPS + _INSTRUMENTED_CORE_DEPS
   assert_no_deps = _ALL_CORE_CRATES - _INSTRUMENTED_CORE_DEPS
 }
+
 rustc_library("netstack3-core-testutils") {
   testonly = true
   sources = _COMMON_SRCS
@@ -402,6 +404,7 @@ rustc_library("netstack3-core-testutils") {
   deps = _COMMON_DEPS + _TESTUTILS_DEPS + _TESTUTILS_CORE_DEPS
   assert_no_deps = _ALL_CORE_CRATES - _TESTUTILS_CORE_DEPS
 }
+
 rustc_library("netstack3-core-benchmarks") {
   testonly = true
   sources = _COMMON_SRCS
@@ -443,6 +446,7 @@ if (is_host) {
     assert_no_deps = _ALL_CORE_CRATES - _LOOM_CORE_DEPS
   }
 }
+
 rustc_test("netstack3-core-instrumented_test") {
   sources = _COMMON_SRCS
   configs += _COMMON_BUILD_FLAGS + [ ":no_lock_order_except_debug_device" ]
@@ -451,6 +455,7 @@ rustc_test("netstack3-core-instrumented_test") {
   proc_macro_deps = _COMMON_PROC_MACRO_DEPS
   deps = _COMMON_DEPS + _TESTUTILS_DEPS + _TESTUTILS_CORE_DEPS
 }
+
 fuchsia_unittest_package("netstack3-core-test-package") {
   package_name = "netstack3-core-test-gn"
   component_name = "netstack3-core-test"

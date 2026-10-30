@@ -50,6 +50,7 @@ group("hanging_get_helper") {
     "//src/camera/bin/usb_device:*",
   ]
 }
+
 source_set("lib") {
   public = [ "hanging_get_helper.h" ]
   visibility = [
@@ -59,6 +60,7 @@ source_set("lib") {
   ]
   public_deps = [ "//sdk/lib/fit" ]
 }
+
 executable("hanging_get_helper_unittest_bin") {
   testonly = true
   sources = [ "hanging_get_helper_unittest.cc" ]
@@ -67,6 +69,7 @@ executable("hanging_get_helper_unittest_bin") {
     "//src/lib/fxl/test:gtest_main",
   ]
 }
+
 fuchsia_unittest_package("hanging_get_helper_unittest") {
   package_name = "hanging_get_helper_unittest-gn"
   component_name = "hanging_get_helper_unittest"

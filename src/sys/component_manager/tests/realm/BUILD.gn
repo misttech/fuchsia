@@ -121,6 +121,7 @@ rustc_test("realm_integration_test_bin") {
     "//src/lib/fuchsia-fs",
   ]
 }
+
 rustc_test("realm_namespace_test_bin") {
   sources = [ "src/namespace_test.rs" ]
   source_root = "src/namespace_test.rs"
@@ -133,11 +134,13 @@ rustc_test("realm_namespace_test_bin") {
     "//src/lib/fuchsia-component",
   ]
 }
+
 fuchsia_component_manifest("no_program-manifest") {
   testonly = true
   component_name = "no_program"
   manifest = "meta/no_program.cml"
 }
+
 fuchsia_component("no_program") {
   testonly = true
   cm_label = ":no_program-manifest"

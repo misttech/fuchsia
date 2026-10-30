@@ -106,13 +106,16 @@ rustc_binary("bin") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+
 fuchsia_component_manifest("manifest") {
   component_name = "system-update-checker"
   manifest = "meta/system-update-checker.cml"
 }
+
 fuchsia_structured_config_rust_lib("system_update_checker_config") {
   cm_label = ":manifest"
 }
+
 fuchsia_component("component") {
   cm_label = ":manifest"
   component_name = "system-update-checker"
@@ -122,6 +125,7 @@ fuchsia_component("component") {
   ]
   deps = [ ":bin" ]
 }
+
 rustc_test("bin_test") {
   sources = [
     "src/apply.rs",
@@ -189,15 +193,18 @@ rustc_test("bin_test") {
   lint_config = "//build/config/rust/lints:clippy_warn_all"
   output_name = "system_update_checker_bin_test"
 }
+
 fuchsia_component_manifest("system-update-checker-bin-test-manifest") {
   testonly = true
   component_name = "system-update-checker-bin-test"
   manifest = "meta/system-update-checker-bin-test.cml"
 }
+
 fuchsia_test_component("system-update-checker-bin-test") {
   cm_label = ":system-update-checker-bin-test-manifest"
   deps = [ ":bin_test" ]
 }
+
 fuchsia_test_package("system-update-checker-tests-package") {
   package_name = "system-update-checker-tests-gn"
   test_components = [ ":system-update-checker-bin-test" ]

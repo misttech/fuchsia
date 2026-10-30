@@ -36,6 +36,7 @@ fidl("components") {
     "//src/sys/lib/elf_runner/tests/lifecycle:*",
   ]
 }
+
 fidl("echofactory") {
   testonly = true
   sources = [ "echo_factory.fidl" ]

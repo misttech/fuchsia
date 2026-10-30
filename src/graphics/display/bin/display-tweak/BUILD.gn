@@ -66,6 +66,7 @@ rustc_binary("bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_test("display_tweak_bin_test") {
   sources = [
     "src/backlight.rs",
@@ -96,6 +97,7 @@ rustc_test("display_tweak_bin_test") {
          ]
   source_root = "src/main.rs"
 }
+
 fuchsia_unittest_package("display-tweak-tests") {
   package_name = "display-tweak-tests-gn"
   component_name = "display-tweak-tests"

@@ -46,6 +46,7 @@ source_set("lib") {
   ]
   public_deps = [ "//src/camera/bin/camera-gym/fidl:controller_hlcpp" ]
 }
+
 executable("camera_gym_controller_error_unittest_bin") {
   testonly = true
   sources = [ "controller_error_unittest.cc" ]
@@ -54,6 +55,7 @@ executable("camera_gym_controller_error_unittest_bin") {
     "//src/lib/fxl/test:gtest_main",
   ]
 }
+
 fuchsia_unittest_package("camera_gym_controller_error_unittest") {
   package_name = "camera_gym_controller_error_unittest-gn"
   component_name = "camera_gym_controller_error_unittest"

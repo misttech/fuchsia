@@ -70,6 +70,7 @@ static_library("lib") {
     "//zircon/system/ulib/zx",
   ]
 }
+
 source_set("cpp") {
   sources = [ "mounted_memfs.cc" ]
   public = [ "mounted_memfs.h" ]
@@ -89,6 +90,7 @@ source_set("cpp") {
     "//zircon/system/ulib/zx",
   ]
 }
+
 executable("memfs_bin") {
   sources = [ "component.cc" ]
   output_name = "memfs"
@@ -106,10 +108,12 @@ executable("memfs_bin") {
     "//zircon/system/ulib/zx",
   ]
 }
+
 fuchsia_component_manifest("memfs_component_manifest") {
   component_name = "memfs"
   manifest = "meta/memfs.cml"
 }
+
 fuchsia_component("memfs_component") {
   cm_label = ":memfs_component_manifest"
   component_name = "memfs"

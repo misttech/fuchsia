@@ -49,6 +49,7 @@ source_set("udp_serde") {
   ]
   public_deps = [ "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_cpp" ]
 }
+
 source_set("udp_serde_test_util") {
   testonly = true
   sources = [ "udp_serde_test_util.cc" ]
@@ -58,6 +59,7 @@ source_set("udp_serde_test_util") {
     "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_cpp",
   ]
 }
+
 executable("udp_serde_cpp_test") {
   testonly = true
   sources = [ "udp_serde_test.cc" ]
@@ -69,6 +71,7 @@ executable("udp_serde_cpp_test") {
     "//src/lib/fxl/test:gtest_main",
   ]
 }
+
 executable("udp_serde_c_compilation_test") {
   testonly = true
   sources = [ "udp_serde_c_compilation_test.c" ]
@@ -77,6 +80,7 @@ executable("udp_serde_c_compilation_test") {
     "//zircon/system/ulib/zxtest",
   ]
 }
+
 fuchsia_unittest_package("udp_serde-unittests") {
   package_name = "udp_serde-unittests-gn"
   component_name = "udp_serde-unittests"
@@ -86,6 +90,7 @@ fuchsia_unittest_package("udp_serde-unittests") {
     "//src/connectivity/network:*",
   ]
 }
+
 fuchsia_unittest_package("udp_serde_c_compilation-unittest") {
   package_name = "udp_serde_c_compilation-unittest-gn"
   component_name = "udp_serde_c_compilation-unittest"

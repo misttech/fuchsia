@@ -397,6 +397,7 @@ template("bazel_ffx_tool") {
 
   # `<target_name>_versioned` already installs the tool in `host_tools_dir`.
   _versioned_target = ":${target_name}_versioned"
+
   group("${target_name}_host_tool") {
     forward_variables_from(invoker, _forwarded_args)
     public_deps = [ _versioned_target ]

@@ -131,6 +131,7 @@ if (is_fuchsia) {
     configs += [ "//build/config/rust/lints:deny_unused_results" ]
   }
 }
+
 fuchsia_unittest_package("speedtest-target-tests") {
   package_name = "speedtest-target-tests-gn"
   component_name = "speedtest-target-tests"

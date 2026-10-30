@@ -74,6 +74,7 @@ rustc_library("alarms") {
     "//third_party/rust_crates:scopeguard",
   ]
 }
+
 rustc_test("alarms_test") {
   sources = [
     "src/emu.rs",
@@ -109,6 +110,7 @@ rustc_test("alarms_test") {
            "//third_party/rust_crates:test-case",
          ]
 }
+
 fuchsia_unittest_package("alarms_test_package") {
   package_name = "alarms_test_package-gn"
   component_name = "alarms_test_package"

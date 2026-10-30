@@ -45,6 +45,7 @@ rustc_library("mock-mmio") {
     "//third_party/rust_crates:mockall",
   ]
 }
+
 rustc_test("mock-mmio_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -53,6 +54,7 @@ rustc_test("mock-mmio_test") {
     "//third_party/rust_crates:mockall",
   ]
 }
+
 fuchsia_unittest_package("unittests") {
   package_name = "mock-mmio-rust-unittests-gn"
   component_name = "mock-mmio-rust-unittests"

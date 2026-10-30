@@ -41,11 +41,13 @@ rustc_binary("security_pkg_paver-binary") {
     "//third_party/rust_crates:log",
   ]
 }
+
 fuchsia_component_manifest("security_pkg_paver-manifest") {
   testonly = true
   component_name = "security_pkg_paver"
   manifest = "meta/security_pkg_paver.cml"
 }
+
 fuchsia_component("security_pkg_paver-component") {
   testonly = true
   cm_label = ":security_pkg_paver-manifest"

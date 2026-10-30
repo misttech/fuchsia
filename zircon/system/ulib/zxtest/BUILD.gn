@@ -139,6 +139,7 @@ static_library("zxtest") {
   visibility = [ "//*" ]
   public_deps = _ZXTEST_DEPS
 }
+
 static_library("zxtest-streams") {
   sources = _ZXTEST_SRCS
   public = _ZXTEST_HDRS

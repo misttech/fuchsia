@@ -117,6 +117,7 @@ rustc_library("procfs") {
     "//third_party/rust_crates:uuid",
   ]
 }
+
 rustc_test("procfs_test") {
   sources = [
     "cgroups.rs",
@@ -189,11 +190,13 @@ rustc_test("procfs_test") {
   ]
   output_name = "starnix_modules_procfs_lib_test"
 }
+
 fuchsia_component_manifest("starnix-procfs-tests-manifest") {
   testonly = true
   component_name = "starnix-procfs-tests"
   manifest = "meta/starnix_procfs_tests.cml"
 }
+
 fuchsia_test_component("starnix-procfs-tests-component") {
   cm_label = ":starnix-procfs-tests-manifest"
   component_name = "starnix-procfs-tests"
@@ -203,6 +206,7 @@ fuchsia_test_component("starnix-procfs-tests-component") {
     "//src/starnix/kernel/vdso",
   ]
 }
+
 fuchsia_test_package("starnix-procfs-tests-package") {
   package_name = "starnix-procfs-tests-gn"
   test_components = [ ":starnix-procfs-tests-component" ]

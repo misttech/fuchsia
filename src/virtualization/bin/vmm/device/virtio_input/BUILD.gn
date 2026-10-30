@@ -59,6 +59,7 @@ rustc_binary("virtio_input_bin") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
 rustc_test("virtio_input_bin_test") {
   sources = [
     "src/input_device.rs",
@@ -87,6 +88,7 @@ rustc_test("virtio_input_bin_test") {
          ] + [ "//src/lib/fuchsia-async" ]
   source_root = "src/main.rs"
 }
+
 fuchsia_unittest_package("virtio_input_unittests") {
   package_name = "virtio_input_unittests-gn"
   component_name = "virtio_input_unittests"
@@ -96,10 +98,12 @@ fuchsia_unittest_package("virtio_input_unittests") {
     "//src/virtualization:*",
   ]
 }
+
 fuchsia_component_manifest("virtio_input_manifest") {
   component_name = "virtio_input"
   manifest = "meta/virtio_input.cml"
 }
+
 fuchsia_component("virtio_input_component") {
   cm_label = ":virtio_input_manifest"
   component_name = "virtio_input"

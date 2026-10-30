@@ -111,6 +111,7 @@ rustc_macro("fuchsia-rcu-derive") {
     "//third_party/rust_crates:syn",
   ]
 }
+
 rustc_library("fuchsia-rcu-traits") {
   sources = [ "traits/src/lib.rs" ]
   source_root = "traits/src/lib.rs"
@@ -120,6 +121,7 @@ rustc_library("fuchsia-rcu-traits") {
   with_unit_tests = true
   deps = [ "//third_party/rust_crates:lock_api" ]
 }
+
 rustc_library("fuchsia-rcu") {
   sources = _COMMON_SRCS
   features = [ "rseq_backend" ]
@@ -129,6 +131,7 @@ rustc_library("fuchsia-rcu") {
   with_unit_tests = true
   deps = _COMMON_DEPS + [ "//src/lib/fuchsia-rseq" ]
 }
+
 rustc_library("fuchsia-rcu-atomic") {
   testonly = true
   sources = _COMMON_SRCS
@@ -138,6 +141,7 @@ rustc_library("fuchsia-rcu-atomic") {
   version = "0.1.0"
   deps = _COMMON_DEPS
 }
+
 rustc_test("fuchsia-rcu-atomic-tests") {
   sources = _COMMON_SRCS
   edition = "2024"

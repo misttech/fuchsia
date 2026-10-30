@@ -81,6 +81,7 @@ rustc_library("diagnostics") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_test("diagnostics_test") {
   sources = [
     "src/escrow.rs",
@@ -123,9 +124,11 @@ rustc_test("diagnostics_test") {
          ]
   output_name = "diagnostics_lib_test"
 }
+
 fuchsia_unittest_component("test_component") {
   deps = [ ":diagnostics_test" ]
 }
+
 fuchsia_test_package("diagnostics_tests_package") {
   package_name = "diagnostics_test-gn"
   test_components = [ ":test_component" ]

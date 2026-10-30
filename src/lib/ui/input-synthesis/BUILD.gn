@@ -77,6 +77,7 @@ rustc_library("input-synthesis") {
     "//third_party/rust_crates:serde",
   ]
 }
+
 rustc_test("input-synthesis_test") {
   sources = [
     "src/lib.rs",
@@ -112,6 +113,7 @@ rustc_test("input-synthesis_test") {
            "//third_party/rust_crates:test-case",
          ]
 }
+
 fuchsia_unittest_package("input-synthesis-tests") {
   package_name = "input-synthesis-tests-gn"
   component_name = "input-synthesis-tests"

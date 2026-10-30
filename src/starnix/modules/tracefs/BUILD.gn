@@ -70,6 +70,7 @@ rustc_library("tracefs") {
     "//third_party/rust_crates:smallvec",
   ]
 }
+
 rustc_test("starnix_modules_tracefs_lib_test") {
   sources = [
     "fs.rs",
@@ -94,11 +95,13 @@ rustc_test("starnix_modules_tracefs_lib_test") {
     "hwasan",
   ]
 }
+
 fuchsia_component_manifest("starnix-tracefs-tests-manifest") {
   testonly = true
   component_name = "starnix-tracefs-tests"
   manifest = "meta/starnix_tracefs_tests.cml"
 }
+
 fuchsia_test_component("starnix-tracefs-tests-component") {
   cm_label = ":starnix-tracefs-tests-manifest"
   component_name = "starnix-tracefs-tests"
@@ -108,6 +111,7 @@ fuchsia_test_component("starnix-tracefs-tests-component") {
     "//src/starnix/kernel/vdso",
   ]
 }
+
 fuchsia_test_package("starnix-tracefs-tests-package") {
   package_name = "starnix-tracefs-tests-gn"
   test_components = [ ":starnix-tracefs-tests-component" ]

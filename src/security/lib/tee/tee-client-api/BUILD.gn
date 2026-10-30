@@ -45,6 +45,7 @@ library_headers("tee-client-api-headers") {
     "//src/devices/tee/drivers/optee:*",
   ]
 }
+
 source_set("tee-client-api-static") {
   sources = [ "tee-client-api.cc" ]
   deps = [

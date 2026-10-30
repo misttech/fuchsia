@@ -99,6 +99,7 @@ group("rust") {
   public_deps = [ ":lib" ]
   visibility = [ "//*" ]
 }
+
 rustc_library("lib") {
   sources = [ "src/lib.rs" ]
   crate_name = "diagnostics_reader"

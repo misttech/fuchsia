@@ -136,6 +136,7 @@ rustc_test("reboot_on_terminate_test_bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_binary("reboot_on_terminate_success_bin") {
   testonly = true
   sources = [ "src/reboot_on_terminate_success.rs" ]
@@ -152,6 +153,7 @@ rustc_binary("reboot_on_terminate_success_bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_binary("reboot_on_terminate_policy_bin") {
   testonly = true
   sources = [ "src/reboot_on_terminate_policy.rs" ]
@@ -172,6 +174,7 @@ rustc_binary("reboot_on_terminate_policy_bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_binary("crash_bin") {
   testonly = true
   sources = [ "src/crash.rs" ]

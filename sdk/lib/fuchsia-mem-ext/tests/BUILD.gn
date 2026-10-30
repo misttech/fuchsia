@@ -41,6 +41,7 @@ test("fuchsia-mem-ext-test") {
     "//zircon/system/ulib/zxtest",
   ]
 }
+
 fuchsia_unittest_package("fuchsia-mem-ext-test-package") {
   package_name = "fuchsia-mem-ext-test-package-gn"
   component_name = "fuchsia-mem-ext-test-package"

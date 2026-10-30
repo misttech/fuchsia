@@ -161,6 +161,7 @@ rustc_library("trace") {
     "//third_party/rust_crates:rand",
   ]
 }
+
 source_set("rust-trace-provider-cpp") {
   sources = [ "trace-provider/trace_provider.cc" ]
   deps = [
@@ -170,6 +171,7 @@ source_set("rust-trace-provider-cpp") {
   ]
   visibility = [ ":*" ]
 }
+
 rustc_library("trace-provider") {
   sources = [ "trace-provider/src/lib.rs" ]
   crate_name = "fuchsia_trace_provider"
@@ -186,6 +188,7 @@ rustc_library("trace-provider") {
     "//sdk/rust/zx",
   ]
 }
+
 rustc_library("trace-observer") {
   sources = [ "trace-observer/src/lib.rs" ]
   crate_name = "fuchsia_trace_observer"

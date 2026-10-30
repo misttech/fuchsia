@@ -53,6 +53,7 @@ rustc_library("lib") {
     "//src/lib/ui/fuchsia-scenic",
   ]
 }
+
 rustc_library("test-helpers-lib") {
   testonly = true
   sources = [ "src/test_helpers.rs" ]
@@ -69,6 +70,7 @@ rustc_library("test-helpers-lib") {
     "//src/lib/ui/fuchsia-scenic",
   ]
 }
+
 rustc_test("fidl_fuchsia_ui_focus_ext_lib_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -79,6 +81,7 @@ rustc_test("fidl_fuchsia_ui_focus_ext_lib_test") {
            "//src/lib/ui/fuchsia-scenic",
          ] + [ ":test-helpers-lib" ]
 }
+
 fuchsia_unittest_package("test-pkg") {
   package_name = "fidl_fuchsia_ui_focus_ext-test-gn"
   component_name = "fidl_fuchsia_ui_focus_ext-test"

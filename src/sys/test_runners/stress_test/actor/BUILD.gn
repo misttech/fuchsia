@@ -49,9 +49,11 @@ rustc_library("stress-test-actor") {
   ]
   deps += [ ":actor_includes" ]
 }
+
 expect_includes("actor_includes") {
   includes = [ "default.shard.cml" ]
 }
+
 group("actor") {
   public_deps = [ ":stress-test-actor" ]
   visibility = [

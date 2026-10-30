@@ -63,6 +63,7 @@ rustc_library("mmio") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
 rustc_test("mmio_test") {
   sources = [
     "src/arch.rs",
@@ -89,6 +90,7 @@ rustc_test("mmio_test") {
          ]
   lint_config = "//build/config/rust/lints:clippy_warn_all"
 }
+
 fuchsia_unittest_package("unittests") {
   package_name = "mmio-rust-unittests-gn"
   component_name = "mmio-rust-unittests"

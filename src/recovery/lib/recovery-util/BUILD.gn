@@ -91,6 +91,7 @@ rustc_library("recovery-util") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+
 rustc_test("recovery-util_test") {
   sources = [
     "src/crash.rs",
@@ -140,6 +141,7 @@ rustc_test("recovery-util_test") {
            "//third_party/rust_crates:mockall",
          ]
 }
+
 fuchsia_unittest_package("recovery-util-test") {
   package_name = "recovery-util-test-gn"
   component_name = "recovery-util-test"

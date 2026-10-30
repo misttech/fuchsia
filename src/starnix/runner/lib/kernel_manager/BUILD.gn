@@ -92,6 +92,7 @@ rustc_library("kernel_manager") {
     forward_variables_from(_concurrent_jobs.vars, "*")
   }
 }
+
 rustc_test("kernel_manager_test") {
   sources = [
     "src/kernels.rs",

@@ -32,10 +32,12 @@ rustc_binary("bin") {
   output_name = "daemon-component"
   edition = "2024"
 }
+
 fuchsia_component_manifest("daemon-component-manifest") {
   component_name = "daemon-component"
   manifest = "meta/daemon-component.cml"
 }
+
 fuchsia_component("daemon-component") {
   cm_label = ":daemon-component-manifest"
   component_name = "daemon-component"

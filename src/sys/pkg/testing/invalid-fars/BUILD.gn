@@ -89,6 +89,7 @@ if (is_host) {
     ]
   }
 }
+
 compiled_action("generate-invalid-fars") {
   outputs = [
     "$target_gen_dir/content-chunk-not-tightly-packed.far",

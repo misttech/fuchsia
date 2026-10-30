@@ -61,6 +61,7 @@ rustc_binary("bin") {
     "//third_party/rust_crates:serde_json",
   ]
 }
+
 rustc_library("lib") {
   sources = [
     "src/backends/c.rs",

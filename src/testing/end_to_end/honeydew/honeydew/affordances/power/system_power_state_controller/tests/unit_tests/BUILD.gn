@@ -15,6 +15,7 @@ if (is_host) {
     main_callable = "unittest.main"
     extra_args = [ "-v" ]
   }
+
   python_host_test("system_power_state_controller_using_usb_cli_test") {
     main_source = "system_power_state_controller_using_usb_cli_test.py"
     libraries = [

@@ -40,6 +40,7 @@ if (is_host) {
     ]
   }
 }
+
 rustc_macro("macro") {
   sources = [ "src/lib.rs" ]
   crate_name = "fuchsia_dso_macro"

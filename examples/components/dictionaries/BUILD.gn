@@ -52,11 +52,13 @@ if (is_fuchsia) {
     ]
   }
 }
+
 fuchsia_component_manifest("dynamic-dictionary-provider-manifest") {
   component_name = "dynamic-dictionary-provider"
   manifest = "meta/dynamic_dictionary_provider.cml"
   restricted_features = [ "dynamic_dictionaries" ]
 }
+
 fuchsia_component("dynamic-dictionary-provider") {
   cm_label = ":dynamic-dictionary-provider-manifest"
   component_name = "dynamic-dictionary-provider"
@@ -76,15 +78,18 @@ if (is_fuchsia) {
     ]
   }
 }
+
 fuchsia_component_manifest("dynamic-dictionary-example-manifest") {
   component_name = "dynamic-dictionary-example"
   manifest = "meta/dynamic_dictionary.cml"
 }
+
 fuchsia_test_component("dynamic-dictionary-example") {
   cm_label = ":dynamic-dictionary-example-manifest"
   component_name = "dynamic-dictionary-example"
   deps = [ ":bin" ]
 }
+
 fuchsia_test_package("dictionary-examples") {
   package_name = "dictionary-examples-gn"
   test_components = [ ":dynamic-dictionary-example" ]

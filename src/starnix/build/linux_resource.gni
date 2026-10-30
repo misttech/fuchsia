@@ -127,6 +127,7 @@ template("linux_resource") {
 
     if (defined(invoker.assert_no_deps)) {
       _assert_target = "${_main_target_name}.assert_no_deps"
+
       group(_assert_target) {
         forward_variables_from(invoker,
                                [

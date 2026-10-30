@@ -90,11 +90,13 @@ fuchsia_component_manifest("manifest") {
   component_name = "hello_starnix"
   manifest = "meta/hello_starnix.cml"
 }
+
 fuchsia_component("component") {
   cm_label = ":manifest"
   component_name = "hello_starnix"
   deps = [ ":hello_starnix_bin" ]
 }
+
 rustc_binary("hello_starnix_integration_test_bin") {
   testonly = true
   sources = [ "test.rs" ]

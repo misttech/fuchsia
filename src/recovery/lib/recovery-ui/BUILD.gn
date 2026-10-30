@@ -84,6 +84,7 @@ rustc_library("recovery-ui") {
     "//third_party/rust_crates:num-traits",
   ]
 }
+
 rustc_test("recovery-ui_test") {
   sources = [
     "src/button.rs",
@@ -122,6 +123,7 @@ rustc_test("recovery-ui_test") {
     "ota_ui",
   ]
 }
+
 fuchsia_unittest_package("recovery-ui-test") {
   package_name = "recovery-ui-test-gn"
   component_name = "recovery-ui-test"

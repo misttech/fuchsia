@@ -100,6 +100,7 @@ rustc_library("surpass") {
     deps += [ "//third_party/rust_crates:zerocopy" ]
   }
 }
+
 rustc_test("surpass_test") {
   sources = [
     "src/affine_transform.rs",
@@ -144,6 +145,7 @@ rustc_test("surpass_test") {
   configs += [ ":surpass-performance" ]
   deps += [ "//build/config/sanitizers:suppress-lsan.DO-NOT-USE-THIS" ]
 }
+
 fuchsia_unittest_package("surpass-tests") {
   package_name = "surpass-tests-gn"
   component_name = "surpass-tests"

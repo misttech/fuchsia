@@ -44,6 +44,7 @@ rustc_library("realm_proxy_client") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+
 group("client") {
   testonly = true
   public_deps = [ ":realm_proxy_client" ]

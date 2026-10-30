@@ -53,6 +53,7 @@ rustc_binary("virtio_console_bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_test("virtio_console_bin_test") {
   sources = [
     "src/device.rs",
@@ -79,6 +80,7 @@ rustc_test("virtio_console_bin_test") {
          ]
   source_root = "src/main.rs"
 }
+
 fuchsia_unittest_package("virtio_console_unittests") {
   package_name = "virtio_console_unittests-gn"
   component_name = "virtio_console_unittests"
@@ -88,10 +90,12 @@ fuchsia_unittest_package("virtio_console_unittests") {
     "//src/virtualization:*",
   ]
 }
+
 fuchsia_component_manifest("virtio_console_manifest") {
   component_name = "virtio_console"
   manifest = "meta/virtio_console.cml"
 }
+
 fuchsia_component("virtio_console_component") {
   cm_label = ":virtio_console_manifest"
   component_name = "virtio_console"

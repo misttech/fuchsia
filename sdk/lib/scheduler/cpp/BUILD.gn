@@ -30,6 +30,7 @@ import("//build/tools/bazel2gn/bazel_migration.gni")
 library_headers("headers") {
   public = [ "include/lib/scheduler/role.h" ]
 }
+
 source_set("cpp") {
   sources = [ "role.cc" ]
   visibility = [

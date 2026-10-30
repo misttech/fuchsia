@@ -71,6 +71,7 @@ rustc_binary("bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_test("bin_test") {
   sources = [
     "src/game.rs",
@@ -102,10 +103,12 @@ rustc_test("bin_test") {
   source_root = "src/main.rs"
   output_name = "snake_flatland_bin_test"
 }
+
 fuchsia_component_manifest("manifest") {
   component_name = "snake-flatland"
   manifest = "meta/snake-flatland.cml"
 }
+
 fuchsia_component("snake-flatland") {
   cm_label = ":manifest"
   component_name = "snake-flatland"
@@ -115,6 +118,7 @@ fuchsia_component("snake-flatland") {
   ]
   deps = [ ":bin" ]
 }
+
 fuchsia_unittest_package("snake-flatland-tests") {
   package_name = "snake-flatland-tests-gn"
   component_name = "snake-flatland-tests"

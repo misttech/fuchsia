@@ -55,6 +55,7 @@ rustc_library("mpmc") {
     "//third_party/rust_crates:futures",
   ]
 }
+
 rustc_test("mpmc_lib_test") {
   sources = [ "src/test.rs" ]
   source_root = "src/test.rs"
@@ -65,6 +66,7 @@ rustc_test("mpmc_lib_test") {
     "//third_party/rust_crates:futures",
   ]
 }
+
 fuchsia_unittest_package("mpmc_tests") {
   package_name = "mpmc_tests-gn"
   component_name = "mpmc_tests"

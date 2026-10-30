@@ -63,6 +63,7 @@ rustc_library("unicode") {
     "//third_party/rust_crates:smallvec",
   ]
 }
+
 rustc_library("unicode_gen") {
   sources = [ "${target_gen_dir}/unicode_gen.rs" ]
   source_root = "${target_gen_dir}/unicode_gen.rs"
@@ -70,6 +71,7 @@ rustc_library("unicode_gen") {
   edition = "2024"
   deps = [ ":types" ]
 }
+
 compiled_action("generate_unicode_gen") {
   sources = [ "//prebuilt/third_party/ucd/UCD.zip" ]
   outputs = [ "$target_gen_dir/unicode_gen.rs" ]
@@ -114,6 +116,7 @@ if (is_host) {
     ]
   }
 }
+
 rustc_library("types") {
   sources = [ "src/types.rs" ]
   source_root = "src/types.rs"

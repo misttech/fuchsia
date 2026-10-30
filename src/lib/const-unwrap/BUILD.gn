@@ -30,6 +30,7 @@ import("//build/tools/bazel2gn/bazel_migration.gni")
 config("check_cfg_flags") {
   rustflags = [ "--check-cfg=cfg(ignore)" ]
 }
+
 rustc_library("const-unwrap") {
   sources = [ "src/lib.rs" ]
   configs += [ ":check_cfg_flags" ]

@@ -73,6 +73,7 @@ rustc_library("circuit") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+
 rustc_test("circuit_test") {
   sources = [
     "src/connection.rs",
@@ -93,6 +94,7 @@ rustc_test("circuit_test") {
            "//third_party/rust_crates:thiserror",
          ] + [ "//src/lib/fuchsia" ]
 }
+
 fuchsia_unittest_package("overnet-circuit-tests") {
   package_name = "overnet-circuit-tests-gn"
   component_name = "overnet-circuit-tests"

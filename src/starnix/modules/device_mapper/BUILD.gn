@@ -71,6 +71,7 @@ rustc_library("device_mapper") {
     "//third_party/rust_crates:bitflags",
   ]
 }
+
 rustc_test("device_mapper_test") {
   sources = [ "lib.rs" ]
   source_root = "lib.rs"
@@ -94,11 +95,13 @@ rustc_test("device_mapper_test") {
   ]
   output_name = "starnix_modules_device_mapper_lib_test"
 }
+
 fuchsia_component_manifest("starnix-device-mapper-tests-manifest") {
   testonly = true
   component_name = "starnix-device-mapper-tests"
   manifest = "meta/starnix_device_mapper_tests.cml"
 }
+
 fuchsia_test_component("starnix-device-mapper-tests-component") {
   cm_label = ":starnix-device-mapper-tests-manifest"
   component_name = "starnix-device-mapper-tests"
@@ -108,6 +111,7 @@ fuchsia_test_component("starnix-device-mapper-tests-component") {
     "//src/starnix/kernel/vdso",
   ]
 }
+
 fuchsia_test_package("starnix-device-mapper-tests-package") {
   package_name = "starnix-device-mapper-tests-gn"
   test_components = [ ":starnix-device-mapper-tests-component" ]

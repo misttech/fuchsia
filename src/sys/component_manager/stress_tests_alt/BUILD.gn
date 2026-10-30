@@ -130,6 +130,7 @@ rustc_binary("unreliable_echo_server_bin") {
     "//third_party/rust_crates:rand",
   ]
 }
+
 rustc_binary("unreliable_echo_client_bin") {
   testonly = true
   sources = [ "unreliable_echo_client.rs" ]
@@ -144,6 +145,7 @@ rustc_binary("unreliable_echo_client_bin") {
     "//third_party/rust_crates:rand",
   ]
 }
+
 rustc_binary("actor-bin") {
   testonly = true
   sources = [

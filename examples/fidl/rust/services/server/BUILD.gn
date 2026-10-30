@@ -39,10 +39,12 @@ rustc_binary("bin") {
     "//third_party/rust_crates:futures",
   ]
 }
+
 fuchsia_component_manifest("echo-server-manifest") {
   component_name = "echo_server"
   manifest = "meta/server.cml"
 }
+
 fuchsia_component("echo-server") {
   cm_label = ":echo-server-manifest"
   component_name = "echo_server"

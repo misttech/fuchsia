@@ -45,6 +45,7 @@ library_headers("headers") {
     "include/lib/symbolizer-markup/writer.h",
   ]
 }
+
 source_set("symbolizer-markup") {
   visibility = [
     ":*",

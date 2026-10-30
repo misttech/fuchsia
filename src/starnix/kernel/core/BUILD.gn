@@ -479,6 +479,7 @@ rustc_library("core") {
   deps += [ "//src/starnix/kernel/vdso" ]
   public_configs = [ "//build/config/fuchsia:dynamic_cpp_standard_library" ]
 }
+
 rustc_test("starnix_core_test") {
   sources = []
   sources += [
@@ -910,11 +911,13 @@ rustc_test("starnix_core_test") {
     "//src/storage/ext4/tests:test_img",
   ]
 }
+
 fuchsia_component_manifest("starnix_core_tests-manifest") {
   testonly = true
   component_name = "starnix_core_tests"
   manifest = "meta/starnix_core_tests.cml"
 }
+
 fuchsia_test_component("starnix_core_tests-component") {
   cm_label = ":starnix_core_tests-manifest"
   component_name = "starnix_core_tests"
@@ -927,6 +930,7 @@ fuchsia_test_component("starnix_core_tests-component") {
     "//src/storage/ext4/tests:test_img",
   ]
 }
+
 fuchsia_test_package("starnix_core_tests-package") {
   package_name = "starnix_core_tests-gn"
   test_components = [ ":starnix_core_tests-component" ]

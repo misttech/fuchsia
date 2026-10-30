@@ -220,6 +220,7 @@ rustc_library("lib") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+
 rustc_test("lib_test") {
   sources = [
     "src/access_point/mod.rs",
@@ -341,6 +342,7 @@ rustc_test("lib_test") {
   configs += [ "//build/config/rust/lints:deny_unused_results" ]
   output_name = "wlancfg_lib_lib_test"
 }
+
 rustc_binary("bin") {
   sources = [ "src/main.rs" ]
   output_name = "wlancfg"
@@ -374,6 +376,7 @@ rustc_binary("bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_test("bin_test") {
   sources = [ "src/main.rs" ]
   edition = "2024"
@@ -412,17 +415,21 @@ rustc_test("bin_test") {
   output_name = "wlancfg_bin_test"
   proc_macro_deps = [ "//third_party/rust_crates:async-trait" ]
 }
+
 fuchsia_component_manifest("wlancfg-manifest") {
   component_name = "wlancfg"
   manifest = "meta/wlancfg.cml"
 }
+
 fuchsia_structured_config_rust_lib("wlancfg-config") {
   cm_label = ":wlancfg-manifest"
 }
+
 fuchsia_component("service") {
   cm_label = ":wlancfg-manifest"
   deps = [ ":bin" ]
 }
+
 metrics_registry("wlan_metrics_registry") {
   generate_rust = true
   project_id = 3708719327

@@ -73,6 +73,7 @@ rustc_binary("virtio_gpu_test_util") {
     deps += [ "//third_party/rust_crates:libc" ]
   }
 }
+
 rustc_test("virtio_gpu_test_util_test") {
   sources = [
     "src/framebuffer.rs",
@@ -101,6 +102,7 @@ rustc_test("virtio_gpu_test_util_test") {
   }
   source_root = "src/main.rs"
 }
+
 fuchsia_unittest_package("virtio-gpu-test-util-tests") {
   package_name = "virtio-gpu-test-util-tests-gn"
   component_name = "virtio-gpu-test-util-tests"

@@ -76,6 +76,7 @@ if (is_host) {
     configs += [ "//build/config/rust:proc_macro_test" ]
   }
 }
+
 rustc_library("net-declare") {
   sources = [ "src/lib.rs" ]
   configs += [ "//build/config/rust/lints:deny_unused_results" ]
@@ -84,6 +85,7 @@ rustc_library("net-declare") {
   visibility = [ "*" ]
   deps = [ "//sdk/fidl/fuchsia.net:fuchsia.net_rust_common" ]
 }
+
 rustc_test("net-declare_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -92,6 +94,7 @@ rustc_test("net-declare_test") {
          [ "//src/connectivity/lib/net-types" ]
   configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
+
 fuchsia_unittest_package("net-declare-tests") {
   package_name = "net-declare-tests-gn"
   component_name = "net-declare-tests"

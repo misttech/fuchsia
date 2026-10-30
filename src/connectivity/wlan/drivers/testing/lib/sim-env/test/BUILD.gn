@@ -37,6 +37,7 @@ executable("event_unittests") {
     "//src/lib/fxl/test:gtest_main",
   ]
 }
+
 executable("rx_tests") {
   testonly = true
   sources = [ "rx_tests.cc" ]
@@ -48,6 +49,7 @@ executable("rx_tests") {
     "//third_party/googletest:gmock",
   ]
 }
+
 executable("frame_ie_tests") {
   testonly = true
   sources = [ "frame_ie_tests.cc" ]
@@ -59,6 +61,7 @@ executable("frame_ie_tests") {
     "//third_party/googletest:gmock",
   ]
 }
+
 executable("location_tests") {
   testonly = true
   sources = [ "location_tests.cc" ]
@@ -70,6 +73,7 @@ executable("location_tests") {
     "//third_party/googletest:gmock",
   ]
 }
+
 executable("trans_time_tests") {
   testonly = true
   sources = [ "trans_time_tests.cc" ]
@@ -81,31 +85,37 @@ executable("trans_time_tests") {
     "//third_party/googletest:gmock",
   ]
 }
+
 fuchsia_unittest_component("wlan-sim-env-test.event_unittests.component") {
   component_name = "event_unittests"
   visibility = [ ":*" ]
   deps = [ ":event_unittests" ]
 }
+
 fuchsia_unittest_component("wlan-sim-env-test.frame_ie_tests.component") {
   component_name = "frame_ie_tests"
   visibility = [ ":*" ]
   deps = [ ":frame_ie_tests" ]
 }
+
 fuchsia_unittest_component("wlan-sim-env-test.location_tests.component") {
   component_name = "location_tests"
   visibility = [ ":*" ]
   deps = [ ":location_tests" ]
 }
+
 fuchsia_unittest_component("wlan-sim-env-test.rx_tests.component") {
   component_name = "rx_tests"
   visibility = [ ":*" ]
   deps = [ ":rx_tests" ]
 }
+
 fuchsia_unittest_component("wlan-sim-env-test.trans_time_tests.component") {
   component_name = "trans_time_tests"
   visibility = [ ":*" ]
   deps = [ ":trans_time_tests" ]
 }
+
 fuchsia_test_package("wlan-sim-env-test") {
   package_name = "wlan-sim-env-test-gn"
   test_components = [

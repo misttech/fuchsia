@@ -70,6 +70,7 @@ rustc_binary("virtio_sound_bin") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
 rustc_test("virtio_sound_bin_test") {
   sources = [
     "src/audio_streams.rs",
@@ -108,6 +109,7 @@ rustc_test("virtio_sound_bin_test") {
          ] + [ "//third_party/rust_crates:pretty_assertions" ]
   source_root = "src/main.rs"
 }
+
 fuchsia_unittest_package("virtio_sound_unittests") {
   package_name = "virtio_sound_unittests-gn"
   component_name = "virtio_sound_unittests"
@@ -117,10 +119,12 @@ fuchsia_unittest_package("virtio_sound_unittests") {
     "//src/virtualization:*",
   ]
 }
+
 fuchsia_component_manifest("virtio_sound_manifest") {
   component_name = "virtio_sound"
   manifest = "meta/virtio_sound.cml"
 }
+
 fuchsia_component("virtio_sound_component") {
   cm_label = ":virtio_sound_manifest"
   component_name = "virtio_sound"

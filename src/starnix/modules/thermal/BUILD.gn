@@ -61,6 +61,7 @@ rustc_library("thermal-netlink") {
     "//third_party/rust_crates:anyhow",
   ]
 }
+
 rustc_library("thermal") {
   sources = [
     "cooling.rs",
@@ -103,6 +104,7 @@ rustc_library("thermal") {
     "//third_party/rust_crates:futures",
   ]
 }
+
 rustc_test("thermal_test") {
   sources = [
     "cooling.rs",
@@ -145,11 +147,13 @@ rustc_test("thermal_test") {
   ]
   output_name = "starnix_modules_thermal_lib_test"
 }
+
 fuchsia_component_manifest("starnix-thermal-module-tests-manifest") {
   testonly = true
   component_name = "starnix-thermal-module-tests"
   manifest = "meta/starnix_thermal_module_tests.cml"
 }
+
 fuchsia_test_component("starnix-thermal-module-tests-component") {
   cm_label = ":starnix-thermal-module-tests-manifest"
   component_name = "starnix-thermal-module-tests"
@@ -159,6 +163,7 @@ fuchsia_test_component("starnix-thermal-module-tests-component") {
     "//src/starnix/kernel/vdso",
   ]
 }
+
 fuchsia_test_package("starnix-thermal-module-tests-package") {
   package_name = "starnix-thermal-module-tests-gn"
   test_components = [ ":starnix-thermal-module-tests-component" ]

@@ -67,6 +67,7 @@ rustc_library("fidl-fuchsia-pkg-rewrite-ext") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+
 rustc_library("fidl-fuchsia-pkg-rewrite-ext_fdomain") {
   sources = [
     "src/errors.rs",
@@ -91,6 +92,7 @@ rustc_library("fidl-fuchsia-pkg-rewrite-ext_fdomain") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+
 rustc_test("fidl-fuchsia-pkg-rewrite-ext_test") {
   sources = [
     "src/errors.rs",
@@ -146,6 +148,7 @@ if (is_host) {
     visibility = [ "*" ]
   }
 }
+
 fuchsia_unittest_package("fidl-fuchsia-pkg-rewrite-ext-tests") {
   package_name = "fidl-fuchsia-pkg-rewrite-ext-tests-gn"
   component_name = "fidl-fuchsia-pkg-rewrite-ext-tests"

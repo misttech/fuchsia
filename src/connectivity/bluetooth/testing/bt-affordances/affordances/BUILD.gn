@@ -92,6 +92,7 @@ if (is_fuchsia) {
     visibility = [ ":*" ]
   }
 }
+
 fuchsia_unittest_package("fuchsia_bt_test_affordances_tests") {
   package_name = "fuchsia_bt_test_affordances_tests-gn"
   component_name = "fuchsia_bt_test_affordances_tests"

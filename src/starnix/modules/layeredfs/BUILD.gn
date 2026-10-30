@@ -61,6 +61,7 @@ rustc_library("layeredfs") {
     "//src/starnix/lib/starnix_uapi",
   ]
 }
+
 rustc_test("starnix_modules_layeredfs_lib_test") {
   sources = [ "lib.rs" ]
   source_root = "lib.rs"
@@ -76,11 +77,13 @@ rustc_test("starnix_modules_layeredfs_lib_test") {
     "hwasan",
   ]
 }
+
 fuchsia_component_manifest("starnix-layeredfs-tests-manifest") {
   testonly = true
   component_name = "starnix-layeredfs-tests"
   manifest = "meta/starnix_layeredfs_tests.cml"
 }
+
 fuchsia_test_component("starnix-layeredfs-tests-component") {
   cm_label = ":starnix-layeredfs-tests-manifest"
   component_name = "starnix-layeredfs-tests"
@@ -90,6 +93,7 @@ fuchsia_test_component("starnix-layeredfs-tests-component") {
     "//src/starnix/kernel/vdso",
   ]
 }
+
 fuchsia_test_package("starnix-layeredfs-tests-package") {
   package_name = "starnix-layeredfs-tests-gn"
   test_components = [ ":starnix-layeredfs-tests-component" ]

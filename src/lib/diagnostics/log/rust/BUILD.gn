@@ -121,6 +121,7 @@ rustc_library("rust") {
   deps = LIB_DEPS
   deps += LIB_ASPECT_HINTS
 }
+
 rustc_library("no_startup_handle") {
   sources = LIB_SRCS
   features = [ "no_startup_handle" ]
@@ -132,6 +133,7 @@ rustc_library("no_startup_handle") {
   deps = LIB_DEPS
   deps += LIB_ASPECT_HINTS
 }
+
 rustc_test("diagnostics_log_lib_test") {
   sources = LIB_SRCS
   if (is_fuchsia) {

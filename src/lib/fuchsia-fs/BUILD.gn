@@ -134,6 +134,7 @@ rustc_library("fuchsia-fs") {
     ]
   }
 }
+
 rustc_library("fuchsia-fs_fdomain") {
   sources = _COMMON_SRCS
   features = [ "fdomain" ]
@@ -147,6 +148,7 @@ rustc_library("fuchsia-fs_fdomain") {
            "//src/lib/fdomain/client:flex_fdomain",
          ]
 }
+
 fidl("fidl.test.schema") {
   testonly = true
   sources = [ "data/schema.test.fidl" ]

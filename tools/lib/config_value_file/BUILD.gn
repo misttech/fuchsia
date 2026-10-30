@@ -62,6 +62,7 @@ rustc_library("config_value_file") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+
 rustc_test("config_value_file_test") {
   sources = [
     "src/field.rs",
@@ -74,6 +75,7 @@ rustc_test("config_value_file_test") {
            "//third_party/rust_crates:thiserror",
          ] + [ "//src/sys/lib/fidl_fuchsia_component_config_ext" ]
 }
+
 fuchsia_unittest_package("config_value_file_tests") {
   package_name = "config_value_file_tests-gn"
   component_name = "config_value_file_tests"

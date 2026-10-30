@@ -108,6 +108,7 @@ executable("child_bin") {
     "//sdk/lib/component/outgoing/cpp",
   ]
 }
+
 fidl("test.config") {
   testonly = true
   sources = [ "config.test.fidl" ]

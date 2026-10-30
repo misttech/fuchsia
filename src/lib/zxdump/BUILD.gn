@@ -315,6 +315,7 @@ zx_library("zxdump") {
   sdk = "source"
   friend = [ ":*" ]
 }
+
 source_set("piped-command") {
   sources = []
   sources += [ "piped-command.cc" ]
@@ -334,6 +335,7 @@ source_set("piped-command") {
     public_deps += [ "//sdk/lib/fdio" ]
   }
 }
+
 source_set("test-data-holder") {
   testonly = true
   sources = [ "test-data-holder.cc" ]
@@ -344,6 +346,7 @@ source_set("test-data-holder") {
     "//third_party/googletest:gtest",
   ]
 }
+
 source_set("test-tool-process") {
   testonly = true
   sources = [ "test-tool-process.cc" ]
@@ -372,12 +375,14 @@ source_set("test-tool-process") {
   }
   data_deps = [ ":zstd-for-test" ]
 }
+
 source_set("cli") {
   sources = [ "cli.cc" ]
   public = [ "cli.h" ]
   visibility = [ ":*" ]
   public_deps = [ ":zxdump" ]
 }
+
 executable("gcore") {
   sources = [ "gcore.cc" ]
   deps = [

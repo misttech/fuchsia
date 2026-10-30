@@ -83,6 +83,7 @@ rustc_library("wlan-sme") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+
 rustc_test("wlan-sme_test") {
   sources = [
     "src/ap/aid.rs",
@@ -145,6 +146,7 @@ rustc_test("wlan-sme_test") {
   configs += [ "//build/config/rust/lints:deny_unused_results" ]
   lint_config = "//build/config/rust/lints:clippy_warn_all"
 }
+
 fuchsia_unittest_package("wlan-sme-tests") {
   package_name = "wlan-sme-tests-gn"
   component_name = "wlan-sme-tests"

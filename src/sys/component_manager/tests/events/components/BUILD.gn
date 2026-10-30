@@ -47,6 +47,7 @@ rustc_binary("echo_reporter_bin") {
     "//third_party/rust_crates:futures",
   ]
 }
+
 rustc_binary("nested_reporter_bin") {
   testonly = true
   sources = [ "nested/reporter.rs" ]
@@ -66,6 +67,7 @@ rustc_binary("nested_reporter_bin") {
     "//src/sys/lib/component-events",
   ]
 }
+
 rustc_binary("async_reporter_bin") {
   testonly = true
   sources = [ "async/reporter.rs" ]
@@ -82,6 +84,7 @@ rustc_binary("async_reporter_bin") {
     "//src/sys/lib/component-events",
   ]
 }
+
 rustc_binary("echo_server_for_events_bin") {
   testonly = true
   sources = [ "scoped/echo_server.rs" ]
@@ -99,6 +102,7 @@ rustc_binary("echo_server_for_events_bin") {
     "//third_party/rust_crates:futures",
   ]
 }
+
 rustc_binary("stub_component_bin") {
   testonly = true
   sources = [ "stub/component.rs" ]
@@ -114,6 +118,7 @@ rustc_binary("stub_component_bin") {
     "//third_party/rust_crates:futures",
   ]
 }
+
 rustc_binary("realm_offered_nested") {
   testonly = true
   sources = [ "realm_offered/nested.rs" ]
@@ -136,6 +141,7 @@ rustc_binary("realm_offered_nested") {
     "//third_party/rust_crates:futures",
   ]
 }
+
 rustc_binary("realm_offered_bin") {
   testonly = true
   sources = [ "realm_offered/reporter.rs" ]
@@ -153,6 +159,7 @@ rustc_binary("realm_offered_bin") {
     "//src/sys/lib/component-events",
   ]
 }
+
 rustc_binary("capability_requested_root_bin") {
   testonly = true
   sources = [ "capability_requested/root.rs" ]
@@ -172,6 +179,7 @@ rustc_binary("capability_requested_root_bin") {
     "//third_party/rust_crates:futures-util",
   ]
 }
+
 rustc_binary("capability_requested_child_bin") {
   testonly = true
   sources = [ "capability_requested/child.rs" ]

@@ -93,6 +93,7 @@ rustc_library("pcap") {
   ]
   deps = _COMMON_DEPS
 }
+
 rustc_library("pcap-compile") {
   sources = _COMMON_SRCS
   configs += _COMMON_BUILD_FLAGS
@@ -113,6 +114,7 @@ rustc_library("pcap-compile") {
            "//src/starnix/lib/linux_uapi",
          ]
 }
+
 rustc_test("pcap_test") {
   sources = _COMMON_SRCS
   edition = "2024"
@@ -120,6 +122,7 @@ rustc_test("pcap_test") {
   deps = _COMMON_DEPS
   configs += _COMMON_BUILD_FLAGS
 }
+
 fuchsia_unittest_package("pcap-tests") {
   package_name = "pcap-tests-gn"
   component_name = "pcap-tests"

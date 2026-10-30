@@ -49,12 +49,14 @@ rustc_library("time_pretty") {
   ]
   deps = [ "//sdk/rust/zx" ]
 }
+
 rustc_test("time_pretty_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
   deps = [ "//sdk/rust/zx" ] + [ "//third_party/rust_crates:test-case" ]
   visibility = [ ":*" ]
 }
+
 fuchsia_unittest_package("time_pretty_test_package") {
   package_name = "time_pretty_test_package-gn"
   component_name = "time_pretty_test_package"

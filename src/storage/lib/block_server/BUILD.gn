@@ -182,6 +182,7 @@ rustc_library("block_server") {
     "//third_party/rust_crates:zstd",
   ]
 }
+
 rustc_test("block_server_test") {
   sources = [
     "src/async_interface.rs",
@@ -227,6 +228,7 @@ rustc_test("block_server_test") {
            "//third_party/rust_crates:test-case",
          ]
 }
+
 fuchsia_unittest_package("block_server_tests") {
   package_name = "block_server_tests-gn"
   component_name = "block_server_tests"

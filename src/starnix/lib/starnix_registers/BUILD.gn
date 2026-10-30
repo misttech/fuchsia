@@ -58,6 +58,7 @@ rustc_library("starnix_registers") {
     "//third_party/rust_crates:memoffset",
   ]
 }
+
 fuchsia_unittest_package("starnix_registers_tests") {
   package_name = "starnix_registers_tests-gn"
   component_name = "starnix_registers_tests"

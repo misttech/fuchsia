@@ -41,11 +41,13 @@ rustc_binary("security_pkg_reboot-binary") {
     "//third_party/rust_crates:log",
   ]
 }
+
 fuchsia_component_manifest("security_pkg_reboot-manifest") {
   testonly = true
   component_name = "security_pkg_reboot"
   manifest = "meta/security_pkg_reboot.cml"
 }
+
 fuchsia_component("security_pkg_reboot-component") {
   testonly = true
   cm_label = ":security_pkg_reboot-manifest"

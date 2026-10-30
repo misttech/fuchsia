@@ -126,6 +126,7 @@ rustc_library("fuchsia-pkg-testing") {
     "//third_party/rust_crates:walkdir",
   ]
 }
+
 rustc_test("fuchsia-pkg-testing_test") {
   sources = [
     "src/blobfs.rs",

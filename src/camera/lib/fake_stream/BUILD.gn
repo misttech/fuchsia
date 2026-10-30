@@ -48,6 +48,7 @@ group("fake_stream") {
     "//src/camera/lib/*",
   ]
 }
+
 source_set("impl_header") {
   sources = [ "fake_stream.h" ]
   public = [ "fake_stream_impl.h" ]
@@ -57,6 +58,7 @@ source_set("impl_header") {
     "//src/camera/lib/fake_controller:*",
   ]
 }
+
 source_set("lib") {
   sources = [ "fake_stream_impl.cc" ]
   public = [ "fake_stream.h" ]
@@ -76,6 +78,7 @@ source_set("lib") {
     "//sdk/lib/fit-promise",
   ]
 }
+
 executable("fake_stream_unittest_bin") {
   testonly = true
   sources = [ "fake_stream_unittest.cc" ]
@@ -85,6 +88,7 @@ executable("fake_stream_unittest_bin") {
     "//src/lib/testing/loop_fixture",
   ]
 }
+
 fuchsia_unittest_package("fake_stream_unittest") {
   package_name = "fake_stream_unittest-gn"
   component_name = "fake_stream_unittest"

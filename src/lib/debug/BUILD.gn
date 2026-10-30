@@ -46,6 +46,7 @@ static_library("debug") {
     "//src/lib/debug/rust:*",
   ]
 }
+
 source_set("backtrace-request") {
   public = [ "backtrace-request.h" ]
   visibility = [
@@ -68,6 +69,7 @@ source_set("backtrace-request") {
   ]
   public_deps = [ "//zircon/system/public" ]
 }
+
 static_library("backtrace-request-utils") {
   sources = [ "backtrace-request-utils.cc" ]
   public = [ "backtrace-request-utils.h" ]

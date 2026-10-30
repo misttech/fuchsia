@@ -86,6 +86,7 @@ rustc_library("async-utils") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+
 fuchsia_unittest_package("async-utils-tests") {
   package_name = "async-utils-tests-gn"
   component_name = "async-utils-tests"

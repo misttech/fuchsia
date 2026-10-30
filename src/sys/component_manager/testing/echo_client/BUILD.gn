@@ -42,10 +42,12 @@ rustc_binary("echo_client_testing") {
     "//third_party/rust_crates:log",
   ]
 }
+
 fuchsia_component_manifest("echo_client_manifest") {
   component_name = "echo_client"
   manifest = "meta/echo_client.cml"
 }
+
 fuchsia_component("echo_client") {
   cm_label = ":echo_client_manifest"
   component_name = "echo_client"

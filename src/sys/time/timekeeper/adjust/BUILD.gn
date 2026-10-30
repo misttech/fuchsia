@@ -67,6 +67,7 @@ rustc_library("time_adjust") {
     "//third_party/rust_crates:scopeguard",
   ]
 }
+
 rustc_test("time_adjust_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -86,6 +87,7 @@ rustc_test("time_adjust_test") {
            "//src/lib/fuchsia-async",
          ]
 }
+
 fuchsia_unittest_package("time_adjust_test_package") {
   package_name = "time_adjust_test_package-gn"
   component_name = "time_adjust_test_package"

@@ -70,6 +70,7 @@ rustc_library("rust") {
   ]
   deps += [ ":includes" ]
 }
+
 expect_includes("includes") {
   includes = [ "//src/testing/realm_client/meta/realm_client.shard.cml" ]
 }

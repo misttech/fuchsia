@@ -71,6 +71,7 @@ rustc_library("display-utils") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+
 rustc_test("display-utils_test") {
   sources = [
     "src/config.rs",
@@ -106,6 +107,7 @@ rustc_test("display-utils_test") {
            "//third_party/rust_crates:googletest",
          ]
 }
+
 fuchsia_unittest_package("display-utils-test") {
   package_name = "display-utils-test-gn"
   component_name = "display-utils-test"

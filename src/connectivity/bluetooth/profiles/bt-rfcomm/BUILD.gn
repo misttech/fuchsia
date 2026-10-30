@@ -160,6 +160,7 @@ if (is_fuchsia) {
     configs += [ "//build/config/rust/lints:deny_unused_results" ]
   }
 }
+
 fuchsia_unittest_package("bt-rfcomm-tests") {
   package_name = "bt-rfcomm-tests-gn"
   component_name = "bt-rfcomm-tests"

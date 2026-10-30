@@ -58,6 +58,7 @@ rustc_library("machina-virtio-device") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+
 rustc_test("machina-virtio-device_test") {
   sources = [
     "src/bell.rs",
@@ -83,6 +84,7 @@ rustc_test("machina-virtio-device_test") {
            "//third_party/rust_crates:assert_matches",
          ]
 }
+
 fuchsia_unittest_package("machina-virtio-device-tests") {
   package_name = "machina-virtio-device-tests-gn"
   component_name = "machina-virtio-device-tests"

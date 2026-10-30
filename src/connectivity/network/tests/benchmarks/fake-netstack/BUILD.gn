@@ -64,11 +64,13 @@ rustc_binary("bin") {
     "//third_party/rust_crates:rand",
   ]
 }
+
 fuchsia_component_manifest("fake-netstack-manifest") {
   testonly = true
   component_name = "fake-netstack"
   manifest = "meta/fake-netstack.cml"
 }
+
 fuchsia_component("fake-netstack") {
   testonly = true
   cm_label = ":fake-netstack-manifest"

@@ -65,6 +65,7 @@ rustc_library("netsvc-proto") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
 rustc_test("netsvc-proto_test") {
   sources = [
     "src/debuglog.rs",
@@ -82,6 +83,7 @@ rustc_test("netsvc-proto_test") {
          ] + [ "//third_party/rust_crates:assert_matches" ]
   configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
+
 fuchsia_unittest_package("netsvc-proto-test") {
   package_name = "netsvc-proto-test-gn"
   component_name = "netsvc-proto-test"

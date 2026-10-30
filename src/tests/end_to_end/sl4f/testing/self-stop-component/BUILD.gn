@@ -32,10 +32,12 @@ rustc_binary("bin") {
   output_name = "self-stop-component"
   edition = "2024"
 }
+
 fuchsia_component_manifest("self-stop-component-manifest") {
   component_name = "self-stop-component"
   manifest = "meta/self-stop-component.cml"
 }
+
 fuchsia_component("self-stop-component") {
   cm_label = ":self-stop-component-manifest"
   component_name = "self-stop-component"

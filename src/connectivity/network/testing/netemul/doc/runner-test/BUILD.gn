@@ -42,6 +42,7 @@ rustc_test("client") {
     "//src/lib/fuchsia",
   ]
 }
+
 rustc_binary("server") {
   testonly = true
   sources = [ "src/server.rs" ]

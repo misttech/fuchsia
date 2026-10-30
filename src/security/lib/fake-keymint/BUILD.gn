@@ -51,6 +51,7 @@ rustc_library("fake-keymint") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_test("fake_keymint_lib_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -64,6 +65,7 @@ rustc_test("fake_keymint_lib_test") {
            "//third_party/rust_crates:log",
          ] + [ "//src/lib/fuchsia" ]
 }
+
 fuchsia_unittest_package("fake-keymint-tests") {
   package_name = "fake-keymint-tests-gn"
   component_name = "fake-keymint-tests"

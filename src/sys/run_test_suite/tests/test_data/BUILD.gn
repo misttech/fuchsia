@@ -49,6 +49,7 @@ rustc_test("error_logging_test_bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_test("logging_test_bin") {
   sources = [ "logging_test.rs" ]
   output_name = "logging_test"
@@ -59,6 +60,7 @@ rustc_test("logging_test_bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_test("log_then_hang_test_bin") {
   sources = [ "log_then_hang.rs" ]
   output_name = "log_then_hang_test"
@@ -69,6 +71,7 @@ rustc_test("log_then_hang_test_bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_test("logspam_test_bin") {
   sources = [ "logspam.rs" ]
   output_name = "logspam_test"
@@ -86,6 +89,7 @@ rustc_test("logspam_test_bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_test("stdout_ansi_test_bin") {
   sources = [ "stdout_ansi_test.rs" ]
   output_name = "stdout_ansi_test"
@@ -97,6 +101,7 @@ rustc_test("stdout_ansi_test_bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_test("long_running_test_bin") {
   sources = [ "long_running_test.rs" ]
   output_name = "long_running_test"
@@ -107,66 +112,78 @@ rustc_test("long_running_test_bin") {
     "//src/lib/fuchsia-async",
   ]
 }
+
 fuchsia_component_manifest("long_running_test-manifest") {
   testonly = true
   component_name = "long_running_test"
   manifest = "meta/long_running_test.cml"
 }
+
 fuchsia_component("long_running_test") {
   testonly = true
   cm_label = ":long_running_test-manifest"
   component_name = "long_running_test"
   deps = [ ":long_running_test_bin" ]
 }
+
 fuchsia_component_manifest("logging_test-manifest") {
   testonly = true
   component_name = "logging_test"
   manifest = "meta/logging_test.cml"
 }
+
 fuchsia_component("logging_test") {
   testonly = true
   cm_label = ":logging_test-manifest"
   component_name = "logging_test"
   deps = [ ":logging_test_bin" ]
 }
+
 fuchsia_component_manifest("log_then_hang_test-manifest") {
   testonly = true
   component_name = "log_then_hang_test"
   manifest = "meta/log_then_hang_test.cml"
 }
+
 fuchsia_component("log_then_hang_test") {
   testonly = true
   cm_label = ":log_then_hang_test-manifest"
   component_name = "log_then_hang_test"
   deps = [ ":log_then_hang_test_bin" ]
 }
+
 fuchsia_component_manifest("logspam_test-manifest") {
   testonly = true
   component_name = "logspam_test"
   manifest = "meta/logspam_test.cml"
 }
+
 fuchsia_component("logspam_test") {
   testonly = true
   cm_label = ":logspam_test-manifest"
   component_name = "logspam_test"
   deps = [ ":logspam_test_bin" ]
 }
+
 fuchsia_component_manifest("stdout_ansi_test-manifest") {
   testonly = true
   component_name = "stdout_ansi_test"
   manifest = "meta/stdout_ansi_test.cml"
 }
+
 fuchsia_component("stdout_ansi_test") {
   testonly = true
   cm_label = ":stdout_ansi_test-manifest"
   component_name = "stdout_ansi_test"
   deps = [ ":stdout_ansi_test_bin" ]
 }
+
 fuchsia_component_manifest("error_logging_test-manifest") {
   testonly = true
   component_name = "error_logging_test"
   manifest = "meta/error_logging_test.cml"
 }
+
 fuchsia_component("error_logging_test") {
   testonly = true
   cm_label = ":error_logging_test-manifest"

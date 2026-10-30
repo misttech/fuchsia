@@ -75,6 +75,7 @@ if (is_fuchsia) {
     ]
   }
 }
+
 fuchsia_unittest_package("gnss-unittests") {
   package_name = "gnss-unittests-gn"
   component_name = "gnss-unittests"

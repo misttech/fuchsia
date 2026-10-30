@@ -263,11 +263,13 @@ if (is_fuchsia) {
     visibility = [ ":*" ]
   }
 }
+
 fuchsia_component_manifest("zxsh_tests_manifest") {
   testonly = true
   component_name = "zxsh_tests"
   manifest = "meta/zxsh_tests.cml"
 }
+
 fuchsia_test_component("zxsh_tests_component") {
   cm_label = ":zxsh_tests_manifest"
   component_name = "zxsh_tests"
@@ -276,6 +278,7 @@ fuchsia_test_component("zxsh_tests_component") {
     ":zxsh_bin_test",
   ]
 }
+
 fuchsia_test_package("zxsh_tests_package") {
   package_name = "zxsh_tests-gn"
   test_components = [ ":zxsh_tests_component" ]

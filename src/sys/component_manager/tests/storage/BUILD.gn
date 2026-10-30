@@ -119,6 +119,7 @@ rustc_test("storage_integration_test_bin") {
     "//src/sys/lib/component-events",
   ]
 }
+
 rustc_test("storage_admin_integration_test_bin") {
   sources = [ "admin_integration_test.rs" ]
   output_name = "storage_admin_integration_test"
@@ -141,6 +142,7 @@ rustc_test("storage_admin_integration_test_bin") {
     "//third_party/rust_crates:maplit",
   ]
 }
+
 rustc_binary("storage_realm_admin_bin") {
   sources = [ "storage_realm_admin.rs" ]
   output_name = "storage_realm_admin"
@@ -158,6 +160,7 @@ rustc_binary("storage_realm_admin_bin") {
     "//third_party/rust_crates:maplit",
   ]
 }
+
 rustc_binary("storage_realm_coll_bin") {
   sources = [ "storage_realm_coll.rs" ]
   output_name = "storage_realm_coll"
@@ -175,6 +178,7 @@ rustc_binary("storage_realm_coll_bin") {
     "//src/sys/lib/component-events",
   ]
 }
+
 rustc_binary("storage_realm_coll_invalid_route_bin") {
   sources = [ "storage_realm_coll_invalid_route.rs" ]
   output_name = "storage_realm_coll_invalid_route"
@@ -190,6 +194,7 @@ rustc_binary("storage_realm_coll_invalid_route_bin") {
     "//src/sys/lib/component-events",
   ]
 }
+
 rustc_binary("storage_user_bin") {
   sources = [ "storage_user.rs" ]
   output_name = "storage_user"
@@ -197,6 +202,7 @@ rustc_binary("storage_user_bin") {
   edition = "2024"
   deps = [ "//src/lib/fuchsia" ]
 }
+
 rustc_binary("storage_user_with_instance_id_bin") {
   sources = [ "storage_user_with_instance_id.rs" ]
   output_name = "storage_user_with_instance_id"
@@ -204,6 +210,7 @@ rustc_binary("storage_user_with_instance_id_bin") {
   edition = "2024"
   deps = [ "//src/lib/fuchsia" ]
 }
+
 rustc_binary("only_exits_bin") {
   sources = [ "only_exits.rs" ]
   output_name = "only_exits"

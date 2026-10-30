@@ -47,6 +47,7 @@ rustc_binary("empty") {
   source_root = "empty.rs"
   edition = "2024"
 }
+
 rustc_binary("use-unoffered") {
   sources = [ "use-unoffered.rs" ]
   output_name = "use_unoffered"
@@ -59,6 +60,7 @@ rustc_binary("use-unoffered") {
     "//third_party/rust_crates:futures",
   ]
 }
+
 rustc_binary("archive-reader") {
   sources = [ "archive-reader.rs" ]
   output_name = "archive_reader"
@@ -73,98 +75,116 @@ rustc_binary("archive-reader") {
     "//third_party/rust_crates:log",
   ]
 }
+
 fuchsia_component_manifest("reader-manifest") {
   testonly = true
   component_name = "reader"
   manifest = "meta/reader.cml"
 }
+
 fuchsia_component("reader") {
   testonly = true
   cm_label = ":reader-manifest"
   component_name = "reader"
   deps = [ ":archive-reader" ]
 }
+
 fuchsia_component_manifest("empty-component-manifest") {
   testonly = true
   component_name = "empty"
   manifest = "meta/empty.cml"
 }
+
 fuchsia_component("empty-component") {
   testonly = true
   cm_label = ":empty-component-manifest"
   component_name = "empty"
   deps = [ ":empty" ]
 }
+
 fuchsia_component_manifest("without-use-manifest") {
   testonly = true
   component_name = "without-use"
   manifest = "meta/without-use.cml"
 }
+
 fuchsia_component("without-use") {
   testonly = true
   cm_label = ":without-use-manifest"
   component_name = "without-use"
   deps = [ ":use-unoffered" ]
 }
+
 fuchsia_component_manifest("use-unoffered-component-manifest") {
   testonly = true
   component_name = "use-unoffered"
   manifest = "meta/use-unoffered.cml"
 }
+
 fuchsia_component("use-unoffered-component") {
   testonly = true
   cm_label = ":use-unoffered-component-manifest"
   component_name = "use-unoffered"
   deps = [ ":use-unoffered" ]
 }
+
 fuchsia_component_manifest("optional-use-unoffered-component-manifest") {
   testonly = true
   component_name = "optional-use-unoffered"
   manifest = "meta/optional-use-unoffered.cml"
 }
+
 fuchsia_component("optional-use-unoffered-component") {
   testonly = true
   cm_label = ":optional-use-unoffered-component-manifest"
   component_name = "optional-use-unoffered"
   deps = [ ":use-unoffered" ]
 }
+
 fuchsia_component_manifest("optional-use-from-void-component-manifest") {
   testonly = true
   component_name = "optional-use-from-void"
   manifest = "meta/optional-use-from-void.cml"
 }
+
 fuchsia_component("optional-use-from-void-component") {
   testonly = true
   cm_label = ":optional-use-from-void-component-manifest"
   component_name = "optional-use-from-void"
   deps = [ ":use-unoffered" ]
 }
+
 fuchsia_component_manifest("offers-to-children-unavailable-manifest") {
   testonly = true
   component_name = "offers-to-children-unavailable"
   manifest = "meta/offers-to-children-unavailable.cml"
 }
+
 fuchsia_component("offers-to-children-unavailable") {
   testonly = true
   cm_label = ":offers-to-children-unavailable-manifest"
   component_name = "offers-to-children-unavailable"
 }
+
 fuchsia_component_manifest(
     "offers-to-children-unavailable-but-optional-manifest") {
   testonly = true
   component_name = "offers-to-children-unavailable-but-optional"
   manifest = "meta/offers-to-children-unavailable-but-optional.cml"
 }
+
 fuchsia_component("offers-to-children-unavailable-but-optional") {
   testonly = true
   cm_label = ":offers-to-children-unavailable-but-optional-manifest"
   component_name = "offers-to-children-unavailable-but-optional"
 }
+
 fuchsia_component_manifest("routing-tests-manifest") {
   testonly = true
   component_name = "routing-tests"
   manifest = "meta/routing-tests.cml"
 }
+
 fuchsia_component("routing-tests") {
   testonly = true
   cm_label = ":routing-tests-manifest"

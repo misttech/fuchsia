@@ -69,6 +69,7 @@ rustc_library("util") {
     "//third_party/rust_crates:pin-project",
   ]
 }
+
 rustc_test("util_test") {
   sources = [
     "src/abortable_scope.rs",
@@ -88,6 +89,7 @@ rustc_test("util_test") {
          ] + [ "//src/lib/fuchsia-async" ]
   output_name = "cm_util_lib_test"
 }
+
 fuchsia_unittest_package("component_manager_util_test") {
   package_name = "component_manager_util_test-gn"
   component_name = "component_manager_util_test"

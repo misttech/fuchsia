@@ -55,6 +55,7 @@ rustc_library("sys") {
   ]
   deps = [ "//sdk/rust/zx-types" ]
 }
+
 rustc_bindgen_golden("async_sys_bindgen_golden") {
   checked_in_source = "src/bindings.rs"
   expect_lints = [ "non_camel_case_types" ]

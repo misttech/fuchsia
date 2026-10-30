@@ -42,6 +42,7 @@ static_library("debug_sym_for_rust") {
     "//src/lib/debug:backtrace-request",
   ]
 }
+
 rustc_library("rust") {
   sources = [ "src/lib.rs" ]
   crate_name = "debug"

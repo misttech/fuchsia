@@ -62,6 +62,7 @@ rustc_test("shutdown_integration_test_bin") {
     "//src/sys/lib/component-events",
   ]
 }
+
 rustc_binary("system_controller_client_bin") {
   sources = [ "system_controller_client.rs" ]
   output_name = "system_controller_client"

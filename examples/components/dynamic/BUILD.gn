@@ -43,10 +43,12 @@ if (is_fuchsia) {
     ]
   }
 }
+
 fuchsia_component_manifest("dynamic-create-child-child-manifest") {
   component_name = "dynamic-create-child-child"
   manifest = "meta/dynamic_create_child_child.cml"
 }
+
 fuchsia_component("dynamic-create-child-child") {
   cm_label = ":dynamic-create-child-child-manifest"
   component_name = "dynamic-create-child-child"
@@ -70,15 +72,18 @@ if (is_fuchsia) {
     ]
   }
 }
+
 fuchsia_component_manifest("dynamic-create-child-test-manifest") {
   component_name = "dynamic-create-child-test"
   manifest = "meta/dynamic_create_child_test.cml"
 }
+
 fuchsia_test_component("dynamic-create-child-test") {
   cm_label = ":dynamic-create-child-test-manifest"
   component_name = "dynamic-create-child-test"
   deps = [ ":test_bin" ]
 }
+
 fuchsia_test_package("tests") {
   package_name = "dynamic-create-child-example-gn"
   test_components = [ ":dynamic-create-child-test" ]

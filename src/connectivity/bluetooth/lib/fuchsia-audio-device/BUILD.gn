@@ -107,6 +107,7 @@ if (is_fuchsia) {
     proc_macro_deps = [ "//src/lib/testing/fixture" ]
   }
 }
+
 fuchsia_unittest_package("fuchsia-audio-device-tests") {
   package_name = "fuchsia-audio-device-tests-gn"
   component_name = "fuchsia-audio-device-tests"

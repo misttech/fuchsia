@@ -97,6 +97,7 @@ rustc_library("core") {
     deps += [ "//sdk/rust/zx" ]
   }
 }
+
 rustc_test("core_test") {
   sources = [
     "src/coding.rs",
@@ -154,10 +155,12 @@ rustc_test("core_test") {
   }
   output_name = "overnet_core_test"
 }
+
 fidl("test.coding") {
   testonly = true
   sources = [ "coding.test.fidl" ]
 }
+
 fuchsia_unittest_package("overnet-core-tests") {
   package_name = "overnet-core-tests-gn"
   component_name = "overnet-core-tests"

@@ -8,6 +8,7 @@ import("//build/components.gni")
 # Imported so `ffmpeg_profile` remains declared in non-test builds where
 # //src/media/lib/ffmpeg is not in the build graph.
 import("//src/media/lib/ffmpeg/ffmpeg_args.gni")
+
 group("codec") {
   testonly = true
   deps = [

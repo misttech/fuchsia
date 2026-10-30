@@ -49,6 +49,7 @@ source_set("backoff") {
     "//zircon/system/ulib/zx",
   ]
 }
+
 executable("backoff_unittests") {
   testonly = true
   sources = [ "exponential_backoff_unittest.cc" ]
@@ -58,6 +59,7 @@ executable("backoff_unittests") {
     "//third_party/googletest:gtest",
   ]
 }
+
 fuchsia_unittest_package("backoff_tests") {
   package_name = "backoff_tests-gn"
   component_name = "backoff_tests"

@@ -33,11 +33,13 @@ rustc_library("wlan-bitfield-wrapper") {
   proc_macro_deps = [ "//src/connectivity/wlan/lib/bitfield:wlan-bitfield" ]
   visibility = [ ":*" ]
 }
+
 rustc_test("wlan-bitfield-wrapper_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
   proc_macro_deps = [ "//src/connectivity/wlan/lib/bitfield:wlan-bitfield" ]
 }
+
 fuchsia_unittest_package("wlan-bitfield-tests") {
   package_name = "wlan-bitfield-tests-gn"
   component_name = "wlan-bitfield-tests"

@@ -47,6 +47,7 @@ rustc_library("fuchsia-inspect-derive") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+
 group("derive") {
   public_deps = [ ":fuchsia-inspect-derive" ]
   visibility = [ "*" ]

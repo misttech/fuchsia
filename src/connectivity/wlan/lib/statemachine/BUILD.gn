@@ -41,6 +41,7 @@ rustc_library("wlan-statemachine") {
     "//src/connectivity/wlan/lib/sme:*",
   ]
 }
+
 rustc_test("wlan-statemachine_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -48,6 +49,7 @@ rustc_test("wlan-statemachine_test") {
     "//src/connectivity/wlan/lib/statemachine/macro:wlan-statemachine-macro",
   ]
 }
+
 fuchsia_unittest_package("wlan-statemachine-tests") {
   package_name = "wlan-statemachine-tests-gn"
   component_name = "wlan-statemachine-tests"

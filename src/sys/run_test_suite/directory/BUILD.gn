@@ -60,6 +60,7 @@ rustc_library("directory") {
     "//third_party/rust_crates:serde_json",
   ]
 }
+
 rustc_test("test_output_directory_lib_test") {
   sources = [
     "src/lib.rs",
@@ -83,15 +84,18 @@ rustc_test("test_output_directory_lib_test") {
          ]
   proc_macro_deps = [ "//src/lib/testing/fixture" ]
 }
+
 fuchsia_component_manifest("test-output-directory-lib-test-manifest") {
   testonly = true
   component_name = "test-output-directory-lib-test"
   manifest = "meta/test-output-directory-lib-test.cml"
 }
+
 fuchsia_test_component("test-output-directory-lib-test") {
   cm_label = ":test-output-directory-lib-test-manifest"
   deps = [ ":test_output_directory_lib_test" ]
 }
+
 fuchsia_test_package("test-output-directory-unit-tests-package") {
   package_name = "test-output-directory-unit-tests-gn"
   test_components = [ ":test-output-directory-lib-test" ]

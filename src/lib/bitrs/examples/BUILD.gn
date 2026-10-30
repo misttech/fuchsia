@@ -42,6 +42,7 @@ rustc_binary("basic-example") {
   edition = "2024"
   deps = [ "//src/lib/bitrs" ]
 }
+
 rustc_binary("bitfield-repr-example") {
   sources = [ "bitfield-repr.rs" ]
   source_root = "bitfield-repr.rs"
@@ -51,6 +52,7 @@ rustc_binary("bitfield-repr-example") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
 rustc_binary("multilayout-example") {
   sources = [ "multilayout.rs" ]
   source_root = "multilayout.rs"

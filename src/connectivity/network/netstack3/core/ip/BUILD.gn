@@ -166,6 +166,7 @@ rustc_library("netstack3-ip") {
            "//src/connectivity/network/netstack3/core/trace:netstack3-trace",
          ]
 }
+
 rustc_library("netstack3-ip-testutils") {
   testonly = true
   sources = _COMMON_SRCS
@@ -187,6 +188,7 @@ rustc_library("netstack3-ip-testutils") {
            "//src/connectivity/network/netstack3/core/trace:netstack3-trace-testutils",
          ]
 }
+
 rustc_library("netstack3-ip-benchmarks") {
   testonly = true
   sources = _COMMON_SRCS
@@ -206,6 +208,7 @@ rustc_library("netstack3-ip-benchmarks") {
            "//src/connectivity/network/netstack3/core/trace:netstack3-trace-testutils",
          ]
 }
+
 rustc_library("netstack3-ip-instrumented") {
   sources = _COMMON_SRCS
   configs += _COMMON_BUILD_FLAGS

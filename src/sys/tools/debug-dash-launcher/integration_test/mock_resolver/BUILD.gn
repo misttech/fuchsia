@@ -41,11 +41,13 @@ rustc_binary("bin") {
     "//third_party/rust_crates:tempfile",
   ]
 }
+
 fuchsia_component_manifest("mock_resolver-manifest") {
   testonly = true
   component_name = "mock_resolver"
   manifest = "meta/mock_resolver.cml"
 }
+
 fuchsia_component("mock_resolver") {
   testonly = true
   cm_label = ":mock_resolver-manifest"

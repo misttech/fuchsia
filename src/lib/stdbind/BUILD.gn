@@ -52,6 +52,7 @@ library_headers("headers") {
     "//zircon/kernel/*",
   ]
 }
+
 source_set("stdbind") {
   visibility = [
     ":*",
@@ -59,6 +60,7 @@ source_set("stdbind") {
   ]
   public_deps = [ ":headers" ]
 }
+
 rustc_library("stdbind-rs") {
   sources = [
     "src/lib.rs",

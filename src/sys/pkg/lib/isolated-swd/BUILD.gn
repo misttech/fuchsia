@@ -127,6 +127,7 @@ rustc_library("isolated-swd") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+
 rustc_test("isolated-swd_test") {
   sources = [
     "src/cache.rs",

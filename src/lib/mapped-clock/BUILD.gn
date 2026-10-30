@@ -64,6 +64,7 @@ rustc_library("lib") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_test("lib_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -75,6 +76,7 @@ rustc_test("lib_test") {
   visibility = [ ":*" ]
   output_name = "mapped_clock_lib_test"
 }
+
 fuchsia_unittest_package("mapped-clock-tests") {
   package_name = "mapped-clock-tests-gn"
   component_name = "mapped-clock-tests"

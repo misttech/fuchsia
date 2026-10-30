@@ -63,10 +63,12 @@ rustc_library("config_encoder") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+
 fidl("test.config.encoder") {
   testonly = true
   sources = [ "fidl/config_encoder.test.fidl" ]
 }
+
 rustc_test("config_encoder_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -84,6 +86,7 @@ rustc_test("config_encoder_test") {
         "//src/sys/lib/fidl_fuchsia_component_config_ext",
       ]
 }
+
 fuchsia_unittest_package("config_encoder_tests") {
   package_name = "config_encoder_tests-gn"
   component_name = "config_encoder_tests"

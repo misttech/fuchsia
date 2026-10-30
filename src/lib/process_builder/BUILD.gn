@@ -114,6 +114,7 @@ rustc_library("process_builder") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
 fidl("test-util-fidl") {
   testonly = true
   sources = [ "test-utils/test_util.test.fidl" ]
@@ -123,6 +124,7 @@ fidl("test-util-fidl") {
   ]
   name = "test.processbuilder"
 }
+
 rustc_binary("test_util") {
   testonly = true
   sources = [ "test-utils/test_util.rs" ]

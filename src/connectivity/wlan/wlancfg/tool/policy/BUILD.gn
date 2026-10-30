@@ -55,6 +55,7 @@ rustc_library("donut-lib") {
     "//third_party/rust_crates:serde_json",
   ]
 }
+
 rustc_library("donut-lib-fdomain") {
   sources = [
     "src/lib.rs",
@@ -84,6 +85,7 @@ rustc_library("donut-lib-fdomain") {
     "//third_party/rust_crates:serde_json",
   ]
 }
+
 rustc_test("donut-lib_test") {
   sources = [
     "src/lib.rs",
@@ -116,6 +118,7 @@ rustc_test("donut-lib_test") {
            "//third_party/rust_crates:test-case",
          ]
 }
+
 fuchsia_unittest_package("donut-lib-tests") {
   package_name = "donut-lib-tests-gn"
   component_name = "donut-lib-tests"

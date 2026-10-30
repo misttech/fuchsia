@@ -59,6 +59,7 @@ rustc_library("types") {
     ]
   }
 }
+
 rustc_library("types-serde") {
   sources = [
     "src/serde_ext.rs",

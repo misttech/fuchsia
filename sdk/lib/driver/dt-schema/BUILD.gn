@@ -32,6 +32,7 @@ rustc_library("dt-schema-lib") {
   edition = "2024"
   deps = []
 }
+
 rustc_binary("dt-schema") {
   sources = [ "bin/validator.rs" ]
   source_root = "bin/validator.rs"

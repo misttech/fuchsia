@@ -39,10 +39,12 @@ rustc_binary("signal_then_hang_bin") {
     "//src/lib/fuchsia-runtime",
   ]
 }
+
 fuchsia_component_manifest("signal_then_hang-manifest") {
   component_name = "signal-then-hang"
   manifest = "meta/signal_then_hang.cml"
 }
+
 fuchsia_component("signal_then_hang") {
   cm_label = ":signal_then_hang-manifest"
   component_name = "signal-then-hang"

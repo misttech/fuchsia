@@ -73,6 +73,7 @@ rustc_binary("looper_bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_test("binder_integration_test_bin") {
   sources = [ "src/binder_integration_test.rs" ]
   output_name = "binder_integration_test"

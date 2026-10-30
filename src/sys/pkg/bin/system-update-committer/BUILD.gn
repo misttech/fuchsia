@@ -99,13 +99,16 @@ rustc_library("lib") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+
 fuchsia_component_manifest("manifest") {
   component_name = "system-update-committer"
   manifest = "meta/system-update-committer.cml"
 }
+
 fuchsia_structured_config_rust_lib("system_update_committer_config") {
   cm_label = ":manifest"
 }
+
 fuchsia_component("component") {
   cm_label = ":manifest"
   component_name = "system-update-committer"
@@ -116,6 +119,7 @@ fuchsia_component("component") {
   ]
   deps = [ ":bin" ]
 }
+
 rustc_test("lib_test") {
   sources = [
     "src/fidl.rs",
@@ -164,16 +168,19 @@ rustc_test("lib_test") {
   lint_config = "//build/config/rust/lints:clippy_warn_all"
   output_name = "system_update_committer_lib_test"
 }
+
 fuchsia_component_manifest("unittest_manifest") {
   testonly = true
   component_name = "unittest_component"
   manifest = "meta/unittests.cml"
 }
+
 fuchsia_test_component("unittest_component") {
   cm_label = ":unittest_manifest"
   component_name = "unittest_component"
   deps = [ ":lib_test" ]
 }
+
 fuchsia_test_package("system-update-committer-tests-package") {
   package_name = "system-update-committer-tests-gn"
   test_components = [ ":unittest_component" ]

@@ -615,6 +615,7 @@ if (is_fuchsia) {
            ] + [ "//src/lib/fuchsia" ]
   }
 }
+
 fuchsia_unittest_package("stream_processor_lib_test") {
   package_name = "stream_processor_lib_test-gn"
   component_name = "stream_processor_lib_test"

@@ -58,6 +58,7 @@ rustc_library("pull-source") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_test("pull-source_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -76,6 +77,7 @@ rustc_test("pull-source_test") {
            "//src/lib/fuchsia-async",
          ]
 }
+
 fuchsia_unittest_package("pull-source-tests") {
   package_name = "pull-source-tests-gn"
   component_name = "pull-source-tests"

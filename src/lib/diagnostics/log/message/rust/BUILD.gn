@@ -54,6 +54,7 @@ group("rust") {
     "//src/starnix/kernel/core:*",
   ]
 }
+
 rustc_library("lib") {
   sources = [
     "src/constants.rs",

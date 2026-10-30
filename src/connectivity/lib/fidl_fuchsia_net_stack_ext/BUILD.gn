@@ -59,6 +59,7 @@ rustc_library("fidl_fuchsia_net_stack_ext") {
     "//third_party/rust_crates:anyhow",
   ]
 }
+
 rustc_test("fidl_fuchsia_net_stack_ext_test") {
   sources = [
     "src/error.rs",
@@ -72,6 +73,7 @@ rustc_test("fidl_fuchsia_net_stack_ext_test") {
   ]
   configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
+
 fuchsia_unittest_package("fidl-fuchsia-net-stack-ext-tests") {
   package_name = "fidl-fuchsia-net-stack-ext-tests-gn"
   component_name = "fidl-fuchsia-net-stack-ext-tests"

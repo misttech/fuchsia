@@ -93,6 +93,7 @@ rustc_binary("resolver_bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_test("integration_test_bin") {
   sources = [ "src/integration_test.rs" ]
   output_name = "component_manager_test_resolvers_integration_test"

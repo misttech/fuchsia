@@ -203,6 +203,7 @@ template("zither_golden_test") {
         suffix = "cc"
       }
       source = "$case_output_dir/compile-check.$suffix"
+
       action(create_source_target) {
         visibility = [ ":*" ]
         testonly = true
@@ -297,6 +298,7 @@ template("zither_golden_test") {
             ifs = output
           }
         }
+
         ifs_shared_library(compilation_check_target) {
           abi = ifs
           deps = [ backend_label ]

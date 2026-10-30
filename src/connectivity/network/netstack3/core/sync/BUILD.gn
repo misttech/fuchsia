@@ -102,6 +102,7 @@ rustc_library("netstack3-sync") {
   ]
   deps = _COMMON_DEPS
 }
+
 rustc_library("netstack3-sync-instrumented") {
   sources = _COMMON_SRCS
   configs += _COMMON_BUILD_FLAGS
@@ -115,6 +116,7 @@ rustc_library("netstack3-sync-instrumented") {
   ]
   deps = _COMMON_DEPS
 }
+
 rustc_library("netstack3-sync-testutils") {
   testonly = true
   sources = _COMMON_SRCS
@@ -152,6 +154,7 @@ if (is_host) {
     deps = _COMMON_DEPS + [ "//third_party/rust_crates:loom" ]
   }
 }
+
 rustc_test("netstack3-sync_test") {
   sources = _COMMON_SRCS
   edition = "2024"
@@ -160,6 +163,7 @@ rustc_test("netstack3-sync_test") {
   configs += _COMMON_BUILD_FLAGS
   visibility = [ ":*" ]
 }
+
 rustc_test("netstack3-sync-instrumented_test") {
   sources = _COMMON_SRCS
   edition = "2024"
@@ -168,12 +172,14 @@ rustc_test("netstack3-sync-instrumented_test") {
   configs += _COMMON_BUILD_FLAGS
   visibility = [ ":*" ]
 }
+
 fuchsia_unittest_package("netstack3-sync-instrumented-package") {
   package_name = "netstack3-sync-instrumented-gn"
   component_name = "netstack3-sync-instrumented"
   deps = [ ":netstack3-sync-instrumented_test" ]
   visibility = [ "*" ]
 }
+
 fuchsia_unittest_package("netstack3-sync-package") {
   package_name = "netstack3-sync-gn"
   component_name = "netstack3-sync"

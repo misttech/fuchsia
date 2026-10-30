@@ -61,6 +61,7 @@ rustc_library("wlan-dev") {
     ]
   }
 }
+
 rustc_test("wlan-dev_test") {
   sources = [
     "src/lib.rs",
@@ -96,6 +97,7 @@ rustc_test("wlan-dev_test") {
     "//third_party/rust_crates:assert_matches",
   ]
 }
+
 fuchsia_unittest_package("wlantool-tests") {
   package_name = "wlantool-tests-gn"
   component_name = "wlantool-tests"

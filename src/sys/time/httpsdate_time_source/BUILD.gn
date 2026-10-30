@@ -91,6 +91,7 @@ rustc_binary("bin") {
     "//third_party/rust_crates:rand",
   ]
 }
+
 rustc_test("httpsdate_time_source_bin_test") {
   sources = [
     "src/bound.rs",
@@ -140,6 +141,7 @@ rustc_test("httpsdate_time_source_bin_test") {
          ]
   source_root = "src/main.rs"
 }
+
 fuchsia_unittest_package("httpsdate-time-source-tests") {
   package_name = "httpsdate-time-source-tests-gn"
   component_name = "httpsdate-time-source-tests"
@@ -154,10 +156,12 @@ fuchsia_unittest_package("httpsdate-time-source-tests") {
     "//src/sys:*",
   ]
 }
+
 fuchsia_component_manifest("manifest") {
   component_name = "httpsdate_time_source"
   manifest = "meta/service.cml"
 }
+
 fuchsia_component("service") {
   cm_label = ":manifest"
   visibility = [
@@ -166,6 +170,7 @@ fuchsia_component("service") {
   ]
   deps = [ ":bin" ]
 }
+
 fuchsia_structured_config_rust_lib("httpsdate_config") {
   cm_label = ":manifest"
 }

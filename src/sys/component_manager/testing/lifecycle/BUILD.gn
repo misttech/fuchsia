@@ -44,11 +44,13 @@ rustc_binary("lifecycle_placeholder") {
     "//third_party/rust_crates:log",
   ]
 }
+
 fuchsia_component_manifest("lifecycle-manifest") {
   testonly = true
   component_name = "lifecycle"
   manifest = "meta/lifecycle.cml"
 }
+
 fuchsia_component("lifecycle") {
   testonly = true
   cm_label = ":lifecycle-manifest"

@@ -71,6 +71,7 @@ rustc_library("packet") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
 rustc_test("packet_lib_test") {
   sources = [
     "src/fragmented.rs",
@@ -96,6 +97,7 @@ rustc_test("packet_lib_test") {
     "//src/connectivity/network:performance_critical_rust_crate",
   ]
 }
+
 fuchsia_unittest_package("packet-test") {
   package_name = "packet-test-gn"
   component_name = "packet-test"

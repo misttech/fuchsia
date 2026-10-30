@@ -45,11 +45,13 @@ rustc_binary("bin") {
     "//third_party/rust_crates:futures",
   ]
 }
+
 fuchsia_component_manifest("filter-setup-manifest") {
   testonly = true
   component_name = "filter-setup"
   manifest = "meta/filter-setup.cml"
 }
+
 fuchsia_component("filter-setup") {
   testonly = true
   cm_label = ":filter-setup-manifest"

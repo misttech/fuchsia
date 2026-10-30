@@ -73,6 +73,7 @@ rustc_library("detect-stall") {
     "//third_party/rust_crates:pin-project-lite",
   ]
 }
+
 fuchsia_unittest_package("detect-stall-unittests") {
   package_name = "detect-stall-unittests-gn"
   component_name = "detect-stall-unittests"

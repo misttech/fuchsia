@@ -43,6 +43,7 @@ fidl("fuchsia.wlan.wlanix") {
     "//zircon/vdso/zx",
   ]
 }
+
 rustc_binary("wlanix_bin") {
   sources = [
     "src/bss_scorer.rs",
@@ -111,6 +112,7 @@ rustc_binary("wlanix_bin") {
     "//third_party/rust_crates:strum",
   ]
 }
+
 rustc_test("wlanix_bin_test") {
   sources = [
     "src/bss_scorer.rs",
@@ -184,6 +186,7 @@ rustc_test("wlanix_bin_test") {
          ]
   source_root = "src/main.rs"
 }
+
 fuchsia_unittest_package("wlanix-tests") {
   package_name = "wlanix-tests-gn"
   component_name = "wlanix-tests"
@@ -198,13 +201,16 @@ fuchsia_unittest_package("wlanix-tests") {
     "//src/connectivity/wlan:*",
   ]
 }
+
 fuchsia_component_manifest("wlanix-manifest") {
   component_name = "wlanix"
   manifest = "meta/wlanix.cml"
 }
+
 fuchsia_structured_config_rust_lib("wlanix-config") {
   cm_label = ":wlanix-manifest"
 }
+
 fuchsia_component("component") {
   cm_label = ":wlanix-manifest"
   deps = [ ":wlanix_bin" ]

@@ -24,6 +24,15 @@ root_patterns = [
   "//:*",
 ]
 
+# GN no longer collects validations metadata by default, so change the
+# default behavior using this flag for now.
+# TODO(https://fxbug.dev/XXXXXX): Change individual generated_file()
+# targets that truly require validations metadata to set
+# `collect_validations_metadata = true` in their definition instead,
+# then remove this flag.
+# TODO(https://fxbug.dev/573091692): Remove this.
+experimental_collect_validations_metadata = true
+
 # The executable used to execute scripts in action and exec_script. This is
 # often an interpreter for projects that use a primary scripting language. In
 # this project, we use several different kinds of programs including scripts in

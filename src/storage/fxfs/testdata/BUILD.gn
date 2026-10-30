@@ -7,6 +7,7 @@ import("//build/components.gni")
 # wildcards. The workaround is to regenerate a gni file containing all images
 # whenever `fx fxfs create_golden` is run.
 import("images.gni")
+
 resource("golden_images") {
   sources = fxfs_golden_images
   outputs = [ "data/fxfs_golden_images/{{source_file_part}}" ]

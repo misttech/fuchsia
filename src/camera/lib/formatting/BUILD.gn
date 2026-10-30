@@ -48,6 +48,7 @@ group("formatting") {
     "//src/camera/drivers/controller/*",
   ]
 }
+
 source_set("lib") {
   sources = [
     "formatting.cc",
@@ -67,6 +68,7 @@ source_set("lib") {
     "//src/camera/drivers/controller/*",
   ]
 }
+
 executable("formatting-unittest-bin") {
   testonly = true
   sources = [ "formatting-unittest.cc" ]
@@ -76,6 +78,7 @@ executable("formatting-unittest-bin") {
     "//src/lib/fxl/test:gtest_main",
   ]
 }
+
 fuchsia_unittest_package("formatting-unittest") {
   package_name = "formatting-unittest-gn"
   component_name = "formatting-unittest"

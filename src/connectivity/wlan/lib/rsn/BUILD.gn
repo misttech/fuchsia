@@ -92,6 +92,7 @@ rustc_library("wlan-rsn") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
 rustc_test("wlan-rsn_test") {
   sources = [
     "src/aes.rs",
@@ -160,6 +161,7 @@ rustc_test("wlan-rsn_test") {
            "//third_party/rust_crates:test-case",
          ]
 }
+
 fuchsia_unittest_package("wlan-rsn-tests") {
   package_name = "wlan-rsn-tests-gn"
   component_name = "wlan-rsn-tests"

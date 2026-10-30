@@ -50,6 +50,7 @@ rustc_library("kgsl_strings") {
     ":gen_strings",
   ]
 }
+
 action("gen_strings") {
   sources = [ "//src/starnix/lib/linux_uapi/src/arm64.rs" ]
   outputs = [ "$target_gen_dir/kgsl_strings.rs" ]

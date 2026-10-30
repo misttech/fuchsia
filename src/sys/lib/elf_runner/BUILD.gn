@@ -141,6 +141,7 @@ rustc_library("elf_runner") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+
 rustc_test("elf_runner_test") {
   sources = [
     "src/component.rs",
@@ -212,6 +213,7 @@ rustc_test("elf_runner_test") {
       ]
   output_name = "elf_runner_lib_test"
 }
+
 rustc_test("elf_runner_next_vdso_tests") {
   sources = [
     "src/logger.rs",

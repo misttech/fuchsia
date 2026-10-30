@@ -58,6 +58,7 @@ rustc_library("fidl_test_util") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_test("fidl_test_util_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -76,6 +77,7 @@ rustc_test("fidl_test_util_test") {
          ]
   output_name = "fidl_test_util_lib_test"
 }
+
 fuchsia_unittest_package("fidl_test_util_target_test") {
   package_name = "fidl_test_util_target_test-gn"
   component_name = "fidl_test_util_target_test"

@@ -61,6 +61,7 @@ rustc_library("terminal") {
     "//third_party/rust_crates:vt100",
   ]
 }
+
 rustc_test("terminal_test") {
   sources = [
     "src/lib.rs",

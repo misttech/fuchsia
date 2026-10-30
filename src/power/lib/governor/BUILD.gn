@@ -63,6 +63,7 @@ rustc_library("governor") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_test("governor_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -80,6 +81,7 @@ rustc_test("governor_test") {
            "//third_party/rust_crates:log",
          ] + [ "//src/lib/fuchsia" ]
 }
+
 fuchsia_unittest_package("governor-tests") {
   package_name = "governor-tests-gn"
   component_name = "governor-tests"

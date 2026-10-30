@@ -76,6 +76,7 @@ rustc_library("syscalls") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
 rustc_test("syscalls_test") {
   sources = [
     "lib.rs",
@@ -107,11 +108,13 @@ rustc_test("syscalls_test") {
     "hwasan",
   ]
 }
+
 fuchsia_component_manifest("starnix-syscalls-tests-manifest") {
   testonly = true
   component_name = "starnix-syscalls-tests"
   manifest = "meta/starnix_syscalls_tests.cml"
 }
+
 fuchsia_test_component("starnix-syscalls-tests-component") {
   cm_label = ":starnix-syscalls-tests-manifest"
   component_name = "starnix-syscalls-tests"
@@ -121,6 +124,7 @@ fuchsia_test_component("starnix-syscalls-tests-component") {
     "//src/starnix/kernel/vdso",
   ]
 }
+
 fuchsia_test_package("starnix-syscalls-tests-package") {
   package_name = "starnix-syscalls-tests-gn"
   test_components = [ ":starnix-syscalls-tests-component" ]

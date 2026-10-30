@@ -85,6 +85,7 @@ rustc_library("fidl_fuchsia_net_matchers_ext") {
   ]
   deps = _COMMON_DEPS + [ "//src/lib/network/fidl_fuchsia_net_interfaces_ext" ]
 }
+
 rustc_library("fidl_fuchsia_net_matchers_ext_fdomain") {
   sources = _COMMON_SRCS
   configs += _COMMON_BUILD_FLAGS
@@ -99,6 +100,7 @@ rustc_library("fidl_fuchsia_net_matchers_ext_fdomain") {
   ]
   deps = _COMMON_DEPS + [ "//src/lib/network/fidl_fuchsia_net_interfaces_ext:fidl_fuchsia_net_interfaces_ext_fdomain" ]
 }
+
 rustc_test("fidl_fuchsia_net_matchers_ext_test") {
   sources = _COMMON_SRCS
   edition = "2024"
@@ -109,6 +111,7 @@ rustc_test("fidl_fuchsia_net_matchers_ext_test") {
       ]
   configs += _COMMON_BUILD_FLAGS
 }
+
 rustc_test("fidl_fuchsia_net_matchers_ext_fdomain_test") {
   sources = _COMMON_SRCS
   edition = "2024"
@@ -119,11 +122,13 @@ rustc_test("fidl_fuchsia_net_matchers_ext_fdomain_test") {
   configs += _COMMON_BUILD_FLAGS
   features = [ "fdomain" ]
 }
+
 fuchsia_unittest_package("fidl-fuchsia-net-matchers-ext-tests") {
   package_name = "fidl-fuchsia-net-matchers-ext-tests-gn"
   component_name = "fidl-fuchsia-net-matchers-ext-tests"
   deps = [ ":fidl_fuchsia_net_matchers_ext_test" ]
 }
+
 fuchsia_unittest_package("fidl-fuchsia-net-matchers-ext-fdomain-tests") {
   package_name = "fidl-fuchsia-net-matchers-ext-fdomain-tests-gn"
   component_name = "fidl-fuchsia-net-matchers-ext-fdomain-tests"

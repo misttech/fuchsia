@@ -110,6 +110,7 @@ rustc_library("fuchsia-component-test-lib") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+
 expect_includes("includes") {
   includes = [ "//sdk/lib/sys/component/realm_builder.shard.cml" ]
   visibility = [

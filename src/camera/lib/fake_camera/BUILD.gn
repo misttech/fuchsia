@@ -56,6 +56,7 @@ source_set("fake_camera") {
     "//src/camera/lib/fake_stream",
   ]
 }
+
 executable("fake_camera_unittest_bin") {
   testonly = true
   sources = [ "fake_camera_unittest.cc" ]
@@ -68,17 +69,20 @@ executable("fake_camera_unittest_bin") {
     "//src/lib/testing/loop_fixture",
   ]
 }
+
 fuchsia_component_manifest("fake_camera_unittest_manifest") {
   testonly = true
   component_name = "fake_camera_unittest"
   manifest = "meta/fake_camera_unittest.cml"
 }
+
 fuchsia_test_component("fake_camera_unittest_component") {
   cm_label = ":fake_camera_unittest_manifest"
   component_name = "fake_camera_unittest"
   deps = [ ":fake_camera_unittest_bin" ]
   test_type = "system"
 }
+
 fuchsia_test_package("fake_camera_unittest") {
   package_name = "fake_camera_unittest-gn"
   test_components = [ ":fake_camera_unittest_component" ]

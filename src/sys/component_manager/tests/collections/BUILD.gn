@@ -86,6 +86,7 @@ rustc_test("collections_integration_test_bin") {
     "//third_party/rust_crates:anyhow",
   ]
 }
+
 rustc_binary("write_startup_socket_bin") {
   testonly = true
   sources = [ "write_startup_socket.rs" ]
@@ -97,11 +98,13 @@ rustc_binary("write_startup_socket_bin") {
     "//src/lib/fuchsia-runtime",
   ]
 }
+
 fuchsia_component_manifest("write_startup_socket-manifest") {
   testonly = true
   component_name = "write_startup_socket"
   manifest = "meta/write_startup_socket.cml"
 }
+
 fuchsia_component("write_startup_socket") {
   testonly = true
   cm_label = ":write_startup_socket-manifest"

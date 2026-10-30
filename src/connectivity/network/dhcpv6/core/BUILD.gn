@@ -63,6 +63,7 @@ rustc_library("core") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
 rustc_test("core_test") {
   sources = [
     "src/client.rs",
@@ -91,6 +92,7 @@ rustc_test("core_test") {
   configs += [ "//build/config/rust/lints:deny_unused_results" ]
   output_name = "dhcpv6_core_lib_test"
 }
+
 fuchsia_unittest_package("dhcpv6-test") {
   package_name = "dhcpv6-test-gn"
   component_name = "dhcpv6-test"

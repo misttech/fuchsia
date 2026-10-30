@@ -57,6 +57,7 @@ sdk_source_set("fidl_driver_transport") {
     "//sdk/lib/fidl/cpp/wire",
   ]
 }
+
 sdk_source_set("fidl_driver") {
   if (is_fuchsia) {
     sources = [ "unknown_interactions.cc" ]
@@ -90,6 +91,7 @@ sdk_source_set("fidl_driver") {
     "//sdk/lib/fidl/cpp/wire",
   ]
 }
+
 sdk_source_set("fidl_driver_natural") {
   if (is_fuchsia) {
     sources = [ "natural_messaging.cc" ]

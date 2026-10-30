@@ -44,10 +44,12 @@ test("zxc_unittests") {
     "//zircon/system/ulib/zxtest",
   ]
 }
+
 fuchsia_unittest_component("zxc-tests-component") {
   deps = [ ":zxc_unittests" ]
   component_name = "zxc-tests"
 }
+
 fuchsia_test_package("zxc-tests-package") {
   package_name = "zxc-tests-gn"
   test_components = [ ":zxc-tests-component" ]

@@ -92,9 +92,11 @@ fuchsia_component_manifest("ui_config_manifest") {
   component_name = "config_system_recovery"
   manifest = "meta/shards/ui.shard.cml"
 }
+
 fuchsia_structured_config_rust_lib("recovery_ui_config") {
   cm_label = ":ui_config_manifest"
 }
+
 rustc_library("fdr_lib") {
   sources = [ "src/fdr.rs" ]
   source_root = "src/fdr.rs"
@@ -109,6 +111,7 @@ rustc_library("fdr_lib") {
     "//third_party/rust_crates:anyhow",
   ]
 }
+
 rustc_test("fdr_lib_test") {
   sources = [ "src/fdr.rs" ]
   source_root = "src/fdr.rs"
@@ -129,11 +132,13 @@ rustc_test("fdr_lib_test") {
            "//third_party/rust_crates:futures",
          ]
 }
+
 fuchsia_unittest_package("fdr_lib_unittests") {
   package_name = "fdr_lib_unittests-gn"
   component_name = "fdr_lib_unittests"
   deps = [ ":fdr_lib_test" ]
 }
+
 rustc_binary("bin_fdr") {
   sources = [ "src/main.rs" ]
   output_name = "system_recovery_fdr"
@@ -155,6 +160,7 @@ rustc_binary("bin_fdr") {
     "//third_party/rust_crates:futures",
   ]
 }
+
 rustc_test("bin_fdr_test") {
   sources = [ "src/main.rs" ]
   edition = "2024"
@@ -177,15 +183,18 @@ rustc_test("bin_fdr_test") {
   source_root = "src/main.rs"
   output_name = "system_recovery_fdr_bin_test"
 }
+
 fuchsia_unittest_package("system_recovery_fdr_unittests") {
   package_name = "system_recovery_fdr_unittests-gn"
   component_name = "system_recovery_fdr_unittests"
   deps = [ ":bin_fdr_test" ]
 }
+
 fuchsia_component_manifest("manifest_fdr") {
   component_name = "system_recovery_fdr"
   manifest = "meta/system_recovery_fdr.cml"
 }
+
 fuchsia_component("component_fdr") {
   cm_label = ":manifest_fdr"
   visibility = [
@@ -194,10 +203,12 @@ fuchsia_component("component_fdr") {
   ]
   deps = [ ":bin_fdr" ]
 }
+
 fuchsia_component_manifest("manifest_android") {
   component_name = "system_recovery_android"
   manifest = "meta/system_recovery_android.cml"
 }
+
 fuchsia_structured_config_rust_lib("recovery_android_config") {
   cm_label = ":manifest_android"
   visibility = [
@@ -205,6 +216,7 @@ fuchsia_structured_config_rust_lib("recovery_android_config") {
     "//src/recovery/system/android:*",
   ]
 }
+
 rustc_library("ota_lib") {
   sources = [
     "src/config.rs",
@@ -249,6 +261,7 @@ rustc_library("ota_lib") {
     "//third_party/rust_crates:tempfile",
   ]
 }
+
 rustc_test("ota_lib_test") {
   sources = [
     "src/config.rs",
@@ -305,6 +318,7 @@ rustc_test("ota_lib_test") {
            "//third_party/rust_crates:url",
          ]
 }
+
 fuchsia_unittest_package("ota_lib_unittests") {
   package_name = "ota_lib_unittests-gn"
   component_name = "ota_lib_unittests"

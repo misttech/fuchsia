@@ -63,6 +63,7 @@ metrics_registry("wlan_metrics_registry") {
   generate_rust = true
   project_id = 3708719327
 }
+
 rustc_binary("bin") {
   sources = [
     "src/device.rs",
@@ -102,6 +103,7 @@ rustc_binary("bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_test("bin_test") {
   sources = [
     "src/device.rs",
@@ -148,6 +150,7 @@ rustc_test("bin_test") {
   source_root = "src/main.rs"
   output_name = "wlandevicemonitor_bin_test"
 }
+
 fuchsia_unittest_package("wlandevicemonitor-tests") {
   package_name = "wlandevicemonitor-tests-gn"
   component_name = "wlandevicemonitor-tests"
@@ -162,6 +165,7 @@ fuchsia_unittest_package("wlandevicemonitor-tests") {
     "//src/connectivity/wlan:*",
   ]
 }
+
 fuchsia_structured_config_rust_lib("wlandevicemonitor_config") {
   cm_label = ":wlandevicemonitor-manifest"
 }

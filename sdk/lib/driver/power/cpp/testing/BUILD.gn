@@ -54,16 +54,19 @@ source_set("fakes") {
     "//sdk/lib/async:async-cpp",
   ]
 }
+
 source_set("fidl_bound_server") {
   testonly = true
   public = [ "fidl_bound_server.h" ]
   public_deps = [ "//sdk/lib/fidl/hlcpp" ]
 }
+
 source_set("fidl_test_base_default") {
   testonly = true
   public = [ "fidl_test_base_default.h" ]
   public_deps = [ "//sdk/lib/fidl/hlcpp" ]
 }
+
 source_set("scoped_background_loop") {
   public = [ "scoped_background_loop.h" ]
   public_deps = [

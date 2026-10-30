@@ -59,11 +59,13 @@ rustc_binary("trigger-bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 fuchsia_component_manifest("trigger-cmp-manifest") {
   testonly = true
   component_name = "trigger"
   manifest = "meta/trigger.cml"
 }
+
 fuchsia_component("trigger-cmp") {
   testonly = true
   cm_label = ":trigger-cmp-manifest"

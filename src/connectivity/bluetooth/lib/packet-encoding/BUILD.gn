@@ -49,6 +49,7 @@ if (is_fuchsia) {
     deps = [ "//third_party/rust_crates:assert_matches" ]
   }
 }
+
 fuchsia_unittest_package("packet-encoding-tests") {
   package_name = "packet-encoding-tests-gn"
   component_name = "packet-encoding-tests"

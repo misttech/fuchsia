@@ -47,6 +47,7 @@ fidl("fuchsia.memory.attribution") {
   ]
   public_deps = [ "//zircon/vdso/zx" ]
 }
+
 measure_tape("measure_tape_for_attribution") {
   fidls = [ ":fuchsia.memory.attribution" ]
   target_binding = "rust"

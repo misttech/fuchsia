@@ -68,6 +68,7 @@ rustc_library("inotify") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
 rustc_test("inotify_test") {
   sources = [
     "inotify.rs",
@@ -90,11 +91,13 @@ rustc_test("inotify_test") {
     "hwasan",
   ]
 }
+
 fuchsia_component_manifest("starnix-inotify-tests-manifest") {
   testonly = true
   component_name = "starnix-inotify-tests"
   manifest = "meta/starnix_inotify_tests.cml"
 }
+
 fuchsia_test_component("starnix-inotify-tests-component") {
   cm_label = ":starnix-inotify-tests-manifest"
   component_name = "starnix-inotify-tests"
@@ -104,6 +107,7 @@ fuchsia_test_component("starnix-inotify-tests-component") {
     "//src/starnix/kernel/vdso",
   ]
 }
+
 fuchsia_test_package("starnix-inotify-tests-package") {
   package_name = "starnix-inotify-tests-gn"
   test_components = [ ":starnix-inotify-tests-component" ]

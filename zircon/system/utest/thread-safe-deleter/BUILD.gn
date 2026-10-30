@@ -57,6 +57,7 @@ executable("thread-safe-deleter") {
     "//zircon/system/ulib/zxtest",
   ]
 }
+
 fuchsia_unittest_package("thread-safe-deleter-test-pkg") {
   package_name = "thread-safe-deleter-test-gn"
   component_name = "thread-safe-deleter-test"

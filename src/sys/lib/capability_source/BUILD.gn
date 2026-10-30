@@ -70,6 +70,7 @@ rustc_library("capability_source") {
     deps += [ "//third_party/rust_crates:serde" ]
   }
 }
+
 rustc_test("capability_source_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -92,6 +93,7 @@ rustc_test("capability_source_test") {
     features = []
   }
 }
+
 fuchsia_unittest_package("capability_source_tests") {
   package_name = "capability_source_tests-gn"
   component_name = "capability_source_tests"

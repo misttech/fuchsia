@@ -42,11 +42,13 @@ rustc_library("watch_handler") {
   ]
   deps = [ "//third_party/rust_crates:thiserror" ]
 }
+
 rustc_test("watch_handler_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
   deps = [ "//third_party/rust_crates:thiserror" ]
 }
+
 fuchsia_unittest_package("watch-handler-tests") {
   package_name = "watch-handler-tests-gn"
   component_name = "watch-handler-tests"

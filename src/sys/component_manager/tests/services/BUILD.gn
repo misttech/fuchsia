@@ -102,6 +102,7 @@ rustc_binary("service-routing-branch-bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_test("service-routing-test-bin") {
   sources = [ "src/service_routing_test.rs" ]
   source_root = "src/service_routing_test.rs"
@@ -130,6 +131,7 @@ rustc_test("service-routing-test-bin") {
     "//third_party/rust_crates:test-case",
   ]
 }
+
 rustc_test("filtered-service-routing-test-bin") {
   sources = [ "src/filtered_service_routing_test.rs" ]
   source_root = "src/filtered_service_routing_test.rs"
@@ -146,6 +148,7 @@ rustc_test("filtered-service-routing-test-bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_binary("service-routing-client-bin") {
   testonly = true
   sources = [ "src/service_client.rs" ]
@@ -160,6 +163,7 @@ rustc_binary("service-routing-client-bin") {
     "//third_party/rust_crates:futures",
   ]
 }
+
 rustc_binary("multi_instance_echo_service_bin") {
   testonly = true
   sources = [ "src/multi_instance_echo_service.rs" ]

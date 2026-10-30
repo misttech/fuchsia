@@ -134,6 +134,7 @@ rustc_library("routing") {
     ]
   }
 }
+
 rustc_test("routing_test") {
   sources = [
     "src/availability.rs",
@@ -223,6 +224,7 @@ rustc_test("routing_test") {
     features = []
   }
 }
+
 fuchsia_unittest_package("fuchsia-routing-tests") {
   package_name = "fuchsia-routing-tests-gn"
   component_name = "fuchsia-routing-tests"

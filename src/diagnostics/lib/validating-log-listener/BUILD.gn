@@ -56,6 +56,7 @@ rustc_library("validating-log-listener") {
     "//third_party/rust_crates:futures",
   ]
 }
+
 rustc_test("validating-log-listener_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -67,6 +68,7 @@ rustc_test("validating-log-listener_test") {
   ]
   lint_config = "//build/config/rust/lints:clippy_warn_all"
 }
+
 fuchsia_unittest_package("validating-log-listener-tests") {
   package_name = "validating-log-listener-tests-gn"
   component_name = "validating-log-listener-tests"

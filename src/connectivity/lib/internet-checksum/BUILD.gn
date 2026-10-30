@@ -56,6 +56,7 @@ config("check_cfg_flags") {
     "--check-cfg=cfg(feature, values(\"benchmark\"))",
   ]
 }
+
 rustc_library("internet-checksum") {
   sources = [ "src/lib.rs" ]
   configs += [
@@ -70,6 +71,7 @@ rustc_library("internet-checksum") {
     "//src/connectivity/network/netstack3/core/device:*",
   ]
 }
+
 rustc_test("internet-checksum_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -83,6 +85,7 @@ rustc_test("internet-checksum_test") {
     "//third_party/rust_crates:rand_xorshift",
   ]
 }
+
 fuchsia_unittest_package("internet-checksum-test") {
   package_name = "internet-checksum-test-gn"
   component_name = "internet-checksum-test"

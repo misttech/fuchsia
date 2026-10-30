@@ -675,6 +675,7 @@ cm("elf_runner_cm") {
   output_name = "cml/elf_runner_cm/elf_runner.cm"
   config_values_package_path = "meta/elf_runner.cvf"
 }
+
 cm("dispatcher_cm") {
   manifest = "meta/dispatcher.cml"
   output_name = "cml/dispatcher_cm/dispatcher.cm"
@@ -685,9 +686,11 @@ cm("dispatcher_cm") {
     "//tools/cmc/build/restricted_features:*",
   ]
 }
+
 fuchsia_structured_config_rust_lib("dispatcher_config") {
   cm_label = ":dispatcher_cm"
 }
+
 rustc_binary("bin") {
   sources = _COMPONENT_MANAGER_SRCS
   configs += [
@@ -720,6 +723,7 @@ rustc_binary("bin") {
   exclude_toolchain_tags = [ "heapdump" ]
   deps = _COMPONENT_MANAGER_DEPS
 }
+
 rustc_test("bin_test") {
   sources = _COMPONENT_MANAGER_SRCS
   inputs = [
@@ -755,6 +759,7 @@ rustc_test("bin_test") {
   exclude_toolchain_tags = [ "heapdump" ]
   output_name = "component_manager_bin_test"
 }
+
 rustc_test("src_model_tests") {
   sources = _COMPONENT_MANAGER_SRCS
   configs += [
@@ -786,6 +791,7 @@ rustc_test("src_model_tests") {
   deps = _COMPONENT_MANAGER_DEPS + _COMPONENT_MANAGER_TEST_DEPS +
          [ "//src/lib/diagnostics/hierarchy/rust" ]
 }
+
 rustc_binary("bin_with_tracing") {
   sources = _COMPONENT_MANAGER_SRCS
   configs += [
@@ -826,10 +832,12 @@ rustc_binary("bin_with_tracing") {
            "//src/lib/trace/rust:trace-provider",
          ]
 }
+
 fuchsia_component_manifest("elf_runner-manifest") {
   component_name = "elf_runner"
   manifest = "meta/elf_runner.cml"
 }
+
 fuchsia_component("elf_runner") {
   cm_label = ":elf_runner-manifest"
   component_name = "elf_runner"
@@ -839,6 +847,7 @@ fuchsia_component("elf_runner") {
     "//src/sys/component_manager/tests/builtin_runner:*",
   ]
 }
+
 measure_tape("measure_tape_for_events") {
   fidls = [
     "//sdk/fidl/fuchsia.component",
@@ -847,6 +856,7 @@ measure_tape("measure_tape_for_events") {
   target_binding = "rust"
   target_types = [ "fuchsia.component/Event" ]
 }
+
 measure_tape("measure_tape_for_instance") {
   fidls = [ "//sdk/fidl/fuchsia.sys2" ]
   target_binding = "rust"

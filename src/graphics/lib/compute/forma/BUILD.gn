@@ -81,6 +81,7 @@ rustc_library("forma") {
     "//third_party/rust_crates:rustc-hash",
   ]
 }
+
 rustc_test("forma_test") {
   sources = [
     "src/buffer.rs",
@@ -104,6 +105,7 @@ rustc_test("forma_test") {
   configs += [ ":forma-performance" ]
   deps += [ "//build/config/sanitizers:suppress-lsan.DO-NOT-USE-THIS" ]
 }
+
 fuchsia_unittest_package("forma-tests") {
   package_name = "forma-tests-gn"
   component_name = "forma-tests"

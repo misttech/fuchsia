@@ -55,6 +55,7 @@ rustc_binary("virtio_mem_bin") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
 rustc_test("virtio_mem_bin_test") {
   sources = [
     "src/main.rs",
@@ -79,6 +80,7 @@ rustc_test("virtio_mem_bin_test") {
          ] + [ "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions" ]
   source_root = "src/main.rs"
 }
+
 fuchsia_unittest_package("virtio_mem_unittests") {
   package_name = "virtio_mem_unittests-gn"
   component_name = "virtio_mem_unittests"
@@ -93,10 +95,12 @@ fuchsia_unittest_package("virtio_mem_unittests") {
     "//src/virtualization:*",
   ]
 }
+
 fuchsia_component_manifest("virtio_mem_manifest") {
   component_name = "virtio_mem"
   manifest = "meta/virtio_mem.cml"
 }
+
 fuchsia_component("virtio_mem_component") {
   cm_label = ":virtio_mem_manifest"
   component_name = "virtio_mem"

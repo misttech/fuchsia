@@ -66,6 +66,7 @@ rustc_library("scope_dispatcher") {
     "//third_party/rust_crates:pin-project-lite",
   ]
 }
+
 rustc_test("libasync_scope_dispatcher_lib_test") {
   sources = [
     "src/lib.rs",
@@ -95,6 +96,7 @@ rustc_test("libasync_scope_dispatcher_lib_test") {
          ]
   lint_config = "//build/config/rust/lints:clippy_warn_all"
 }
+
 fuchsia_unittest_package("libasync_scope_dispatcher_tests") {
   package_name = "libasync_scope_dispatcher_tests-gn"
   component_name = "libasync_scope_dispatcher_tests"

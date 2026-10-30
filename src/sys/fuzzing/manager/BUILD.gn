@@ -60,11 +60,13 @@ rustc_binary("bin") {
     "//third_party/rust_crates:url",
   ]
 }
+
 fuchsia_component_manifest("manifest") {
   testonly = true
   component_name = "fuzz-manager"
   manifest = "meta/fuzz-manager.cml"
 }
+
 fuchsia_component("manager") {
   testonly = true
   cm_label = ":manifest"
@@ -106,17 +108,20 @@ if (is_fuchsia) {
     output_name = "fuzz_manager_bin_test"
   }
 }
+
 fuchsia_component_manifest("unittests-manifest") {
   testonly = true
   component_name = "unittests"
   manifest = "meta/unittests.cml"
 }
+
 fuchsia_test_component("unittests-component") {
   cm_label = ":unittests-manifest"
   component_name = "unittests"
   visibility = [ ":*" ]
   deps = [ ":bin_test" ]
 }
+
 fuchsia_test_package("unittests-pkg") {
   package_name = "fuzz-manager-unittests-gn"
   test_components = [ ":unittests-component" ]

@@ -133,6 +133,7 @@ if (is_fuchsia) {
     configs += [ "//build/config/rust/lints:deny_unused_results" ]
   }
 }
+
 fuchsia_unittest_package("bt-a2dp-lib-tests") {
   package_name = "bt-a2dp-lib-tests-gn"
   component_name = "bt-a2dp-lib-tests"

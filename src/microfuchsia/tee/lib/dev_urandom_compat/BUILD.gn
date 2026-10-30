@@ -45,6 +45,7 @@ source_set("dev_urandom_compat") {
     "//src/microfuchsia/tee/tests/rpc/inet:*",
   ]
 }
+
 test("dev_urandom_compat_test") {
   sources = [ "dev_urandom_compat_test.cc" ]
   deps = [
@@ -53,6 +54,7 @@ test("dev_urandom_compat_test") {
     "//zircon/system/ulib/fbl",
   ]
 }
+
 fuchsia_unittest_package("dev_urandom_compat_test_package") {
   package_name = "dev_urandom_compat_test-gn"
   component_name = "dev_urandom_compat_test"

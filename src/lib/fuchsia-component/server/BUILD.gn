@@ -83,6 +83,7 @@ rustc_library("server") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+
 fuchsia_unittest_package("fuchsia-component-server-unittests") {
   package_name = "fuchsia-component-server-unittests-gn"
   component_name = "fuchsia-component-server-unittests"

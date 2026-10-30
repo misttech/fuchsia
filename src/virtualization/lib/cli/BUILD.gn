@@ -78,6 +78,7 @@ rustc_library("guest_cli") {
     ]
   }
 }
+
 rustc_test("guest_cli_test") {
   sources = [
     "src/attach.rs",
@@ -124,6 +125,7 @@ rustc_test("guest_cli_test") {
     "//src/lib/fuchsia",
   ]
 }
+
 fuchsia_unittest_package("guest_cli_tests") {
   package_name = "guest_cli_tests-gn"
   component_name = "guest_cli_tests"

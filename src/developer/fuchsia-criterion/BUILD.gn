@@ -64,6 +64,7 @@ rustc_library("fuchsia-criterion") {
     "//third_party/rust_crates:walkdir",
   ]
 }
+
 rustc_binary("criterion_bench_bin") {
   sources = [ "examples/main.rs" ]
   output_name = "criterion_bench"

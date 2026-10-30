@@ -56,6 +56,7 @@ rustc_library("spinel_pack") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
 rustc_test("spinel_pack_test") {
   sources = [
     "src/eui.rs",
@@ -73,6 +74,7 @@ rustc_test("spinel_pack_test") {
          ] + [ "//third_party/rust_crates:assert_matches" ]
   lint_config = "//build/config/rust/lints:clippy_warn_all"
 }
+
 fuchsia_unittest_package("spinel-pack-tests") {
   package_name = "spinel-pack-tests-gn"
   component_name = "spinel-pack-tests"

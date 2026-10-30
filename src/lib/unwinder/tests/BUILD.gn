@@ -54,6 +54,7 @@ source_set("tests") {
     "//src/lib/unwinder:*",
   ]
 }
+
 source_set("cfi_only") {
   testonly = true
   sources = [ "cfi_only.cc" ]
@@ -64,6 +65,7 @@ source_set("cfi_only") {
     configs += [ "//build/config:no_frame_pointers" ]
   }
 }
+
 source_set("scs_only") {
   testonly = true
   sources = [ "scs_only.cc" ]
@@ -74,6 +76,7 @@ source_set("scs_only") {
     configs += [ "//build/config:no_frame_pointers" ]
   }
 }
+
 source_set("fp_only") {
   testonly = true
   sources = [ "fp_only.cc" ]

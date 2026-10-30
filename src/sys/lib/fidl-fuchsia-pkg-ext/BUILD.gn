@@ -113,6 +113,7 @@ measure_tape("measure_fuchsia_pkg") {
     "fuchsia.pkg/BlobInfo",
   ]
 }
+
 rustc_library("fidl-fuchsia-pkg-ext") {
   sources = [
     "src/base_package_index.rs",

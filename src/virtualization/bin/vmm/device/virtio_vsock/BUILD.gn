@@ -63,6 +63,7 @@ rustc_binary("virtio_vsock_bin") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
 rustc_test("virtio_vsock_bin_test") {
   sources = [
     "src/connection.rs",
@@ -98,6 +99,7 @@ rustc_test("virtio_vsock_bin_test") {
          ]
   source_root = "src/main.rs"
 }
+
 fuchsia_unittest_package("virtio_vsock_unittests") {
   package_name = "virtio_vsock_unittests-gn"
   component_name = "virtio_vsock_unittests"
@@ -112,10 +114,12 @@ fuchsia_unittest_package("virtio_vsock_unittests") {
     "//src/virtualization:*",
   ]
 }
+
 fuchsia_component_manifest("manifest") {
   component_name = "virtio_vsock"
   manifest = "meta/virtio_vsock.cml"
 }
+
 fuchsia_component("virtio_vsock_cmp") {
   cm_label = ":manifest"
   component_name = "virtio_vsock"

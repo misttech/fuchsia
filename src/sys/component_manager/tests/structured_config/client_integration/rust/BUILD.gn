@@ -83,16 +83,19 @@ rustc_binary("bin") {
     "//third_party/rust_crates:futures",
   ]
 }
+
 fuchsia_structured_config_rust_lib("config_lib") {
   testonly = true
   cm_label = ":manifest"
   name = "receiver_config"
 }
+
 fuchsia_component("component") {
   testonly = true
   cm_label = ":manifest"
   deps = [ ":bin" ]
 }
+
 rustc_test("rust_sc_client_test_bin") {
   sources = [ "src/test.rs" ]
   source_root = "src/test.rs"

@@ -35,6 +35,7 @@ group("blocking_mpsc_queue") {
     "//src/media/lib/*",
   ]
 }
+
 source_set("blocking_mpsc_queue_sources") {
   public = [ "blocking_mpsc_queue.h" ]
   visibility = [ ":*" ]

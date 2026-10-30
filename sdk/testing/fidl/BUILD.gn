@@ -44,6 +44,7 @@ source_set("test_support") {
     "//sdk/lib/async-loop:async-loop-default",
   ]
 }
+
 source_set("test") {
   testonly = true
   sources = [
@@ -63,6 +64,7 @@ source_set("test") {
   ]
   public_deps = [ ":frobinator_hlcpp" ]
 }
+
 fidl("frobinator") {
   testonly = true
   sources = [ "frobinator.test.fidl" ]
@@ -74,6 +76,7 @@ fidl("frobinator") {
   ]
   public_deps = [ "//zircon/vdso/zx" ]
 }
+
 fidl("fidl_test") {
   testonly = true
   sources = [ "fidl_test.test.fidl" ]
@@ -89,6 +92,7 @@ fidl("fidl_test") {
     "//src/lib/fidl/llcpp/tests/message_container:*",
   ]
 }
+
 fidl("fidl_test_handles") {
   testonly = true
   sources = [ "fidl_test_handles.test.fidl" ]
@@ -100,6 +104,7 @@ fidl("fidl_test_handles") {
   ]
   public_deps = [ "//zircon/vdso/zx" ]
 }
+
 fidl("collision_test") {
   testonly = true
   sources = [ "collision.test.fidl" ]

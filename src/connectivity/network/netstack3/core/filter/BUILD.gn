@@ -113,6 +113,7 @@ rustc_library("netstack3-filter") {
   deps = _COMMON_DEPS +
          [ "//src/connectivity/network/netstack3/core/base:netstack3-base" ]
 }
+
 rustc_library("netstack3-filter-instrumented") {
   sources = _COMMON_SRCS
   configs += _COMMON_BUILD_FLAGS
@@ -126,6 +127,7 @@ rustc_library("netstack3-filter-instrumented") {
   ]
   deps = _COMMON_DEPS + [ "//src/connectivity/network/netstack3/core/base:netstack3-base-instrumented" ]
 }
+
 rustc_library("netstack3-filter-testutils") {
   testonly = true
   sources = _COMMON_SRCS
@@ -143,6 +145,7 @@ rustc_library("netstack3-filter-testutils") {
   ]
   deps = _COMMON_DEPS + [ "//src/connectivity/network/netstack3/core/base:netstack3-base-testutils" ]
 }
+
 rustc_library("netstack3-filter-benchmarks") {
   testonly = true
   sources = _COMMON_SRCS

@@ -97,6 +97,7 @@ rustc_library("line_discipline") {
     "//third_party/rust_crates:serde_json",
   ]
 }
+
 rustc_test("line_discipline_scenarios_test") {
   sources = [ "$target_gen_dir/testing/scenarios.rs" ]
   source_root = "$target_gen_dir/testing/scenarios.rs"

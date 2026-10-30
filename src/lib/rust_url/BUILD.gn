@@ -74,6 +74,7 @@ source_set("rust_url") {
     "//vendor/google/*",
   ]
 }
+
 executable("rust_url_unittests_bin") {
   testonly = true
   sources = [ "rust_url_unittests.cc" ]
@@ -82,6 +83,7 @@ executable("rust_url_unittests_bin") {
     "//src/lib/fxl/test:gtest_main",
   ]
 }
+
 fuchsia_unittest_package("rust_url_unittests") {
   package_name = "rust_url_unittests-gn"
   component_name = "rust_url_unittests"

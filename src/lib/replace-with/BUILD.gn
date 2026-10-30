@@ -56,10 +56,12 @@ rustc_library("replace-with") {
     "//vendor/google/*",
   ]
 }
+
 rustc_test("replace-with_lib_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
 }
+
 fuchsia_unittest_package("replace-with-test") {
   package_name = "replace-with-test-gn"
   component_name = "replace-with-test"

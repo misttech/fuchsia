@@ -120,11 +120,13 @@ if (is_fuchsia) {
     edition = "2024"
   }
 }
+
 fuchsia_component_manifest("test-component-manifest") {
   testonly = true
   component_name = "fdio_lib_test"
   manifest = "meta/fdio_lib_test.cml"
 }
+
 fuchsia_test_component("test-component") {
   cm_label = ":test-component-manifest"
   component_name = "fdio_lib_test"
@@ -134,10 +136,12 @@ fuchsia_test_component("test-component") {
     ":spawn_test_target",
   ]
 }
+
 fuchsia_unittest_component("fdio_zxio_test_component") {
   deps = [ ":fdio_zxio_test" ]
   component_name = "fdio_zxio_test"
 }
+
 fuchsia_test_package("test-package") {
   package_name = "fdio-rust-tests-gn"
   test_components = [

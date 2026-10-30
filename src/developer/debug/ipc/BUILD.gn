@@ -45,6 +45,7 @@ static_library("tests") {
   ]
   public_deps = [ ":ipc" ]
 }
+
 static_library("ipc") {
   sources = [
     "automation_instruction.cc",

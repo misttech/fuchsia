@@ -34,11 +34,13 @@ rustc_binary("without_log_bin") {
   source_root = "src/without_log.rs"
   edition = "2024"
 }
+
 fuchsia_component_manifest("without_log_manifest") {
   testonly = true
   component_name = "without_log"
   manifest = "meta/without_log.cml"
 }
+
 fuchsia_component("without_log") {
   testonly = true
   check_includes = false
@@ -49,6 +51,7 @@ fuchsia_component("without_log") {
   ]
   deps = [ ":without_log_bin" ]
 }
+
 rustc_binary("with_log_bin") {
   testonly = true
   sources = [ "src/with_log.rs" ]
@@ -57,11 +60,13 @@ rustc_binary("with_log_bin") {
   edition = "2024"
   deps = [ "//src/lib/fuchsia" ]
 }
+
 fuchsia_component_manifest("with_log_manifest") {
   testonly = true
   component_name = "with_log"
   manifest = "meta/with_log.cml"
 }
+
 fuchsia_component("with_log") {
   testonly = true
   cm_label = ":with_log_manifest"
@@ -71,11 +76,13 @@ fuchsia_component("with_log") {
   ]
   deps = [ ":with_log_bin" ]
 }
+
 fuchsia_component_manifest("with_log_and_stdout_manifest") {
   testonly = true
   component_name = "with_log_and_stdout"
   manifest = "meta/with_log_and_stdout.cml"
 }
+
 fuchsia_component("with_log_and_stdout") {
   testonly = true
   cm_label = ":with_log_and_stdout_manifest"
@@ -85,11 +92,13 @@ fuchsia_component("with_log_and_stdout") {
   ]
   deps = [ ":with_log_bin" ]
 }
+
 fuchsia_component_manifest("with_log_shard_manifest") {
   testonly = true
   component_name = "with_log_shard"
   manifest = "meta/with_log_shard.cml"
 }
+
 fuchsia_component("with_log_shard") {
   testonly = true
   cm_label = ":with_log_shard_manifest"

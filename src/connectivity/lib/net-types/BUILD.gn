@@ -75,6 +75,7 @@ rustc_library("net-types") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
 rustc_macro("net-types-macros") {
   sources = [ "src/macros.rs" ]
   configs += [ "//build/config/rust/lints:deny_unused_results" ]
@@ -87,6 +88,7 @@ rustc_macro("net-types-macros") {
     "//third_party/rust_crates:syn",
   ]
 }
+
 rustc_test("net-types_test") {
   sources = [
     "src/ethernet.rs",
@@ -104,6 +106,7 @@ rustc_test("net-types_test") {
     "//src/connectivity/network:performance_critical_rust_crate",
   ]
 }
+
 rustc_test("net-types-redaction_test") {
   sources = [ "tests/redaction.rs" ]
   configs += [ "//build/config/rust/lints:deny_unused_results" ]
@@ -114,17 +117,20 @@ rustc_test("net-types-redaction_test") {
     "//src/diagnostics/lib/redactor",
   ]
 }
+
 fuchsia_unittest_component("net-types-test-package.net-types_test.component") {
   component_name = "net-types_test"
   visibility = [ ":*" ]
   deps = [ ":net-types_test" ]
 }
+
 fuchsia_unittest_component(
     "net-types-test-package.net-types-redaction_test.component") {
   component_name = "net-types-redaction_test"
   visibility = [ ":*" ]
   deps = [ ":net-types-redaction_test" ]
 }
+
 fuchsia_test_package("net-types-test-package") {
   package_name = "net-types-test-gn"
   test_components = [

@@ -105,6 +105,7 @@ rustc_library("fdf_sys") {
     "//sdk/rust/zx-types",
   ]
 }
+
 rustc_test("fdf_sys_test") {
   sources = [
     "src/bindings.rs",
@@ -116,6 +117,7 @@ rustc_test("fdf_sys_test") {
     "//sdk/rust/zx-types",
   ]
 }
+
 fuchsia_unittest_package("fdf_sys_tests") {
   package_name = "fdf_sys_tests-gn"
   component_name = "fdf_sys_tests"

@@ -57,6 +57,7 @@ library_headers("headers") {
   ]
   deps = [ "//sdk/lib/stdcompat" ]
 }
+
 source_set("concurrent") {
   sources = []
   sources += [
@@ -80,6 +81,7 @@ source_set("concurrent") {
     sources += [ "seqlock_usermode_fuchsia.cc" ]
   }
 }
+
 source_set("concurrent_vdso") {
   sources = [ "copy.cc" ]
   deps = [ "//sdk/lib/stdcompat" ]

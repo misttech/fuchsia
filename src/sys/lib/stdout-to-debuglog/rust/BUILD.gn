@@ -45,6 +45,7 @@ rustc_library("stdout-to-debuglog") {
     "//third_party/rust_crates:anyhow",
   ]
 }
+
 group("rust") {
   public_deps = [ ":stdout-to-debuglog" ]
   visibility = [

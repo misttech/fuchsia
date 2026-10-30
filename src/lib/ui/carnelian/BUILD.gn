@@ -460,6 +460,7 @@ rustc_library("carnelian") {
   ]
   configs += [ ":carnelian-performance" ]
 }
+
 rustc_binary("button") {
   sources = [ "examples/button.rs" ]
   source_root = "examples/button.rs"
@@ -473,6 +474,7 @@ rustc_binary("button") {
     "//third_party/rust_crates:euclid",
   ]
 }
+
 rustc_binary("clockface") {
   sources = [ "examples/clockface.rs" ]
   source_root = "examples/clockface.rs"
@@ -486,6 +488,7 @@ rustc_binary("clockface") {
     "//third_party/rust_crates:euclid",
   ]
 }
+
 rustc_binary("font_metrics") {
   sources = [ "examples/font_metrics.rs" ]
   source_root = "examples/font_metrics.rs"
@@ -496,6 +499,7 @@ rustc_binary("font_metrics") {
     "//third_party/rust_crates:euclid",
   ]
 }
+
 rustc_binary("shapes") {
   sources = [ "examples/shapes.rs" ]
   source_root = "examples/shapes.rs"
@@ -510,6 +514,7 @@ rustc_binary("shapes") {
     "//third_party/rust_crates:rand",
   ]
 }
+
 rustc_binary("designer") {
   sources = [ "examples/designer.rs" ]
   source_root = "examples/designer.rs"
@@ -522,6 +527,7 @@ rustc_binary("designer") {
     "//third_party/rust_crates:euclid",
   ]
 }
+
 rustc_binary("gamma") {
   sources = [ "examples/gamma.rs" ]
   source_root = "examples/gamma.rs"
@@ -534,6 +540,7 @@ rustc_binary("gamma") {
     "//third_party/rust_crates:euclid",
   ]
 }
+
 rustc_binary("layout_gallery") {
   sources = [ "examples/layout_gallery.rs" ]
   source_root = "examples/layout_gallery.rs"
@@ -548,6 +555,7 @@ rustc_binary("layout_gallery") {
     "//third_party/rust_crates:toml",
   ]
 }
+
 rustc_test("layout_gallery_test") {
   sources = [ "examples/layout_gallery.rs" ]
   source_root = "examples/layout_gallery.rs"
@@ -562,6 +570,7 @@ rustc_test("layout_gallery_test") {
            "//third_party/rust_crates:toml",
          ] + [ "//third_party/rust_crates:itertools" ]
 }
+
 fuchsia_unittest_package("carnelian-layout-tests") {
   package_name = "carnelian-layout-tests-gn"
   component_name = "carnelian-layout-tests"
@@ -571,6 +580,7 @@ fuchsia_unittest_package("carnelian-layout-tests") {
     "//src/lib/ui:*",
   ]
 }
+
 rustc_binary("png") {
   sources = [ "examples/png.rs" ]
   source_root = "examples/png.rs"
@@ -585,6 +595,7 @@ rustc_binary("png") {
     "//third_party/rust_crates:png",
   ]
 }
+
 rustc_binary("svg") {
   sources = [ "examples/svg.rs" ]
   source_root = "examples/svg.rs"
@@ -597,6 +608,7 @@ rustc_binary("svg") {
     "//third_party/rust_crates:euclid",
   ]
 }
+
 rustc_binary("rive") {
   sources = [ "examples/rive.rs" ]
   source_root = "examples/rive.rs"
@@ -611,6 +623,7 @@ rustc_binary("rive") {
     "//third_party/rust_crates:argh",
   ]
 }
+
 rustc_binary("textgrid") {
   sources = [ "examples/textgrid.rs" ]
   source_root = "examples/textgrid.rs"
@@ -625,6 +638,7 @@ rustc_binary("textgrid") {
     "//third_party/rust_crates:rustc-hash",
   ]
 }
+
 rustc_test("carnelian_test") {
   sources = [
     "src/app.rs",
@@ -712,32 +726,38 @@ rustc_test("carnelian_test") {
   configs += [ ":carnelian-performance" ]
   output_name = "carnelian_lib_test"
 }
+
 fuchsia_component_manifest("carnelian-render-tests-manifest") {
   testonly = true
   component_name = "carnelian-render-tests"
   manifest = "meta/carnelian_lib_test.cml"
 }
+
 fuchsia_test_component("carnelian-render-tests-component") {
   cm_label = ":carnelian-render-tests-manifest"
   component_name = "carnelian-render-tests"
   deps = [ ":carnelian_test" ]
   test_type = "system"
 }
+
 fuchsia_test_package("carnelian-render-tests-package") {
   package_name = "carnelian-render-tests-gn"
   test_components = [ ":carnelian-render-tests-component" ]
 }
+
 fuchsia_component_manifest("carnelian-tests-manifest") {
   testonly = true
   component_name = "carnelian-tests"
   manifest = "meta/carnelian_lib_test.cml"
 }
+
 fuchsia_test_component("carnelian-tests-component") {
   cm_label = ":carnelian-tests-manifest"
   component_name = "carnelian-tests"
   deps = [ ":carnelian_test" ]
   test_type = "system"
 }
+
 fuchsia_test_package("carnelian-tests-package") {
   package_name = "carnelian-tests-gn"
   test_components = [ ":carnelian-tests-component" ]

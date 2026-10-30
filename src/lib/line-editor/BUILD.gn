@@ -63,6 +63,7 @@ rustc_library("line-editor") {
     "//third_party/rust_crates:libc",
   ]
 }
+
 rustc_test("line-editor_test") {
   sources = [
     "src/config.rs",
@@ -81,6 +82,7 @@ rustc_test("line-editor_test") {
     "//third_party/rust_crates:libc",
   ]
 }
+
 fuchsia_unittest_package("line-editor-tests") {
   package_name = "line-editor-tests-gn"
   component_name = "line-editor-tests"

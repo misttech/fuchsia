@@ -42,10 +42,12 @@ rustc_binary("bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 fuchsia_component_manifest("manifest") {
   component_name = "lowpan-monitor"
   manifest = "meta/lowpan-monitor.cml"
 }
+
 fuchsia_component("lowpan-monitor") {
   cm_label = ":manifest"
   component_name = "lowpan-monitor"

@@ -100,6 +100,7 @@ rustc_library("fuchsia-inspect-contrib") {
   visibility = [ "*" ]
   deps = LIB_DEPS
 }
+
 rustc_test("fuchsia-inspect-contrib_test") {
   sources = LIB_SRCS
   edition = "2024"
@@ -115,6 +116,7 @@ rustc_test("fuchsia-inspect-contrib_test") {
            "//third_party/rust_crates:assert_matches",
          ]
 }
+
 group("rust") {
   public_deps = [ ":fuchsia-inspect-contrib" ]
   visibility = [ "*" ]

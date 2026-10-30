@@ -103,6 +103,7 @@ fidl("manual.conformance.large") {
   ]
   visibility = [ ":*" ]
 }
+
 static_library("conformance_utils") {
   testonly = true
   public = [ "conformance_utils.h" ]

@@ -83,6 +83,7 @@ if (is_fuchsia) {
     visibility = [ ":*" ]
   }
 }
+
 fuchsia_unittest_package("test-call-manager-tests") {
   package_name = "test-call-manager-tests-gn"
   component_name = "test-call-manager-tests"

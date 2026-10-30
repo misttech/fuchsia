@@ -88,6 +88,7 @@ rustc_test("destruction_integration_test_bin") {
     "//src/sys/lib/component-events",
   ]
 }
+
 rustc_binary("destruction_collection_realm_bin") {
   sources = [ "collection_realm.rs" ]
   output_name = "destruction_collection_realm"
@@ -106,6 +107,7 @@ rustc_binary("destruction_collection_realm_bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_binary("destroy_and_recreate_bin") {
   sources = [ "destroy_and_recreate.rs" ]
   output_name = "destroy_and_recreate"
@@ -124,6 +126,7 @@ rustc_binary("destroy_and_recreate_bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_binary("destruction_trigger_bin") {
   sources = [ "trigger.rs" ]
   output_name = "destruction_trigger"

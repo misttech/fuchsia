@@ -63,6 +63,7 @@ rustc_library("task-exceptions") {
     "//third_party/rust_crates:futures",
   ]
 }
+
 rustc_test("task-exceptions_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -83,11 +84,13 @@ rustc_test("task-exceptions_test") {
          ]
   output_name = "task_exceptions_lib_test"
 }
+
 fuchsia_component_manifest("task-exceptions-cmp-manifest") {
   testonly = true
   component_name = "task-exceptions-tests"
   manifest = "meta/task-exceptions-tests.cml"
 }
+
 fuchsia_component("task-exceptions-cmp") {
   testonly = true
   cm_label = ":task-exceptions-cmp-manifest"

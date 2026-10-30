@@ -89,12 +89,14 @@ rustc_test("security_policy_capability_allowlist_integration_test_bin") {
     "//third_party/rust_crates:anyhow",
   ]
 }
+
 fidl("test.policy") {
   testonly = true
   sources = [ "policy.test.fidl" ]
   excluded_checks = [ "string-bounds-not-specified" ]
   public_deps = [ "//zircon/vdso/zx" ]
 }
+
 rustc_binary("policy_service_bin") {
   testonly = true
   sources = [ "policy_service.rs" ]
@@ -109,6 +111,7 @@ rustc_binary("policy_service_bin") {
     "//third_party/rust_crates:futures",
   ]
 }
+
 rustc_binary("dir_service_bin") {
   testonly = true
   sources = [ "dir_service.rs" ]
@@ -121,6 +124,7 @@ rustc_binary("dir_service_bin") {
     "//third_party/rust_crates:futures",
   ]
 }
+
 rustc_binary("cap_getter_bin") {
   testonly = true
   sources = [ "cap_getter.rs" ]

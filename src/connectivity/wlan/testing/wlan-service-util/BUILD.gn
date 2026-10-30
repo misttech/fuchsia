@@ -53,6 +53,7 @@ rustc_library("wlan-service-util") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_test("wlan-service-util_test") {
   sources = [
     "src/ap.rs",
@@ -80,6 +81,7 @@ rustc_test("wlan-service-util_test") {
            "//third_party/rust_crates:rand",
          ]
 }
+
 fuchsia_unittest_package("wlan-service-util-tests") {
   package_name = "wlan-service-util-tests-gn"
   component_name = "wlan-service-util-tests"

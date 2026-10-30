@@ -36,6 +36,7 @@ rustc_library("testing") {
   ]
   with_unit_tests = true
 }
+
 rustc_test("testing_integration_test") {
   sources = [ "tests/integration_test.rs" ]
   source_root = "tests/integration_test.rs"
@@ -46,6 +47,7 @@ rustc_test("testing_integration_test") {
   ]
   deps = [ ":testing" ]
 }
+
 rustc_test("testing_integration_test_two") {
   sources = [ "tests/integration_test_two.rs" ]
   source_root = "tests/integration_test_two.rs"

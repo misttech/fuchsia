@@ -81,6 +81,7 @@ rustc_library("nmfs") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+
 rustc_test("starnix_modules_nmfs_lib_test") {
   sources = [
     "fs.rs",
@@ -124,11 +125,13 @@ rustc_test("starnix_modules_nmfs_lib_test") {
     "hwasan",
   ]
 }
+
 fuchsia_component_manifest("starnix-nmfs-tests-manifest") {
   testonly = true
   component_name = "starnix-nmfs-tests"
   manifest = "meta/starnix_nmfs_tests.cml"
 }
+
 fuchsia_test_component("starnix-nmfs-tests-component") {
   cm_label = ":starnix-nmfs-tests-manifest"
   component_name = "starnix-nmfs-tests"
@@ -138,6 +141,7 @@ fuchsia_test_component("starnix-nmfs-tests-component") {
     "//src/starnix/kernel/vdso",
   ]
 }
+
 fuchsia_test_package("starnix-nmfs-tests-package") {
   package_name = "starnix-nmfs-tests-gn"
   test_components = [ ":starnix-nmfs-tests-component" ]

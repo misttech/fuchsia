@@ -194,11 +194,13 @@ rustc_library("bssl-macros") {
     "//third_party/rust_crates:*",
   ]
 }
+
 static_library("rust-wrapper") {
   sources = [ "bssl-sys/wrapper.c" ]
   configs += [ ":rust-wrapper.config" ]
   visibility = [ ":*" ]
 }
+
 rustc_library("bssl-sys.lib") {
   sources = [ "bssl-sys/lib.rs" ]
   configs += [ ":bssl-sys.config" ]

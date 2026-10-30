@@ -36,11 +36,13 @@ fidl("fuchsia.test") {
   visibility = [ "*" ]
   public_deps = [ "//zircon/vdso/zx" ]
 }
+
 measure_tape("hlcpp_measure_tape_for_case") {
   fidls = [ ":fuchsia.test" ]
   target_binding = "hlcpp"
   target_types = [ "fuchsia.test/Case" ]
 }
+
 measure_tape("rust_measure_tape_for_case") {
   fidls = [ ":fuchsia.test" ]
   target_binding = "rust"

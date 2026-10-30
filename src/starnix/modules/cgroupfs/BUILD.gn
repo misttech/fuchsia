@@ -73,6 +73,7 @@ rustc_library("cgroupfs") {
     "//src/starnix/lib/starnix_uapi",
   ]
 }
+
 rustc_test("starnix_modules_cgroupfs_lib_test") {
   sources = [
     "cpuset.rs",
@@ -100,11 +101,13 @@ rustc_test("starnix_modules_cgroupfs_lib_test") {
     "hwasan",
   ]
 }
+
 fuchsia_component_manifest("starnix-cgroupfs-tests-manifest") {
   testonly = true
   component_name = "starnix-cgroupfs-tests"
   manifest = "meta/starnix_cgroupfs_tests.cml"
 }
+
 fuchsia_test_component("starnix-cgroupfs-tests-component") {
   cm_label = ":starnix-cgroupfs-tests-manifest"
   component_name = "starnix-cgroupfs-tests"
@@ -114,6 +117,7 @@ fuchsia_test_component("starnix-cgroupfs-tests-component") {
     "//src/starnix/kernel/vdso",
   ]
 }
+
 fuchsia_test_package("starnix-cgroupfs-tests-package") {
   package_name = "starnix-cgroupfs-tests-gn"
   test_components = [ ":starnix-cgroupfs-tests-component" ]

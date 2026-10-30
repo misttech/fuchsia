@@ -40,6 +40,7 @@ source_set("scudo") {
     "//src/developer/memory/metrics:*",
   ]
 }
+
 rustc_library("rust") {
   sources = [ "lib.rs" ]
   crate_name = "scudo"

@@ -191,6 +191,7 @@ if (is_fuchsia) {
     ]
   }
 }
+
 sdk_source_set("hlcpp_base") {
   sources = [
     "clone.cc",

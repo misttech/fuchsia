@@ -64,6 +64,7 @@ rustc_library("hooks") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_test("hooks_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -83,9 +84,11 @@ rustc_test("hooks_test") {
            "//third_party/rust_crates:log",
          ] + [ "//src/lib/fuchsia" ]
 }
+
 fuchsia_unittest_component("test_component") {
   deps = [ ":hooks_test" ]
 }
+
 fuchsia_test_package("hooks_tests_package") {
   package_name = "hooks_test-gn"
   test_components = [ ":test_component" ]

@@ -37,6 +37,7 @@ group("testing") {
     "//src/zircon/tests/x86-umip:*",
   ]
 }
+
 library_headers("headers") {
   testonly = true
   public = [ "include/lib/captive-thread/testing/matchers.h" ]
@@ -46,6 +47,7 @@ library_headers("headers") {
     "//third_party/googletest:gtest",
   ]
 }
+
 static_library("captive-thread-testing") {
   testonly = true
   sources = [ "registers-as-container.cc" ]

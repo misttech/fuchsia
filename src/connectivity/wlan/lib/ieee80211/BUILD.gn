@@ -49,6 +49,7 @@ rustc_library("ieee80211") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
 rustc_test("ieee80211_test") {
   sources = [
     "src/bssid.rs",
@@ -67,6 +68,7 @@ rustc_test("ieee80211_test") {
   ]
   visibility = [ ":*" ]
 }
+
 fuchsia_unittest_package("ieee80211-tests") {
   package_name = "ieee80211-tests-gn"
   component_name = "ieee80211-tests"

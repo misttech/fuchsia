@@ -45,6 +45,7 @@ rustc_library("power_manager") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_library("power_manager_testing") {
   sources = [ "src/testing.rs" ]
   crate_name = "wlan_power_manager_testing"
@@ -65,6 +66,7 @@ rustc_library("power_manager_testing") {
     "//third_party/rust_crates:anyhow",
   ]
 }
+
 rustc_test("power_manager_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -83,6 +85,7 @@ rustc_test("power_manager_test") {
            "//third_party/rust_crates:futures",
          ]
 }
+
 fuchsia_unittest_package("wlan-power-manager-tests") {
   package_name = "wlan-power-manager-tests-gn"
   component_name = "wlan-power-manager-tests"

@@ -52,11 +52,13 @@ rustc_library("buddy_allocator") {
   ]
   deps = []
 }
+
 rustc_test("buddy_allocator_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
   deps = [] + [ "//src/lib/fuchsia" ]
 }
+
 fuchsia_unittest_package("buddy-allocator-tests") {
   package_name = "buddy-allocator-tests-gn"
   component_name = "buddy-allocator-tests"

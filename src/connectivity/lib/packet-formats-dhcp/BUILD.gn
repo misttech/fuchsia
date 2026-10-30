@@ -69,6 +69,7 @@ rustc_library("packet-formats-dhcp") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
 rustc_test("packet-formats-dhcp_test") {
   sources = [
     "src/lib.rs",
@@ -92,6 +93,7 @@ rustc_test("packet-formats-dhcp_test") {
          ]
   configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
+
 fuchsia_unittest_package("packet-formats-dhcp-test-package") {
   package_name = "packet-formats-dhcp-test-gn"
   component_name = "packet-formats-dhcp-test"

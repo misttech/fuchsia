@@ -37,6 +37,7 @@ rustc_library("from-enum") {
   proc_macro_deps = [ ":from-enum-derive" ]
   visibility = [ "//*" ]
 }
+
 rustc_macro("from-enum-derive") {
   sources = [ "src/macro.rs" ]
   source_root = "src/macro.rs"

@@ -76,6 +76,7 @@ rustc_library("pty") {
     "//third_party/rust_crates:libc",
   ]
 }
+
 rustc_test("pty_test") {
   sources = [
     "src/key_util.rs",

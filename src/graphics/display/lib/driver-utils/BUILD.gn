@@ -50,6 +50,7 @@ source_set("driver-utils") {
     "//zircon/system/ulib/zx",
   ]
 }
+
 test("driver-utils-test") {
   sources = [
     "poll-until-test.cc",
@@ -64,6 +65,7 @@ test("driver-utils-test") {
     "//third_party/googletest:gtest",
   ]
 }
+
 fuchsia_unittest_package("driver-utils-test-package") {
   package_name = "display-driver-utils-test-gn"
   component_name = "display-driver-utils-test"

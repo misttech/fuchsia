@@ -51,6 +51,7 @@ rustc_library("driver_manager_types") {
     "//third_party/rust_crates:futures",
   ]
 }
+
 rustc_test("driver_manager_types_test") {
   sources = [
     "src/bind_result.rs",
@@ -71,6 +72,7 @@ rustc_test("driver_manager_types_test") {
   ]
   lint_config = "//build/config/rust/lints:clippy_warn_all"
 }
+
 fuchsia_unittest_package("driver-manager-types-unittests") {
   package_name = "driver-manager-types-unittests-gn"
   component_name = "driver-manager-types-unittests"

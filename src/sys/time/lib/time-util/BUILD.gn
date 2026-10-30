@@ -53,6 +53,7 @@ rustc_library("time-util") {
   ]
   deps = [ "//sdk/rust/zx" ]
 }
+
 rustc_test("time-util_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -61,6 +62,7 @@ rustc_test("time-util_test") {
            "//src/lib/test_util",
          ]
 }
+
 fuchsia_unittest_package("time-util-tests") {
   package_name = "time-util-tests-gn"
   component_name = "time-util-tests"

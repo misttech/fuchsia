@@ -84,10 +84,12 @@ rustc_library("lib") {
     "//third_party/rust_crates:anyhow",
   ]
 }
+
 fidl("test.componentmanager.stresstests") {
   testonly = true
   sources = [ "stress.test.fidl" ]
 }
+
 rustc_test("realm_with_many_children_bin") {
   sources = [ "realm_with_many_children.rs" ]
   output_name = "realm_with_many_children"
@@ -100,6 +102,7 @@ rustc_test("realm_with_many_children_bin") {
     "//third_party/rust_crates:futures",
   ]
 }
+
 rustc_test("deep_tree_stress_test_bin") {
   sources = [ "deep_tree_stress_test.rs" ]
   output_name = "deep_tree_stress_test"
@@ -110,6 +113,7 @@ rustc_test("deep_tree_stress_test_bin") {
     "//src/lib/fuchsia",
   ]
 }
+
 rustc_binary("child_for_stress_test_bin") {
   testonly = true
   sources = [ "child_for_stress_test.rs" ]

@@ -145,6 +145,7 @@ if (is_fuchsia) {
     deps = [ "//src/lib/trace/rust:trace" ]
   }
 }
+
 rustc_library("storage_trace_disabled_rust") {
   testonly = true
   sources = [
@@ -162,10 +163,12 @@ if (is_fuchsia) {
     public_deps = [ "//zircon/system/ulib/trace" ]
   }
 }
+
 source_set("storage_trace_disabled_cpp") {
   public = [ "trace_disabled.h" ]
   public_deps = [ "//zircon/system/ulib/fbl" ]
 }
+
 source_set("cpp") {
   public = [ "trace.h" ]
   if (is_fuchsia) {
@@ -197,6 +200,7 @@ if (is_fuchsia) {
     public_deps = [ ":storage_trace_enabled_cpp" ]
   }
 }
+
 source_set("storage_trace_force_disabled_cpp") {
   testonly = true
   public = [ "trace.h" ]

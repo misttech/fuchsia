@@ -62,6 +62,7 @@ group("rust") {
   public_deps = [ ":fuchsia-inspect" ]
   visibility = [ "//*" ]
 }
+
 rustc_library("fuchsia-inspect") {
   sources = []
   sources += [

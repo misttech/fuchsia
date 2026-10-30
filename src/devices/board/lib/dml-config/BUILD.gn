@@ -91,6 +91,7 @@ fidl("fuchsia.board.dml.config") {
   ]
   public_deps = [ "//sdk/fidl/fuchsia.driver.metadata" ]
 }
+
 rustc_library("dml-config") {
   sources = [
     "src/lib.rs",

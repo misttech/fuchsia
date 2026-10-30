@@ -106,6 +106,7 @@ rustc_binary("encoding-bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_binary("core-bin") {
   sources = [ "src/core.rs" ]
   output_name = "diagnostics_log_bench"
@@ -122,6 +123,7 @@ rustc_binary("core-bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_binary("decoding-bin") {
   sources = [
     "src/common.rs",

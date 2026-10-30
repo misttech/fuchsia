@@ -38,10 +38,12 @@ rustc_binary("bin") {
     "//src/lib/fuchsia-runtime",
   ]
 }
+
 fuchsia_component_manifest("rust-time-example-manifest") {
   component_name = "rust-time-example"
   manifest = "meta/rust-time-example.cml"
 }
+
 fuchsia_component("rust-time-example-component") {
   cm_label = ":rust-time-example-manifest"
   component_name = "rust-time-example"

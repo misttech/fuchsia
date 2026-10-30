@@ -95,11 +95,13 @@ rustc_binary("bin") {
     "//third_party/rust_crates:rand",
   ]
 }
+
 fuchsia_component_manifest("root_component_manifest") {
   testonly = true
   component_name = "root_component"
   manifest = "meta/root_component.cml"
 }
+
 fuchsia_component("root_component") {
   testonly = true
   cm_label = ":root_component_manifest"

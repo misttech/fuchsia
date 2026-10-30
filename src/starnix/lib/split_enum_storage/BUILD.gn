@@ -58,6 +58,7 @@ rustc_library("split_enum_storage") {
   edition = "2024"
   proc_macro_deps = [ ":split_enum_storage_macro" ]
 }
+
 rustc_macro("split_enum_storage_macro") {
   sources = [ "src/macro.rs" ]
   crate_name = "split_enum_storage_macro"

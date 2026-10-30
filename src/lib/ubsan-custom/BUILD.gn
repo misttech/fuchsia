@@ -99,6 +99,7 @@ source_set("handlers") {
   ]
   public_deps = [ ":types" ]
 }
+
 source_set("types") {
   public = [ "types.h" ]
   public_configs = [ ":includes" ]

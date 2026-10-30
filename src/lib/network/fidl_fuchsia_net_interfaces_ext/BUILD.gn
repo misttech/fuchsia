@@ -105,6 +105,7 @@ rustc_library("fidl_fuchsia_net_interfaces_ext") {
            "//src/lib/fdomain/client:flex_fidl",
          ]
 }
+
 rustc_library("fidl_fuchsia_net_interfaces_ext_fdomain") {
   sources = _COMMON_SRCS
   configs += _COMMON_BUILD_FLAGS

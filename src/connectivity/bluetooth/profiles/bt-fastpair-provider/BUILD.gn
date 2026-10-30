@@ -105,6 +105,7 @@ if (is_fuchsia) {
     ]
   }
 }
+
 fuchsia_structured_config_rust_lib("fastpair_provider_config") {
   cm_label = ":manifest"
 }
@@ -202,6 +203,7 @@ if (is_fuchsia) {
     deps = [ ":bt_fastpair_provider_bin_test" ]
   }
 }
+
 fuchsia_test_package("bt-fastpair-provider-tests-package") {
   package_name = "bt-fastpair-provider-tests-gn"
   test_components = [ ":bt-fastpair-provider-tests-component" ]

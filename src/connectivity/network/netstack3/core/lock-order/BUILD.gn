@@ -59,6 +59,7 @@ rustc_library("lock-order") {
     "//src/connectivity/network/netstack3/core/*",
   ]
 }
+
 rustc_test("lock-order_test") {
   sources = [
     "src/lib.rs",
@@ -70,6 +71,7 @@ rustc_test("lock-order_test") {
   configs += [ "//build/config/rust/lints:deny_unused_results" ]
   visibility = [ ":*" ]
 }
+
 fuchsia_unittest_package("lock-order-test-package") {
   package_name = "lock-order-test-gn"
   component_name = "lock-order-test"

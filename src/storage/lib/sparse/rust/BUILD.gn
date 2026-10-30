@@ -107,16 +107,19 @@ if (is_fuchsia) {
     testonly = true
   }
 }
+
 fuchsia_component_manifest("sparse-test-manifest") {
   testonly = true
   component_name = "sparse-test"
   manifest = "meta/sparse_test.cml"
 }
+
 fuchsia_test_component("sparse-test-component") {
   cm_label = ":sparse-test-manifest"
   component_name = "sparse-test"
   deps = [ ":sparse_lib_test" ]
 }
+
 fuchsia_test_package("sparse-test-package") {
   package_name = "sparse-test-gn"
   test_components = [ ":sparse-test-component" ]

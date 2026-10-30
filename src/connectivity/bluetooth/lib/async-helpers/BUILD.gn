@@ -74,6 +74,7 @@ if (is_fuchsia) {
     configs += [ "//build/config/rust/lints:deny_unused_results" ]
   }
 }
+
 rustc_library("async-test-helpers") {
   testonly = true
   sources = [ "src/test/lib.rs" ]
@@ -90,6 +91,7 @@ rustc_library("async-test-helpers") {
     "//third_party/rust_crates:futures",
   ]
 }
+
 fuchsia_unittest_package("async-helpers-tests") {
   package_name = "async-helpers-tests-gn"
   component_name = "async-helpers-tests"

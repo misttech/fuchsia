@@ -94,6 +94,7 @@ if (is_fuchsia) {
     configs += [ "//build/config/rust/lints:deny_unused_results" ]
   }
 }
+
 fuchsia_unittest_package("bt-gatt-fuchsia-tests") {
   package_name = "bt-gatt-fuchsia-tests-gn"
   component_name = "bt-gatt-fuchsia-tests"

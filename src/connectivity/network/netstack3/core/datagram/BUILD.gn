@@ -110,6 +110,7 @@ rustc_library("netstack3-datagram") {
            "//src/connectivity/network/netstack3/core/ip:netstack3-ip",
          ]
 }
+
 rustc_library("netstack3-datagram-testutils") {
   testonly = true
   sources = _COMMON_SRCS
@@ -131,6 +132,7 @@ rustc_library("netstack3-datagram-testutils") {
            "//src/connectivity/network/netstack3/core/ip:netstack3-ip-testutils",
          ]
 }
+
 rustc_library("netstack3-datagram-benchmarks") {
   testonly = true
   sources = _COMMON_SRCS
@@ -150,6 +152,7 @@ rustc_library("netstack3-datagram-benchmarks") {
            "//src/connectivity/network/netstack3/core/ip:netstack3-ip-benchmarks",
          ]
 }
+
 rustc_library("netstack3-datagram-instrumented") {
   sources = _COMMON_SRCS
   configs += _COMMON_BUILD_FLAGS
@@ -191,6 +194,7 @@ if (is_host) {
            ]
   }
 }
+
 rustc_test("netstack3-datagram-instrumented_test") {
   sources = _COMMON_SRCS
   configs += _COMMON_BUILD_FLAGS
@@ -206,6 +210,7 @@ rustc_test("netstack3-datagram-instrumented_test") {
            "//third_party/rust_crates:test-case",
          ]
 }
+
 fuchsia_unittest_package("netstack3-core-datagram-test") {
   package_name = "netstack3-core-datagram-test-gn"
   component_name = "netstack3-core-datagram-test"

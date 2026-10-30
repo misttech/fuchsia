@@ -42,6 +42,7 @@ test("fidl_cpp_natural_coding_tests_bin") {
   ]
   output_name = "fidl_cpp_natural_coding_tests"
 }
+
 fuchsia_unittest_package("fidl_cpp_natural_coding_tests") {
   package_name = "fidl_cpp_natural_coding_tests-gn"
   component_name = "fidl_cpp_natural_coding_tests"

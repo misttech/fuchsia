@@ -131,6 +131,7 @@ rustc_library("fuchsia-hyper") {
     ]
   }
 }
+
 rustc_test("fuchsia-hyper_test") {
   sources = []
   sources += [ "src/lib.rs" ]

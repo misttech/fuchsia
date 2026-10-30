@@ -72,6 +72,7 @@ rustc_library("ebpf") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
 rustc_test("ebpf_test") {
   sources = []
   sources += [
@@ -358,6 +359,7 @@ rustc_test("ebpf_test") {
   lint_config = "//src/starnix/config:starnix_clippy_lints_test"
   visibility = [ ":*" ]
 }
+
 fuchsia_unittest_package("starnix-ebpf-tests") {
   package_name = "starnix-ebpf-tests-gn"
   component_name = "starnix-ebpf-tests"

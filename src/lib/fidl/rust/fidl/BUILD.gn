@@ -87,6 +87,7 @@ rustc_library("fidl") {
     deps += [ "//src/lib/fuchsia-emulated-handle" ]
   }
 }
+
 rustc_test("fidl_rust_lib_tests_bin") {
   sources = SRCS
   edition = "2024"

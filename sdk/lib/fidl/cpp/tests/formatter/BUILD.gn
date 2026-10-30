@@ -36,6 +36,7 @@ test("fidl_cpp_formatter_tests_bin") {
   ]
   output_name = "fidl_cpp_formatter_tests"
 }
+
 fuchsia_unittest_package("fidl_cpp_formatter_tests") {
   package_name = "fidl_cpp_formatter_tests-gn"
   component_name = "fidl_cpp_formatter_tests"

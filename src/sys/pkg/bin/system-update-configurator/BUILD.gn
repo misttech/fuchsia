@@ -139,6 +139,7 @@ rustc_library("lib") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+
 rustc_test("lib_test") {
   sources = [
     "src/bridge.rs",
@@ -172,15 +173,18 @@ rustc_test("lib_test") {
   lint_config = "//build/config/rust/lints:clippy_warn_all"
   output_name = "system_update_configurator_lib_test"
 }
+
 fuchsia_unittest_package("system-update-configurator-tests") {
   package_name = "system-update-configurator-unit-tests-gn"
   component_name = "system-update-configurator-unit-tests"
   deps = [ ":lib_test" ]
 }
+
 fuchsia_component_manifest("manifest") {
   component_name = "system-update-configurator"
   manifest = "meta/system-update-configurator.cml"
 }
+
 fuchsia_component("component") {
   cm_label = ":manifest"
   component_name = "system-update-configurator"

@@ -41,6 +41,7 @@ fidl("test.unknown.interactions") {
     "//src/lib/fidl/rust/external_tests:*",
   ]
 }
+
 fidl("test.protocol.connector") {
   testonly = true
   sources = [ "protocol_connector.test.fidl" ]
@@ -52,6 +53,7 @@ fidl("test.protocol.connector") {
     "//src/lib/fidl/rust/fidl-contrib:*",
   ]
 }
+
 fidl("test.empty.protocol") {
   testonly = true
   sources = [ "empty_protocol.test.fidl" ]
@@ -62,6 +64,7 @@ fidl("test.empty.protocol") {
     "//src/lib/fidl/llcpp/tests/integration:*",
   ]
 }
+
 fidl("test.error.methods") {
   testonly = true
   sources = [ "error_methods.test.fidl" ]
@@ -73,6 +76,7 @@ fidl("test.error.methods") {
     "//src/lib/fidl/llcpp/tests/integration:*",
   ]
 }
+
 fidl("test.basic.protocol") {
   testonly = true
   sources = [ "basic_protocol.test.fidl" ]

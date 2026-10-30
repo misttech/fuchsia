@@ -162,6 +162,7 @@ rustc_library("lib") {
     "//third_party/rust_crates:trust-dns-resolver",
   ]
 }
+
 rustc_test("lib_test") {
   sources = [
     "src/async_resolver.rs",

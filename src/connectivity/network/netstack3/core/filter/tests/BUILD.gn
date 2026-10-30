@@ -61,6 +61,7 @@ rustc_test("netstack3_filter_integration_test") {
     "//third_party/rust_crates:test-case",
   ]
 }
+
 fuchsia_unittest_package("netstack3-core-filter-integration-test") {
   package_name = "netstack3-core-filter-integration-test-gn"
   component_name = "netstack3-core-filter-integration-test"

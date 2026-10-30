@@ -51,6 +51,7 @@ source_set("actor_base") {
     "//sdk/lib/fit-promise",
   ]
 }
+
 executable("actor_base_unittest_bin") {
   testonly = true
   sources = [ "actor_base_unittest.cc" ]
@@ -64,6 +65,7 @@ executable("actor_base_unittest_bin") {
     "//third_party/googletest:gtest",
   ]
 }
+
 fuchsia_unittest_package("actor_base_unittest") {
   package_name = "actor_base_unittest-gn"
   component_name = "actor_base_unittest"

@@ -22,6 +22,11 @@ flutter_root = "//third_party/flutter"
 # in place of // to refer to the root of the cobalt source tree.
 cobalt_root = "//third_party/cobalt"
 
+# GN now sets this variable to true by default, override the default
+# here to allow `gn gen` to succeed in the Fuchsia tree.
+# TODO(https://fxbug.dev/573092893): Remove this.
+check_includes_strict = false
+
 declare_args() {
   # If set, the build will produce compilation analysis dumps, used for code
   # cross-referencing in code search.  The extra work done during analysis

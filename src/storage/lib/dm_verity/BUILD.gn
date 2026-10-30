@@ -55,6 +55,7 @@ rustc_library("dm_verity") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+
 rustc_test("dm_verity_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -65,6 +66,7 @@ rustc_test("dm_verity_test") {
            "//third_party/rust_crates:thiserror",
          ] + [ "//third_party/rust_crates:test-case" ]
 }
+
 fuchsia_unittest_package("dm_verity_tests") {
   package_name = "dm_verity_tests-gn"
   component_name = "dm_verity_tests"

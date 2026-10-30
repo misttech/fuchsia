@@ -60,6 +60,7 @@ rustc_library("pseudo_fs") {
     "//third_party/rust_crates:futures",
   ]
 }
+
 rustc_library("pseudo_fs_static") {
   sources = [
     "src/lazy_pseudo_directory.rs",
@@ -79,6 +80,7 @@ rustc_library("pseudo_fs_static") {
     "//third_party/rust_crates:futures",
   ]
 }
+
 rustc_test("pseudo_fs_test") {
   sources = [
     "src/lazy_pseudo_directory.rs",
@@ -99,6 +101,7 @@ rustc_test("pseudo_fs_test") {
            "//src/lib/fuchsia-fs",
          ]
 }
+
 fuchsia_unittest_package("pseudo_fs_tests") {
   package_name = "pseudo_fs_tests-gn"
   component_name = "pseudo_fs_tests"

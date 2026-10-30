@@ -81,12 +81,14 @@ rustc_binary("virtio_gpu_bin") {
            "//src/lib/ui/fuchsia-framebuffer",
          ]
 }
+
 rustc_test("virtio_gpu_bin_test") {
   sources = _COMMON_SOURCES
   source_root = "src/main.rs"
   edition = "2024"
   deps = _COMMON_DEPS
 }
+
 fuchsia_unittest_package("virtio_gpu_unittests") {
   package_name = "virtio_gpu_unittests-gn"
   component_name = "virtio_gpu_unittests"
@@ -96,10 +98,12 @@ fuchsia_unittest_package("virtio_gpu_unittests") {
     "//src/virtualization:*",
   ]
 }
+
 fuchsia_component_manifest("virtio_gpu_manifest") {
   component_name = "virtio_gpu"
   manifest = "meta/virtio_gpu.cml"
 }
+
 fuchsia_component("virtio_gpu_component") {
   cm_label = ":virtio_gpu_manifest"
   component_name = "virtio_gpu"

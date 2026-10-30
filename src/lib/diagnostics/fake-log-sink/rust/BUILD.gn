@@ -89,6 +89,7 @@ rustc_library("rust") {
     "//third_party/rust_crates:futures",
   ]
 }
+
 rustc_test("rust_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -112,16 +113,19 @@ rustc_test("rust_test") {
   lint_config = "//build/config/rust/lints:clippy_warn_all"
   output_name = "fake_log_sink_lib_test"
 }
+
 fuchsia_component_manifest("fake-log-sink-tests-manifest") {
   testonly = true
   component_name = "fake-log-sink-tests"
   manifest = "meta/fake-log-sink-test.cml"
 }
+
 fuchsia_test_component("fake-log-sink-tests-component") {
   cm_label = ":fake-log-sink-tests-manifest"
   component_name = "fake-log-sink-tests"
   deps = [ ":rust_test" ]
 }
+
 fuchsia_test_package("fake-log-sink-tests-package") {
   package_name = "fake-log-sink-tests-gn"
   test_components = [ ":fake-log-sink-tests-component" ]

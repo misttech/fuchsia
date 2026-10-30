@@ -45,6 +45,7 @@ zx_library("audio-proto-utils") {
       [ "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_cpp" ]
   sdk = "source"
 }
+
 executable("audio-proto-utils-unit-tests") {
   testonly = true
   sources = [ "unit-tests.cc" ]
@@ -54,6 +55,7 @@ executable("audio-proto-utils-unit-tests") {
     "//zircon/system/ulib/zxtest",
   ]
 }
+
 fuchsia_unittest_package("audio-proto-utils-tests") {
   package_name = "audio-proto-utils-tests-gn"
   component_name = "audio-proto-utils-tests"

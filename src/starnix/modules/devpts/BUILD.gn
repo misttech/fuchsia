@@ -64,6 +64,7 @@ rustc_library("devpts") {
     "//src/starnix/lib/starnix_uapi",
   ]
 }
+
 rustc_test("devpts_test") {
   sources = [ "lib.rs" ]
   source_root = "lib.rs"
@@ -87,11 +88,13 @@ rustc_test("devpts_test") {
   ]
   output_name = "starnix_modules_devpts_lib_test"
 }
+
 fuchsia_component_manifest("starnix-devpts-tests-manifest") {
   testonly = true
   component_name = "starnix-devpts-tests"
   manifest = "meta/starnix_devpts_tests.cml"
 }
+
 fuchsia_test_component("starnix-devpts-tests-component") {
   cm_label = ":starnix-devpts-tests-manifest"
   component_name = "starnix-devpts-tests"
@@ -101,6 +104,7 @@ fuchsia_test_component("starnix-devpts-tests-component") {
     "//src/starnix/kernel/vdso",
   ]
 }
+
 fuchsia_test_package("starnix-devpts-tests-package") {
   package_name = "starnix-devpts-tests-gn"
   test_components = [ ":starnix-devpts-tests-component" ]

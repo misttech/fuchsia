@@ -65,6 +65,7 @@ rustc_library("netstack3-trace") {
   deps = _COMMON_DEPS +
          [ "//src/connectivity/network/netstack3/core/sync:netstack3-sync" ]
 }
+
 rustc_library("netstack3-trace-instrumented") {
   sources = _COMMON_SRCS
   configs += _COMMON_BUILD_FLAGS
@@ -76,6 +77,7 @@ rustc_library("netstack3-trace-instrumented") {
   ]
   deps = _COMMON_DEPS + [ "//src/connectivity/network/netstack3/core/sync:netstack3-sync-instrumented" ]
 }
+
 rustc_library("netstack3-trace-testutils") {
   testonly = true
   sources = _COMMON_SRCS

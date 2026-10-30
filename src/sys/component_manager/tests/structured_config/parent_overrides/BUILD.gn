@@ -97,10 +97,12 @@ fidl("test.config.parentoverrides") {
   testonly = true
   sources = [ "fidl/config_reporter.fidl" ]
 }
+
 fuchsia_structured_config_rust_lib("received_config") {
   testonly = true
   cm_label = ":config_receiver_manifest"
 }
+
 rustc_binary("config_receiver_bin") {
   testonly = true
   sources = [ "config_receiver.rs" ]

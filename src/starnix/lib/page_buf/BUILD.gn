@@ -45,6 +45,7 @@ rustc_library("page_buf") {
     "//src/lib/fuchsia-runtime",
   ]
 }
+
 rustc_test("page_buf_lib_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -55,17 +56,20 @@ rustc_test("page_buf_lib_test") {
     "//src/lib/fuchsia-runtime",
   ]
 }
+
 fuchsia_component_manifest("page_buf_tests-manifest") {
   testonly = true
   component_name = "page_buf_tests"
   manifest = "meta/page_buf_tests.cml"
 }
+
 fuchsia_test_component("page_buf_tests-component") {
   cm_label = ":page_buf_tests-manifest"
   component_name = "page_buf_tests"
   test_type = "starnix"
   deps = [ ":page_buf_lib_test" ]
 }
+
 fuchsia_test_package("page_buf_tests-package") {
   package_name = "page_buf_tests-gn"
   test_components = [ ":page_buf_tests-component" ]

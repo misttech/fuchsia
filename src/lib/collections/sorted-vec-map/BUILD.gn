@@ -62,6 +62,7 @@ rustc_library("sorted-vec-map") {
   ]
   deps = [ "//third_party/rust_crates:serde" ]
 }
+
 rustc_test("sorted_vec_map_lib_test") {
   sources = [
     "src/lib.rs",
@@ -75,6 +76,7 @@ rustc_test("sorted_vec_map_lib_test") {
            "//third_party/rust_crates:test-case",
          ]
 }
+
 fuchsia_unittest_package("sorted-vec-map-tests") {
   package_name = "sorted-vec-map-tests-gn"
   component_name = "sorted-vec-map-tests"

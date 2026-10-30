@@ -44,6 +44,7 @@ test("backtrace-request-test") {
     "//zircon/system/ulib/zxtest",
   ]
 }
+
 fuchsia_unittest_package("backtrace-request-test-pkg") {
   package_name = "backtrace-request-test-gn"
   component_name = "backtrace-request-test"
@@ -53,6 +54,7 @@ fuchsia_unittest_package("backtrace-request-test-pkg") {
     "//src/lib:*",
   ]
 }
+
 test("backtrace-request-integration-test") {
   sources = [ "backtrace-request-integration-test.cc" ]
   deps = [
@@ -60,6 +62,7 @@ test("backtrace-request-integration-test") {
     "//zircon/system/ulib/zxtest",
   ]
 }
+
 fuchsia_unittest_package("backtrace-request-integration-test-pkg") {
   package_name = "backtrace-request-integration-test-gn"
   component_name = "backtrace-request-integration-test"

@@ -56,6 +56,7 @@ rustc_library("event-queue") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+
 fidl("test.pkg.eventqueue") {
   testonly = true
   sources = [ "test.fidl" ]

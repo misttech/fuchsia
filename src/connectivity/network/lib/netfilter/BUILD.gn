@@ -69,6 +69,7 @@ rustc_library("netfilter") {
     ]
   }
 }
+
 rustc_test("netfilter_test") {
   sources = [
     "src/grammar.rs",
@@ -104,6 +105,7 @@ rustc_test("netfilter_test") {
   }
   output_name = "netfilter_lib_test"
 }
+
 fuchsia_unittest_package("netfilter-tests") {
   package_name = "netfilter-tests-gn"
   component_name = "netfilter-tests"

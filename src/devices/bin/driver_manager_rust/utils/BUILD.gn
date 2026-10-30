@@ -48,6 +48,7 @@ rustc_library("driver_manager_utils") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+
 rustc_test("driver_manager_utils_test") {
   sources = [
     "src/dictionary_utils.rs",
@@ -72,6 +73,7 @@ rustc_test("driver_manager_utils_test") {
       ]
   lint_config = "//build/config/rust/lints:clippy_warn_all"
 }
+
 fuchsia_unittest_package("driver-manager-utils-unittests") {
   package_name = "driver-manager-utils-unittests-gn"
   component_name = "driver-manager-utils-unittests"

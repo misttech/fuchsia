@@ -73,6 +73,7 @@ source_set("common") {
     ]
   }
 }
+
 executable("mcs_rate_lookup_test") {
   testonly = true
   sources = [ "mcs_rate_lookup_test.cc" ]
@@ -82,6 +83,7 @@ executable("mcs_rate_lookup_test") {
     "//src/lib/fxl/test:gtest_main",
   ]
 }
+
 fuchsia_unittest_package("mcs_rate_lookup_tests") {
   package_name = "mcs-rate-lookup-tests-gn"
   component_name = "mcs-rate-lookup-tests"
@@ -91,6 +93,7 @@ fuchsia_unittest_package("mcs_rate_lookup_tests") {
     "//src/connectivity/wlan:*",
   ]
 }
+
 executable("wlan_cpp_bitfield_test") {
   testonly = true
   sources = [ "bitfield_test.cc" ]
@@ -99,6 +102,7 @@ executable("wlan_cpp_bitfield_test") {
     "//src/lib/fxl/test:gtest_main",
   ]
 }
+
 fuchsia_unittest_package("wlan_cpp_bitfield_tests") {
   package_name = "wlan-cpp-bitfield-tests-gn"
   component_name = "wlan-cpp-bitfield-tests"

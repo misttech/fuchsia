@@ -46,6 +46,7 @@ executable("mock-function-test") {
     "//zircon/system/ulib/zxtest",
   ]
 }
+
 fuchsia_unittest_package("mock-function-test-pkg") {
   package_name = "mock-function-test-gn"
   component_name = "mock-function-test"

@@ -44,10 +44,12 @@ rustc_binary("bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 fuchsia_component_manifest("manifest") {
   component_name = "fizzbuzz"
   manifest = "meta/inspect_rust_codelab_fizzbuzz.cml"
 }
+
 fuchsia_component("fizzbuzz") {
   cm_label = ":manifest"
   visibility = [

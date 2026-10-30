@@ -57,6 +57,7 @@ rustc_library("fuchsia-zbi") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
 rustc_test("fuchsia-zbi_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -72,6 +73,7 @@ rustc_test("fuchsia-zbi_test") {
            "//third_party/rust_crates:anyhow",
          ]
 }
+
 fuchsia_unittest_package("fuchsia-zbi-tests") {
   package_name = "fuchsia-zbi-tests-gn"
   component_name = "fuchsia-zbi-tests"

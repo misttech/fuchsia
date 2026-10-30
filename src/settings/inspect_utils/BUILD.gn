@@ -79,16 +79,19 @@ if (is_fuchsia) {
     lint_config = "//build/config/rust/lints:clippy_warn_all"
   }
 }
+
 fuchsia_component_manifest("settings_inspect_utils_tests_manifest") {
   testonly = true
   component_name = "settings_inspect_utils_test"
   manifest = "meta/settings_inspect_utils_tests.cml"
 }
+
 fuchsia_test_component("settings_inspect_utils_tests_component") {
   cm_label = ":settings_inspect_utils_tests_manifest"
   component_name = "settings_inspect_utils_test"
   deps = [ ":settings_inspect_utils_lib_test" ]
 }
+
 fuchsia_test_package("settings_inspect_utils_tests-package") {
   package_name = "settings_inspect_utils_tests-gn"
   test_components = [ ":settings_inspect_utils_tests_component" ]

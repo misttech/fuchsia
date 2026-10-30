@@ -66,6 +66,7 @@ rustc_library("overlayfs") {
     "//third_party/rust_crates:rand",
   ]
 }
+
 rustc_test("starnix_modules_overlayfs_lib_test") {
   sources = [ "lib.rs" ]
   source_root = "lib.rs"
@@ -93,11 +94,13 @@ rustc_test("starnix_modules_overlayfs_lib_test") {
     "hwasan",
   ]
 }
+
 fuchsia_component_manifest("starnix-overlayfs-tests-manifest") {
   testonly = true
   component_name = "starnix-overlayfs-tests"
   manifest = "meta/starnix_overlayfs_tests.cml"
 }
+
 fuchsia_test_component("starnix-overlayfs-tests-component") {
   cm_label = ":starnix-overlayfs-tests-manifest"
   component_name = "starnix-overlayfs-tests"
@@ -107,6 +110,7 @@ fuchsia_test_component("starnix-overlayfs-tests-component") {
     "//src/starnix/kernel/vdso",
   ]
 }
+
 fuchsia_test_package("starnix-overlayfs-tests-package") {
   package_name = "starnix-overlayfs-tests-gn"
   test_components = [ ":starnix-overlayfs-tests-component" ]

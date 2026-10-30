@@ -45,6 +45,7 @@ rustc_library("units") {
     deps = []
   }
 }
+
 rustc_test("units_test") {
   sources = []
   sources += [ "src/lib.rs" ]
@@ -58,6 +59,7 @@ rustc_test("units_test") {
   }
   deps += [ "//src/lib/fuchsia" ]
 }
+
 fuchsia_unittest_package("storage-units-tests") {
   package_name = "storage-units-tests-gn"
   component_name = "storage-units-tests"

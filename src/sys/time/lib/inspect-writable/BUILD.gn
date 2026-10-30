@@ -53,6 +53,7 @@ rustc_library("inspect-writable") {
   ]
   deps = [ "//src/lib/diagnostics/inspect/rust" ]
 }
+
 rustc_test("test_bin") {
   sources = [ "tests/derive_test.rs" ]
   output_name = "inspect_writable_test"
@@ -65,6 +66,7 @@ rustc_test("test_bin") {
     "//src/lib/fuchsia",
   ]
 }
+
 fuchsia_unittest_package("inspect-writable-tests") {
   package_name = "inspect-writable-tests-gn"
   component_name = "inspect-writable-tests"

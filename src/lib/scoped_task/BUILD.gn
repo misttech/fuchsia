@@ -59,6 +59,7 @@ rustc_library("scoped_task") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_test("scoped_task_test") {
   sources = [ "test/main.rs" ]
   source_root = "test/main.rs"
@@ -69,6 +70,7 @@ rustc_test("scoped_task_test") {
     "//src/lib/fuchsia-runtime",
   ]
 }
+
 rustc_binary("scoped_task_test_spawner") {
   sources = [ "test/spawner.rs" ]
   source_root = "test/spawner.rs"
@@ -82,11 +84,13 @@ rustc_binary("scoped_task_test_spawner") {
     "//third_party/rust_crates:argh",
   ]
 }
+
 fuchsia_component_manifest("scoped_task_test_cmp_manifest") {
   testonly = true
   component_name = "scoped_task_test"
   manifest = "meta/scoped_task_test.cml"
 }
+
 fuchsia_test_component("scoped_task_test_cmp") {
   cm_label = ":scoped_task_test_cmp_manifest"
   component_name = "scoped_task_test"
@@ -95,6 +99,7 @@ fuchsia_test_component("scoped_task_test_cmp") {
     ":scoped_task_test_spawner",
   ]
 }
+
 fuchsia_test_package("scoped-task-tests-pkg") {
   package_name = "scoped-task-tests-gn"
   test_components = [ ":scoped_task_test_cmp" ]

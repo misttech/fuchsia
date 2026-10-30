@@ -41,34 +41,42 @@ rustc_binary("bin") {
   output_name = "prints_when_launched_rust"
   edition = "2024"
 }
+
 fuchsia_component_manifest("logs-stdout-and-stderr-rust-manifest") {
   component_name = "logs-stdout-and-stderr-rust"
   manifest = "meta/logs_stdout_and_stderr_rust.cml"
 }
+
 fuchsia_component("logs-stdout-and-stderr-rust") {
   cm_label = ":logs-stdout-and-stderr-rust-manifest"
   deps = [ ":bin" ]
 }
+
 fuchsia_component_manifest("logs-default-rust-manifest") {
   component_name = "logs-default-rust"
   manifest = "meta/logs_default_rust.cml"
 }
+
 fuchsia_component("logs-default-rust") {
   cm_label = ":logs-default-rust-manifest"
   deps = [ ":bin" ]
 }
+
 fuchsia_component_manifest("logs-stdout-rust-manifest") {
   component_name = "logs-stdout-rust"
   manifest = "meta/logs_stdout_rust.cml"
 }
+
 fuchsia_component("logs-stdout-rust") {
   cm_label = ":logs-stdout-rust-manifest"
   deps = [ ":bin" ]
 }
+
 fuchsia_component_manifest("logs-stderr-rust-manifest") {
   component_name = "logs-stderr-rust"
   manifest = "meta/logs_stderr_rust.cml"
 }
+
 fuchsia_component("logs-stderr-rust") {
   cm_label = ":logs-stderr-rust-manifest"
   deps = [ ":bin" ]

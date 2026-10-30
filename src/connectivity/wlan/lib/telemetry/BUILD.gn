@@ -83,6 +83,7 @@ rustc_library("wlan-telemetry") {
     "//third_party/rust_crates:strum",
   ]
 }
+
 rustc_test("wlan-telemetry_test") {
   sources = [
     "src/config.rs",
@@ -141,6 +142,7 @@ rustc_test("wlan-telemetry_test") {
          ]
   configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
+
 fuchsia_unittest_package("wlan-telemetry-tests") {
   package_name = "wlan-telemetry-tests-gn"
   component_name = "wlan-telemetry-tests"
@@ -150,6 +152,7 @@ fuchsia_unittest_package("wlan-telemetry-tests") {
     "//src/connectivity/wlan:*",
   ]
 }
+
 metrics_registry("wlan_legacy_metrics_registry") {
   generate_rust = true
   project_id = 3708719327

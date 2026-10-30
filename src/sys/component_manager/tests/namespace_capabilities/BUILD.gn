@@ -102,17 +102,20 @@ rustc_binary("trigger_bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 fuchsia_component_manifest("trigger-manifest") {
   testonly = true
   component_name = "trigger"
   manifest = "meta/trigger.cml"
 }
+
 fuchsia_component("trigger") {
   testonly = true
   cm_label = ":trigger-manifest"
   component_name = "trigger"
   deps = [ ":trigger_bin" ]
 }
+
 rustc_test("integration_test_bin") {
   sources = [ "integration_test.rs" ]
   output_name = "namespace_capabilities_integration_test"
@@ -124,6 +127,7 @@ rustc_test("integration_test_bin") {
     "//src/sys/lib/component-events",
   ]
 }
+
 rustc_binary("integration_test_root_bin") {
   testonly = true
   sources = [ "integration_test_root.rs" ]

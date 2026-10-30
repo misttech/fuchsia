@@ -82,6 +82,7 @@ rustc_library("erofs") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
 rustc_test("erofs_test") {
   sources = [
     "src/format.rs",

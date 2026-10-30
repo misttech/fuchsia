@@ -139,14 +139,17 @@ rustc_binary("bin") {
     "//third_party/rust_crates:uuid",
   ]
 }
+
 fuchsia_component_manifest("manifest") {
   component_name = "system-updater"
   manifest = "meta/system-updater.cml"
 }
+
 fuchsia_structured_config_rust_lib("config_lib") {
   cm_label = ":manifest"
   name = "system_updater_config"
 }
+
 fuchsia_component("component") {
   cm_label = ":manifest"
   component_name = "system-updater"
@@ -157,10 +160,12 @@ fuchsia_component("component") {
   ]
   deps = [ ":bin" ]
 }
+
 fuchsia_component_manifest("isolated-v2-manifest") {
   component_name = "system-updater-isolated"
   manifest = "meta/system-updater-isolated.cml"
 }
+
 fuchsia_component("isolated-v2") {
   cm_label = ":isolated-v2-manifest"
   component_name = "system-updater-isolated"

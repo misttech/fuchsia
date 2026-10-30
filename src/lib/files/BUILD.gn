@@ -81,6 +81,7 @@ source_set("files") {
     "//zircon/system/ulib/fbl",
   ]
 }
+
 executable("files_unittests") {
   testonly = true
   sources = [
@@ -101,16 +102,19 @@ executable("files_unittests") {
   ]
   deps += [ "//third_party/googletest:gmock" ]
 }
+
 fuchsia_component_manifest("files-tests-manifest") {
   testonly = true
   component_name = "files-tests"
   manifest = "meta/files_unittests.cml"
 }
+
 fuchsia_test_component("files-tests-component") {
   cm_label = ":files-tests-manifest"
   component_name = "files-tests"
   deps = [ ":files_unittests" ]
 }
+
 fuchsia_test_package("files-tests-package") {
   package_name = "files-tests-gn"
   test_components = [ ":files-tests-component" ]

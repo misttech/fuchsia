@@ -60,10 +60,12 @@ rustc_library("fidl_next_util_internal") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+
 group("fidl_next_util") {
   public_deps = [ ":fidl_next_util_internal" ]
   visibility = fidl_rust_next_allowlist
 }
+
 group("fidl_next_util_test") {
   testonly = true
   public_deps = [ ":fidl_next_util_internal_test" ]

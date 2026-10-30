@@ -59,6 +59,7 @@ rustc_library("vmo-blob") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_test("vmo-blob_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -72,6 +73,7 @@ rustc_test("vmo-blob_test") {
   lint_config = "//build/config/rust/lints:clippy_warn_all"
   visibility = [ ":*" ]
 }
+
 fuchsia_unittest_package("vmo-blob-tests") {
   package_name = "vmo-blob-tests-gn"
   component_name = "vmo-blob-tests"

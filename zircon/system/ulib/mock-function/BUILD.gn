@@ -43,6 +43,7 @@ library_headers("headers") {
   ]
   public_deps = [ "//zircon/system/ulib/zxtest" ]
 }
+
 source_set("mock-function") {
   visibility = [ "//*" ]
   public_deps = [ ":headers" ]

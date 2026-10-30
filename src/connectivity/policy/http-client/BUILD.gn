@@ -126,6 +126,7 @@ rustc_binary("http_client") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+
 rustc_test("http_client_test") {
   sources = [
     "src/main.rs",
@@ -165,24 +166,29 @@ rustc_test("http_client_test") {
   configs += [ "//build/config/rust/lints:deny_unused_results" ]
   output_name = "http_client_bin_test"
 }
+
 fuchsia_component_manifest("manifest") {
   component_name = "http-client"
   manifest = "meta/http_client.cml"
 }
+
 fuchsia_component("component") {
   cm_label = ":manifest"
   component_name = "http-client"
   deps = [ ":http_client" ]
 }
+
 fuchsia_component_manifest("google_manifest") {
   component_name = "google-http-client"
   manifest = "meta/google_http_client.cml"
 }
+
 fuchsia_component("google_component") {
   cm_label = ":google_manifest"
   component_name = "google-http-client"
   deps = [ ":http_client" ]
 }
+
 fuchsia_structured_config_rust_lib("http_client_config") {
   cm_label = ":manifest"
 }

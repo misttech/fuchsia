@@ -114,6 +114,7 @@ if (is_fuchsia) {
     manifest = "meta/bt-hfp-hands-free.cml"
   }
 }
+
 fuchsia_structured_config_rust_lib("hfp_hands_free_profile_config") {
   cm_label = ":manifest"
 }
@@ -197,6 +198,7 @@ if (is_fuchsia) {
     proc_macro_deps = [ "//third_party/rust_crates:paste" ]
   }
 }
+
 fuchsia_unittest_package("bt-hfp-hands-free-tests") {
   package_name = "bt-hfp-hands-free-tests-gn"
   component_name = "bt-hfp-hands-free-tests"

@@ -303,6 +303,7 @@ if (is_host) {
       rebase_path("$host_tools_dir/ffx", root_build_dir),
     ]
   }
+
   go_test("clang_coverage_tests_on_target") {
     embed = [ ":lib" ]
     non_go_deps = [

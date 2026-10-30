@@ -31,6 +31,7 @@ fidl("fuchsia.stresstest") {
   sources = [ "actor.fidl" ]
   visibility = [ "*" ]
 }
+
 measure_tape("rust_measure_tape_for_action") {
   fidls = [ ":fuchsia.stresstest" ]
   target_binding = "rust"

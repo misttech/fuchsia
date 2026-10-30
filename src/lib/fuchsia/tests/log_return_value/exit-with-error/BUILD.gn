@@ -34,11 +34,13 @@ rustc_binary("exit-with-error-bin") {
   edition = "2024"
   deps = [ "//src/lib/fuchsia" ]
 }
+
 fuchsia_component_manifest("component-manifest") {
   testonly = true
   component_name = "exit-with-error"
   manifest = "meta/exit-with-error.cml"
 }
+
 fuchsia_component("component") {
   testonly = true
   cm_label = ":component-manifest"

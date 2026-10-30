@@ -123,6 +123,7 @@ rustc_test("introspector_integration_test_bin") {
     "//third_party/rust_crates:futures-util",
   ]
 }
+
 rustc_binary("proxy_outgoing_to_incoming") {
   testonly = true
   sources = [ "src/proxy_outgoing_to_incoming.rs" ]
@@ -135,6 +136,7 @@ rustc_binary("proxy_outgoing_to_incoming") {
     "//third_party/rust_crates:futures-util",
   ]
 }
+
 rustc_test("use_introspector_disallowed_test_bin") {
   sources = [ "src/use_introspector_disallowed_test.rs" ]
   source_root = "src/use_introspector_disallowed_test.rs"

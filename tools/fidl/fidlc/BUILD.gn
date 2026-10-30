@@ -187,6 +187,7 @@ source_set("lib") {
     "//zircon/system/public",
   ]
 }
+
 source_set("json_schema") {
   sources = [
     "${target_gen_dir}/json_schema.cc",
@@ -195,6 +196,7 @@ source_set("json_schema") {
   visibility = [ ":*" ]
   public_deps = [ ":gen-json-schema" ]
 }
+
 action("gen-json-schema") {
   sources = [ "schema.json" ]
   outputs = [ "${target_gen_dir}/json_schema.cc" ]

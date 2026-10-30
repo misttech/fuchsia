@@ -54,6 +54,7 @@ rustc_library("local") {
     "//third_party/rust_crates:futures",
   ]
 }
+
 rustc_library("local_fdomain_flex") {
   sources = [ "src/flex.rs" ]
   features = [ "fdomain" ]
@@ -70,6 +71,7 @@ rustc_library("local_fdomain_flex") {
   with_unit_tests = true
   deps = [ ":local" ]
 }
+
 rustc_library("local_fidl_flex") {
   sources = [ "src/flex.rs" ]
   crate_name = "flex_local"

@@ -51,6 +51,7 @@ rustc_library("parser") {
     "//third_party/rust_crates:serde_json5",
   ]
 }
+
 rustc_test("parser_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -67,6 +68,7 @@ rustc_test("parser_test") {
          ]
   output_name = "energy_model_config_lib_test"
 }
+
 fuchsia_unittest_package("energy-model-config-parser-tests") {
   package_name = "energy-model-config-parser-tests-gn"
   component_name = "energy-model-config-parser-tests"

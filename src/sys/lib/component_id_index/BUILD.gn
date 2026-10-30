@@ -85,6 +85,7 @@ rustc_library("component_id_index") {
     ]
   }
 }
+
 rustc_test("component_id_index_test") {
   sources = [
     "src/fidl_convert.rs",
@@ -123,6 +124,7 @@ rustc_test("component_id_index_test") {
     features = []
   }
 }
+
 fuchsia_unittest_package("component-id-index-tests") {
   package_name = "component-id-index-tests-gn"
   component_name = "component-id-index-tests"

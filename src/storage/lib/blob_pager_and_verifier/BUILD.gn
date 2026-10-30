@@ -80,6 +80,7 @@ rustc_library("blob_pager_and_verifier") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_test("blob_pager_and_verifier_test") {
   sources = [
     "src/delivery.rs",
@@ -114,6 +115,7 @@ rustc_test("blob_pager_and_verifier_test") {
     "//third_party/rust_crates:test-case",
   ]
 }
+
 fuchsia_unittest_package("blob_pager_and_verifier_tests") {
   package_name = "blob_pager_and_verifier_tests-gn"
   component_name = "blob_pager_and_verifier_tests"

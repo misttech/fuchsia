@@ -202,10 +202,12 @@ rustc_test("resolve_bootfs_package") {
     "//src/lib/fuchsia-runtime",
   ]
 }
+
 fidl("test.checker") {
   testonly = true
   sources = [ "checker.test.fidl" ]
 }
+
 rustc_binary("root_component_bin") {
   testonly = true
   sources = [ "src/root_component.rs" ]

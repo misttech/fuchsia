@@ -38,6 +38,7 @@ if (is_host) {
     ]
   }
 }
+
 group("all_tests") {
   testonly = true
   public_deps = [ ":host_tests($host_toolchain)" ]

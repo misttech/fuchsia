@@ -68,6 +68,7 @@ rustc_library("usb_vsock") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
 rustc_test("usb_vsock_test") {
   sources = [
     "src/connection.rs",
@@ -90,6 +91,7 @@ rustc_test("usb_vsock_test") {
            "//third_party/rust_crates:test-case",
          ]
 }
+
 fuchsia_unittest_package("usb-vsock-target-tests") {
   package_name = "usb-vsock-target-tests-gn"
   component_name = "usb-vsock-target-tests"

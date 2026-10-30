@@ -91,6 +91,7 @@ if (is_host) {
     testonly = true
     public_deps = [ ":app_launch_test($host_toolchain)" ]
   }
+
   group("binder_test") {
     testonly = true
     public_deps = [ ":binder_test($host_toolchain)" ]

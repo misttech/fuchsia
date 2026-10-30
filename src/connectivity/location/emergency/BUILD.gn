@@ -93,6 +93,7 @@ if (is_fuchsia) {
     ]
   }
 }
+
 metrics_registry("emergency_metrics_registry") {
   generate_rust = true
   project_id = 4
@@ -162,16 +163,19 @@ if (is_fuchsia) {
         ]
   }
 }
+
 fuchsia_unittest_component("emergency-tests.emergency-test.component") {
   component_name = "emergency-test"
   visibility = [ ":*" ]
   deps = [ ":emergency-test" ]
 }
+
 fuchsia_unittest_component("emergency-tests.emergency-lib-test.component") {
   component_name = "emergency-lib-test"
   visibility = [ ":*" ]
   deps = [ ":emergency-lib-test" ]
 }
+
 fuchsia_test_package("emergency-tests") {
   package_name = "emergency-tests-gn"
   test_components = [

@@ -41,6 +41,7 @@ fidl("fidl") {
     "//zircon/vdso/zx",
   ]
 }
+
 rustc_binary("bin") {
   testonly = true
   sources = [ "src/main.rs" ]
@@ -67,10 +68,12 @@ rustc_binary("bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 fuchsia_component_manifest("counter_manifest") {
   component_name = "counter"
   manifest = "meta/counter.cml"
 }
+
 fuchsia_component("counter") {
   testonly = true
   cm_label = ":counter_manifest"
@@ -80,11 +83,13 @@ fuchsia_component("counter") {
   ]
   deps = [ ":bin" ]
 }
+
 fuchsia_component_manifest("counter-alternative_manifest") {
   testonly = true
   component_name = "counter-alternative"
   manifest = "meta/counter-alternative.cml"
 }
+
 fuchsia_component("counter-alternative") {
   testonly = true
   cm_label = ":counter-alternative_manifest"
@@ -94,11 +99,13 @@ fuchsia_component("counter-alternative") {
   ]
   deps = [ ":bin" ]
 }
+
 fuchsia_component_manifest("devfs-subdir-user_manifest") {
   testonly = true
   component_name = "devfs-subdir-user"
   manifest = "meta/devfs-subdir-user.cml"
 }
+
 fuchsia_component("devfs-subdir-user") {
   testonly = true
   cm_label = ":devfs-subdir-user_manifest"
@@ -108,11 +115,13 @@ fuchsia_component("devfs-subdir-user") {
   ]
   deps = [ ":bin" ]
 }
+
 fuchsia_component_manifest("counter-without-program_manifest") {
   testonly = true
   component_name = "counter-without-program"
   manifest = "meta/counter-without-program.cml"
 }
+
 fuchsia_component("counter-without-program") {
   testonly = true
   cm_label = ":counter-without-program_manifest"
@@ -122,11 +131,13 @@ fuchsia_component("counter-without-program") {
   ]
   deps = [ ":bin" ]
 }
+
 fuchsia_component_manifest("counter-with-shutdown_manifest") {
   testonly = true
   component_name = "counter-with-shutdown"
   manifest = "meta/counter-with-shutdown.cml"
 }
+
 fuchsia_component("counter-with-shutdown") {
   testonly = true
   cm_label = ":counter-with-shutdown_manifest"
@@ -136,6 +147,7 @@ fuchsia_component("counter-with-shutdown") {
   ]
   deps = [ ":bin" ]
 }
+
 fuchsia_structured_config_rust_lib("config_lib") {
   cm_label = ":counter_manifest"
   name = "counter_config"

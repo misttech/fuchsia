@@ -68,6 +68,7 @@ rustc_library("serve_processargs") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+
 rustc_test("serve_processargs_test") {
   sources = [
     "src/lib.rs",
@@ -100,6 +101,7 @@ rustc_test("serve_processargs_test") {
         "//third_party/rust_crates:test-case",
       ]
 }
+
 fuchsia_unittest_package("serve_processargs_unittests") {
   package_name = "serve_processargs_unittests-gn"
   component_name = "serve_processargs_unittests"

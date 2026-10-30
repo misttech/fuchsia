@@ -60,6 +60,7 @@ rustc_library("lib") {
     "//sdk/rust/zx",
   ]
 }
+
 rustc_test("fidl_fuchsia_ui_views_ext_lib_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -68,6 +69,7 @@ rustc_test("fidl_fuchsia_ui_views_ext_lib_test") {
            "//sdk/rust/zx",
          ] + [ "//src/lib/ui/fuchsia-scenic" ]
 }
+
 fuchsia_unittest_package("test-pkg") {
   package_name = "fidl_fuchsia_ui_views_ext-test-gn"
   component_name = "fidl_fuchsia_ui_views_ext-test"

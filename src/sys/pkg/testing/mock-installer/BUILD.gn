@@ -87,6 +87,7 @@ rustc_library("mock-installer") {
     "//third_party/rust_crates:pretty_assertions",
   ]
 }
+
 rustc_library("mock-installer_fdomain") {
   sources = [ "src/lib.rs" ]
   features = [ "fdomain" ]
@@ -107,6 +108,7 @@ rustc_library("mock-installer_fdomain") {
     "//third_party/rust_crates:pretty_assertions",
   ]
 }
+
 rustc_test("mock_installer_lib_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -150,6 +152,7 @@ if (is_host) {
     lint_config = "//build/config/rust/lints:clippy_warn_all"
   }
 }
+
 fuchsia_unittest_package("mock-installer-tests") {
   package_name = "mock-installer-tests-gn"
   component_name = "mock-installer-tests"

@@ -51,12 +51,14 @@ rustc_library("fidl_fuchsia_net_name_ext") {
   ]
   deps = [ "//sdk/fidl/fuchsia.net.name:fuchsia.net.name_rust" ]
 }
+
 rustc_test("fidl_fuchsia_net_name_ext_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
   deps = [ "//sdk/fidl/fuchsia.net.name:fuchsia.net.name_rust" ]
   configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
+
 fuchsia_unittest_package("fidl-fuchsia-net-name-ext-tests") {
   package_name = "fidl-fuchsia-net-name-ext-tests-gn"
   component_name = "fidl-fuchsia-net-name-ext-tests"

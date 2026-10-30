@@ -154,6 +154,7 @@ rustc_library("wlan-common") {
     ]
   }
 }
+
 rustc_test("wlan-common_test") {
   sources = []
   sources += [
@@ -283,6 +284,7 @@ rustc_test("wlan-common_test") {
     "//third_party/rust_crates:test-case",
   ]
 }
+
 fuchsia_unittest_package("wlan-common-tests") {
   package_name = "wlan-common-tests-gn"
   component_name = "wlan-common-tests"

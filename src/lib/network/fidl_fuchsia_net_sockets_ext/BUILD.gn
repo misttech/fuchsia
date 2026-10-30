@@ -65,6 +65,7 @@ rustc_library("fidl_fuchsia_net_sockets_ext") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+
 rustc_test("fidl_fuchsia_net_sockets_ext_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -90,6 +91,7 @@ rustc_test("fidl_fuchsia_net_sockets_ext_test") {
          ]
   configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
+
 fuchsia_unittest_package("fidl-fuchsia-net-sockets-ext-tests") {
   package_name = "fidl-fuchsia-net-sockets-ext-tests-gn"
   component_name = "fidl-fuchsia-net-sockets-ext-tests"

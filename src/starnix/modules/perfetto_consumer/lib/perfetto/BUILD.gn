@@ -59,6 +59,7 @@ rustc_library("perfetto") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+
 rust_proto_library("perfetto_protos") {
   sources = [
     "//third_party/perfetto/protos/perfetto/ipc/consumer_port.proto",
@@ -73,6 +74,7 @@ rust_proto_library("perfetto_protos") {
     "//src/starnix/modules/perfetto_consumer/lib/perfetto/trace_decoder:*",
   ]
 }
+
 action("merge_perfetto_trace_extensions") {
   sources = [
     "//third_party/perfetto/protos/perfetto/trace/perfetto_trace.proto",
@@ -100,6 +102,7 @@ action("merge_perfetto_trace_extensions") {
     "frame_timeline_event",
   ]
 }
+
 rust_proto_library("perfetto_trace_protos") {
   sources = [ "$target_gen_dir/perfetto_trace_modified.proto" ]
   include_dirs = [ "//third_party/perfetto" ]

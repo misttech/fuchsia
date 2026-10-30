@@ -64,6 +64,7 @@ rustc_library("keymaps") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_test("keymaps_test") {
   sources = [
     "src/config.rs",
@@ -84,6 +85,7 @@ rustc_test("keymaps_test") {
            "//third_party/rust_crates:test-case",
          ]
 }
+
 fuchsia_unittest_package("keymaps-tests") {
   package_name = "keymaps-tests-gn"
   component_name = "keymaps-tests"

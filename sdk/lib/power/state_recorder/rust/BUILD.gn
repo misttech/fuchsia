@@ -58,6 +58,7 @@ rustc_library("rust") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+
 rustc_test("state_recorder_lib_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -79,16 +80,19 @@ rustc_test("state_recorder_lib_test") {
          ]
   proc_macro_deps = [ "//third_party/rust_crates:strum_macros" ]
 }
+
 fuchsia_component_manifest("power_state_recorder_rust_unittests-manifest") {
   testonly = true
   component_name = "power_state_recorder_rust_unittests"
   manifest = "meta/power_state_recorder_rust_unittests.cml"
 }
+
 fuchsia_test_component("power_state_recorder_rust_unittests-component") {
   cm_label = ":power_state_recorder_rust_unittests-manifest"
   component_name = "power_state_recorder_rust_unittests"
   deps = [ ":state_recorder_lib_test" ]
 }
+
 fuchsia_test_package("power_state_recorder_rust_unittests-package") {
   package_name = "power_state_recorder_rust_unittests-gn"
   test_components = [ ":power_state_recorder_rust_unittests-component" ]

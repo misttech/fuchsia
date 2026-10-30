@@ -88,6 +88,7 @@ rustc_library("nanohub") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
 rustc_test("nanohub_test") {
   sources = [
     "datachannel_file.rs",
@@ -131,11 +132,13 @@ rustc_test("nanohub_test") {
     "hwasan",
   ]
 }
+
 fuchsia_component_manifest("starnix-nanohub-tests-manifest") {
   testonly = true
   component_name = "starnix-nanohub-tests"
   manifest = "meta/starnix_nanohub_tests.cml"
 }
+
 fuchsia_test_component("starnix-nanohub-tests-component") {
   cm_label = ":starnix-nanohub-tests-manifest"
   component_name = "starnix-nanohub-tests"
@@ -145,6 +148,7 @@ fuchsia_test_component("starnix-nanohub-tests-component") {
     "//src/starnix/kernel/vdso",
   ]
 }
+
 fuchsia_test_package("starnix-nanohub-tests-package") {
   package_name = "starnix-nanohub-tests-gn"
   test_components = [ ":starnix-nanohub-tests-component" ]
@@ -154,34 +158,42 @@ fuchsia_test_package("starnix-nanohub-tests-package") {
     }
   }
 }
+
 fuchsia_component_manifest("google_display_manifest") {
   component_name = "google_display"
   manifest = "meta/display.cml"
 }
+
 fuchsia_component("google_display_component") {
   cm_label = ":google_display_manifest"
   component_name = "google_display"
 }
+
 fuchsia_component_manifest("sockettunnel_manifest") {
   component_name = "sockettunnel"
   manifest = "meta/sockettunnel.cml"
 }
+
 fuchsia_component("sockettunnel_component") {
   cm_label = ":sockettunnel_manifest"
   component_name = "sockettunnel"
 }
+
 fuchsia_component_manifest("google_nanohub_manifest") {
   component_name = "google_nanohub"
   manifest = "meta/nanohub.cml"
 }
+
 fuchsia_component("google_nanohub_component") {
   cm_label = ":google_nanohub_manifest"
   component_name = "google_nanohub"
 }
+
 fuchsia_component_manifest("google_backlight_manifest") {
   component_name = "google_backlight"
   manifest = "meta/backlight.cml"
 }
+
 fuchsia_component("google_backlight_component") {
   cm_label = ":google_backlight_manifest"
   component_name = "google_backlight"

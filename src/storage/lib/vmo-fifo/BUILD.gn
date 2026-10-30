@@ -73,6 +73,7 @@ rustc_library("vmo-fifo") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
 fuchsia_unittest_package("vmo-fifo-tests") {
   package_name = "vmo-fifo-tests-gn"
   component_name = "vmo-fifo-tests"

@@ -53,6 +53,7 @@ source_set("guest_config") {
     "//zircon/system/ulib/zx",
   ]
 }
+
 executable("unittests") {
   testonly = true
   sources = [ "guest_config_unittest.cc" ]
@@ -63,6 +64,7 @@ executable("unittests") {
     "//third_party/googletest:gmock",
   ]
 }
+
 fuchsia_unittest_package("guest-config-tests") {
   package_name = "guest-config-tests-gn"
   component_name = "guest-config-tests"

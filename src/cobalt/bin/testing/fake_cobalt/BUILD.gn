@@ -63,6 +63,7 @@ rustc_binary("bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_test("bin_test") {
   sources = [ "src/main.rs" ]
   edition = "2024"
@@ -84,17 +85,20 @@ rustc_test("bin_test") {
   source_root = "src/main.rs"
   output_name = "fake_cobalt_bin_test"
 }
+
 fuchsia_component_manifest("component_v2_manifest") {
   testonly = true
   component_name = "fake_cobalt"
   manifest = "meta/fake_cobalt.cml"
 }
+
 fuchsia_component("component_v2") {
   testonly = true
   cm_label = ":component_v2_manifest"
   component_name = "fake_cobalt"
   deps = [ ":bin" ]
 }
+
 fuchsia_unittest_package("fake-cobalt-tests") {
   package_name = "fake-cobalt-tests-gn"
   component_name = "fake-cobalt-tests"

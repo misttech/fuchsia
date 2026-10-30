@@ -479,6 +479,7 @@ rustc_macro("fxfs_macros") {
     "//third_party/rust_crates:syn",
   ]
 }
+
 rustc_library("lib") {
   sources = [
     "src/blob_metadata.rs",

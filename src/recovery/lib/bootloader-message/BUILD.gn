@@ -60,6 +60,7 @@ rustc_library("bootloader-message") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
 rustc_test("bootloader-message_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -69,6 +70,7 @@ rustc_test("bootloader-message_test") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
 fuchsia_unittest_package("bootloader-message-tests") {
   package_name = "bootloader-message-tests-gn"
   component_name = "bootloader-message-tests"

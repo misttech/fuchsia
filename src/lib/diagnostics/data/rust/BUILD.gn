@@ -45,6 +45,7 @@ group("rust") {
   public_deps = [ ":lib" ]
   visibility = [ "*" ]
 }
+
 rustc_library("lib") {
   sources = []
   sources += [ "src/lib.rs" ]
@@ -99,6 +100,7 @@ rustc_library("lib") {
     deps += [ "//third_party/rust_crates:schemars" ]
   }
 }
+
 fuchsia_unittest_package("diagnostics-data-tests") {
   package_name = "diagnostics-data-tests-gn"
   component_name = "diagnostics-data-tests"

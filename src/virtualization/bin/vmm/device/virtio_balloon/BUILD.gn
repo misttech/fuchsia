@@ -57,6 +57,7 @@ rustc_binary("virtio_balloon_bin") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
 rustc_test("virtio_balloon_bin_test") {
   sources = [
     "src/balloon_device.rs",
@@ -83,6 +84,7 @@ rustc_test("virtio_balloon_bin_test") {
          ] + [ "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions" ]
   source_root = "src/main.rs"
 }
+
 fuchsia_unittest_package("virtio_balloon_unittests") {
   package_name = "virtio_balloon_unittests-gn"
   component_name = "virtio_balloon_unittests"
@@ -92,10 +94,12 @@ fuchsia_unittest_package("virtio_balloon_unittests") {
     "//src/virtualization:*",
   ]
 }
+
 fuchsia_component_manifest("virtio_balloon_manifest") {
   component_name = "virtio_balloon"
   manifest = "meta/virtio_balloon.cml"
 }
+
 fuchsia_component("virtio_balloon_component") {
   cm_label = ":virtio_balloon_manifest"
   component_name = "virtio_balloon"

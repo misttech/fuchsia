@@ -44,11 +44,13 @@ rustc_binary("security_pkg_dns_resolver-binary") {
     "//third_party/rust_crates:log",
   ]
 }
+
 fuchsia_component_manifest("security_pkg_dns_resolver-manifest") {
   testonly = true
   component_name = "security_pkg_dns_resolver"
   manifest = "meta/security_pkg_dns_resolver.cml"
 }
+
 fuchsia_component("security_pkg_dns_resolver-component") {
   testonly = true
   cm_label = ":security_pkg_dns_resolver-manifest"

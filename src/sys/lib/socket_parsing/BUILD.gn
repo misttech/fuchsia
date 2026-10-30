@@ -57,6 +57,7 @@ rustc_library("socket_parsing") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+
 rustc_test("socket_parsing_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -68,10 +69,12 @@ rustc_test("socket_parsing_test") {
          ] + [ "//src/lib/fuchsia" ]
   output_name = "socket_parsing_lib_test"
 }
+
 fuchsia_unittest_component("socket_parsing_tests_component") {
   deps = [ ":socket_parsing_test" ]
   component_name = "socket_parsing_tests"
 }
+
 fuchsia_test_package("socket_parsing_tests_package") {
   package_name = "socket_parsing_tests-gn"
   test_components = [ ":socket_parsing_tests_component" ]

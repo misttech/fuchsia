@@ -44,6 +44,7 @@ rustc_library("block_protocol") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
 source_set("block_fifo") {
   public = [
     "block-fifo.h",

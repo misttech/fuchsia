@@ -89,6 +89,7 @@ import("//build/tools/bazel2gn/bazel_migration.gni")
 config("check_cfg_flags") {
   rustflags = [ "--check-cfg=cfg(rcu_backend, values(\"rseq\", \"atomic\"))" ]
 }
+
 rustc_binary("bin_rseq") {
   testonly = true
   sources = [ "src/main.rs" ]
@@ -104,6 +105,7 @@ rustc_binary("bin_rseq") {
     "//src/lib/fuchsia-rcu",
   ]
 }
+
 rustc_binary("bin_atomic") {
   testonly = true
   sources = [ "src/main.rs" ]

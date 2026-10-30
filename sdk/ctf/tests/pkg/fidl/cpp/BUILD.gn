@@ -261,6 +261,7 @@ fidl("union_migration_test_fidl") {
   name = "fidl.test.unionmigration"
   visibility = [ ":*" ]
 }
+
 source_set("test_util") {
   testonly = true
   public = [ "test/test_util.h" ]

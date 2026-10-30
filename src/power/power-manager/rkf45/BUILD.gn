@@ -51,6 +51,7 @@ rustc_library("lib") {
   ]
   deps = [ "//third_party/rust_crates:anyhow" ]
 }
+
 rustc_test("rkf45_lib_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -59,6 +60,7 @@ rustc_test("rkf45_lib_test") {
            "//src/lib/test_util",
          ]
 }
+
 fuchsia_unittest_package("rkf45-tests") {
   package_name = "rkf45-tests-gn"
   component_name = "rkf45-tests"

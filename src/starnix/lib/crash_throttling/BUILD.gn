@@ -49,6 +49,7 @@ rustc_library("crash_throttling") {
     "//third_party/rust_crates:futures",
   ]
 }
+
 fuchsia_unittest_package("crash-throttling-tests") {
   package_name = "crash-throttling-tests-gn"
   component_name = "crash-throttling-tests"

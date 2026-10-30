@@ -53,6 +53,7 @@ rustc_library("processargs") {
     "//src/lib/process_builder",
   ]
 }
+
 rustc_test("processargs_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -62,6 +63,7 @@ rustc_test("processargs_test") {
     "//src/lib/process_builder",
   ]
 }
+
 fuchsia_unittest_package("processargs-unittests") {
   package_name = "processargs-unittests-gn"
   component_name = "processargs-unittests"

@@ -141,6 +141,7 @@ rustc_library("packet-formats") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
 rustc_test("packet-formats_test") {
   sources = [
     "src/arp.rs",
@@ -192,6 +193,7 @@ rustc_test("packet-formats_test") {
          ]
   configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
+
 fuchsia_unittest_package("packet-formats-test") {
   package_name = "packet-formats-test-gn"
   component_name = "packet-formats-test"

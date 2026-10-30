@@ -160,6 +160,7 @@ if (is_fuchsia) {
     manifest = "meta/bt-hfp-audio-gateway.cml"
   }
 }
+
 fuchsia_structured_config_rust_lib("hfp_profile_config") {
   cm_label = ":manifest"
 }

@@ -73,6 +73,7 @@ rustc_library("functionfs") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
 rustc_test("functionfs_test") {
   sources = [ "lib.rs" ]
   source_root = "lib.rs"
@@ -104,11 +105,13 @@ rustc_test("functionfs_test") {
     "hwasan",
   ]
 }
+
 fuchsia_component_manifest("starnix-functionfs-tests-manifest") {
   testonly = true
   component_name = "starnix-functionfs-tests"
   manifest = "meta/starnix_functionfs_tests.cml"
 }
+
 fuchsia_test_component("starnix-functionfs-tests-component") {
   cm_label = ":starnix-functionfs-tests-manifest"
   component_name = "starnix-functionfs-tests"
@@ -118,6 +121,7 @@ fuchsia_test_component("starnix-functionfs-tests-component") {
     "//src/starnix/kernel/vdso",
   ]
 }
+
 fuchsia_test_package("starnix-functionfs-tests-package") {
   package_name = "starnix-functionfs-tests-gn"
   test_components = [ ":starnix-functionfs-tests-component" ]

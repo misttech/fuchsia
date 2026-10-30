@@ -79,6 +79,7 @@ rustc_library("starnix_logging") {
     "//third_party/rust_crates:regex-lite",
   ]
 }
+
 rustc_test("starnix_logging_lib_test") {
   sources = [
     "src/core_dump_list.rs",

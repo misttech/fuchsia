@@ -81,6 +81,7 @@ if (is_fuchsia) {
     manifest = "meta/bt-device-id.cml"
   }
 }
+
 fuchsia_structured_config_rust_lib("bt_device_id_profile_config") {
   cm_label = ":manifest"
 }
@@ -131,6 +132,7 @@ if (is_fuchsia) {
     configs += [ "//build/config/rust/lints:deny_unused_results" ]
   }
 }
+
 fuchsia_unittest_package("bt-device-id-tests") {
   package_name = "bt-device-id-tests-gn"
   component_name = "bt-device-id-tests"

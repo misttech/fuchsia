@@ -42,6 +42,7 @@ library_headers("headers") {
     "//zircon/system/ulib/zx",
   ]
 }
+
 static_library("captive-thread") {
   sources = [ "captive-thread.cc" ]
   deps = [
@@ -60,6 +61,7 @@ static_library("captive-thread") {
     "//zircon/system/ulib/zx",
   ]
 }
+
 source_set("fake-step") {
   sources = []
   sources += [ "fake-step.h" ]
@@ -79,6 +81,7 @@ source_set("fake-step") {
     "//sdk/lib/stdcompat",
   ]
 }
+
 executable("captive-thread-unittests") {
   testonly = true
   sources = [ "captive-thread-tests.cc" ]
@@ -90,6 +93,7 @@ executable("captive-thread-unittests") {
     "//third_party/googletest:gmock",
   ]
 }
+
 fuchsia_unittest_package("captive-thread-tests") {
   package_name = "captive-thread-tests-gn"
   component_name = "captive-thread-tests"

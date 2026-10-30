@@ -49,14 +49,17 @@ rustc_binary("bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 fuchsia_component_manifest("manifest") {
   component_name = "null-update-checker"
   manifest = "meta/null-update-checker.cml"
 }
+
 fuchsia_component("component") {
   cm_label = ":manifest"
   deps = [ ":bin" ]
 }
+
 fuchsia_structured_config_rust_lib("null_update_checker_config") {
   cm_label = ":manifest"
 }

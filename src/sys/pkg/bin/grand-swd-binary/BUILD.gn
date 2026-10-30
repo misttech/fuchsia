@@ -58,6 +58,7 @@ rustc_binary("grand-swd-binary") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+
 rustc_test("grand-swd-binary_test") {
   sources = [ "src/main.rs" ]
   edition = "2024"
@@ -71,6 +72,7 @@ rustc_test("grand-swd-binary_test") {
   source_root = "src/main.rs"
   lint_config = "//build/config/rust/lints:clippy_warn_all"
 }
+
 fuchsia_unittest_package("grand-swd-binary-tests") {
   package_name = "grand-swd-binary-tests-gn"
   component_name = "grand-swd-binary-tests"

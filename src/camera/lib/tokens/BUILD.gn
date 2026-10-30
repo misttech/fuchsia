@@ -43,6 +43,7 @@ source_set("tokens") {
     "//sdk/lib/async-default",
   ]
 }
+
 executable("tokens-unittest-bin") {
   testonly = true
   sources = [ "tokens-unittest.cc" ]
@@ -53,6 +54,7 @@ executable("tokens-unittest-bin") {
     "//src/lib/fxl/test:gtest_main",
   ]
 }
+
 fuchsia_unittest_package("tokens-unittest") {
   package_name = "tokens-unittest-gn"
   component_name = "tokens-unittest"

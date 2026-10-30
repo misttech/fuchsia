@@ -103,11 +103,13 @@ rustc_test("lifecycle_test") {
     "//src/sys/lib/component-events",
   ]
 }
+
 rustc_binary("immediate_exit") {
   sources = [ "immediate_exit_component.rs" ]
   source_root = "immediate_exit_component.rs"
   edition = "2024"
 }
+
 rustc_binary("immediate_escrow") {
   sources = [ "immediate_escrow_component.rs" ]
   source_root = "immediate_escrow_component.rs"
@@ -120,6 +122,7 @@ rustc_binary("immediate_escrow") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_binary("run-indefinitely") {
   sources = [ "run_indefinitely.rs" ]
   source_root = "run_indefinitely.rs"
@@ -134,6 +137,7 @@ rustc_binary("run-indefinitely") {
     "//src/lib/fuchsia-async",
   ]
 }
+
 rustc_binary("rendezvous_exit") {
   sources = [ "rendezvous_exit_component.rs" ]
   source_root = "rendezvous_exit_component.rs"
@@ -146,6 +150,7 @@ rustc_binary("rendezvous_exit") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_test("component_exit") {
   sources = [ "component_exit.rs" ]
   output_name = "component_exit_integration_test"
@@ -158,6 +163,7 @@ rustc_test("component_exit") {
     "//src/sys/lib/component-events",
   ]
 }
+
 rustc_test("lifecycle_timeout") {
   sources = [ "lifecycle_timeout.rs" ]
   output_name = "lifecycle_timeout_integration_test"
@@ -170,6 +176,7 @@ rustc_test("lifecycle_timeout") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_test("lifecycle_timeout_unresponsive") {
   sources = [ "lifecycle_timeout_unresponsive.rs" ]
   output_name = "lifecycle_timeout_unresponsive_integration_test"
@@ -182,6 +189,7 @@ rustc_test("lifecycle_timeout_unresponsive") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_test("debug_started") {
   sources = [ "debug_started.rs" ]
   output_name = "debug_started_integration_test"
@@ -196,6 +204,7 @@ rustc_test("debug_started") {
     "//src/sys/lib/component-events",
   ]
 }
+
 rustc_binary("unresponsive_component") {
   sources = [ "unresponsive_component.rs" ]
   source_root = "unresponsive_component.rs"
@@ -212,53 +221,63 @@ rustc_binary("unresponsive_component") {
     "//third_party/rust_crates:log",
   ]
 }
+
 fuchsia_component_manifest("lifecycle_timeout_unresponsive_root-manifest") {
   testonly = true
   component_name = "lifecycle_timeout_unresponsive_root"
   manifest = "meta/lifecycle_timeout_unresponsive_root.cml"
 }
+
 fuchsia_component("lifecycle_timeout_unresponsive_root") {
   testonly = true
   cm_label = ":lifecycle_timeout_unresponsive_root-manifest"
   component_name = "lifecycle_timeout_unresponsive_root"
 }
+
 fuchsia_component_manifest("lifecycle_timeout_unresponsive_node-manifest") {
   testonly = true
   component_name = "lifecycle_timeout_unresponsive_node"
   manifest = "meta/lifecycle_timeout_unresponsive_node.cml"
 }
+
 fuchsia_component("lifecycle_timeout_unresponsive_node") {
   testonly = true
   cm_label = ":lifecycle_timeout_unresponsive_node-manifest"
   component_name = "lifecycle_timeout_unresponsive_node"
   deps = [ ":unresponsive_component" ]
 }
+
 fuchsia_component_manifest("lifecycle_timeout_root-manifest") {
   testonly = true
   component_name = "lifecycle_timeout_root"
   manifest = "meta/lifecycle_timeout_root.cml"
 }
+
 fuchsia_component("lifecycle_timeout_root") {
   testonly = true
   cm_label = ":lifecycle_timeout_root-manifest"
   component_name = "lifecycle_timeout_root"
 }
+
 fuchsia_component_manifest("immediate_exit_component-manifest") {
   testonly = true
   component_name = "immediate_exit_component"
   manifest = "meta/immediate_exit_component.cml"
 }
+
 fuchsia_component("immediate_exit_component") {
   testonly = true
   cm_label = ":immediate_exit_component-manifest"
   component_name = "immediate_exit_component"
   deps = [ ":immediate_exit" ]
 }
+
 fuchsia_component_manifest("immediate_escrow_component-manifest") {
   testonly = true
   component_name = "immediate_escrow_component"
   manifest = "meta/immediate_escrow_component.cml"
 }
+
 fuchsia_component("immediate_escrow_component") {
   testonly = true
   cm_label = ":immediate_escrow_component-manifest"
@@ -269,11 +288,13 @@ fuchsia_component("immediate_escrow_component") {
   ]
   deps = [ ":immediate_escrow" ]
 }
+
 fuchsia_component_manifest("rendezvous_exit_component-manifest") {
   testonly = true
   component_name = "rendezvous_exit_component"
   manifest = "meta/rendezvous_exit_component.cml"
 }
+
 fuchsia_component("rendezvous_exit_component") {
   testonly = true
   cm_label = ":rendezvous_exit_component-manifest"

@@ -107,6 +107,7 @@ if (is_fuchsia) {
     output_name = "attribution_processing_lib_test"
   }
 }
+
 fuchsia_unittest_package("attribution-processing-tests") {
   package_name = "attribution-processing-tests-gn"
   component_name = "attribution-processing-tests"

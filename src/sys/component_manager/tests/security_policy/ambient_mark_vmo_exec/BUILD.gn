@@ -90,11 +90,13 @@ rustc_test("security_policy_vmex_integration_test_bin") {
     "//third_party/rust_crates:assert_matches",
   ]
 }
+
 fidl("test.policy") {
   testonly = true
   sources = [ "policy.test.fidl" ]
   public_deps = [ "//zircon/vdso/zx" ]
 }
+
 rustc_binary("protected_ops_util") {
   testonly = true
   sources = [ "protected_ops_util.rs" ]

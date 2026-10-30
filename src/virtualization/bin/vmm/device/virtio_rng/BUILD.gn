@@ -44,10 +44,12 @@ rustc_binary("virtio_rng_bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 fuchsia_component_manifest("virtio_rng_component-manifest") {
   component_name = "virtio_rng"
   manifest = "meta/virtio_rng.cml"
 }
+
 fuchsia_component("virtio_rng_component") {
   cm_label = ":virtio_rng_component-manifest"
   component_name = "virtio_rng"

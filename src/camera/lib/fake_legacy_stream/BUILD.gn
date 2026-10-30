@@ -85,16 +85,19 @@ if (is_fuchsia) {
     ]
   }
 }
+
 fuchsia_component_manifest("fake_legacy_stream_unittest_manifest") {
   testonly = true
   component_name = "fake_legacy_stream_unittest"
   manifest = "meta/fake_legacy_stream_unittest.cml"
 }
+
 fuchsia_test_component("fake_legacy_stream_unittest_component") {
   cm_label = ":fake_legacy_stream_unittest_manifest"
   component_name = "fake_legacy_stream_unittest"
   deps = [ ":fake_legacy_stream_unittest_bin" ]
 }
+
 fuchsia_test_package("fake_legacy_stream_unittest_package") {
   package_name = "fake_legacy_stream_unittest-gn"
   test_components = [ ":fake_legacy_stream_unittest_component" ]

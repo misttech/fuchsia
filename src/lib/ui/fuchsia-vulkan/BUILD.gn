@@ -57,6 +57,7 @@ rustc_library("fuchsia-vulkan") {
     "//third_party/rust_crates:vk-sys",
   ]
 }
+
 rustc_test("fuchsia-vulkan_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"

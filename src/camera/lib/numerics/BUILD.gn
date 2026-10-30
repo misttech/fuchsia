@@ -48,6 +48,7 @@ group("numerics") {
     "//src/camera/drivers/controller:*",
   ]
 }
+
 source_set("rational") {
   sources = [ "rational.cc" ]
   public = [ "rational.h" ]
@@ -56,6 +57,7 @@ source_set("rational") {
     "//src/camera/drivers/controller:*",
   ]
 }
+
 executable("numerics-unittest-bin") {
   testonly = true
   sources = [ "numerics-unittest.cc" ]
@@ -64,6 +66,7 @@ executable("numerics-unittest-bin") {
     "//src/lib/fxl/test:gtest_main",
   ]
 }
+
 fuchsia_unittest_package("numerics-unittest") {
   package_name = "numerics-unittest-gn"
   component_name = "numerics-unittest"

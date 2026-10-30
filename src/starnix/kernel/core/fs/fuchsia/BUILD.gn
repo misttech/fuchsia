@@ -70,11 +70,13 @@ rustc_test("remote_unified_aspace_tests") {
     "//third_party/rust_crates:smallvec",
   ]
 }
+
 fuchsia_component_manifest("remote_unified_aspace_tests-manifest") {
   testonly = true
   component_name = "remote_unified_aspace_tests"
   manifest = "meta/remote_unified_aspace_tests.cml"
 }
+
 fuchsia_test_component("remote_unified_aspace_tests-component") {
   cm_label = ":remote_unified_aspace_tests-manifest"
   component_name = "remote_unified_aspace_tests"
@@ -84,6 +86,7 @@ fuchsia_test_component("remote_unified_aspace_tests-component") {
     "//src/starnix/kernel/vdso",
   ]
 }
+
 fuchsia_test_package("remote_unified_aspace_tests-package") {
   package_name = "remote_unified_aspace_tests-gn"
   test_components = [ ":remote_unified_aspace_tests-component" ]

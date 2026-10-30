@@ -40,11 +40,13 @@ rustc_binary("provider-bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 fuchsia_component_manifest("provider-a-cmp-manifest") {
   testonly = true
   component_name = "provider-a"
   manifest = "meta/provider-a.cml"
 }
+
 fuchsia_component("provider-a-cmp") {
   testonly = true
   cm_label = ":provider-a-cmp-manifest"
@@ -55,11 +57,13 @@ fuchsia_component("provider-a-cmp") {
   ]
   deps = [ ":provider-bin" ]
 }
+
 fuchsia_component_manifest("provider-b-cmp-manifest") {
   testonly = true
   component_name = "provider-b"
   manifest = "meta/provider-b.cml"
 }
+
 fuchsia_component("provider-b-cmp") {
   testonly = true
   cm_label = ":provider-b-cmp-manifest"

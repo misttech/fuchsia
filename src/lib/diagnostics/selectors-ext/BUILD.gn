@@ -48,6 +48,7 @@ rustc_library("selectors-ext") {
     "//third_party/rust_crates:serde",
   ]
 }
+
 rustc_test("selectors-ext_test") {
   sources = [
     "src/inspect.rs",
@@ -66,6 +67,7 @@ rustc_test("selectors-ext_test") {
            "//third_party/rust_crates:test-case",
          ]
 }
+
 fuchsia_unittest_package("selectors-ext-test") {
   package_name = "selectors-ext-test-gn"
   component_name = "selectors-ext-test"

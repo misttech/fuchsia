@@ -51,6 +51,7 @@ source_set("timekeeper") {
   ]
   public_deps = [ "//zircon/system/ulib/zx" ]
 }
+
 source_set("system") {
   public = [ "system_clock.h" ]
   visibility = [
@@ -65,6 +66,7 @@ source_set("system") {
     "//zircon/system/ulib/zx",
   ]
 }
+
 source_set("testing") {
   testonly = true
   sources = [

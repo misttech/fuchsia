@@ -104,6 +104,7 @@ rustc_library("netstack3-icmp-echo") {
         "//src/connectivity/network/netstack3/core/ip:netstack3-ip",
       ]
 }
+
 rustc_library("netstack3-icmp-echo-testutils") {
   testonly = true
   sources = _COMMON_SRCS
@@ -125,6 +126,7 @@ rustc_library("netstack3-icmp-echo-testutils") {
            "//src/connectivity/network/netstack3/core/ip:netstack3-ip-testutils",
          ]
 }
+
 rustc_library("netstack3-icmp-echo-benchmarks") {
   testonly = true
   sources = _COMMON_SRCS
@@ -144,6 +146,7 @@ rustc_library("netstack3-icmp-echo-benchmarks") {
            "//src/connectivity/network/netstack3/core/ip:netstack3-ip-benchmarks",
          ]
 }
+
 rustc_library("netstack3-icmp-echo-instrumented") {
   sources = _COMMON_SRCS
   configs += _COMMON_BUILD_FLAGS
@@ -185,6 +188,7 @@ if (is_host) {
            ]
   }
 }
+
 rustc_test("netstack3-icmp-echo-instrumented_test") {
   sources = _COMMON_SRCS
   configs += _COMMON_BUILD_FLAGS
@@ -201,6 +205,7 @@ rustc_test("netstack3-icmp-echo-instrumented_test") {
            "//third_party/rust_crates:test-case",
          ]
 }
+
 fuchsia_unittest_package("netstack3-core-icmp-echo-test") {
   package_name = "netstack3-core-icmp-echo-test-gn"
   component_name = "netstack3-core-icmp-echo-test"

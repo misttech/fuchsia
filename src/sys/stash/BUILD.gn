@@ -145,6 +145,7 @@ rustc_binary("bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 measure_tape("measure_tape_for_stash") {
   fidls = [
     "//sdk/fidl/fuchsia.stash",

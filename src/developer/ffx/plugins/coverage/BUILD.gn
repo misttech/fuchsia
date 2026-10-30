@@ -35,6 +35,7 @@ host_test_data("ffx_coverage_tool_test_data") {
 
 # TODO(https://fxbug.dev/438572714): Remove once the IDK uses the Bazel atom.
 _idk_path = "tools/$current_cpu/ffx_tools/ffx-coverage"
+
 sdk_atom("sdk") {
   category = "partner"
   sdk_area = "Developer"

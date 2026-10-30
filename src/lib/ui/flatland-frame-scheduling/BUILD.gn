@@ -63,6 +63,7 @@ rustc_library("flatland-frame-scheduling-lib") {
     "//src/lib/trace/rust:trace",
   ]
 }
+
 source_set("simple_present") {
   sources = [ "src/simple_present.cc" ]
   public = [ "src/simple_present.h" ]
@@ -82,6 +83,7 @@ source_set("simple_present") {
     "//sdk/lib/async-loop:async-loop-cpp",
   ]
 }
+
 rustc_test("flatland-frame-scheduling-lib_test") {
   sources = [
     "src/lib.rs",
@@ -98,6 +100,7 @@ rustc_test("flatland-frame-scheduling-lib_test") {
         "//src/lib/trace/rust:trace",
       ] + [ "//third_party/rust_crates:assert_matches" ]
 }
+
 fuchsia_unittest_package("flatland-frame-scheduling-lib-tests") {
   package_name = "flatland-frame-scheduling-lib-tests-gn"
   component_name = "flatland-frame-scheduling-lib-tests"

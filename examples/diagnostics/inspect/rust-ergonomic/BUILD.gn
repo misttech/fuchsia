@@ -50,6 +50,7 @@ rustc_test("ergonomic_inspect_tests") {
     "//src/lib/fuchsia",
   ]
 }
+
 fuchsia_unittest_package("ergonomic-inspect-tests") {
   package_name = "ergonomic-inspect-tests-gn"
   component_name = "ergonomic-inspect-tests"

@@ -57,6 +57,7 @@ rustc_binary("pkg_server-binary") {
     "//third_party/rust_crates:tokio-rustls",
   ]
 }
+
 fidl("test.security.pkg") {
   testonly = true
   sources = [ "fidl/pkg_server.fidl" ]

@@ -97,6 +97,7 @@ rustc_test("stop_with_escrow_integration_test_bin") {
     "//third_party/rust_crates:futures",
   ]
 }
+
 rustc_binary("stop_with_pending_request_bin") {
   sources = [ "stop_with_pending_request.rs" ]
   output_name = "stop_with_pending_request"
@@ -115,6 +116,7 @@ rustc_binary("stop_with_pending_request_bin") {
     "//third_party/rust_crates:futures",
   ]
 }
+
 rustc_binary("stop_with_delivery_on_readable_request_bin") {
   sources = [ "stop_with_delivery_on_readable_request.rs" ]
   output_name = "stop_with_delivery_on_readable_request"
@@ -129,6 +131,7 @@ rustc_binary("stop_with_delivery_on_readable_request_bin") {
     "//third_party/rust_crates:futures",
   ]
 }
+
 rustc_binary("stop_with_dynamic_dictionary_bin") {
   sources = [ "stop_with_dynamic_dictionary.rs" ]
   output_name = "stop_with_dynamic_dictionary"
@@ -149,6 +152,7 @@ rustc_binary("stop_with_dynamic_dictionary_bin") {
     "//third_party/rust_crates:log",
   ]
 }
+
 rustc_binary("stop_with_escrowed_dictionary_bin") {
   sources = [ "stop_with_escrowed_dictionary.rs" ]
   output_name = "stop_with_escrowed_dictionary"

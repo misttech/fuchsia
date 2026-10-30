@@ -65,6 +65,7 @@ rustc_library("make-blob-image") {
   ]
   deps = _DEPS
 }
+
 rustc_test("make-blob-image_test") {
   sources = _SRCS
   output_name = "fxfs_make_blob_image_lib_test"

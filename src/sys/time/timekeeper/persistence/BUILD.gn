@@ -59,6 +59,7 @@ rustc_library("lib") {
     "//third_party/rust_crates:serde_json",
   ]
 }
+
 rustc_test("lib_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
@@ -83,6 +84,7 @@ rustc_test("lib_test") {
   deps += [ "//src/sys/test_runners:tmp_storage" ]
   output_name = "time_persistence_lib_test"
 }
+
 fuchsia_unittest_package("time-persistence-tests") {
   package_name = "time-persistence-tests-gn"
   component_name = "time-persistence-tests"

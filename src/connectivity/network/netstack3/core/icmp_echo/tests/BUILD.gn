@@ -67,6 +67,7 @@ rustc_test("netstack3_icmp_echo_integration_test") {
     "//third_party/rust_crates:test-case",
   ]
 }
+
 fuchsia_unittest_package("netstack3-core-icmp-echo-integration-test") {
   package_name = "netstack3-core-icmp-echo-integration-test-gn"
   component_name = "netstack3-core-icmp-echo-integration-test"

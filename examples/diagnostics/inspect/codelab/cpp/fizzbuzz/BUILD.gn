@@ -39,10 +39,12 @@ executable("bin") {
     "//sdk/lib/syslog/cpp",
   ]
 }
+
 fuchsia_component_manifest("fizzbuzz-manifest") {
   component_name = "fizzbuzz"
   manifest = "meta/inspect_cpp_codelab_fizzbuzz.cml"
 }
+
 fuchsia_component("fizzbuzz") {
   cm_label = ":fizzbuzz-manifest"
   visibility = [

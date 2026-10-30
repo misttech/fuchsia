@@ -31,6 +31,7 @@ fuchsia_component_manifest("realm-manifest") {
   component_name = "realm"
   manifest = "meta/realm.cml"
 }
+
 fuchsia_component("realm") {
   cm_label = ":realm-manifest"
   component_name = "realm"

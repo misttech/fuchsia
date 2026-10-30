@@ -87,6 +87,7 @@ rustc_library("wlan-hw-sim") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
 rustc_test("wlan-hw-sim_test") {
   sources = [
     "src/config.rs",
@@ -142,6 +143,7 @@ rustc_test("wlan-hw-sim_test") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
 fuchsia_unittest_package("wlan-hw-sim-lib-tests") {
   package_name = "wlan-hw-sim-lib-tests-gn"
   component_name = "wlan-hw-sim-lib-tests"

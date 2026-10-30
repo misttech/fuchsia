@@ -88,11 +88,13 @@ rustc_test("security_policy_critical_integration_test_bin") {
     "//third_party/rust_crates:futures",
   ]
 }
+
 fidl("test.policy") {
   testonly = true
   sources = [ "policy.test.fidl" ]
   public_deps = [ "//zircon/vdso/zx" ]
 }
+
 rustc_binary("exit_on_command_bin") {
   testonly = true
   sources = [ "exit_on_command.rs" ]

@@ -101,6 +101,7 @@ rustc_library("fidl_fuchsia_net_filter_ext") {
     deps += [ "//sdk/rust/zx" ]
   }
 }
+
 rustc_library("fidl_fuchsia_net_filter_ext_fdomain") {
   sources = _COMMON_SRCS
   configs += _COMMON_BUILD_FLAGS
@@ -121,6 +122,7 @@ rustc_library("fidl_fuchsia_net_filter_ext_fdomain") {
            "//src/lib/network/fidl_fuchsia_net_matchers_ext:fidl_fuchsia_net_matchers_ext_fdomain",
          ]
 }
+
 rustc_test("fidl_fuchsia_net_filter_ext_test") {
   sources = _COMMON_SRCS
   edition = "2024"
@@ -150,6 +152,7 @@ rustc_test("fidl_fuchsia_net_filter_ext_test") {
   ]
   configs += _COMMON_BUILD_FLAGS
 }
+
 rustc_test("fidl_fuchsia_net_filter_ext_fdomain_test") {
   sources = _COMMON_SRCS
   edition = "2024"
@@ -173,11 +176,13 @@ rustc_test("fidl_fuchsia_net_filter_ext_fdomain_test") {
   configs += _COMMON_BUILD_FLAGS
   features = [ "fdomain" ]
 }
+
 fuchsia_unittest_package("fidl-fuchsia-net-filter-ext-tests") {
   package_name = "fidl-fuchsia-net-filter-ext-tests-gn"
   component_name = "fidl-fuchsia-net-filter-ext-tests"
   deps = [ ":fidl_fuchsia_net_filter_ext_test" ]
 }
+
 fuchsia_unittest_package("fidl-fuchsia-net-filter-ext-fdomain-tests") {
   package_name = "fidl-fuchsia-net-filter-ext-fdomain-tests-gn"
   component_name = "fidl-fuchsia-net-filter-ext-fdomain-tests"

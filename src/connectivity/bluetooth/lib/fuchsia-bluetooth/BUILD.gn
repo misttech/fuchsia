@@ -185,6 +185,7 @@ if (is_fuchsia) {
     configs += [ "//build/config/rust/lints:deny_unused_results" ]
   }
 }
+
 fuchsia_unittest_package("bluetooth-crate-tests") {
   package_name = "bluetooth-crate-tests-gn"
   component_name = "bluetooth-crate-tests"

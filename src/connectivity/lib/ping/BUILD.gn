@@ -70,6 +70,7 @@ rustc_library("ping") {
     ]
   }
 }
+
 rustc_test("ping_test") {
   sources = [
     "src/fuchsia.rs",
@@ -93,6 +94,7 @@ rustc_test("ping_test") {
   deps += [ "//src/connectivity/lib/net-declare" ]
   configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
+
 fuchsia_unittest_package("ping-tests") {
   package_name = "ping-tests-gn"
   component_name = "ping-tests"

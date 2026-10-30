@@ -83,6 +83,7 @@ executable("bin") {
   deps = [ "//sdk/lib/syslog/cpp" ]
   output_name = "structured_config_bad_values"
 }
+
 rustc_test("cpp_sc_bad_values_test_bin") {
   sources = [ "src/test.rs" ]
   source_root = "src/test.rs"
