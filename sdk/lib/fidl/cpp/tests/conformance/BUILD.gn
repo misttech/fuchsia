@@ -2,20 +2,30 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/bazel_test_suite.gni")
 import("//build/components.gni")
 import("//build/fidl/fidl.gni")
 import("//build/test.gni")
 import("//src/tests/fidl/conformance_suite/gidl-conformance-suite.gni")
 import("//tools/fidl/gidl/gidl.gni")
 
+bazel_test_suite("bazel_tests") {
+  target_tests =
+      [ "//sdk/lib/fidl/cpp/tests/conformance:fidl_cpp_conformance_tests" ]
+  host_tests =
+      [ "//sdk/lib/fidl/cpp/tests/conformance:fidl_cpp_conformance_tests_bin" ]
+}
+
 group("conformance") {
   testonly = true
   deps = [
+    ":bazel_tests",
     ":fidl_cpp_conformance_tests",
     ":fidl_cpp_conformance_tests_bin($host_toolchain)",
   ]
 }
 
+# LINT.IfChange
 gidl_output_prefix = "conformance_suite__"
 
 gidl_deps = []
@@ -42,8 +52,11 @@ test("fidl_cpp_conformance_tests_bin") {
 }
 
 fuchsia_unittest_package("fidl_cpp_conformance_tests") {
+  package_name = "fidl_cpp_conformance_tests-gn"
   deps = [ ":fidl_cpp_conformance_tests_bin" ]
 }
+
+# LINT.ThenChange(//sdk/lib/fidl/cpp/tests/conformance/BUILD.bazel)
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
@@ -77,7 +90,7 @@ source_set("conformance_utils") {
   public_deps = [
     "//sdk/lib/fidl/cpp/wire",
     "//sdk/lib/fidl_base",
-    "//zircon/system/public",
+    "//src/zircon/lib/zircon",
     "//zircon/system/ulib/zx",
     "//zircon/system/ulib/zxtest",
   ]
