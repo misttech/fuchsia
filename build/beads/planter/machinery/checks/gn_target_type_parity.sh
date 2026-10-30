@@ -45,6 +45,12 @@ set -euo pipefail
 #      `fuchsia_component` (what bazel2gn emits for `fx_component(testonly =
 #      True)`), because `//build/components/fuchsia_test_component.gni` only
 #      adds `testonly = true` and `test_type` metadata to `fuchsia_component`.
+#      A GN `cc_test_executable` may become the testonly `executable` that
+#      bazel2gn emits for `fx_cc_binary(testonly = True)`, but:
+#   6. cc_test_executable_lost_lto_config (error): the `executable` lacks the
+#      `//build/config/lto:no-fat-lto-objects-linking` config that
+#      `cc_test_executable` adds unless `disable_lto = false`; set it with
+#      `build_flags` on the `fx_cc_binary`.
 # - If the GN target is gone (BUILD.gn deleted in a full removal, or the target
 #   removed) and BUILD.bazel defines a cc_library or fx_cc_library of the same
 #   name, its `alwayslink` must match the GN type:
@@ -663,6 +669,42 @@ def append_template_parity_info(
         )
 
 
+NO_FAT_LTO_LINKING = "//build/config/lto:no-fat-lto-objects-linking"
+
+
+# GN `cc_test_executable()` (//build/testing/cc_test_executable.gni), and GN `test()` which wraps
+# it, add `configs += [ NO_FAT_LTO_LINKING ]` unless `disable_lto = false`. A bazel2gn-generated
+# `executable()` only gets it from `build_flags` on the Bazel `fx_cc_binary`, so report a
+# conversion that drops it.
+def append_lost_lto_config_error(
+    findings, before, after, gn_rel, label, name, line, was_tmpl, old_name=None
+):
+    old_body = gn_target_body(before, was_tmpl, old_name or name)
+    if old_body is None or re.search(r"\bdisable_lto\s*=\s*false\b", old_body):
+        return
+    new_body = gn_target_body(after, "executable", name)
+    if new_body is None or NO_FAT_LTO_LINKING in new_body:
+        return
+    findings.append(
+        {
+            "source": "gn_target_type_parity",
+            "category": "cc_test_executable_lost_lto_config",
+            "severity": "ERROR",
+            "file": gn_rel,
+            "line": line,
+            "message": (
+                f"`{label}` was GN `{was_tmpl}`, which links with `{NO_FAT_LTO_LINKING}`\n"
+                "unless it sets `disable_lto = false`, but the bazel2gn-generated `executable`\n"
+                "does not, so the migration changes how the test links in GN and Bazel."
+            ),
+            "remediation": (
+                f'Add `build_flags = ["{NO_FAT_LTO_LINKING}"]` to the Bazel\n'
+                "`fx_cc_binary(testonly = True)`; bazel2gn turns it into `configs +=`."
+            ),
+        }
+    )
+
+
 # Check whether a pre-migration GN target was a unittest/test component that maps to
 # fx_test_component -> fuchsia_test_component when packaged via fx_package(test_components).
 def is_test_root_component_in_base(gn_text, name, old_types):
@@ -762,6 +804,17 @@ def record_renamed_unwrap_template_parity(
                         new_line,
                         next(iter(old_types)),
                         "executable",
+                        old_name=old_name,
+                    )
+                    append_lost_lto_config_error(
+                        findings,
+                        before,
+                        after,
+                        gn_rel,
+                        f"//{os.path.dirname(gn_rel)}:{new_name}",
+                        new_name,
+                        new_line,
+                        next(iter(old_types)),
                         old_name=old_name,
                     )
 
@@ -890,7 +943,8 @@ for pkg in sorted(candidate_dirs):
                     )
             # Accept a GN cc_test_executable (or test when fx_cc_test.bzl is unavailable) converted
             # from a Bazel fx_cc_binary(testonly = True): bazel2gn maps fx_cc_binary/cc_binary to
-            # executable() and has no form that emits cc_test_executable().
+            # executable() and has no form that emits cc_test_executable(). The executable must
+            # keep cc_test_executable's LTO config (see append_lost_lto_config_error).
             allowed_exec_tmpls = (
                 ({"cc_test_executable"},)
                 if FX_CC_TEST_AVAILABLE
@@ -916,8 +970,14 @@ for pkg in sorted(candidate_dirs):
                             "testonly `executable` from a Bazel fx_cc_binary(testonly = True); bazel2gn\n"
                             f"has no form for {was_tmpl}, so this type change is expected."
                         ),
-                        "remediation": "None needed; do not dispute or work around this INFO.",
+                        "remediation": (
+                            "None needed for the type change; do not dispute or work around this\n"
+                            "INFO. Keep the LTO config (`cc_test_executable_lost_lto_config`)."
+                        ),
                     }
+                )
+                append_lost_lto_config_error(
+                    findings, before, after, gn_rel, label, name, line, was_tmpl, old_name=orig_name
                 )
                 append_template_parity_info(
                     findings,

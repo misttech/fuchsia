@@ -197,8 +197,12 @@ the Bazel test keeps the label).
   `fx_cc_binary(testonly = True)` for a GN `test()`: bazel2gn turns it into `executable()`, which
   drops `test()`'s FatLTO-disabled linking, its `test/<output_name>` package path and its host
   `host_test()` (`gn_target_type_parity` reports this as ERROR `test_became_executable`; do not
-  dispute it). A GN `cc_test_executable()` still becomes `fx_cc_binary(testonly = True)` (INFO
-  `cc_test_executable_converted`). In Bazel, `fx_unittest_package` installs every test binary to
+  dispute it). A GN `cc_test_executable()` becomes `fx_cc_binary(testonly = True,
+  build_flags = ["//build/config/lto:no-fat-lto-objects-linking"])` (INFO
+  `cc_test_executable_converted`): `cc_test_executable()` is an `executable()` that adds that
+  config unless it sets `disable_lto = false` (then omit `build_flags`), and bazel2gn turns
+  `build_flags` into `configs +=`. Without it, `gn_target_type_parity` reports ERROR
+  `cc_test_executable_lost_lto_config`. In Bazel, `fx_unittest_package` installs every test binary to
   `bin/` while the GN copy of a `test()` installs to `test/`; both sides generate their own
   manifest, so this is expected: do not unroll the package or add a `.cml` to change it. In an
   explicit custom-manifest package, wrap the `fx_cc_test` in
@@ -241,7 +245,8 @@ the Bazel test keeps the label).
   under `src/sys/test_runners/`) when a shard directory has no Bazel target yet.
 - **Constructing a custom-manifest test package explicitly** (only when `fx_unittest_package` / `fx_unittest_component` cannot be used):
   1. Test binary: C++ `fx_cc_test(tags = ["manual"])` for a GN `test()` (or
-     `fx_cc_binary(testonly = True, tags = ["manual"])` for a GN `cc_test_executable()`/`executable()`)
+     `fx_cc_binary(testonly = True, tags = ["manual"])` for a GN `executable()`, plus
+     `build_flags = ["//build/config/lto:no-fat-lto-objects-linking"]` for a GN `cc_test_executable()`)
      with the test main in `deps`; Rust standalone `rustc_test(...)`
      from `//build/bazel/rules/rust:rustc_test.bzl` (never `with_unit_tests` on `rustc_library`/`rustc_binary`).
   2. `fx_packaged_binary(testonly = True, binary = ..., binary_name = ...)`
@@ -321,7 +326,8 @@ sentinel, and `group("tests")` lists `":foo-tests-package"`. C++ unit tests work
 `test("foo_unittest_bin")` becomes
 `fx_cc_test(name = "foo_unittest_bin", tags = ["manual"], deps = [..., "//src/lib/fxl/test:gtest_main"])`
 in `unit_tests = [":foo_unittest_bin"]` (bazel2gn generates `test("foo_unittest_bin")`), and a GN
-`cc_test_executable()` becomes `fx_cc_binary(testonly = True, tags = ["manual"], ...)`. Wire `":foo-tests"` into `group("tests")` in the leaf
+`cc_test_executable()` becomes
+`fx_cc_binary(testonly = True, build_flags = ["//build/config/lto:no-fat-lto-objects-linking"], tags = ["manual"], ...)`. Wire `":foo-tests"` into `group("tests")` in the leaf
 `BUILD.gn` and `"//src/area/foo:foo-tests"` into `test_suite(name = "target_tests")` in
 `//src/area/BUILD.bazel` (or into a local `bazel_test_suite("bazel_tests")` only when no ancestor
 test suite exists).
