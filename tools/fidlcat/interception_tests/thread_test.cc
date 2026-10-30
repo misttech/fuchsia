@@ -406,6 +406,38 @@ TEST_F(InterceptionWorkflowTestArm, ZxThreadReadStateVectorRegsAArch64) {
       "    }\n");
 }
 
+namespace {
+
+TEST_F(InterceptionWorkflowTestArm, ZxThreadReadStateArm64Sve) {
+  zx_arm64_thread_state_sve_regs_t buffer;
+  memset(&buffer, 0, sizeof(buffer));
+  for (size_t i = 0; i < sizeof(buffer.p) / sizeof(buffer.p[0]); ++i) {
+    buffer.p[i] = static_cast<uint16_t>(0x1111 * i);
+  }
+  buffer.ffr = 0x00ff;
+  THREAD_READ_STATE_DISPLAY_TEST_CONTENT(
+      ZX_OK, ZX_THREAD_STATE_ARM64_SVE, buffer,
+      "\n"
+      "\x1B[32m0.000000\x1B[0m "
+      "test_3141 \x1B[31m3141\x1B[0m:\x1B[31m8764\x1B[0m "
+      "zx_thread_read_state("
+      "handle: \x1B[32mhandle\x1B[0m = \x1B[31mcefa1db0\x1B[0m, "
+      "kind: \x1B[32mzx.thread_state_topic\x1B[0m = \x1B[34mZX_THREAD_STATE_ARM64_SVE\x1B[0m, "
+      "buffer_size: \x1B[32msize\x1B[0m = \x1B[34m34\x1B[0m)\n"
+      "\x1B[32m0.000000\x1B[0m "
+      "  -> \x1B[32mZX_OK\x1B[0m\n"
+      "    regs: \x1B[32mzx_arm64_thread_state_sve_regs_t\x1B[0m = {\n"
+      "      p: vector<\x1B[32muint16\x1B[0m> = [ "
+      "\x1B[34m0000\x1B[0m, \x1B[34m1111\x1B[0m, \x1B[34m2222\x1B[0m, \x1B[34m3333\x1B[0m, "
+      "\x1B[34m4444\x1B[0m, \x1B[34m5555\x1B[0m, \x1B[34m6666\x1B[0m, \x1B[34m7777\x1B[0m, "
+      "\x1B[34m8888\x1B[0m, \x1B[34m9999\x1B[0m, \x1B[34maaaa\x1B[0m, \x1B[34mbbbb\x1B[0m, "
+      "\x1B[34mcccc\x1B[0m, \x1B[34mdddd\x1B[0m, \x1B[34meeee\x1B[0m, \x1B[34mffff\x1B[0m ]\n"
+      "      ffr: \x1B[32muint16\x1B[0m = \x1B[34m00ff\x1B[0m\n"
+      "    }\n");
+}
+
+}  // namespace
+
 TEST_F(InterceptionWorkflowTestX64, ZxThreadReadStateVectorRegsX64) {
   zx_thread_state_vector_regs_x86_t buffer;
   memset(&buffer, 0, sizeof(buffer));
@@ -1160,6 +1192,38 @@ TEST_F(InterceptionWorkflowTestArm, ZxThreadWriteStateVectorRegsAArch64) {
       "\x1B[32m0.000000\x1B[0m "
       "  -> \x1B[32mZX_OK\x1B[0m\n");
 }
+
+namespace {
+
+TEST_F(InterceptionWorkflowTestArm, ZxThreadWriteStateArm64Sve) {
+  zx_arm64_thread_state_sve_regs_t buffer;
+  memset(&buffer, 0, sizeof(buffer));
+  for (size_t i = 0; i < sizeof(buffer.p) / sizeof(buffer.p[0]); ++i) {
+    buffer.p[i] = static_cast<uint16_t>(0x1111 * i);
+  }
+  buffer.ffr = 0x00ff;
+  THREAD_WRITE_STATE_DISPLAY_TEST_CONTENT(
+      ZX_OK, ZX_THREAD_STATE_ARM64_SVE, buffer,
+      "\n"
+      "\x1B[32m0.000000\x1B[0m "
+      "test_3141 \x1B[31m3141\x1B[0m:\x1B[31m8764\x1B[0m "
+      "zx_thread_write_state("
+      "handle: \x1B[32mhandle\x1B[0m = \x1B[31mcefa1db0\x1B[0m, "
+      "kind: \x1B[32mzx.thread_state_topic\x1B[0m = \x1B[34mZX_THREAD_STATE_ARM64_SVE\x1B[0m, "
+      "buffer_size: \x1B[32msize\x1B[0m = \x1B[34m34\x1B[0m)\n"
+      "  regs: \x1B[32mzx_arm64_thread_state_sve_regs_t\x1B[0m = {\n"
+      "    p: vector<\x1B[32muint16\x1B[0m> = [ "
+      "\x1B[34m0000\x1B[0m, \x1B[34m1111\x1B[0m, \x1B[34m2222\x1B[0m, \x1B[34m3333\x1B[0m, "
+      "\x1B[34m4444\x1B[0m, \x1B[34m5555\x1B[0m, \x1B[34m6666\x1B[0m, \x1B[34m7777\x1B[0m, "
+      "\x1B[34m8888\x1B[0m, \x1B[34m9999\x1B[0m, \x1B[34maaaa\x1B[0m, \x1B[34mbbbb\x1B[0m, "
+      "\x1B[34mcccc\x1B[0m, \x1B[34mdddd\x1B[0m, \x1B[34meeee\x1B[0m, \x1B[34mffff\x1B[0m ]\n"
+      "    ffr: \x1B[32muint16\x1B[0m = \x1B[34m00ff\x1B[0m\n"
+      "  }\n"
+      "\x1B[32m0.000000\x1B[0m "
+      "  -> \x1B[32mZX_OK\x1B[0m\n");
+}
+
+}  // namespace
 
 TEST_F(InterceptionWorkflowTestX64, ZxThreadWriteStateVectorRegsX64) {
   zx_thread_state_vector_regs_x86_t buffer;

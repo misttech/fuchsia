@@ -906,6 +906,7 @@ void PrettyPrinter::DisplayThreadStateTopic(zx_thread_state_topic_t topic) {
     ThreadStateTopicCase(ZX_THREAD_STATE_VECTOR_REGS);
     ThreadStateTopicCase(ZX_THREAD_STATE_DEBUG_REGS);
     ThreadStateTopicCase(ZX_THREAD_STATE_SINGLE_STEP);
+    ThreadStateTopicCase(ZX_THREAD_STATE_ARM64_SVE);
     default:
       *this << static_cast<uint32_t>(topic) << ResetColor;
       return;

@@ -2187,6 +2187,40 @@ const ZxThreadStateVectorRegsAArch64* ZxThreadStateVectorRegsAArch64::GetClass()
   return instance_;
 }
 
+namespace {
+
+class ZxArm64ThreadStateSveRegs : public Class<zx_arm64_thread_state_sve_regs_t> {
+ public:
+  static const ZxArm64ThreadStateSveRegs* GetClass();
+
+  static std::pair<const uint16_t*, int> p(const zx_arm64_thread_state_sve_regs_t* from) {
+    return std::make_pair(from->p, sizeof(from->p) / sizeof(from->p[0]));
+  }
+  static uint16_t ffr(const zx_arm64_thread_state_sve_regs_t* from) { return from->ffr; }
+
+ private:
+  ZxArm64ThreadStateSveRegs() : Class("zx_arm64_thread_state_sve_regs_t") {
+    AddField(std::make_unique<DynamicArrayField<zx_arm64_thread_state_sve_regs_t, uint16_t, int>>(
+        "p", SyscallType::kUint16Hexa, p));
+    AddField(std::make_unique<ClassField<zx_arm64_thread_state_sve_regs_t, uint16_t>>(
+        "ffr", SyscallType::kUint16Hexa, ffr));
+  }
+  ZxArm64ThreadStateSveRegs(const ZxArm64ThreadStateSveRegs&) = delete;
+  ZxArm64ThreadStateSveRegs& operator=(const ZxArm64ThreadStateSveRegs&) = delete;
+  static ZxArm64ThreadStateSveRegs* instance_;
+};
+
+ZxArm64ThreadStateSveRegs* ZxArm64ThreadStateSveRegs::instance_ = nullptr;
+
+const ZxArm64ThreadStateSveRegs* ZxArm64ThreadStateSveRegs::GetClass() {
+  if (instance_ == nullptr) {
+    instance_ = new ZxArm64ThreadStateSveRegs;
+  }
+  return instance_;
+}
+
+}  // namespace
+
 class ZxThreadStateVectorRegsX86Zmm : public Class<zx_thread_state_vector_regs_x86_zmm_t> {
  public:
   static const ZxThreadStateVectorRegsX86Zmm* GetClass();
@@ -3650,6 +3684,7 @@ void SyscallDecoderDispatcher::Populate() {
     const uint8_t kZxThreadReadState_ZX_THREAD_STATE_VECTOR_REGS_X64 = 5;
     const uint8_t kZxThreadReadState_ZX_THREAD_STATE_DEBUG_REGS_Arm64 = 6;
     const uint8_t kZxThreadReadState_ZX_THREAD_STATE_DEBUG_REGS_X64 = 7;
+    const uint8_t kZxThreadReadState_ZX_THREAD_STATE_ARM64_SVE = 8;
     // Inputs
     zx_thread_read_state->Input<zx_handle_t>("handle",
                                              std::make_unique<ArgumentAccess<zx_handle_t>>(handle));
@@ -3719,6 +3754,14 @@ void SyscallDecoderDispatcher::Populate() {
             std::make_unique<ArgumentAccess<uint8_t>>(buffer))
         ->DisplayIfEqual<uint32_t>(std::make_unique<ArgumentAccess<uint32_t>>(kind),
                                    ZX_THREAD_STATE_SINGLE_STEP);
+    zx_thread_read_state
+        ->OutputObject<zx_arm64_thread_state_sve_regs_t>(
+            ZX_OK, "regs", std::make_unique<ArgumentAccess<uint8_t>>(buffer),
+            ZxArm64ThreadStateSveRegs::GetClass())
+        ->DisplayIfEqual<uint32_t>(std::make_unique<ArgumentAccess<uint32_t>>(kind),
+                                   ZX_THREAD_STATE_ARM64_SVE)
+        ->DisplayIfArch(debug::Arch::kArm64)
+        ->SetId(kZxThreadReadState_ZX_THREAD_STATE_ARM64_SVE);
   }
 
   {
@@ -3736,6 +3779,7 @@ void SyscallDecoderDispatcher::Populate() {
     const uint8_t kZxThreadWriteState_ZX_THREAD_STATE_VECTOR_REGS_X64 = 5;
     const uint8_t kZxThreadWriteState_ZX_THREAD_STATE_DEBUG_REGS_Arm64 = 6;
     const uint8_t kZxThreadWriteState_ZX_THREAD_STATE_DEBUG_REGS_X64 = 7;
+    const uint8_t kZxThreadWriteState_ZX_THREAD_STATE_ARM64_SVE = 8;
     // Inputs
     zx_thread_write_state->Input<zx_handle_t>(
         "handle", std::make_unique<ArgumentAccess<zx_handle_t>>(handle));
@@ -3804,6 +3848,14 @@ void SyscallDecoderDispatcher::Populate() {
             "single_step", SyscallType::kUint32, std::make_unique<ArgumentAccess<uint8_t>>(buffer))
         ->DisplayIfEqual<uint32_t>(std::make_unique<ArgumentAccess<uint32_t>>(kind),
                                    ZX_THREAD_STATE_SINGLE_STEP);
+    zx_thread_write_state
+        ->InputObject<zx_arm64_thread_state_sve_regs_t>(
+            "regs", std::make_unique<ArgumentAccess<uint8_t>>(buffer),
+            ZxArm64ThreadStateSveRegs::GetClass())
+        ->DisplayIfEqual<uint32_t>(std::make_unique<ArgumentAccess<uint32_t>>(kind),
+                                   ZX_THREAD_STATE_ARM64_SVE)
+        ->DisplayIfArch(debug::Arch::kArm64)
+        ->SetId(kZxThreadWriteState_ZX_THREAD_STATE_ARM64_SVE);
   }
 
   {
