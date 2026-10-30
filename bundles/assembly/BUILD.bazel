@@ -3868,7 +3868,7 @@ assembly_input_bundle(
 assembly_input_bundle(
     name = "wlan_wlanix",
     base_packages = [
-        "//bundles/assembly/bazel_inputs/src/connectivity/wlan/wlanix",
+        "//src/connectivity/wlan/wlanix",
     ],
     core_shards = [
         "//src/connectivity/wlan/wlanix:meta/wlanix.core_shard.cml",

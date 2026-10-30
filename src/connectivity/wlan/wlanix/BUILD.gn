@@ -2,12 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components.gni")
-
-fuchsia_package("wlanix") {
-  deps = [ ":component" ]
-}
-
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -70,7 +64,6 @@ rustc_binary("wlanix_bin") {
     "src/security/wep.rs",
   ]
   output_name = "wlanix"
-  source_root = "src/main.rs"
   edition = "2024"
   lint_config = "//build/config/rust/lints:clippy_warn_all"
   proc_macro_deps = [
@@ -138,7 +131,6 @@ rustc_test("wlanix_bin_test") {
     "src/security/mod.rs",
     "src/security/wep.rs",
   ]
-  source_root = "src/main.rs"
   edition = "2024"
   proc_macro_deps = [
     "//third_party/rust_crates:async-trait",
@@ -190,6 +182,7 @@ rustc_test("wlanix_bin_test") {
            "//third_party/rust_crates:rand",
            "//third_party/rust_crates:test-case",
          ]
+  source_root = "src/main.rs"
 }
 fuchsia_unittest_package("wlanix-tests") {
   package_name = "wlanix-tests-gn"

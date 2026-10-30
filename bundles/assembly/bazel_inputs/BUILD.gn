@@ -1297,7 +1297,7 @@ group("wlan_virtio_hwsim_driver") {
 }
 
 group("wlan_wlanix") {
-  deps = [ "//bundles/assembly/bazel_inputs/src/connectivity/wlan/wlanix" ]
+  deps = []
 }
 
 group("location_emergency") {
