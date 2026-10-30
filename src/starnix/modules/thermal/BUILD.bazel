@@ -1,0 +1,129 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "thermal-netlink",
+    srcs = ["netlink_types.rs"],
+    crate_root = "netlink_types.rs",
+    edition = "2024",
+    visibility = ["//src/starnix/tests/thermal:__pkg__"],
+    deps = [
+        "//src/starnix/lib/linux_uapi",
+        "//src/starnix/lib/third_party/rust_netlink/netlink_packet_generic",
+        "//src/starnix/lib/third_party/rust_netlink/netlink_packet_utils",
+        "//third_party/rust_crates/vendor:anyhow",
+    ],
+)
+
+rustc_library(
+    name = "thermal",
+    srcs = [
+        "cooling.rs",
+        "family.rs",
+        "lib.rs",
+        "powercap.rs",
+        "thermal_zone.rs",
+    ],
+    crate_name = "starnix_modules_thermal",
+    crate_root = "lib.rs",
+    edition = "2024",
+    lint_config = "//src/starnix/build:kernel_library_config",
+    proc_macro_deps = ["//third_party/rust_crates/vendor:async-trait"],
+    visibility = ["//src/starnix/modules:__pkg__"],
+    deps = [
+        ":thermal-netlink",
+        "//sdk/fidl/fuchsia.hardware.temperature:fuchsia.hardware.temperature_rust",
+        "//sdk/fidl/fuchsia.hardware.trippoint:fuchsia.hardware.trippoint_rust",
+        "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_rust",
+        "//sdk/fidl/fuchsia.power.powercap:fuchsia.power.powercap_rust",
+        "//sdk/fidl/fuchsia.thermal:fuchsia.thermal_rust",
+        "//sdk/rust/zx",
+        "//src/connectivity/network/netlink",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/mpmc",
+        "//src/starnix/kernel/core",
+        "//src/starnix/lib/linux_uapi",
+        "//src/starnix/lib/starnix_logging",
+        "//src/starnix/lib/starnix_sync",
+        "//src/starnix/lib/starnix_uapi",
+        "//src/starnix/lib/third_party/rust_netlink/netlink_packet_core",
+        "//src/starnix/lib/third_party/rust_netlink/netlink_packet_generic",
+        "//src/starnix/lib/third_party/rust_netlink/netlink_packet_utils",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+# TODO(https://fxbug.dev/42059075): Re-enable starnix in these environments.
+# @bazel2gn:raw_attribute:exclude_toolchain_tags = [ "asan", "hwasan" ]
+# @bazel2gn:raw_attribute:output_name = "starnix_modules_thermal_lib_test"
+rustc_test(
+    name = "thermal_test",
+    crate = ":thermal",
+    edition = "2024",
+    lint_config = "//src/starnix/config:starnix_clippy_lints_test",
+    deps = ["//src/lib/fuchsia"],
+)
+
+fx_packaged_binary(
+    name = "thermal_test_packaged_bin",
+    testonly = True,
+    binary = ":thermal_test",
+    binary_name = "starnix_modules_thermal_lib_test",
+)
+
+fx_component_manifest(
+    name = "starnix-thermal-module-tests-manifest",
+    testonly = True,
+    component_name = "starnix-thermal-module-tests",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/starnix:unit_test.shard.cml",
+    ],
+    manifest = "meta/starnix_thermal_module_tests.cml",
+)
+
+fx_test_component(
+    name = "starnix-thermal-module-tests-component",
+    compiled_manifest = ":starnix-thermal-module-tests-manifest",
+    component_name = "starnix-thermal-module-tests",
+    test_type = "starnix",
+    deps = [
+        ":thermal_test_packaged_bin",
+        # In GN, //src/starnix/kernel/vdso is a resource() propagated through
+        # //src/starnix/kernel/core's deps.
+        "//src/starnix/kernel/vdso",
+    ],
+)
+
+fx_package(
+    name = "starnix-thermal-module-tests-package",
+    package_name = "starnix-thermal-module-tests",
+    test_components = [":starnix-thermal-module-tests-component"],
+)
+
+fx_test(
+    name = "starnix-thermal-module-tests",
+    max_log_severity = "ERROR",
+    package = ":starnix-thermal-module-tests-package",
+)
