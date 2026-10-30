@@ -6,11 +6,19 @@ load(
     "//build/bazel/rules/components:fx_component.bzl",
     "fx_component",
     "fx_component_manifest",
+    "fx_test_component",
 )
 load(
     "//build/bazel/rules/packages:fx_package.bzl",
     "fx_package",
 )
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -22,6 +30,106 @@ exports_files(
         "meta/sockettunnel.core_shard.cml",
     ],
     visibility = ["//bundles/assembly:__subpackages__"],
+)
+
+rustc_library(
+    name = "nanohub",
+    srcs = [
+        "datachannel_file.rs",
+        "display_sysfs_files.rs",
+        "lib.rs",
+        "nanohub.rs",
+        "nanohub_comms_directory.rs",
+        "nanohub_firmware_file.rs",
+        "nanohub_gpio_stub.rs",
+        "nanohub_socket_file.rs",
+        "nanohub_sysfs_files.rs",
+        "socket_tunnel_file.rs",
+        "sysfs.rs",
+    ],
+    crate_name = "starnix_modules_nanohub",
+    crate_root = "lib.rs",
+    edition = "2024",
+    lint_config = "//src/starnix/build:kernel_library_config",
+    visibility = ["//src/starnix/modules:__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.hardware.backlight:fuchsia.hardware.backlight_rust",
+        "//sdk/fidl/fuchsia.hardware.google.nanohub:fuchsia.hardware.google.nanohub_rust",
+        "//sdk/fidl/fuchsia.hardware.serial:fuchsia.hardware.serial_rust",
+        "//sdk/fidl/fuchsia.hardware.sockettunnel:fuchsia.hardware.sockettunnel_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fdio/rust:fdio",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-fs",
+        "//src/starnix/kernel/core",
+        "//src/starnix/lib/starnix_logging",
+        "//src/starnix/lib/starnix_sync",
+        "//src/starnix/lib/starnix_syscalls",
+        "//src/starnix/lib/starnix_uapi",
+        "//src/starnix/modules/serial",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
+
+# TODO(https://fxbug.dev/42059075): Re-enable starnix in these environments.
+# @bazel2gn:raw_attribute:exclude_toolchain_tags = [ "asan", "hwasan" ]
+rustc_test(
+    name = "nanohub_test",
+    crate = ":nanohub",
+    crate_name = "starnix_modules_nanohub_lib_test",
+    edition = "2024",
+    lint_config = "//src/starnix/build:kernel_library_config",
+    deps = [
+        "//src/lib/fuchsia",
+    ],
+)
+
+fx_packaged_binary(
+    name = "nanohub_test_packaged_bin",
+    testonly = True,
+    binary = ":nanohub_test",
+    binary_name = "starnix_modules_nanohub_lib_test",
+)
+
+fx_component_manifest(
+    name = "starnix-nanohub-tests-manifest",
+    testonly = True,
+    component_name = "starnix-nanohub-tests",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/starnix:unit_test.shard.cml",
+    ],
+    manifest = "meta/starnix_nanohub_tests.cml",
+)
+
+fx_test_component(
+    name = "starnix-nanohub-tests-component",
+    compiled_manifest = ":starnix-nanohub-tests-manifest",
+    component_name = "starnix-nanohub-tests",
+    test_type = "starnix",
+    deps = [
+        ":nanohub_test_packaged_bin",
+        # In GN, //src/starnix/kernel/vdso is a resource() propagated through
+        # //src/starnix/kernel/core's deps.
+        "//src/starnix/kernel/vdso",
+    ],
+)
+
+fx_package(
+    name = "starnix-nanohub-tests-package",
+    package_name = "starnix-nanohub-tests",
+    test_components = [":starnix-nanohub-tests-component"],
+)
+
+fx_test(
+    name = "starnix-nanohub-tests",
+    # Tests exercise failure cases, so ERROR logs are expected.
+    max_log_severity = "ERROR",
+    package = ":starnix-nanohub-tests-package",
 )
 
 # google_display
