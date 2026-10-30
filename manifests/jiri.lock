@@ -706,8 +706,8 @@
     },
     {
         "package": "fuchsia/third_party/tzres",
-        "version": "version:2026e",
-        "instance_id": "ccDlh9MxwdISXQQrtExMOTlEDku-MSR4-9dgODwA5osC"
+        "version": "version:2026f",
+        "instance_id": "oDiuP4GJgBYs187KDuheRolkrKJDmkUtRXLnlkJXQKIC"
     },
     {
         "package": "fuchsia/third_party/ucd",
