@@ -41,6 +41,37 @@ class QueriesTest(unittest.TestCase):
     def tearDownClass(cls) -> None:
         cls._exit_stack.close()
 
+    def test_query_as(self) -> None:
+        from typing import NamedTuple
+
+        class TestRow(NamedTuple):
+            val: int
+            label: str
+
+        rows = list(
+            self.importer._query_as(
+                TestRow, "SELECT 123 AS val, 'sample' AS label"
+            )
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].val, 123)
+        self.assertEqual(rows[0].label, "sample")
+        self.assertIsInstance(rows[0], TestRow)
+
+        # Mismatched columns must raise ValueError
+        with self.assertRaises(ValueError):
+            list(
+                self.importer._query_as(
+                    TestRow, "SELECT 123 AS wrong_col, 'sample' AS label"
+                )
+            )
+
+    def test_legacy_query_method_removed(self) -> None:
+        self.assertFalse(
+            hasattr(trace_importing_fxt._FxtImporter, "_query"),
+            "_query must be deleted in favor of typed _query_as",
+        )
+
     def test_get_slices_with_filtering(self) -> None:
         # 1. Filter by pattern
         importer_filtered = trace_importing_fxt._FxtImporter(
@@ -95,12 +126,13 @@ class QueriesTest(unittest.TestCase):
     def test_get_args_map_excludes_chromium_binary_data(self) -> None:
         fresh_importer = trace_importing_fxt._FxtImporter(self.session)
         with mock.patch.object(
-            fresh_importer, "_query", wraps=fresh_importer._query
-        ) as mock_query:
+            fresh_importer, "_query_as", wraps=fresh_importer._query_as
+        ) as mock_query_as:
             args_map = fresh_importer._get_args_map()
 
-        mock_query.assert_called_once()
-        executed_sql = mock_query.call_args[0][0]
+        mock_query_as.assert_called_once()
+        row_type, executed_sql = mock_query_as.call_args[0]
+        self.assertIs(row_type, trace_importing_fxt._ArgRow)
         self.assertIn("WHERE key NOT LIKE 'debug.params.%.data'", executed_sql)
         self.assertGreater(len(args_map), 0)
 
@@ -118,13 +150,25 @@ class QueriesTest(unittest.TestCase):
         self.assertEqual(len(unfiltered), 1)
 
     def test_get_slices(self) -> None:
-        (
-            result_events,
-            slice_id_to_event,
-            slice_parent_map,
-        ) = self.importer.get_slices()
+        fresh_importer = trace_importing_fxt._FxtImporter(self.session)
+        with mock.patch.object(
+            fresh_importer, "_query_as", wraps=fresh_importer._query_as
+        ) as mock_query_as:
+            (
+                result_events,
+                slice_id_to_event,
+                slice_parent_map,
+            ) = fresh_importer.get_slices()
 
-        self.importer._restore_slice_hierarchy(
+        mock_query_as.assert_called()
+        slice_calls = [
+            c
+            for c in mock_query_as.call_args_list
+            if c[0][0] is trace_importing_fxt._SliceRow
+        ]
+        self.assertEqual(len(slice_calls), 1)
+
+        fresh_importer._restore_slice_hierarchy(
             slice_parent_map, slice_id_to_event
         )
         self.assertGreater(len(result_events), 0)
@@ -138,7 +182,19 @@ class QueriesTest(unittest.TestCase):
         self.assertIsInstance(async_events[0], trace_model.AsyncEvent)
 
     def test_get_counter_events(self) -> None:
-        counters = self.importer.get_counter_events()
+        fresh_importer = trace_importing_fxt._FxtImporter(self.session)
+        with mock.patch.object(
+            fresh_importer, "_query_as", wraps=fresh_importer._query_as
+        ) as mock_query_as:
+            counters = fresh_importer.get_counter_events()
+
+        counter_calls = [
+            c
+            for c in mock_query_as.call_args_list
+            if c[0][0] is trace_importing_fxt._CounterRow
+        ]
+        self.assertEqual(len(counter_calls), 1)
+
         self.assertGreater(len(counters.events), 0)
         self.assertIsInstance(counters.events[0], trace_model.CounterEvent)
         self.assertEqual(counters.events[0].name, "cpu_usage")
@@ -152,18 +208,33 @@ class QueriesTest(unittest.TestCase):
         self.assertIsInstance(first_switch, trace_model.ContextSwitch)
 
     def test_get_scheduling_records_end_states(self) -> None:
-        # Columns: ts, cpu, dur, end_state, priority, tid, state
         mock_rows = [
-            ["1000", "0", "100", "R", "3122", "101", "Running"],
-            ["1100", "0", "100", "S", "3122", "102", "Running"],
-            ["1200", "0", "100", "D", "3122", "103", "Running"],
-            ["1300", "0", "100", "T", "3122", "104", "Running"],
-            ["1400", "0", "100", "Z", "3122", "105", "Running"],
+            trace_importing_fxt._SchedRow(
+                1000, 0, 100, "R", 3122, 101, "Running"
+            ),
+            trace_importing_fxt._SchedRow(
+                1100, 0, 100, "S", 3122, 102, "Running"
+            ),
+            trace_importing_fxt._SchedRow(
+                1200, 0, 100, "D", 3122, 103, "Running"
+            ),
+            trace_importing_fxt._SchedRow(
+                1300, 0, 100, "T", 3122, 104, "Running"
+            ),
+            trace_importing_fxt._SchedRow(
+                1400, 0, 100, "Z", 3122, 105, "Running"
+            ),
             # Gap from 1500 to 1600 exercises outgoing_state across an idle gap.
-            ["1600", "0", "100", "X", "3122", "106", "Running"],
-            ["1700", "0", "100", "R", "3122", "107", "Running"],
+            trace_importing_fxt._SchedRow(
+                1600, 0, 100, "X", 3122, 106, "Running"
+            ),
+            trace_importing_fxt._SchedRow(
+                1700, 0, 100, "R", 3122, 107, "Running"
+            ),
         ]
-        with mock.patch.object(self.importer, "_query", return_value=mock_rows):
+        with mock.patch.object(
+            self.importer, "_query_as", return_value=iter(mock_rows)
+        ):
             scheduling = self.importer.get_scheduling_records()
 
         switches = [
@@ -188,13 +259,18 @@ class QueriesTest(unittest.TestCase):
         )
 
     def test_get_scheduling_records_waking_during_idle_gap(self) -> None:
-        # Columns: ts, cpu, dur, end_state, priority, tid, state
         mock_rows = [
-            ["1000", "0", "500", "S", "3122", "101", "Running"],
-            ["2000", "0", "0", "", "0", "102", "W"],
-            ["2500", "0", "500", "R", "3122", "102", "Running"],
+            trace_importing_fxt._SchedRow(
+                1000, 0, 500, "S", 3122, 101, "Running"
+            ),
+            trace_importing_fxt._SchedRow(2000, 0, 0, "", 0, 102, "W"),
+            trace_importing_fxt._SchedRow(
+                2500, 0, 500, "R", 3122, 102, "Running"
+            ),
         ]
-        with mock.patch.object(self.importer, "_query", return_value=mock_rows):
+        with mock.patch.object(
+            self.importer, "_query_as", return_value=iter(mock_rows)
+        ):
             scheduling = self.importer.get_scheduling_records()
 
         records = scheduling.records[0]
@@ -279,16 +355,17 @@ class QueriesTest(unittest.TestCase):
         )
 
     def test_get_scheduling_records_final_outgoing_switch(self) -> None:
-        # Columns: ts, cpu, dur, end_state, priority, tid, state
-        # CPU 0 ends with a closed slice (dur=500, end_state="S") and should
-        # emit a trailing ContextSwitch into IDLE_TID at ts=1500.
-        # CPU 1 ends with an unclosed slice (dur=-1, end_state="") and should
-        # NOT emit a trailing ContextSwitch into IDLE_TID.
         mock_rows = [
-            ["1000", "0", "500", "S", "3122", "101", "Running"],
-            ["1000", "1", "-1", "", "3122", "201", "Running"],
+            trace_importing_fxt._SchedRow(
+                1000, 0, 500, "S", 3122, 101, "Running"
+            ),
+            trace_importing_fxt._SchedRow(
+                1000, 1, -1, "", 3122, 201, "Running"
+            ),
         ]
-        with mock.patch.object(self.importer, "_query", return_value=mock_rows):
+        with mock.patch.object(
+            self.importer, "_query_as", return_value=iter(mock_rows)
+        ):
             scheduling = self.importer.get_scheduling_records()
 
         cpu0_records = scheduling.records[0]
@@ -322,9 +399,19 @@ class QueriesTest(unittest.TestCase):
             slice_id_to_event,
             slice_parent_map,
         ) = self.importer.get_slices()
-        flows = self.importer.get_flow_events(
-            slice_id_to_event, slice_parent_map
-        )
+        with mock.patch.object(
+            self.importer, "_query_as", wraps=self.importer._query_as
+        ) as mock_query_as:
+            flows = self.importer.get_flow_events(
+                slice_id_to_event, slice_parent_map
+            )
+
+        flow_calls = [
+            c
+            for c in mock_query_as.call_args_list
+            if c[0][0] is trace_importing_fxt._FlowRow
+        ]
+        self.assertEqual(len(flow_calls), 1)
 
         flow_events = [
             e for e in flows.events if isinstance(e, trace_model.FlowEvent)

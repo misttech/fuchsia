@@ -77,6 +77,28 @@ class TpShellTest(unittest.TestCase):
                 expected_names = ["example_duration"] * 20
                 self.assertEqual(event_names, expected_names)
 
+    def test_query_rows_types_and_columns(self) -> None:
+        """Tests that query_rows returns typed tuples and column names lazily."""
+        source = importlib.resources.files("test_data").joinpath(
+            "perfetto_golden.fxt"
+        )
+        with importlib.resources.as_file(source) as trace_path:
+            with PerfettoTraceProcessor(str(trace_path)) as tp:
+                cols, rows = tp.query_rows(
+                    "SELECT 42 AS int_col, 3.14 AS float_col, 'hello' AS str_col, NULL AS null_col"
+                )
+                self.assertEqual(
+                    cols, ("int_col", "float_col", "str_col", "null_col")
+                )
+                row_list = list(rows)
+                self.assertEqual(len(row_list), 1)
+                first_row = row_list[0]
+                self.assertEqual(first_row, (42, 3.14, "hello", None))
+                self.assertIsInstance(first_row[0], int)
+                self.assertIsInstance(first_row[1], float)
+                self.assertIsInstance(first_row[2], str)
+                self.assertIsNone(first_row[3])
+
     @unittest.mock.patch("urllib.request.urlopen")
     def test_http_uri_resolver_timeout(
         self, mock_urlopen: unittest.mock.MagicMock

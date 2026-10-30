@@ -716,6 +716,35 @@ class PerfettoTraceProcessor:
             _LOGGER.error(f"Error running query: {e}")
             raise
 
+    def query_rows(
+        self, query: str
+    ) -> tuple[tuple[str, ...], Iterator[tuple[Any, ...]]]:
+        """Runs a SQL query against the trace and returns (column_names, row_iterator).
+
+        Yields rows lazily as tuples of typed values (int, float, str, bytes, None)
+        without allocating full materialized result lists or intermediate dicts.
+        """
+        if not hasattr(self, "_finalizer") or not self._finalizer.alive:
+            raise RuntimeError("Trace processor is closed.")
+
+        if self.debug:
+            _LOGGER.debug(
+                f"--- DEBUG SQL QUERY ---\n{query.strip()}\n-----------------------"
+            )
+
+        try:
+            result_iterator = self._tp.query(query)
+            columns = tuple(result_iterator.column_names)
+
+            def row_gen() -> Iterator[tuple[Any, ...]]:
+                for row in result_iterator:
+                    yield tuple(getattr(row, col) for col in columns)
+
+            return columns, row_gen()
+        except Exception as e:
+            _LOGGER.error(f"Error running query: {e}")
+            raise
+
     def get_tables(self) -> set[str]:
         """Returns the set of table and view names available in the trace database."""
         rows = self.run_query(

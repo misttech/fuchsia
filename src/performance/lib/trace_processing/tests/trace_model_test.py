@@ -64,6 +64,17 @@ class TraceModelTest(unittest.TestCase):
         copied_model: trace_model.Model = model.slice(None, None)
         test_utils.assertModelsEqual(self, model, copied_model)
 
+    def test_assert_models_equal_scheduling_records_mismatch(self) -> None:
+        model_a = test_utils.get_test_model()
+        model_b = test_utils.get_test_model()
+        # Drop one scheduling record from model_b on CPU 0.
+        self.assertGreater(len(model_b.scheduling_records[0]), 1)
+        sched_records = dict(model_b.scheduling_records)
+        sched_records[0] = sched_records[0][:-1]
+        model_b.scheduling_records = sched_records
+        with self.assertRaises(AssertionError):
+            test_utils.assertModelsEqual(self, model_a, model_b)
+
     def test_trace_slicing_sched(self) -> None:
         model: trace_model.Model = test_utils.get_test_model()
 

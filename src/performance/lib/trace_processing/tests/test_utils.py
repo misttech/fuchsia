@@ -661,13 +661,19 @@ def assertModelsEqual(
         assertProcessesEqual(test, a_process, b_process)
 
     test.assertEqual(
-        len(a.scheduling_records),
-        len(b.scheduling_records),
-        f"Error, model scheduling record lengths did not match: {len(a.scheduling_records)} "
-        f"vs {len(b.scheduling_records)}",
+        set(a.scheduling_records.keys()),
+        set(b.scheduling_records.keys()),
+        f"Error, model scheduling record CPUs did not match: "
+        f"{set(a.scheduling_records.keys())} vs {set(b.scheduling_records.keys())}",
     )
 
     for cpu in a.scheduling_records:
+        test.assertEqual(
+            len(a.scheduling_records[cpu]),
+            len(b.scheduling_records[cpu]),
+            f"Error, model scheduling record counts on CPU {cpu} did not match: "
+            f"{len(a.scheduling_records[cpu])} vs {len(b.scheduling_records[cpu])}",
+        )
         for a_record, b_record in zip(
             a.scheduling_records[cpu], b.scheduling_records[cpu]
         ):
