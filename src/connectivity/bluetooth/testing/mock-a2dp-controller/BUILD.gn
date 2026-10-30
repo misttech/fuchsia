@@ -2,14 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components.gni")
-
-fuchsia_component("mock-a2dp-controller") {
-  testonly = true
-  manifest = "meta/mock-a2dp-controller.cml"
-  deps = [ ":mock_a2dp_controller_bin" ]
-}
-
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -52,5 +44,26 @@ if (is_fuchsia) {
       "//third_party/rust_crates:anyhow",
       "//third_party/rust_crates:futures",
     ]
+  }
+}
+if (is_fuchsia) {
+  fuchsia_component_manifest("manifest") {
+    testonly = true
+    component_name = "mock-a2dp-controller"
+    manifest = "meta/mock-a2dp-controller.cml"
+  }
+}
+if (is_fuchsia) {
+  fuchsia_component("mock-a2dp-controller") {
+    testonly = true
+    cm_label = ":manifest"
+    component_name = "mock-a2dp-controller"
+    visibility = [
+      ":*",
+      "//src/connectivity/bluetooth/profiles/bt-hfp-audio-gateway:*",
+      "//src/connectivity/bluetooth/profiles/tests/bt-hfp-audio-gateway-integration-tests:*",
+      "//src/connectivity/bluetooth/testing:*",
+    ]
+    deps = [ ":mock_a2dp_controller_bin" ]
   }
 }

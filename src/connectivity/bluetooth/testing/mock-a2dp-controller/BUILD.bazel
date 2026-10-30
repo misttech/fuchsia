@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("//build/bazel/rules/components:fx_component.bzl", "fx_component", "fx_component_manifest")
+load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
 load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
 
 package(default_applicable_licenses = ["//:license"])
@@ -24,4 +26,35 @@ rustc_binary(
         "//third_party/rust_crates/vendor:anyhow",
         "//third_party/rust_crates/vendor:futures",
     ],
+)
+
+fx_packaged_binary(
+    name = "mock_a2dp_controller_bin_packaged_bin",
+    testonly = True,
+    binary = ":mock_a2dp_controller_bin",
+    binary_name = "mock_a2dp_controller",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+)
+
+fx_component_manifest(
+    name = "manifest",
+    testonly = True,
+    component_name = "mock-a2dp-controller",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/mock-a2dp-controller.cml",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+)
+
+fx_component(
+    name = "mock-a2dp-controller",
+    testonly = True,
+    compiled_manifest = ":manifest",
+    component_name = "mock-a2dp-controller",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//src/connectivity/bluetooth/profiles/bt-hfp-audio-gateway:__pkg__",
+        "//src/connectivity/bluetooth/profiles/tests/bt-hfp-audio-gateway-integration-tests:__pkg__",
+        "//src/connectivity/bluetooth/testing:__pkg__",
+    ],
+    deps = [":mock_a2dp_controller_bin_packaged_bin"],
 )

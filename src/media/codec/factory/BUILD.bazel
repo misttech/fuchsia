@@ -2,9 +2,17 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("//build/bazel/rules/components:cml_shard.bzl", "cml_shard")
+
 package(default_applicable_licenses = ["//:license"])
 
 exports_files(
     ["meta/codec_factory.core_shard.cml"],
     visibility = ["//bundles/assembly:__subpackages__"],
+)
+
+cml_shard(
+    name = "meta/include_codecfactory_testonly.shard",
+    shard = "meta/include_codecfactory_testonly.shard.cml",
+    visibility = ["//src/connectivity/bluetooth/profiles/bt-hfp-audio-gateway:__pkg__"],
 )

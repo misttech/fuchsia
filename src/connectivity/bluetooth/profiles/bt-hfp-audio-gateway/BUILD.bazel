@@ -2,9 +2,221 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/components:structured_config.bzl", "fuchsia_structured_config_rust_lib")
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
 package(default_applicable_licenses = ["//:license"])
 
 exports_files(
     ["meta/bt-hfp-audio-gateway.core_shard.cml"],
     visibility = ["//bundles/assembly:__subpackages__"],
+)
+
+rustc_binary(
+    name = "bin",
+    srcs = [
+        "src/config.rs",
+        "src/error.rs",
+        "src/features.rs",
+        "src/fidl_service.rs",
+        "src/hfp.rs",
+        "src/inspect.rs",
+        "src/main.rs",
+        "src/peer.rs",
+        "src/peer/calls.rs",
+        "src/peer/calls/pending.rs",
+        "src/peer/gain_control.rs",
+        "src/peer/indicators.rs",
+        "src/peer/procedure.rs",
+        "src/peer/procedure/answer.rs",
+        "src/peer/procedure/call_line_ident_notifications.rs",
+        "src/peer/procedure/call_waiting_notifications.rs",
+        "src/peer/procedure/codec_connection_setup.rs",
+        "src/peer/procedure/codec_support.rs",
+        "src/peer/procedure/dtmf.rs",
+        "src/peer/procedure/extended_errors.rs",
+        "src/peer/procedure/hang_up.rs",
+        "src/peer/procedure/hf_indicator_status.rs",
+        "src/peer/procedure/hold.rs",
+        "src/peer/procedure/indicator_status.rs",
+        "src/peer/procedure/indicators_activation.rs",
+        "src/peer/procedure/initiate_call.rs",
+        "src/peer/procedure/nrec.rs",
+        "src/peer/procedure/phone_status.rs",
+        "src/peer/procedure/query_current_calls.rs",
+        "src/peer/procedure/query_operator_selection.rs",
+        "src/peer/procedure/ring.rs",
+        "src/peer/procedure/slc_initialization.rs",
+        "src/peer/procedure/subscriber_number_information.rs",
+        "src/peer/procedure/transfer_hf_indicator.rs",
+        "src/peer/procedure/volume_control.rs",
+        "src/peer/procedure/volume_synchronization.rs",
+        "src/peer/ringer.rs",
+        "src/peer/service_level_connection.rs",
+        "src/peer/slc_request.rs",
+        "src/peer/task.rs",
+        "src/peer/update.rs",
+        "src/profile.rs",
+        "src/service_definitions.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate_name = "bt_hfp_audio_gateway",
+    edition = "2024",
+    proc_macro_deps = ["//third_party/rust_crates/vendor:async-trait"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        ":hfp_profile_config",
+        "//sdk/fidl/fuchsia.bluetooth.bredr:fuchsia.bluetooth.bredr_rust",
+        "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth_rust",
+        "//sdk/fidl/fuchsia.bluetooth.hfp:fuchsia.bluetooth.hfp_rust",
+        "//sdk/fidl/fuchsia.bluetooth.hfp.test:fuchsia.bluetooth.hfp.test_rust",
+        "//sdk/rust/zx",
+        "//src/connectivity/bluetooth/lib/async-helpers",
+        "//src/connectivity/bluetooth/lib/battery-client",
+        "//src/connectivity/bluetooth/lib/bt-hfp",
+        "//src/connectivity/bluetooth/lib/bt-rfcomm",
+        "//src/connectivity/bluetooth/lib/fuchsia-bluetooth",
+        "//src/connectivity/bluetooth/lib/profile-client",
+        "//src/connectivity/bluetooth/lib/vigil",
+        "//src/connectivity/lib/at-commands",
+        "//src/lib/async-utils",
+        "//src/lib/diagnostics/inspect/contrib/rust",
+        "//src/lib/diagnostics/inspect/derive",
+        "//src/lib/diagnostics/inspect/runtime/rust",
+        "//src/lib/diagnostics/inspect/rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:bitflags",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:num-traits",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+fx_packaged_binary(
+    name = "bin_packaged_bin",
+    binary = ":bin",
+    binary_name = "bt_hfp_audio_gateway",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+)
+
+fx_component_manifest(
+    name = "manifest",
+    component_name = "bt-hfp-audio-gateway",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+    ],
+    manifest = "meta/bt-hfp-audio-gateway.cml",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+)
+
+fuchsia_structured_config_rust_lib(
+    name = "hfp_profile_config",
+    cm_label = ":manifest",
+)
+
+fx_component(
+    name = "component",
+    compiled_manifest = ":manifest",
+    component_name = "bt-hfp-audio-gateway",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//src/connectivity/bluetooth/profiles/tests/bt-hfp-audio-gateway-integration-tests:__pkg__",
+        "//src/connectivity/bluetooth/tests/bt-manifest-integration-tests:__pkg__",
+    ],
+    deps = [":bin_packaged_bin"],
+)
+
+rustc_test(
+    name = "bt_hfp_audio_gateway_bin_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":bin",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//sdk/fidl/fuchsia.bluetooth.internal.a2dp:fuchsia.bluetooth.internal.a2dp_rust",
+        "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_rust",
+        "//src/connectivity/bluetooth/lib/async-helpers:async-test-helpers",
+        "//src/connectivity/bluetooth/testing/bt-channel-test-support",
+        "//src/connectivity/bluetooth/testing/test-battery-manager",
+        "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+        "//src/lib/test_util",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:proptest",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+fx_packaged_binary(
+    name = "bt_hfp_audio_gateway_bin_test_packaged_bin",
+    testonly = True,
+    binary = ":bt_hfp_audio_gateway_bin_test",
+    binary_name = "bt_hfp_audio_gateway_bin_test",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+)
+
+fx_component_manifest(
+    name = "test-component-manifest",
+    testonly = True,
+    component_name = "test-component",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+        "//src/media/codec/factory:meta/include_codecfactory_testonly.shard",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/bt-hfp-audio-gateway-tests.cml",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+)
+
+fx_test_component(
+    name = "test-component",
+    compiled_manifest = ":test-component-manifest",
+    component_name = "test-component",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    test_type = "system",
+    deps = [":bt_hfp_audio_gateway_bin_test_packaged_bin"],
+)
+
+# TODO(https://fxbug.dev/571945302): Add subpackages =
+# ["//src/media/codec:codec_factory_for_test"] once it can be a Bazel test
+# subpackage.
+#
+# The GN copy of this test package is written by hand in BUILD.gn, because
+# bazel2gn doesn't support `target_compatible_with` on an `fx_package` with
+# `test_components`, and the GN copy keeps the `codec_factory_for_test`
+# subpackage.
+# @bazel2gn:skip
+fx_package(
+    name = "bt-hfp-audio-gateway-tests-package",
+    package_name = "bt-hfp-audio-gateway-tests",
+    components = [
+        # The component mock for the `fuchsia.bluetooth.internal.a2dp.Controller`
+        # capability.
+        "//src/connectivity/bluetooth/testing/mock-a2dp-controller",
+    ],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    test_components = [":test-component"],
+)
+
+fx_test(
+    name = "bt-hfp-audio-gateway-tests",
+    package = ":bt-hfp-audio-gateway-tests-package",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//src/connectivity/bluetooth:__pkg__"],
 )
