@@ -1,0 +1,42 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/cc:fx_cc_test.bzl", "fx_cc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "dev_urandom_compat",
+    srcs = ["dev_urandom_compat.cc"],
+    hdrs = ["dev_urandom_compat.h"],
+    implementation_deps = [
+        "//sdk/lib/fdio",
+        "//sdk/lib/zxio",
+    ],
+    visibility = [
+        "//src/microfuchsia/tee/binder-proxy:__subpackages__",
+        "//src/microfuchsia/tee/tests/rpc/inet:__pkg__",
+    ],
+    alwayslink = True,
+)
+
+fx_cc_test(
+    name = "dev_urandom_compat_test",
+    srcs = ["dev_urandom_compat_test.cc"],
+    tags = ["manual"],
+    deps = [
+        ":dev_urandom_compat",
+        "//src/lib/fxl/test:gtest_main",
+        "//zircon/system/ulib/fbl",
+    ],
+)
+
+fx_unittest_package(
+    name = "dev_urandom_compat_test_package",
+    package_name = "dev_urandom_compat_test",
+    unit_tests = [":dev_urandom_compat_test"],
+    visibility = ["//src/microfuchsia:__pkg__"],
+)
