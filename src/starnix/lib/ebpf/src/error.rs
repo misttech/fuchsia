@@ -95,6 +95,9 @@ pub enum VerifierErrorKind {
     #[error("array has no entry")]
     EmptyArrayMap,
 
+    #[error("map value offset {0} out of bounds for value_size {1}")]
+    InvalidMapValueOffset(i32, u32),
+
     // Helper arguments.
     #[error("buffer size is not a constant")]
     NonConstantBufferSize,
@@ -233,6 +236,7 @@ impl VerifierErrorKind {
             | Self::InvalidMapIndex(_)
             | Self::LddwMapValueNotArray(_, _)
             | Self::EmptyArrayMap
+            | Self::InvalidMapValueOffset(_, _)
             | Self::InvalidMapTypeForHelper(_)
             | Self::ResourceLeak
             | Self::InconsistentMemoryAccess
@@ -326,6 +330,7 @@ mod tests {
         assert_eq!(VerifierErrorKind::InvalidMapIndex(0).errno(), EINVAL);
         assert_eq!(VerifierErrorKind::LddwMapValueNotArray(0, 1).errno(), EINVAL);
         assert_eq!(VerifierErrorKind::EmptyArrayMap.errno(), EINVAL);
+        assert_eq!(VerifierErrorKind::InvalidMapValueOffset(-4, 8).errno(), EINVAL);
         assert_eq!(VerifierErrorKind::InvalidMapTypeForHelper(1).errno(), EINVAL);
         assert_eq!(VerifierErrorKind::ResourceLeak.errno(), EINVAL);
         assert_eq!(VerifierErrorKind::InconsistentMemoryAccess.errno(), EINVAL);

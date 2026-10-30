@@ -738,12 +738,18 @@ where
 
     let helpers = C::helpers();
 
-    for pc in 0..code.len() {
-        let instruction = &mut code[pc];
-
+    let mut pc = 0;
+    while pc < code.len() {
         // Replace helper IDs with helper indices in call instructions.
-        if instruction.code() == (BPF_JMP | BPF_CALL) {
-            assert!(instruction.src_reg() == 0);
+        if code[pc].code() == (BPF_JMP | BPF_CALL) {
+            let instruction = &mut code[pc];
+            if instruction.src_reg() != 0 {
+                return Err(EbpfError::ProgramLinkError(format!(
+                    "Unsupported src_reg={} in call instruction at pc {}",
+                    instruction.src_reg(),
+                    pc,
+                )));
+            }
             let helper_id = instruction.imm() as u32;
             let Some(index) = helpers.get_index_by_id(helper_id) else {
                 return Err(EbpfError::ProgramLinkError(format!(
@@ -752,32 +758,76 @@ where
                 )));
             };
             instruction.set_imm(index as i32);
+            pc += 1;
+            continue;
         }
 
         // Link maps.
-        if instruction.code() == BPF_LDDW {
-            // If the instruction references BPF_PSEUDO_MAP_FD, then we need to look up the map fd
-            // and create a reference from this program to that object.
+        if code[pc].code() == BPF_LDDW {
+            if pc + 1 >= code.len() {
+                return Err(EbpfError::ProgramLinkError(format!(
+                    "Incomplete lddw instruction at pc {}",
+                    pc,
+                )));
+            }
+            let (instruction, next_instruction) = {
+                let (a1, a2) = code.split_at_mut(pc + 1);
+                (&mut a1[pc], &mut a2[0])
+            };
+            if next_instruction.code() != 0
+                || next_instruction.offset() != 0
+                || next_instruction.src_reg() != 0
+                || next_instruction.dst_reg() != 0
+            {
+                return Err(EbpfError::ProgramLinkError(format!(
+                    "Malformed lddw instruction at pc {}",
+                    pc,
+                )));
+            }
+
+            // If the instruction references BPF_PSEUDO_MAP_IDX or BPF_PSEUDO_MAP_IDX_VALUE, then
+            // look up the map and rewrite the 64-bit immediate in place.
             match instruction.src_reg() {
-                0 => (),
+                0 => {}
                 BPF_PSEUDO_MAP_IDX | BPF_PSEUDO_MAP_IDX_VALUE => {
-                    let map_index = usize::try_from(instruction.imm())
-                        .expect("negative map index in a verified program");
+                    let map_index = usize::try_from(instruction.imm()).map_err(|_| {
+                        EbpfError::ProgramLinkError(format!(
+                            "Negative map_index={} at pc {}",
+                            instruction.imm(),
+                            pc,
+                        ))
+                    })?;
                     let map = maps.get(map_index).ok_or_else(|| {
                         EbpfError::ProgramLinkError(format!("Invalid map_index: {}", map_index))
                     })?;
-                    assert!(*map.schema() == program.maps[map_index]);
-
-                    let (instruction, next_instruction) = {
-                        // The code was verified, so this is not expected to overflow.
-                        let (a1, a2) = code.split_at_mut(pc + 1);
-                        (&mut a1[pc], &mut a2[0])
-                    };
+                    let schema = map.schema();
+                    if program.maps.get(map_index) != Some(schema) {
+                        return Err(EbpfError::ProgramLinkError(format!(
+                            "Map schema mismatch for map_index: {}",
+                            map_index,
+                        )));
+                    }
 
                     let value = if instruction.src_reg() == BPF_PSEUDO_MAP_IDX {
                         map.as_bpf_value().as_u64()
                     } else {
                         // BPF_PSEUDO_MAP_IDX_VALUE
+                        if schema.map_type != linux_uapi::bpf_map_type_BPF_MAP_TYPE_ARRAY
+                            || schema.max_entries == 0
+                        {
+                            return Err(EbpfError::ProgramLinkError(format!(
+                                "BPF_PSEUDO_MAP_IDX_VALUE requires non-empty array map at index {map_index}"
+                            )));
+                        }
+                        let offset = u32::try_from(next_instruction.imm())
+                            .ok()
+                            .filter(|&off| off < schema.value_size)
+                            .ok_or_else(|| {
+                                EbpfError::ProgramLinkError(format!(
+                                    "Invalid map value offset {} for map at index {map_index}",
+                                    next_instruction.imm(),
+                                ))
+                            })?;
                         let map_value = map
                             .get_data_ptr()
                             .ok_or_else(|| {
@@ -786,13 +836,11 @@ where
                                 ))
                             })?
                             .as_u64();
-                        map_value.checked_add_signed(next_instruction.imm().into()).ok_or_else(
-                            || {
-                                EbpfError::ProgramLinkError(format!(
-                                    "Unable to use offset for map access"
-                                ))
-                            },
-                        )?
+                        map_value.checked_add(u64::from(offset)).ok_or_else(|| {
+                            EbpfError::ProgramLinkError(format!(
+                                "Unable to use offset for map access"
+                            ))
+                        })?
                     };
 
                     let (high, low) = ((value >> 32) as i32, value as i32);
@@ -807,7 +855,11 @@ where
                     )));
                 }
             }
+            pc += 2;
+            continue;
         }
+
+        pc += 1;
     }
 
     Ok(EbpfProgram { code, maps, type_checker })
@@ -1016,6 +1068,22 @@ mod test {
         }
     }
 
+    struct TestMap(MapSchema);
+
+    impl MapReference for TestMap {
+        fn schema(&self) -> &MapSchema {
+            &self.0
+        }
+        fn as_bpf_value(&self) -> BpfValue {
+            BpfValue::from(0x1000u64)
+        }
+        fn get_data_ptr(&self) -> Option<BpfValue> {
+            assert_eq!(self.0.map_type, linux_uapi::bpf_map_type_BPF_MAP_TYPE_ARRAY);
+            assert!(self.0.max_entries > 0);
+            Some(BpfValue::from(0x2000u64))
+        }
+    }
+
     struct TestEbpfProgramContext {}
 
     impl EbpfProgramContext for TestEbpfProgramContext {
@@ -1028,7 +1096,7 @@ mod test {
         type Arg4<'a> = ();
         type Arg5<'a> = ();
 
-        type Map = NoMap;
+        type Map = TestMap;
     }
 
     empty_static_helper_set!(TestEbpfProgramContext);
@@ -1420,5 +1488,136 @@ mod test {
         let linked = link_program::<FiveArgContext>(&verified, vec![])
             .expect("5-argument program should link");
         assert_eq!(linked.run_with_5_arguments(&mut (), 10, 20, 30, 40, 50), 150);
+    }
+
+    #[test]
+    fn test_link_rejects_malformed_call_and_lddw() {
+        let try_link =
+            |code: Vec<EbpfInstruction>, prog_maps: Vec<MapSchema>, maps: Vec<TestMap>| {
+                let program = VerifiedEbpfProgram::from_verified_code(
+                    code,
+                    vec![TEST_ARG_TYPE.clone()],
+                    vec![],
+                    prog_maps,
+                );
+                link_program::<TestEbpfProgramContext>(&program, maps)
+            };
+
+        let array_schema = MapSchema {
+            map_type: linux_uapi::bpf_map_type_BPF_MAP_TYPE_ARRAY,
+            key_size: 4,
+            value_size: 8,
+            max_entries: 1,
+            flags: crate::MapFlags::empty(),
+        };
+        let hash_schema =
+            MapSchema { map_type: linux_uapi::bpf_map_type_BPF_MAP_TYPE_HASH, ..array_schema };
+
+        let mut pseudo_call_code = parse_asm(
+            r#"
+            mov %r0, 0
+            exit
+            "#,
+        );
+        // `parse_asm` only supports helper calls (`src_reg = 0`), so append `BPF_PSEUDO_CALL`.
+        pseudo_call_code.push(EbpfInstruction::new(BPF_JMP | BPF_CALL, 0, BPF_PSEUDO_CALL, 0, 1));
+        assert!(matches!(
+            try_link(pseudo_call_code, vec![], vec![]),
+            Err(EbpfError::ProgramLinkError(_))
+        ));
+
+        let neg_map_code = parse_asm(
+            r#"
+            mov %r0, 0
+            exit
+            lddw %r1, map[-1]
+            "#,
+        );
+        assert!(matches!(
+            try_link(neg_map_code, vec![], vec![]),
+            Err(EbpfError::ProgramLinkError(_))
+        ));
+
+        // Mismatched `MapSchema` between `program.maps` and linked `maps`.
+        let map_load_code = parse_asm(
+            r#"
+            lddw %r1, map[0]
+            mov %r0, 0
+            exit
+            "#,
+        );
+        let wider_schema = MapSchema { value_size: 16, ..array_schema };
+        assert!(matches!(
+            try_link(map_load_code, vec![array_schema], vec![TestMap(wider_schema)]),
+            Err(EbpfError::ProgramLinkError(_))
+        ));
+
+        // Truncated `BPF_LDDW` at the end of `code` (both immediate and map load).
+        let mut truncated_imm_lddw = parse_asm(
+            r#"
+            mov %r0, 0
+            exit
+            "#,
+        );
+        truncated_imm_lddw.push(EbpfInstruction::new(BPF_LDDW, 1, 0, 0, 42));
+        assert!(matches!(
+            try_link(truncated_imm_lddw, vec![], vec![]),
+            Err(EbpfError::ProgramLinkError(_))
+        ));
+
+        let mut truncated_map_lddw = parse_asm(
+            r#"
+            mov %r0, 0
+            exit
+            "#,
+        );
+        truncated_map_lddw.push(EbpfInstruction::new(BPF_LDDW, 1, BPF_PSEUDO_MAP_IDX, 0, 0));
+        assert!(matches!(
+            try_link(truncated_map_lddw, vec![array_schema], vec![TestMap(array_schema)]),
+            Err(EbpfError::ProgramLinkError(_))
+        ));
+
+        // `BPF_PSEUDO_MAP_IDX_VALUE` on a non-array map must return `ProgramLinkError` before
+        // calling `MapReference::get_data_ptr()` (which asserts `BPF_MAP_TYPE_ARRAY`).
+        let map_val_non_array = vec![
+            EbpfInstruction::new(BPF_LDDW, 1, BPF_PSEUDO_MAP_IDX_VALUE, 0, 0),
+            EbpfInstruction::new(0, 0, 0, 0, 0),
+            EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_K, 0, 0, 0, 0),
+            EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0),
+        ];
+        assert!(matches!(
+            try_link(map_val_non_array, vec![hash_schema], vec![TestMap(hash_schema)]),
+            Err(EbpfError::ProgramLinkError(_))
+        ));
+
+        // `BPF_PSEUDO_MAP_IDX_VALUE` with out-of-bounds value offset must return
+        // `ProgramLinkError`.
+        for bad_offset in [-4, 8] {
+            let map_val_oob = vec![
+                EbpfInstruction::new(BPF_LDDW, 1, BPF_PSEUDO_MAP_IDX_VALUE, 0, 0),
+                EbpfInstruction::new(0, 0, 0, 0, bad_offset),
+                EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_K, 0, 0, 0, 0),
+                EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0),
+            ];
+            assert!(matches!(
+                try_link(map_val_oob, vec![array_schema], vec![TestMap(array_schema)]),
+                Err(EbpfError::ProgramLinkError(_))
+            ));
+        }
+
+        // Dead-branch unknown helper call sanitized by `verify_program` links and runs cleanly.
+        let dead_helper_code = parse_asm(
+            r#"
+            mov %r0, 7
+            jeq %r0, 8, +1
+            exit
+            call 9999
+            exit
+            "#,
+        );
+        let mut arg = TestArgument::default();
+        let linked = initialize_test_program(dead_helper_code)
+            .expect("dead-branch unknown helper should verify and link");
+        assert_eq!(linked.run_with_1_argument(&mut (), &mut arg), 7);
     }
 }

@@ -1,0 +1,9 @@
+# Verify unreachable BPF_LDDW with BPF_PSEUDO_MAP_FD (src_reg = 1) is rejected
+# during verify_program's linear pre-scan.
+-- raw
+0x00000000000000b7
+0x0000000000000095
+0x0000000000001118
+0x0000000000000000
+-- error
+unsupported lddw source

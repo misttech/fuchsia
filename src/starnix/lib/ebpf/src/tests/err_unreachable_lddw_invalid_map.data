@@ -1,0 +1,8 @@
+# Verify unreachable BPF_PSEUDO_MAP_IDX lddw with a negative map index is
+# rejected during verify_program's linear pre-scan.
+-- asm
+mov %r0, 0
+exit
+lddw %r1, map[-1]
+-- error
+lddw with invalid map index

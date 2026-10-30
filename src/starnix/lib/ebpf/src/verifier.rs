@@ -1069,11 +1069,63 @@ pub struct CallingContext {
     pub allow_ptr_leaks: bool,
 }
 
+enum ResolvedLddw {
+    Imm(u64),
+    MapPtr { map_index: u32, schema: MapSchema },
+    MapValuePtr { map_index: u32, schema: MapSchema, offset: u32 },
+}
+
 impl CallingContext {
     pub fn register_map(&mut self, schema: MapSchema) -> usize {
         let index = self.maps.len();
         self.maps.push(schema);
         index
+    }
+
+    fn resolve_lddw(
+        &self,
+        src: u8,
+        lower: i32,
+        next_imm: i32,
+    ) -> Result<ResolvedLddw, VerifierErrorKind> {
+        match src {
+            0 => {
+                let value = ((lower as u32) as u64) | (((next_imm as u32) as u64) << 32);
+                Ok(ResolvedLddw::Imm(value))
+            }
+            BPF_PSEUDO_MAP_IDX => {
+                let map_index = lower as u32;
+                let schema = usize::try_from(lower)
+                    .ok()
+                    .and_then(|idx| self.maps.get(idx))
+                    .copied()
+                    .ok_or(VerifierErrorKind::InvalidMapIndex(map_index))?;
+                Ok(ResolvedLddw::MapPtr { map_index, schema })
+            }
+            BPF_PSEUDO_MAP_IDX_VALUE => {
+                let map_index = lower as u32;
+                let schema = usize::try_from(lower)
+                    .ok()
+                    .and_then(|idx| self.maps.get(idx))
+                    .copied()
+                    .ok_or(VerifierErrorKind::InvalidMapIndex(map_index))?;
+                if schema.map_type != bpf_map_type_BPF_MAP_TYPE_ARRAY {
+                    return Err(VerifierErrorKind::LddwMapValueNotArray(
+                        map_index,
+                        schema.map_type,
+                    ));
+                }
+                if schema.max_entries == 0 {
+                    return Err(VerifierErrorKind::EmptyArrayMap);
+                }
+                let offset = u32::try_from(next_imm)
+                    .ok()
+                    .filter(|&off| off < schema.value_size)
+                    .ok_or(VerifierErrorKind::InvalidMapValueOffset(next_imm, schema.value_size))?;
+                Ok(ResolvedLddw::MapValuePtr { map_index, schema, offset })
+            }
+            _ => Err(VerifierErrorKind::UnsupportedLddwSource(src)),
+        }
     }
 }
 
@@ -1124,8 +1176,11 @@ impl VerifiedEbpfProgram {
 
 /// Verify the given code depending on the type of the parameters and the registered external
 /// functions. Returned `VerifiedEbpfProgram` should be linked in order to execute it.
+///
+/// Note that `code` may be modified during verification, in particular by replacing unreachable
+/// instructions with `ja -1` so dead branches are ignored during linking.
 pub fn verify_program(
-    code: Vec<EbpfInstruction>,
+    mut code: Vec<EbpfInstruction>,
     calling_context: CallingContext,
     logger: &mut dyn VerifierLogger,
 ) -> Result<VerifiedEbpfProgram, VerifierError> {
@@ -1135,64 +1190,68 @@ pub fn verify_program(
             VerifierError { kind: VerifierErrorKind::ProgramTooLarge, pc: None },
         );
     }
-    // Pre-scan the program to ensure all LDDW instructions are structurally well-formed,
-    // even if they are in unreachable code. This is necessary because:
-    // 1. The linker may rewrite LDDW instructions (e.g., to resolve map pointers) and
-    //    expects them to be well-formed.
-    // 2. It ensures that the second part of every LDDW has a `code` of 0 (invalid opcode).
-    //    This guarantees that any attempt to jump directly into the second part of an
-    //    LDDW will be rejected during verification as an invalid instruction.
+    // Pre-scan the program to ensure all `BPF_LDDW` and `BPF_JMP | BPF_CALL` instructions are
+    // structurally well-formed and have valid map/call operands, even in unreachable code:
+    // 1. `link_program_internal` linearly scans and rewrites `BPF_LDDW` map loads and
+    //    `BPF_JMP | BPF_CALL` helper calls across the entire instruction array.
+    // 2. Enforcing `code == 0` on the second slot of every `BPF_LDDW` guarantees that any jump
+    //    into the middle of an `LDDW` is rejected during verification as an invalid opcode.
     //
-    // It also computes the prune points: the targets of the jumps and the instructions following
-    // a conditional jump or a `cmpxchg` (which also branches into two states). Every loop and
-    // every join of two branches goes through one of them, and the states are only compared with
-    // and recorded as terminating contexts at these points.
+    // This pass also computes the prune points: the targets of jumps and the instructions
+    // following a conditional jump or a `cmpxchg` (which also branches into two states). Every
+    // loop and every join of two branches goes through one of them, and states are only compared
+    // with and recorded as terminating contexts at these points.
     let mut terminating_contexts: Vec<Option<TerminatingContexts>> =
         (0..code.len()).map(|_| None).collect();
     let mut scan_pc = 0;
     while scan_pc < code.len() {
-        let inst = &code[scan_pc];
-        if inst.code() == BPF_LDDW {
-            let Some(next_instruction) = code.get(scan_pc + 1) else {
-                return error_and_log(
-                    logger,
-                    VerifierError { kind: VerifierErrorKind::IncompleteLddw, pc: Some(scan_pc) },
-                );
-            };
-            if next_instruction.code() != 0
-                || next_instruction.offset() != 0
-                || next_instruction.src_reg() != 0
-                || next_instruction.dst_reg() != 0
-            {
-                return error_and_log(
-                    logger,
-                    VerifierError { kind: VerifierErrorKind::MalformedLddw, pc: Some(scan_pc) },
-                );
-            }
-            scan_pc += 2;
-        } else {
-            let class = inst.code() & BPF_CLS_MASK;
-            let op = inst.code() & BPF_SUB_OP_MASK;
-            let is_cmpxchg = (inst.code() == (BPF_STX | BPF_ATOMIC | BPF_W)
-                || inst.code() == (BPF_STX | BPF_ATOMIC | BPF_DW))
-                && inst.imm() as u8 == BPF_CMPXCHG;
-            if (class == BPF_JMP || class == BPF_JMP32) && op != BPF_CALL && op != BPF_EXIT {
-                // Invalid targets are ignored here, and rejected if they are reached.
-                let target = scan_pc.checked_add_signed(isize::from(inst.offset()) + 1);
-                if let Some(entry) = target.and_then(|pc| terminating_contexts.get_mut(pc)) {
-                    *entry = Some(Default::default());
+        let step_result = (|| -> Result<usize, VerifierErrorKind> {
+            let inst = &code[scan_pc];
+            if inst.code() == BPF_LDDW {
+                let next_instruction =
+                    code.get(scan_pc + 1).ok_or(VerifierErrorKind::IncompleteLddw)?;
+                if next_instruction.code() != 0
+                    || next_instruction.offset() != 0
+                    || next_instruction.src_reg() != 0
+                    || next_instruction.dst_reg() != 0
+                {
+                    return Err(VerifierErrorKind::MalformedLddw);
                 }
-                if op != BPF_JA {
+                calling_context.resolve_lddw(inst.src_reg(), inst.imm(), next_instruction.imm())?;
+                Ok(2)
+            } else {
+                if inst.code() == (BPF_JMP | BPF_CALL) && inst.src_reg() != 0 {
+                    return Err(VerifierErrorKind::UnsupportedCallType(inst.src_reg()));
+                }
+                let class = inst.code() & BPF_CLS_MASK;
+                let op = inst.code() & BPF_SUB_OP_MASK;
+                let is_cmpxchg = (inst.code() == (BPF_STX | BPF_ATOMIC | BPF_W)
+                    || inst.code() == (BPF_STX | BPF_ATOMIC | BPF_DW))
+                    && inst.imm() as u8 == BPF_CMPXCHG;
+                if (class == BPF_JMP || class == BPF_JMP32) && op != BPF_CALL && op != BPF_EXIT {
+                    // Invalid targets are ignored here, and rejected if they are reached.
+                    let target = scan_pc.checked_add_signed(isize::from(inst.offset()) + 1);
+                    if let Some(entry) = target.and_then(|pc| terminating_contexts.get_mut(pc)) {
+                        *entry = Some(Default::default());
+                    }
+                    if op != BPF_JA {
+                        if let Some(entry) = terminating_contexts.get_mut(scan_pc + 1) {
+                            *entry = Some(Default::default());
+                        }
+                    }
+                } else if is_cmpxchg {
                     if let Some(entry) = terminating_contexts.get_mut(scan_pc + 1) {
                         *entry = Some(Default::default());
                     }
                 }
-            } else if is_cmpxchg {
-                if let Some(entry) = terminating_contexts.get_mut(scan_pc + 1) {
-                    *entry = Some(Default::default());
-                }
+                Ok(1)
             }
-            scan_pc += 1;
+        })();
+        match step_result {
+            Ok(advance) => scan_pc += advance,
+            Err(kind) => {
+                return error_and_log(logger, VerifierError { kind, pc: Some(scan_pc) });
+            }
         }
     }
 
@@ -1204,6 +1263,7 @@ pub fn verify_program(
             .map_err(|kind| VerifierError { kind, pc: None })?;
     }
     let states = vec![context];
+    let mut visited = vec![false; code.len()];
     let mut verification_context =
         VerificationContext::new(calling_context, logger, &code, states, terminating_contexts);
     while let Some(mut context) = verification_context.states.pop() {
@@ -1237,6 +1297,7 @@ pub fn verify_program(
                 VerifierError { kind: VerifierErrorKind::FellOffProgramEnd, pc: Some(context.pc) },
             );
         }
+        visited[context.pc] = true;
         let first_successor = verification_context.states.len();
         if let Err(kind) = (&context).visit(&mut verification_context, code[context.pc]) {
             return error_and_log(
@@ -1261,15 +1322,38 @@ pub fn verify_program(
         verification_context.iteration += 1;
     }
 
-    let struct_access_instructions = verification_context
-        .memory_access_instructions
+    let VerificationContext {
+        calling_context: CallingContext { maps, args, .. },
+        memory_access_instructions,
+        ..
+    } = verification_context;
+
+    // Sanitize unreachable instructions to `ja -1` (matching Linux's `sanitize_dead_code`) so dead
+    // branches containing e.g. unknown helper IDs do not fail during `link_program_internal`.
+    let dead_insn = EbpfInstruction::new(BPF_JMP | BPF_JA, 0, 0, -1, 0);
+    let mut pc = 0;
+    while pc < code.len() {
+        if code[pc].code() == BPF_LDDW {
+            if !visited[pc] {
+                code[pc] = dead_insn;
+                code[pc + 1] = dead_insn;
+            }
+            pc += 2;
+        } else {
+            if !visited[pc] {
+                code[pc] = dead_insn;
+            }
+            pc += 1;
+        }
+    }
+
+    let struct_access_instructions = memory_access_instructions
         .into_iter()
         .filter_map(|access| match access {
             MemoryAccess::Struct(s) => Some(s),
             MemoryAccess::Unaccessed | MemoryAccess::NonStruct => None,
         })
         .collect::<Vec<_>>();
-    let CallingContext { maps, args, .. } = verification_context.calling_context;
     Ok(VerifiedEbpfProgram { code, struct_access_instructions, maps, args })
 }
 
@@ -4802,14 +4886,16 @@ impl BpfVisitor for &ComputationContext {
         // The pre-scan has already guaranteed that `pc + 1` is valid and structurally well-formed.
         let next_instruction = &context.code[self.pc + 1];
 
-        let value = match src {
-            0 => {
-                let value = (lower as u64) | (((next_instruction.imm() as u32) as u64) << 32);
+        let value = match context.calling_context.resolve_lddw(
+            src,
+            lower as i32,
+            next_instruction.imm(),
+        )? {
+            ResolvedLddw::Imm(value) => {
                 bpf_log!(self, context, "lddw {}, 0x{:x}", display_register(dst), value);
                 Type::from(value)
             }
-            BPF_PSEUDO_MAP_IDX => {
-                let map_index = lower;
+            ResolvedLddw::MapPtr { map_index, schema } => {
                 bpf_log!(
                     self,
                     context,
@@ -4817,16 +4903,9 @@ impl BpfVisitor for &ComputationContext {
                     display_register(dst),
                     map_index
                 );
-                context
-                    .calling_context
-                    .maps
-                    .get(usize::try_from(map_index).unwrap())
-                    .map(|schema| Type::ConstPtrToMap { id: map_index.into(), schema: *schema })
-                    .ok_or(VerifierErrorKind::InvalidMapIndex(map_index))?
+                Type::ConstPtrToMap { id: map_index.into(), schema }
             }
-            BPF_PSEUDO_MAP_IDX_VALUE => {
-                let map_index = lower;
-                let offset = next_instruction.imm();
+            ResolvedLddw::MapValuePtr { map_index, schema, offset } => {
                 bpf_log!(
                     self,
                     context,
@@ -4835,23 +4914,7 @@ impl BpfVisitor for &ComputationContext {
                     map_index
                 );
                 let id = context.next_id();
-                let map_schema = context
-                    .calling_context
-                    .maps
-                    .get(usize::try_from(map_index).unwrap())
-                    .ok_or(VerifierErrorKind::InvalidMapIndex(map_index))?;
-
-                if map_schema.map_type != bpf_map_type_BPF_MAP_TYPE_ARRAY {
-                    return Err(VerifierErrorKind::LddwMapValueNotArray(
-                        map_index,
-                        map_schema.map_type,
-                    ));
-                }
-                if map_schema.max_entries == 0 {
-                    return Err(VerifierErrorKind::EmptyArrayMap);
-                }
-
-                let origin = if map_schema.flags.contains(MapFlags::ProgReadOnly) {
+                let origin = if schema.flags.contains(MapFlags::ProgReadOnly) {
                     PointerOrigin::MapReadOnly
                 } else {
                     PointerOrigin::MapWritable
@@ -4859,12 +4922,9 @@ impl BpfVisitor for &ComputationContext {
                 Type::PtrToMemory {
                     id: MemoryId::from(id),
                     offset: offset.into(),
-                    buffer_size: map_schema.value_size.into(),
+                    buffer_size: schema.value_size.into(),
                     origin,
                 }
-            }
-            _ => {
-                return Err(VerifierErrorKind::UnsupportedLddwSource(src));
             }
         };
 
@@ -6381,5 +6441,76 @@ mod tests {
         assert!(!singleton_with_unk.is_known());
         assert_eq!(comp_eq64(singleton_with_unk, 6u64.into()), Ok(Some(true)));
         assert_eq!(comp_eq32(singleton_with_unk, 6u64.into()), Ok(Some(true)));
+    }
+
+    #[test]
+    fn test_lddw_map_value_offset_and_dead_code_sanitization() {
+        let make_array_context = || {
+            let mut ctx = CallingContext::default();
+            ctx.register_map(MapSchema {
+                map_type: bpf_map_type_BPF_MAP_TYPE_ARRAY,
+                key_size: 4,
+                value_size: 8,
+                max_entries: 1,
+                flags: MapFlags::empty(),
+            });
+            ctx
+        };
+
+        // Negative or `>= value_size` offsets in `BPF_PSEUDO_MAP_IDX_VALUE` must fail with
+        // `InvalidMapValueOffset` (`EINVAL`), both when reachable and when unreachable.
+        for bad_offset in [-4, 8, i32::MIN] {
+            let reachable = vec![
+                EbpfInstruction::new(BPF_LDDW, 1, BPF_PSEUDO_MAP_IDX_VALUE, 0, 0),
+                EbpfInstruction::new(0, 0, 0, 0, bad_offset),
+                EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_K, 0, 0, 0, 0),
+                EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0),
+            ];
+            let err = verify_program(reachable, make_array_context(), &mut NullVerifierLogger)
+                .unwrap_err();
+            assert_eq!(
+                err,
+                VerifierError {
+                    kind: VerifierErrorKind::InvalidMapValueOffset(bad_offset, 8),
+                    pc: Some(0),
+                }
+            );
+            assert_eq!(err.errno(), linux_uapi::EINVAL);
+
+            let unreachable = vec![
+                EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_K, 0, 0, 0, 0),
+                EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0),
+                EbpfInstruction::new(BPF_LDDW, 1, BPF_PSEUDO_MAP_IDX_VALUE, 0, 0),
+                EbpfInstruction::new(0, 0, 0, 0, bad_offset),
+            ];
+            assert_eq!(
+                verify_program(unreachable, make_array_context(), &mut NullVerifierLogger).err(),
+                Some(VerifierError {
+                    kind: VerifierErrorKind::InvalidMapValueOffset(bad_offset, 8),
+                    pc: Some(2),
+                })
+            );
+        }
+
+        // Valid `BPF_PSEUDO_MAP_IDX_VALUE` offset (`4 < 8`) verifies, preserves a visited `LDDW`'s
+        // second slot (`pc = 1`), and sanitizes unvisited instructions (including an unreachable
+        // unknown helper call and an unreachable valid `LDDW`) to `ja -1`.
+        let code = vec![
+            EbpfInstruction::new(BPF_LDDW, 1, BPF_PSEUDO_MAP_IDX_VALUE, 0, 0),
+            EbpfInstruction::new(0, 0, 0, 0, 4),
+            EbpfInstruction::new(BPF_LDX | BPF_MEM | BPF_W, 0, 1, 0, 0),
+            EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0),
+            EbpfInstruction::new(BPF_JMP | BPF_CALL, 0, 0, 0, 9999),
+            EbpfInstruction::new(BPF_LDDW, 2, 0, 0, 0x1234),
+            EbpfInstruction::new(0, 0, 0, 0, 0x5678),
+        ];
+        let verified = verify_program(code, make_array_context(), &mut NullVerifierLogger)
+            .expect("program with dead unknown helper should verify");
+        assert_eq!(verified.code()[0].code(), BPF_LDDW);
+        assert_eq!(verified.code()[1], EbpfInstruction::new(0, 0, 0, 0, 4));
+        let dead_insn = EbpfInstruction::new(BPF_JMP | BPF_JA, 0, 0, -1, 0);
+        assert_eq!(verified.code()[4], dead_insn);
+        assert_eq!(verified.code()[5], dead_insn);
+        assert_eq!(verified.code()[6], dead_insn);
     }
 }
