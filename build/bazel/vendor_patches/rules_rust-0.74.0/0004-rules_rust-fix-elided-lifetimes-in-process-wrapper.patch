@@ -1,0 +1,73 @@
+Subject: [rules_rust] Fix elided lifetimes in process_wrapper
+
+Fuchsia's Rust toolchain passes its default lint flags, including
+-Wrust-2018-idioms, to exec-configuration crates as well. process_wrapper
+is built in the exec configuration without --cap-lints=allow, so every
+`fmt::Formatter` without an explicit lifetime emits an
+elided_lifetimes_in_paths warning.
+
+Spell out the anonymous lifetime (`fmt::Formatter<'_>`) so that
+process_wrapper builds cleanly.
+
+Drop this patch once upstream rules_rust includes the same fix.
+---
+--- a/third_party/bazel_vendor/rules_rust+/util/process_wrapper/flags.rs
++++ b/third_party/bazel_vendor/rules_rust+/util/process_wrapper/flags.rs
+@@ -28,7 +28,7 @@
+ }
+ 
+ impl fmt::Display for FlagParseError {
+-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+         match self {
+             Self::UnknownFlag(ref flag) => write!(f, "unknown flag \"{flag}\""),
+             Self::ValueMissing(ref flag) => write!(f, "flag \"{flag}\" missing parameter(s)"),
+@@ -50,13 +50,13 @@
+ }
+ 
+ impl<T> fmt::Display for FlagDef<'_, T> {
+-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+         write!(f, "{}\t{}", self.name, self.help)
+     }
+ }
+ 
+ impl<T> fmt::Debug for FlagDef<'_, T> {
+-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+         f.debug_struct("FlagDef")
+             .field("name", &self.name)
+             .field("help", &self.help)
+--- a/third_party/bazel_vendor/rules_rust+/util/process_wrapper/main.rs
++++ b/third_party/bazel_vendor/rules_rust+/util/process_wrapper/main.rs
+@@ -58,7 +58,7 @@
+ struct ProcessWrapperError(String);
+ 
+ impl fmt::Display for ProcessWrapperError {
+-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+         write!(f, "process wrapper error: {}", self.0)
+     }
+ }
+--- a/third_party/bazel_vendor/rules_rust+/util/process_wrapper/options.rs
++++ b/third_party/bazel_vendor/rules_rust+/util/process_wrapper/options.rs
+@@ -16,7 +16,7 @@
+ }
+ 
+ impl fmt::Display for OptionError {
+-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+         match self {
+             Self::FlagError(e) => write!(f, "error parsing flags: {e}"),
+             Self::Generic(s) => write!(f, "{s}"),
+--- a/third_party/bazel_vendor/rules_rust+/util/process_wrapper/output.rs
++++ b/third_party/bazel_vendor/rules_rust+/util/process_wrapper/output.rs
+@@ -36,7 +36,7 @@
+ }
+ 
+ impl fmt::Display for ProcessError {
+-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+         match self {
+             Self::IO(e) => write!(f, "{}", e),
+             Self::Process(p) => write!(f, "{}", p),
