@@ -1,0 +1,32 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules:zx_library.bzl", "cc_source_library_zx")
+
+package(default_applicable_licenses = ["//:license"])
+
+cc_source_library_zx(
+    name = "virtio",
+    hdrs = [
+        "include/virtio/balloon.h",
+        "include/virtio/block.h",
+        "include/virtio/console.h",
+        "include/virtio/gpu.h",
+        "include/virtio/input.h",
+        "include/virtio/mem.h",
+        "include/virtio/net.h",
+        "include/virtio/scsi.h",
+        "include/virtio/sound.h",
+        "include/virtio/virtio.h",
+        "include/virtio/virtio_ids.h",
+        "include/virtio/virtio_ring.h",
+        "include/virtio/vsock.h",
+        "include/virtio/wl.h",
+    ],
+    includes = ["include"],
+    visibility = [
+        "//src/devices/bus/lib/virtio:__pkg__",
+        "//src/virtualization/bin:__subpackages__",
+    ],
+)

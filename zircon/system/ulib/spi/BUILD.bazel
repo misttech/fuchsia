@@ -1,0 +1,21 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules:zx_library.bzl", "cc_source_library_zx")
+
+package(default_applicable_licenses = ["//:license"])
+
+cc_source_library_zx(
+    name = "spi",
+    srcs = ["spi.cc"],
+    hdrs = ["include/lib/spi/spi.h"],
+    includes = ["include"],
+    visibility = [
+        "//src/devices/spi/bin/spiutil:__pkg__",
+        "//src/devices/spi/drivers/spi:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.hardware.spi:fuchsia.hardware.spi_cpp",
+    ],
+)

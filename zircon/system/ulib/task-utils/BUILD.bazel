@@ -1,0 +1,34 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules:zx_library.bzl", "cc_source_library_zx")
+
+package(default_applicable_licenses = ["//:license"])
+
+cc_source_library_zx(
+    name = "task-utils",
+    srcs = [
+        "get.c",
+        "walker.cc",
+    ],
+    hdrs = [
+        "include/task-utils/get.h",
+        "include/task-utils/walker.h",
+    ],
+    implementation_deps = [
+        "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
+        "//sdk/lib/component/incoming/cpp",
+        "//sdk/lib/fdio",
+        "//zircon/system/ulib/zx",
+    ],
+    includes = ["include"],
+    visibility = [
+        "//src/bringup/bin/critical-services/storage-watchdog:__pkg__",
+        "//src/developer:__subpackages__",
+        "//src/performance/cpu_profiler:__pkg__",
+        "//src/sys/bin/psutils:__pkg__",
+        "//src/virtualization/tests/lib:__pkg__",
+        "//zircon/system/utest:__subpackages__",
+    ],
+)
