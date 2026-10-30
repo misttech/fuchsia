@@ -10,7 +10,7 @@ package(default_applicable_licenses = ["//:license"])
 
 exports_files(
     [
-        "testdata/composite_policies/initial_sids",
+        "testdata/policy/base/initial_sids",
         "testdata/scripts/merge_policies/a_policy.conf",
         "testdata/scripts/merge_policies/b_policy.conf",
         "testdata/scripts/merge_policies/golden_a_b_policy.conf",

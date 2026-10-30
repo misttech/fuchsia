@@ -4,11 +4,34 @@
 
 import("//src/starnix/lib/selinux/policy.gni")
 
-# --- Base Policy Source Set ---
+# --- Base Policy Source Sets ---
+
+sepolicy_source_set("kernel_classes") {
+  testonly = true
+  sources = [
+    "policy/base/kernel_classes.conf",
+    "policy/base/kernel_permissions.conf",
+  ]
+}
+
+sepolicy_source_set("mls") {
+  testonly = true
+  sources = [ "policy/base/mls.conf" ]
+}
+
+sepolicy_source_set("minimal_base_policy") {
+  testonly = true
+  deps = [
+    ":kernel_classes",
+    ":mls",
+  ]
+  sources = [ "policy/base/minimal_base.conf" ]
+}
 
 sepolicy_source_set("base_policy") {
   testonly = true
-  sources = [ "composite_policies/base_policy.conf" ]
+  deps = [ ":minimal_base_policy" ]
+  sources = [ "policy/base/filesystems.conf" ]
 }
 
 # --- Composite Policies ---

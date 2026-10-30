@@ -5,7 +5,7 @@
 import("//build/testing/config.gni")
 
 _DEFAULT_INITIAL_SIDS =
-    "//src/starnix/lib/selinux/testdata/composite_policies/initial_sids"
+    "//src/starnix/lib/selinux/testdata/policy/base/initial_sids"
 
 # Declares a set of SELinux policy fragment sources.
 #

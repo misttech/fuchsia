@@ -23,7 +23,7 @@ host_test_data_files(
 host_test_data_files(
     name = "merge_policies_initial_sids",
     srcs = [
-        "//src/starnix/lib/selinux:testdata/composite_policies/initial_sids",
+        "//src/starnix/lib/selinux:testdata/policy/base/initial_sids",
     ],
     dest_dir = "testdata/scripts/merge_policies",
     target_compatible_with = HOST_OS_CONSTRAINTS,
