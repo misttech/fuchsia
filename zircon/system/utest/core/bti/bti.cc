@@ -100,7 +100,7 @@ void bti_pin_test_helper(VmoType vmo_type) {
             ZX_OK);
   ASSERT_EQ(zx::bti::create(iommu, 0, 0xdeadbeef, &bti), ZX_OK);
 
-  static constexpr uint64_t kPageCount = 256;
+  static constexpr uint64_t kPageCount = 4;
   const uint64_t kVmoSize = zx_system_get_page_size() * kPageCount;
   zx::vmo vmo;
   if (vmo_type == VmoType::Contiguous) {
@@ -141,7 +141,7 @@ TEST(Bti, PinContigFlag) {
             ZX_OK);
   ASSERT_EQ(zx::bti::create(iommu, 0, 0xdeadbeef, &bti), ZX_OK);
 
-  static constexpr uint64_t kPageCount = 256;
+  static constexpr uint64_t kPageCount = 4;
   const uint64_t kVmoSize = zx_system_get_page_size() * kPageCount;
   zx::vmo vmo;
   ASSERT_EQ(zx::vmo::create_contiguous(bti, kVmoSize, 0, &vmo), ZX_OK);

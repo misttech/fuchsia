@@ -2030,8 +2030,13 @@ void VmCowPages::RemoveChildLocked(VmCowPages* removed, const LockedPtr& sibling
   // If we have a sibling to the right of the removed node then update any cursors to point there,
   // otherwise find the next valid sibling starting from our parent, which we already hold the lock
   // for.
-  const bool removed_left = removed == &children_list_.front();
-  if (removed_left && sibling) {
+  // We only want to move the cursors to the sibling if it is the sibling immediately to the right
+  // of the removed node. If the sibling is to the left (which can happen when deleting the right
+  // child of a hidden parent), we should instead move the cursors to the parent's sibling.
+  auto next_sibling_iter = ++children_list_.make_iterator(*removed);
+  const bool is_right_sibling =
+      sibling && next_sibling_iter.IsValid() && sibling.get() == &*next_sibling_iter;
+  if (is_right_sibling) {
     TreeWalkCursor::MoveToSibling(removed->cur_cursor_list_, removed, &sibling.locked());
   } else {
     TreeWalkCursor::MoveToSiblingOfParent(removed->cur_cursor_list_, removed, this);

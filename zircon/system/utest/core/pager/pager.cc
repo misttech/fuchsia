@@ -15,6 +15,7 @@
 #include <zircon/syscalls/object.h>
 #include <zircon/time.h>
 
+#include <atomic>
 #include <iterator>
 #include <memory>
 #include <thread>
@@ -4480,6 +4481,182 @@ TEST(Pager, DetachAndAlwaysNeed) {
 
   EXPECT_OK(pager.detach_vmo(vmo));
   EXPECT_OK(vmo.op_range(ZX_VMO_OP_ALWAYS_NEED, 0, 2u * zx_system_get_page_size(), nullptr, 0));
+}
+
+// Regression test for b/538541874.
+// Test that detaching a pager VMO while concurrently destroying a middle clone
+// does not abort the unmap walk early. If the walk aborts early, some clones
+// remain mapped (PTEs not cleared), which leads to UAF.
+TEST(Pager, DetachSiblingRace) {
+  UserPager pager;
+  ASSERT_TRUE(pager.Init());
+
+  const size_t page_size = zx_system_get_page_size();
+  const size_t size = page_size * 8;
+  const size_t target_offset = page_size * 4;
+
+  size_t initial_delay = 0;
+  size_t delay = 0;
+
+  // We use TestLimiter to balance the iteration count and execution time.
+  // 1000 iterations is enough to consistently reproduce the bug in a virtualized environment,
+  // but for testing directly on native hardware, one might need to increase the iteration count.
+  // We use a 60-second limit to cap slow executions in CQ.
+  for (TestLimiter limiter(1000, zx::sec(60)); !limiter.Finished(); limiter.next()) {
+    int i = limiter.iteration();
+    Vmo* parent = nullptr;
+    ASSERT_TRUE(pager.CreateVmo(size / page_size, &parent));
+
+    // Supply pages to parent so we can fault them in clones without a fault handler.
+    ASSERT_TRUE(pager.SupplyPages(parent, 0, size / page_size));
+
+    // Create clones.
+    // New children are pushed to the front of the parent's children list.
+    // Creation order: c0, c1, c2.
+    // List order: [c2 (front), c1 (middle), c0 (back)].
+    // The sibling walk visits front -> back (c2 -> c1 -> c0).
+    // If we race detach with closing c1 (middle):
+    // - c2 (visited first) is always unmapped.
+    // - c0 (visited last, after c1) is skipped if the bug triggers.
+    std::unique_ptr<Vmo> c0 = parent->Clone();
+    std::unique_ptr<Vmo> c1 = parent->Clone();
+    std::unique_ptr<Vmo> c2 = parent->Clone();
+    ASSERT_NOT_NULL(c0);
+    ASSERT_NOT_NULL(c1);
+    ASSERT_NOT_NULL(c2);
+
+    // Commit alternate pages in c1 to slow down the walk and destruction.
+    for (size_t offset = 0; offset < size; offset += page_size * 2) {
+      ASSERT_TRUE(c1->Commit(offset / page_size, 1));
+    }
+
+    // Map c2 and c0 multiple times to slow down the walk.
+    // Note: Vmo::Clone already mapped them once. We add extra mappings
+    // of the raw vmos to further slow down the invalidation walk.
+    constexpr int kNumExtraMappings = 4;
+    zx_vaddr_t extra_a0[kNumExtraMappings] = {};
+    zx_vaddr_t extra_a2[kNumExtraMappings] = {};
+    for (int j = 0; j < kNumExtraMappings; j++) {
+      ASSERT_OK(zx::vmar::root_self()->map(ZX_VM_PERM_READ, 0, c0->vmo(), 0, size, &extra_a0[j]));
+      ASSERT_OK(zx::vmar::root_self()->map(ZX_VM_PERM_READ, 0, c2->vmo(), 0, size, &extra_a2[j]));
+    }
+
+    auto cleanup = fit::defer([&]() {
+      for (int j = 0; j < kNumExtraMappings; j++) {
+        if (extra_a0[j]) {
+          zx::vmar::root_self()->unmap(extra_a0[j], size);
+        }
+        if (extra_a2[j]) {
+          zx::vmar::root_self()->unmap(extra_a2[j], size);
+        }
+      }
+      if (parent) {
+        pager.ReleaseVmo(parent);
+      }
+    });
+
+    // Fault in the target page for all mappings to establish PTEs.
+    (void)*reinterpret_cast<volatile uint8_t*>(c0->base_addr() + target_offset);
+    (void)*reinterpret_cast<volatile uint8_t*>(c2->base_addr() + target_offset);
+    for (int j = 0; j < kNumExtraMappings; j++) {
+      (void)*reinterpret_cast<volatile uint8_t*>(extra_a0[j] + target_offset);
+      (void)*reinterpret_cast<volatile uint8_t*>(extra_a2[j] + target_offset);
+    }
+
+    if (i == 0) {
+      // Calibration iteration: run sequentially to measure baseline DetachVmo time
+      // and empty loop speed to compute target iteration counts.
+      zx::ticks loop_start = zx::ticks::now();
+      constexpr size_t kCalibrationLoopIters = 100000;
+      for (size_t d = 0; d < kCalibrationLoopIters; d++) {
+        __asm__ volatile("" : : : "memory");
+      }
+      zx::ticks loop_ticks = zx::ticks::now() - loop_start;
+
+      zx::ticks detach_start = zx::ticks::now();
+      ASSERT_TRUE(pager.DetachVmo(parent), "detach_vmo failed");
+      zx::ticks detach_ticks = zx::ticks::now() - detach_start;
+
+      if (loop_ticks.get() > 0) {
+        initial_delay = (detach_ticks.get() * kCalibrationLoopIters) / (2 * loop_ticks.get());
+      } else {
+        initial_delay = 10000;
+      }
+      delay = initial_delay;
+      c1.reset();
+    } else {
+      // Concurrent race iteration.
+      // Coordinate the threads to enter their respective syscalls concurrently.
+      // - `busy`: A spin barrier initialized to 2. Each thread decrements it and spins
+      //   until it reaches 0, ensuring they start execution at almost the same time.
+      // - `detach_done`: Set by the detacher thread when detach_vmo completes.
+      //   Used by the closer thread to determine if it was too fast or too slow.
+      std::atomic<size_t> busy(2);
+      std::atomic<bool> detach_done(false);
+      std::atomic<zx_status_t> detach_status(ZX_ERR_INTERNAL);
+
+      std::thread detacher([&]() {
+        busy.fetch_sub(1);
+        while (busy.load() > 0) {
+          std::this_thread::yield();
+        }
+        detach_status.store(pager.DetachVmo(parent) ? ZX_OK : ZX_ERR_INTERNAL);
+        detach_done.store(true);
+      });
+
+      std::thread closer([&]() {
+        busy.fetch_sub(1);
+        while (busy.load() > 0) {
+          std::this_thread::yield();
+        }
+        // Micro-delay using pure instructions.
+        for (size_t d = 0; d < delay; d++) {
+          __asm__ volatile("" : : : "memory");
+        }
+        // Feedback loop to adjust delay:
+        // - If detach completed first, the closer was too slow -> decrease delay.
+        // - If closer finished first, it was too fast -> increase delay.
+        if (detach_done.load()) {
+          delay = (delay * 3) / 4;
+        } else {
+          delay += initial_delay / 50;
+        }
+        c1.reset();  // Destroys the Vmo, dropping the handle and triggering dead transition
+      });
+
+      detacher.join();
+      closer.join();
+
+      ASSERT_OK(detach_status.load(), "detach_vmo failed");
+    }
+
+    // Verify c2 (visited first) is unmapped. It should always crash when accessed.
+    {
+      TestThread thread([addr = c2->base_addr() + target_offset]() -> bool {
+        volatile char val = *reinterpret_cast<const volatile char*>(addr);
+        (void)val;
+        return true;
+      });
+      ASSERT_TRUE(thread.Start());
+      ASSERT_TRUE(thread.WaitForCrash(c2->base_addr() + target_offset, ZX_ERR_BAD_STATE),
+                  "c2 did not crash");
+    }
+
+    // Verify c0 (visited last) is unmapped. If the bug is present, the walk was
+    // truncated at c1, so c0's mapping survives and accessing it does not crash.
+    {
+      TestThread thread([addr = c0->base_addr() + target_offset]() -> bool {
+        volatile char val = *reinterpret_cast<const volatile char*>(addr);
+        (void)val;
+        return true;
+      });
+      ASSERT_TRUE(thread.Start());
+      bool crashed = thread.WaitForCrash(c0->base_addr() + target_offset, ZX_ERR_BAD_STATE);
+      if (!crashed) {
+        FAIL("Bug reproduced: c0 remained mapped after detach (iteration %d)", i);
+      }
+    }
+  }
 }
 
 }  // namespace pager_tests
