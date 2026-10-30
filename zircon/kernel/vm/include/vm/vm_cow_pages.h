@@ -401,9 +401,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
 
   VmObjectPaged* get_paged_backlink_locked() const TA_REQ(lock()) { return paged_ref_; }
 
-  uint64_t HeapAllocationBytesLocked() const TA_REQ(lock()) {
-    return page_list_.HeapAllocationBytes();
-  }
+  uint64_t HeapAllocationBytesLocked() const TA_REQ(lock());
 
   uint64_t ReclamationEventCountLocked() const TA_REQ(lock());
 
@@ -1658,8 +1656,8 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // The page source, if any.
   const fbl::RefPtr<PageSource> page_source_;
 
-  // a tree of pages
-  VmPageList page_list_ TA_GUARDED(lock());
+  VmPageList& page_list_locked() TA_REQ(lock());
+  const VmPageList& page_list_locked() const TA_REQ(lock());
 
   // Tracks the populated bytes count and its high-water mark.
   //
@@ -1949,7 +1947,7 @@ class VmCowPages::LookupCursor {
   // owner_info_.cursor, is in a zero interval.
   bool CursorIsInIntervalZero() const TA_REQ(lock()) {
     return CursorIsIntervalZero() ||
-           owner_info_.owner.locked_or(target_).page_list_.IsOffsetInZeroInterval(
+           owner_info_.owner.locked_or(target_).page_list_locked().IsOffsetInZeroInterval(
                owner_info_.owner_offset);
   }
 
@@ -2301,6 +2299,8 @@ __PURE uint64_t rust_vm_cow_pages_parent_limit_locked(const VmCowPages* cow);
 void rust_vm_cow_pages_set_parent_limit_locked(const VmCowPages* cow, uint64_t v);
 __PURE uint64_t rust_vm_cow_pages_root_parent_offset_locked(const VmCowPages* cow);
 void rust_vm_cow_pages_set_root_parent_offset_locked(const VmCowPages* cow, uint64_t v);
+VmPageList* rust_vm_cow_pages_page_list_locked(const VmCowPages* cow);
+__PURE uint64_t rust_vm_cow_pages_heap_allocation_bytes_locked(const VmCowPages* cow);
 __PURE uint32_t rust_vm_cow_pages_children_list_len_locked(const VmCowPages* cow);
 void rust_vm_cow_pages_set_children_list_len_locked(const VmCowPages* cow, uint32_t v);
 __PURE uint64_t rust_vm_cow_pages_pinned_page_count_locked(const VmCowPages* cow);
@@ -2356,6 +2356,15 @@ inline void VmCowPages::set_parent_limit_locked(uint64_t v) {
 }
 inline uint64_t VmCowPages::root_parent_offset_locked() const {
   return rust_vm_cow_pages_root_parent_offset_locked(this);
+}
+inline VmPageList& VmCowPages::page_list_locked() {
+  return *rust_vm_cow_pages_page_list_locked(this);
+}
+inline const VmPageList& VmCowPages::page_list_locked() const {
+  return *rust_vm_cow_pages_page_list_locked(this);
+}
+inline uint64_t VmCowPages::HeapAllocationBytesLocked() const {
+  return rust_vm_cow_pages_heap_allocation_bytes_locked(this);
 }
 inline void VmCowPages::set_root_parent_offset_locked(uint64_t v) {
   rust_vm_cow_pages_set_root_parent_offset_locked(this, v);

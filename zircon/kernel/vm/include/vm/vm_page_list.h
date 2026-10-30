@@ -1226,11 +1226,6 @@ class VmPageList final {
     return true;
   }
 
-  uint64_t HeapAllocationBytes() const {
-    auto utilization = list_.calculate_utilization_slow();
-    return utilization.nodes_in_bytes() + (utilization.stored_values * sizeof(VmPageListNode));
-  }
-
   // Allow the implementation to use a one-past-the-end for VmPageListNode offsets.
   static constexpr uint64_t MAX_SIZE =
       ROUNDDOWN(UINT64_MAX, VmPageListNode::kPageFanOut* kPageSize);

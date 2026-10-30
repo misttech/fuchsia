@@ -8,7 +8,7 @@ use super::anonymous_page_request::AnonymousPageRequest;
 use super::page::{VmPageDoublyLinkedList, VmPagePtr};
 use super::page_queues::PageQueues;
 use super::page_state::VmPageState;
-use super::vm_page_list::VmPageSpliceList;
+use super::vm_page_list::{VmPageList, VmPageSpliceList};
 use crate::kernel::types::PAddr;
 use crate::vm::compressor::VmCompressor;
 use crate::vm::discardable_vmo_tracker::DiscardableVmoTracker;
@@ -1084,6 +1084,9 @@ struct VmCowPagesState {
     /// its parent is used to simplify some operations and so this invariant of not overflowing
     /// accumulated offsets needs to be maintained.
     root_parent_offset: KCell<u64, VmCowPagesLockClass>,
+
+    /// a tree of pages
+    page_list: KCell<VmPageList, VmCowPagesLockClass>,
 }
 
 ::zr::static_assert_size_and_align!(
@@ -1240,8 +1243,9 @@ impl VmCowPages {
     fn state(&self) -> &VmCowPagesState {
         // SAFETY: `self.as_raw()` points to a live `VmCowPages`. `cpp_vm_cow_pages_state` returns
         // a non-null, suitably aligned pointer to the `VmCowPagesState` that the C++ constructor
-        // initialised via `rust_vm_cow_pages_state_init`. It lives as long as `self`, and C++
-        // never writes to it after construction, so creating a shared reference is sound.
+        // initialised via `rust_vm_cow_pages_state_init`. It lives as long as `self`, and all
+        // fields mutated after construction (`KCell` and `AtomicBool`) wrap `UnsafeCell`, so
+        // creating a shared reference is sound.
         unsafe {
             bindings::cpp_vm_cow_pages_state(self.as_raw())
                 .cast::<VmCowPagesState>()
@@ -1987,6 +1991,32 @@ impl VmCowPages {
     }
 
     #[inline]
+    fn page_list_locked<'a>(
+        &'a self,
+        token: &'a LockToken<'_, VmCowPagesLockClass>,
+    ) -> &'a VmPageList {
+        // SAFETY: The VmCowPages lock is held.
+        unsafe { self.state().page_list.get(token) }
+    }
+
+    #[inline]
+    fn page_list_locked_ptr(
+        &self,
+        token: &mut LockToken<'_, VmCowPagesLockClass>,
+    ) -> *mut VmPageList {
+        // SAFETY: The VmCowPages lock is held.
+        unsafe { self.state().page_list.as_mut_ptr(token) }
+    }
+
+    #[inline]
+    pub(crate) fn heap_allocation_bytes_locked(
+        &self,
+        token: &LockToken<'_, VmCowPagesLockClass>,
+    ) -> u64 {
+        self.page_list_locked(token).heap_allocation_bytes()
+    }
+
+    #[inline]
     fn set_root_parent_offset_locked(
         &self,
         token: &mut LockToken<'_, VmCowPagesLockClass>,
@@ -2032,6 +2062,7 @@ extern "C" fn rust_vm_cow_pages_state_init(
         parent_offset: KCell::new(0),
         parent_limit: KCell::new(0),
         root_parent_offset: KCell::new(0),
+        page_list: KCell::new(VmPageList::new()),
     });
 }
 
@@ -2377,6 +2408,30 @@ unsafe extern "C" fn rust_vm_cow_pages_root_parent_offset_locked(this: &VmCowPag
     // SAFETY: the C++ caller holds the lock (TA_REQ).
     let token = unsafe { LockToken::new() };
     this.root_parent_offset_locked(&token)
+}
+
+/// # Safety
+///
+/// * `this` must point to a valid `VmCowPages`.
+/// * The C++ caller must hold `lock()`.
+/// * The returned pointer is valid only while the lock is held and the object lives.
+/// * C++ must not retain the returned pointer across a lock drop.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_vm_cow_pages_page_list_locked(this: &VmCowPages) -> *mut VmPageList {
+    // SAFETY: the C++ caller holds the lock (TA_REQ).
+    let mut token = unsafe { LockToken::new() };
+    this.page_list_locked_ptr(&mut token)
+}
+
+/// # Safety
+///
+/// * `this` must point to a valid `VmCowPages`.
+/// * The C++ caller must hold `lock()`.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_vm_cow_pages_heap_allocation_bytes_locked(this: &VmCowPages) -> u64 {
+    // SAFETY: the C++ caller holds the lock (TA_REQ).
+    let token = unsafe { LockToken::new() };
+    this.heap_allocation_bytes_locked(&token)
 }
 
 /// # Safety
