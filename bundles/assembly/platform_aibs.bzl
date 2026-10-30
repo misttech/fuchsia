@@ -168,6 +168,9 @@ bringup_platform_aib_names = [
 
     # SPMI device user-space utility.
     "spmi-ctl",
+
+    # Battery and charger user-space utility.
+    "batteryutil",
 ]
 
 platform_aib_names = bringup_platform_aib_names + [

@@ -433,7 +433,6 @@ fuchsia_package("bootstrap_eng.bootfs_files_package") {
     "//src/devices/cpu/bin/cpuctl:bootfs",
     "//src/devices/gpio/bin/gpioutil:bootfs",
     "//src/devices/i2c/bin:bootfs",
-    "//src/devices/power/bin/batteryutil:bootfs",
     "//src/devices/power/bin/lspwr:bootfs",
     "//src/devices/ram/bin/ram-info:bootfs",
     "//src/devices/registers/bin/register-util:bootfs",
@@ -494,6 +493,19 @@ fuchsia_package("spmi-ctl.bootfs_files_package") {
 
 export_fuchsia_package_to_bazel("spmi-ctl.bootfs_files_package.bazel_input") {
   package = ":spmi-ctl.bootfs_files_package"
+}
+
+group("batteryutil") {
+  deps = [ ":batteryutil.bootfs_files_package.bazel_input" ]
+}
+
+fuchsia_package("batteryutil.bootfs_files_package") {
+  deps = [ "//src/devices/power/bin/batteryutil:bootfs" ]
+}
+
+export_fuchsia_package_to_bazel(
+    "batteryutil.bootfs_files_package.bazel_input") {
+  package = ":batteryutil.bootfs_files_package"
 }
 
 group("kernel_debug_broker_userdebug") {

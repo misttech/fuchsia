@@ -65,6 +65,11 @@ prebuilt_package(
 )
 
 prebuilt_package(
+    name = "batteryutil.bootfs_files_package",
+    archive = "@gn_targets//bundles/assembly/bazel_inputs:batteryutil.bootfs_files_package",
+)
+
+prebuilt_package(
     name = "clock_development_tools.bootfs_files_package",
     archive = "@gn_targets//bundles/assembly/bazel_inputs:clock_development_tools.bootfs_files_package",
 )
