@@ -1,0 +1,42 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# GN-only: rustc_library has no Bazel equivalent of `disable_rustdoc`.
+# TODO(https://fxbug.dev/543568916): Remove raw_attribute once rustc_library
+# supports disable_rustdoc.
+# @bazel2gn:raw_attribute:disable_rustdoc = true
+rustc_library(
+    name = "utils",
+    testonly = True,
+    srcs = ["src/lib.rs"],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    # rustc_library.bzl defaults lint_config to clippy_warn_production even
+    # when testonly = True, while GN rustc_artifact.gni skips
+    # clippy_warn_production on testonly targets. Set the GN default here so
+    # Bazel matches GN; GN already applies it, so bazel2gn skips it.
+    # @bazel2gn:skip
+    lint_config = "//build/config/rust/lints:clippy_warn_default",
+    visibility = ["//src/settings/service/integration_tests:__subpackages__"],
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
+        "//sdk/fidl/fuchsia.ui.input:fuchsia.ui.input_rust",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        # GN callers use the default `//src/lib/fuchsia-component-test` target,
+        # which is a group that also pulls in the realm builder shard and
+        # server component. Bazel has no equivalent of that group yet, so
+        # depend on the library directly.
+        # TODO(https://fxbug.dev/543568916): Drop the path_overwrite once the
+        # Bazel package exposes the same default target as GN.
+        "//src/lib/fuchsia-component-test:fuchsia-component-test-lib",  # @bazel2gn:path_overwrite://src/lib/fuchsia-component-test
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
