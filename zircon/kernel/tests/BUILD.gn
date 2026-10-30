@@ -100,7 +100,6 @@ if (toolchain_environment == "kernel") {
       "mp_hotplug_tests.cc",
       "mp_tests.cc",
       "mutex_spin_time_tests.cc",
-      "pi_tests.cc",
       "port_tests.cc",
       "pow2_tests.cc",
       "preempt_disable_tests.cc",
@@ -170,6 +169,7 @@ if (toolchain_environment == "kernel") {
       "fibo.rs",
       "mem_tests.rs",
       "owned_wait_queue_topology.rs",
+      "pi_tests.rs",
       "sleep_tests.rs",
       "spinner.rs",
       "tests.rs",
@@ -178,6 +178,7 @@ if (toolchain_environment == "kernel") {
     deps = [
       "//sdk/rust/zx-status",
       "//sdk/rust/zx-types",
+      "//src/lib/ffl",
       "//src/lib/kalloc",
       "//src/lib/kprint",
       "//src/lib/ksync",
@@ -190,6 +191,7 @@ if (toolchain_environment == "kernel") {
       "//zircon/kernel/lib/init:init_rust",
       "//zircon/kernel/lib/page",
       "//zircon/kernel/lib/unittest:unittest-rs",
+      "//zircon/system/ulib/fbl/rust:fbl",
       "//zircon/system/ulib/pretty/rust:pretty",
     ]
   }

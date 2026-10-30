@@ -656,6 +656,9 @@ macro_rules! unwrap_some {
 /// Returns `bool`: `true` if all assertions in the subtest passed, `false` otherwise.
 #[macro_export]
 macro_rules! subtest {
+    (|| $body:block) => {
+        $crate::subtest!(| | $body)
+    };
     (|$($param:ident : $ty:ty),* $(,)?| $body:block) => {
         |$($param : $ty),*| -> bool {
             // Unused when the subtest body contains no soft assertions.

@@ -2136,6 +2136,40 @@ impl Thread {
         // panic context.
         unsafe { cpp_thread_dump_all_during_panic(ptr, full) };
     }
+
+    /// Changes the base profile of the thread to `profile`, propagating any priority inheritance
+    /// side effects (`Thread::SetBaseProfile`).
+    #[inline]
+    pub fn set_base_profile(&self, profile: &scheduler::BaseProfile) {
+        self.assert_canary();
+        OwnedWaitQueue::set_thread_base_profile_and_propagate(self, profile);
+    }
+
+    /// Acquires the thread's lock and returns a snapshot of its base profile
+    /// (`Thread::SnapshotBaseProfile`).
+    #[inline]
+    pub fn snapshot_base_profile(&self) -> scheduler::BaseProfile {
+        crate::kconcurrent::single_chain_lock_guard_owned!(
+            guard,
+            self,
+            crate::kconcurrent::IRQ_SAVE_OPTION,
+            crate::kconcurrent::clt_tag!("Thread::SnapshotBaseProfile")
+        );
+        *guard.proof().base_profile()
+    }
+
+    /// Acquires the thread's lock and returns a snapshot of its effective profile
+    /// (`Thread::SnapshotEffectiveProfile`).
+    #[inline]
+    pub fn snapshot_effective_profile(&self) -> scheduler::EffectiveProfile {
+        crate::kconcurrent::single_chain_lock_guard_owned!(
+            guard,
+            self,
+            crate::kconcurrent::IRQ_SAVE_OPTION,
+            crate::kconcurrent::clt_tag!("Thread::SnapshotEffectiveeProfile")
+        );
+        *guard.proof().effective_profile()
+    }
 }
 
 /// Finds a thread based on the thread ID (`thread_id_to_thread_slow`).
@@ -2265,6 +2299,15 @@ impl<'p> ChainLockProof<'p, Thread> {
         unsafe { &mut (*p).inherited_profile_values }
     }
 
+    /// Returns this thread's effective profile.
+    #[inline]
+    pub(crate) fn effective_profile(&self) -> &scheduler::EffectiveProfile {
+        let p = self.scheduler_state_ptr();
+        // SAFETY: `self` proves `self.owner().lock()` is held, which guards `effective_profile`,
+        // and `&(*p).effective_profile` projects only that field.
+        unsafe { &(*p).effective_profile }
+    }
+
     /// Returns this thread's effective profile mutably (for example, to mark it dirty).
     #[inline]
     pub(crate) fn effective_profile_mut(&mut self) -> &mut scheduler::EffectiveProfile {
@@ -2315,6 +2358,32 @@ impl<'p> ChainLockProof<'p, Thread> {
         unsafe {
             ((*ss).start_time, (*ss).finish_time, (*ss).time_slice_ns, (*ss).time_slice_used_ns)
         }
+    }
+
+    /// Returns this thread's remaining time slice (`remaining_time_slice_ns()`).
+    #[inline]
+    pub(crate) fn remaining_time_slice_ns(&self) -> scheduler::SchedDuration {
+        let (_, _, time_slice_ns, time_slice_used_ns) = self.dynamic_parameters();
+        scheduler::SchedDuration::from(time_slice_ns - time_slice_used_ns)
+    }
+
+    /// Returns this thread's activation count (`activation_count()`).
+    #[inline]
+    pub(crate) fn activation_count(&self) -> u64 {
+        let ss = self.scheduler_state_ptr();
+        // SAFETY: `ss` points to `self.owner()`'s live `SchedulerState`, and `activation_count` is
+        // read by value through the raw pointer without forming a reference to the whole struct.
+        unsafe { (*ss).activation_count }
+    }
+
+    /// Returns the time at which this thread last started running (`last_started_running()`).
+    #[inline]
+    pub(crate) fn last_started_running(&self) -> scheduler::SchedTime {
+        let ss = self.scheduler_state_ptr();
+        // SAFETY: `ss` points to `self.owner()`'s live `SchedulerState`, and
+        // `last_started_running` is read by value through the raw pointer without forming a
+        // reference to the whole struct.
+        unsafe { (*ss).last_started_running }
     }
 
     /// Returns a reference to this thread's [`ThreadState`].

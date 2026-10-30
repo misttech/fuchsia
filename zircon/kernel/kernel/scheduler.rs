@@ -940,6 +940,7 @@ impl SchedDeadlineParams {
     ///
     /// Panics if `deadline_ns` is zero, and asserts in debug builds that
     /// `0 < capacity_ns <= deadline_ns`.
+    #[inline]
     pub fn new(capacity_ns: SchedDuration, deadline_ns: SchedDuration) -> Self {
         debug_assert!(SchedDuration::from_raw(0) < capacity_ns);
         debug_assert!(capacity_ns <= deadline_ns);
@@ -947,6 +948,47 @@ impl SchedDeadlineParams {
             capacity_ns,
             deadline_ns,
             utilization: SchedUtilization::from(capacity_ns / deadline_ns),
+        }
+    }
+
+    /// Creates a `SchedDeadlineParams` with explicit `utilization`, matching C++
+    /// `SchedDeadlineParams(capacity_ns, deadline_ns, utilization)`.
+    #[inline]
+    pub fn with_utilization(
+        capacity_ns: SchedDuration,
+        deadline_ns: SchedDuration,
+        utilization: SchedUtilization,
+    ) -> Self {
+        debug_assert!(SchedDuration::from_raw(0) < capacity_ns);
+        debug_assert!(capacity_ns <= deadline_ns);
+        // Because different code paths either use capacity and deadline to derive
+        // utilization or utilization and deadline to derive capacity, there can be
+        // small differences, due to rounding, between the resulting utilization
+        // values, even when the capacity and deadline values are the same here.
+        // Checking consistency requires verifying that at least one relationship is
+        // valid.
+        debug_assert!(
+            utilization == SchedUtilization::from(capacity_ns / deadline_ns)
+                || capacity_ns == SchedDuration::from(utilization * deadline_ns),
+            "{} = {}/{} ; {} = {}*{}",
+            SchedUtilization::from(capacity_ns / deadline_ns).raw_value(),
+            capacity_ns.raw_value(),
+            deadline_ns.raw_value(),
+            SchedDuration::from(utilization * deadline_ns).raw_value(),
+            utilization.raw_value(),
+            deadline_ns.raw_value(),
+        );
+        Self { capacity_ns, deadline_ns, utilization }
+    }
+}
+
+impl Default for SchedDeadlineParams {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            capacity_ns: SchedDuration::from_raw(0),
+            deadline_ns: SchedDuration::from_raw(0),
+            utilization: SchedUtilization::from_raw(0),
         }
     }
 }
@@ -1537,8 +1579,8 @@ impl SchedulerState {
     /// Converts from kernel priority value in the interval [0, 31] to weight in
     /// the interval (0.0, 1.0]. See the definition of `SchedWeight` for an
     /// explanation of the weight distribution.
-    pub fn convert_priority_to_weight(priority: i32) -> SchedWeight {
-        debug_assert!((LOWEST_PRIORITY..=HIGHEST_PRIORITY).contains(&priority));
+    pub const fn convert_priority_to_weight(priority: i32) -> SchedWeight {
+        debug_assert!(priority >= LOWEST_PRIORITY && priority <= HIGHEST_PRIORITY);
         K_PRIORITY_TO_WEIGHT_TABLE[priority as usize]
     }
 

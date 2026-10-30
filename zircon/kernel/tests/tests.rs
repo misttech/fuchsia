@@ -12,6 +12,7 @@ mod clock_tests;
 mod fibo;
 mod mem_tests;
 mod owned_wait_queue_topology;
+mod pi_tests;
 mod sleep_tests;
 mod spinner;
 mod uart_tests;
