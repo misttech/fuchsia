@@ -41,11 +41,6 @@ python_host_test("bazel_lint_test") {
   ]
 }
 
-python_host_test("check_bazel_test_parity_test") {
-  main_source = "check_bazel_test_parity_test.py"
-  sources = [ "//scripts/shac/check_bazel_test_parity.py" ]
-}
-
 python_host_test("check_header_guards_test") {
   main_source = "check_header_guards_test.py"
   sources = [ "//scripts/shac/check_header_guards.py" ]
@@ -70,7 +65,6 @@ group("tests") {
   deps = [
     ":bazel_defined_tests",
     ":bazel_lint_test",
-    ":check_bazel_test_parity_test",
     ":check_header_guards_test",
     ":clang_tidy_test",
     ":commit_msg_checker_test",

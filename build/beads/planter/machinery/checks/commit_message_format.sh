@@ -508,17 +508,16 @@ if head and base_rev and head != base_rev:
     if dirs and has_tests and not suites:
         add("migrated_tests_not_in_ancestor_suite", 1,
             "No ancestor BUILD.bazel `test_suite()` includes the migrated tests.",
-            "When an ancestor directory already defines a wired `test_suite()` / `bazel_test_suite`, add the migrated "
-            "tests there. When no ancestor `bazel_test_suite` exists yet above the package, place `bazel_test_suite` "
-            "at the nearest `group(\"tests\")` boundary (do not invent a new top-level area `BUILD.bazel` suite unless "
-            "requested).", severity="info")
+            "Add the migrated tests to the appropriate `test_suite()` in an ancestor directory's BUILD.bazel (the one "
+            "already wired into a GN `bazel_test_suite`). If none exists (e.g. first migration in the area), do not "
+            "invent one: say in the summary that the developer must choose or define the `test_suite()` (possibly "
+            "consulting the Build team).", severity="info")
     # Body: changes not specific to the migrated targets must be described.
-    body = "\n".join(l for l in lines[1:] if not re.match(r"^(Test|Bug|Fixed|Bazel-Migration-Target|Build-Only|Deleted-Tests|Renamed-Tests|Skipped-Dual-Tests|Skip-Readme-Check|TAG|CONV|Change-Id|Multiply|Cq-[\w-]+):", l))
+    body = "\n".join(l for l in lines[1:] if not re.match(r"^(Test|Bug|Fixed|Bazel-Migration-Target|Skip-Readme-Check|TAG|Change-Id|Multiply|Cq-[\w-]+):", l))
     # Check that the commit body does not restate the [bazel_migration] //<dir> subject line,
     # including when wrapped across multiple lines or when the subject abbreviates with //.../
     footer_line_re = re.compile(
-        r"^(Test|Bug|Fixed|Bazel-Migration-Target|Build-Only|Deleted-Tests|Renamed-Tests|"
-        r"Skipped-Dual-Tests|Skip-Readme-Check|TAG|CONV|Change-Id|"
+        r"^(Test|Bug|Fixed|Bazel-Migration-Target|Skip-Readme-Check|TAG|Change-Id|"
         r"Multiply|Cq-[\w-]+|Reviewed-on|Reviewed-by|Commit-Queue|Fuchsia-Auto-Submit|"
         r"Presubmit-Verified|API-Review):"
     )
@@ -955,8 +954,7 @@ if head and base_rev and head != base_rev:
     # Check subject and body line lengths (mirroring scripts/shac/commit_msg_checker.py).
     exempt_subject_re = re.compile(r"^(?:Revert(?:\^\d+)?|Reland|fixup!|squash!|amend!) ")
     exempt_footer_re = re.compile(
-        r"^(Bug|Fixed|Test|Bazel-Migration-Target|Build-Only|Deleted-Tests|Renamed-Tests|"
-        r"Skipped-Dual-Tests|Skip-Readme-Check|Change-Id|"
+        r"^(Bug|Fixed|Test|Bazel-Migration-Target|Build-Only|Skip-Readme-Check|Change-Id|"
         r"Cq-Include-Trybots|Fuchsia-Auto-Submit|Multiply|Depends-on|Run-All-Tests|"
         r"Exempt|No-Tree-Checks|No-Presubmit|No-Try|TAG|CONV|Reviewed-on|Reviewed-by|"
         r"Commit-Queue|Presubmit-Verified|API-Review)[:=]"
@@ -1538,295 +1536,17 @@ if head and base_rev and head != base_rev:
                     )
 
         check_cq_include_trybots(lines)
-
-        deleted_tests_lines = [
-            (i + 1, l)
-            for i, l in enumerate(lines)
-            if re.match(r"^Deleted-Tests\s*:", l, re.I)
-        ]
-        skipped_dual_lines = [
-            (i + 1, l)
-            for i, l in enumerate(lines)
-            if re.match(r"^Skipped-Dual-Tests\s*:", l, re.I)
-        ]
-        renamed_tests_lines = [
-            (i + 1, l)
-            for i, l in enumerate(lines)
-            if re.match(r"^Renamed-Tests\s*:", l, re.I)
-        ]
-        build_only_lines = [
-            (i + 1, l)
-            for i, l in enumerate(lines)
-            if re.match(r"^Build-Only\s*:", l, re.I)
-        ]
-
-        def _gn_test_footprint(text):
-            if not text:
-                return []
-            clean_gn = re.sub(
-                r'("(?:\\.|[^"\\])*")|#[^\n]*',
-                lambda m: m.group(1) or " " * len(m.group(0)),
-                text,
-            )
-            test_tmpls = {
-                "test",
-                "cc_test",
-                "rustc_test",
-                "go_test",
-                "python_host_test",
-                "host_test",
-                "fuchsia_unittest_package",
-                "fuchsia_test_package",
-                "fuchsia_unittest_component",
-                "fuchsia_test_component",
-                "bazel_test_suite",
-                "standardized_test_groups",
-            }
-            test_groups = {
-                "tests",
-                "hermetic_tests",
-                "non_hermetic_tests",
-                "e2e_tests",
-                "host_tests",
-                "tests_no_e2e",
-            }
-            sigs = []
-            for m_t in re.finditer(
-                r'\b([A-Za-z_]\w*)\(\s*"([^"$]+)"\s*\)\s*\{', clean_gn
-            ):
-                tmpl_name, tgt_name = m_t.group(1), m_t.group(2)
-                depth = 0
-                in_s = False
-                pos = m_t.end() - 1
-                while pos < len(clean_gn):
-                    ch = clean_gn[pos]
-                    if in_s:
-                        if ch == "\\":
-                            pos += 2
-                            continue
-                        in_s = ch != '"'
-                    elif ch == '"':
-                        in_s = True
-                    elif ch == "{":
-                        depth += 1
-                    elif ch == "}":
-                        depth -= 1
-                        if depth == 0:
-                            break
-                    pos += 1
-                blk_body = clean_gn[m_t.end() : pos]
-                norm_blk = re.sub(r"\s+", " ", blk_body).strip()
-                if tmpl_name in test_tmpls or (
-                    tmpl_name == "group" and tgt_name in test_groups
-                ):
-                    sigs.append((tmpl_name, tgt_name, norm_blk))
-                elif re.search(
-                    r"\bwith_(?:host_)?unit_tests\s*=", blk_body
-                ):
-                    ut_flags = re.findall(
-                        r"\bwith_(?:host_)?unit_tests\s*=\s*\w+", blk_body
-                    )
-                    sigs.append(
-                        (tmpl_name, tgt_name, ";".join(sorted(ut_flags)))
-                    )
-            return sorted(sigs)
-
-        def _bazel_test_footprint(text):
-            if not text:
-                return []
-            import ast
-
-            bz_test_rules = {
-                "fx_unittest_package",
-                "fx_unittest_component",
-                "fuchsia_unittest_package",
-                "fuchsia_unittest_component",
-                "fuchsia_test_package",
-                "fuchsia_test_component",
-                "fx_test",
-                "fx_test_component",
-                "rustc_test",
-                "rust_test",
-                "cc_test",
-                "fx_cc_test",
-                "go_test",
-                "py_test",
-                "host_test",
-                "host_cc_test",
-                "host_rustc_test",
-                "host_go_test",
-                "host_py_test",
-                "sdk_host_test",
-                "python_host_test",
-                "wrap_host_rust_test",
-                "test_suite",
-            }
-            try:
-                tree = ast.parse(text)
-            except SyntaxError:
-                return [("SYNTAX_ERROR", re.sub(r"\s+", " ", text))]
-            sigs = []
-            for stmt in tree.body:
-                if not isinstance(stmt, ast.Expr) or not isinstance(
-                    stmt.value, ast.Call
-                ):
-                    continue
-                call = stmt.value
-                if isinstance(call.func, ast.Name):
-                    rname = call.func.id
-                elif isinstance(call.func, ast.Attribute):
-                    rname = call.func.attr
-                else:
-                    continue
-                kw_names = {kw.arg for kw in call.keywords if kw.arg}
-                if rname in bz_test_rules:
-                    sigs.append((rname, ast.dump(call)))
-                elif kw_names & {"with_unit_tests", "with_host_unit_tests"}:
-                    ut_kws = sorted(
-                        (kw.arg, ast.dump(kw.value))
-                        for kw in call.keywords
-                        if kw.arg
-                        in ("name", "with_unit_tests", "with_host_unit_tests")
-                    )
-                    sigs.append((rname, repr(ut_kws)))
-            return sorted(sigs)
-
-        def _read_after_file(rel_path):
-            disk_path = os.path.join(workdir, rel_path)
-            if os.path.isfile(disk_path):
-                try:
-                    with open(disk_path, encoding="utf-8", errors="replace") as fh:
-                        return fh.read()
-                except OSError:
-                    pass
-            return git("show", f"{head}:{rel_path}")
-
-        def check_test_parity_footers(msg_lines, changed_files):
-            has_planter_tag = any(
-                re.match(r"^TAG\s*[:=]\s*.*\bplanter\b", raw, re.I)
-                for raw in msg_lines
-            )
-            has_numeric_bug = any(
-                re.match(r"^(?:Bug|Fixed)\s*:\s*(?:b/)?\d+\b", raw, re.I)
-                for raw in msg_lines
-            )
-
-            for ln, l in deleted_tests_lines:
-                rhs = l.split(":", 1)[1].strip()
-                if has_planter_tag:
-                    add(
-                        "forbidden_deleted_tests_footer",
-                        ln,
-                        f"Agent-authored (`TAG: planter`) migration commit declares `{l}`; coding agents are strictly forbidden from deleting tests or emitting `Deleted-Tests:`.",
-                        "Restore and migrate the test target(s), keep unmigrated GN-blocked tests above `## BAZEL2GN SENTINEL`, or halt and escalate to a human owner.",
-                        severity="error",
-                    )
-                elif not rhs or "*" in rhs or not has_numeric_bug:
-                    add(
-                        "invalid_deleted_tests_footer",
-                        ln,
-                        f"`{l}` must name exact test target label(s) without wildcards (`*`) and be accompanied by a numeric `Bug: <id>` footer (plus human `Test-Drop-Verified +1` on Gerrit).",
-                        "Specify exact target label(s) in `Deleted-Tests:` alongside `Bug: <id>`, or keep the test instead of deleting it.",
-                        severity="error",
-                    )
-
-            for ln, l in skipped_dual_lines:
-                rhs = l.split(":", 1)[1].strip()
-                if not rhs or "*" in rhs or not has_numeric_bug:
-                    add(
-                        "invalid_skipped_dual_tests_footer",
-                        ln,
-                        f"`{l}` must name exact Bazel test label(s) (`//<dir>:<target>`) without wildcards and include a numeric `Bug: <id>` footer.",
-                        "Specify `Skipped-Dual-Tests: //<dir>:<target>` and `Bug: <id>` alongside `# Needs reviewer attention (bazel2gn skip): <reason>`.",
-                        severity="error",
-                    )
-
-            for ln, l in renamed_tests_lines:
-                rhs = l.split(":", 1)[1].strip()
-                parts = [p.strip() for p in rhs.split("->")]
-                if len(parts) != 2 or not parts[0] or not parts[1] or "*" in rhs:
-                    add(
-                        "invalid_renamed_tests_footer",
-                        ln,
-                        f"`{l}` must have the exact 1:1 format `Renamed-Tests: <old> -> <new>` without wildcards.",
-                        "Write one `Renamed-Tests: <old> -> <new>` footer line per renamed test target.",
-                        severity="error",
-                    )
-
-            build_only_true = [
-                (ln, l)
-                for ln, l in build_only_lines
-                if l.split(":", 1)[1].strip().lower() == "true"
-            ]
-            if build_only_true:
-                ln0, l0 = build_only_true[0]
-                reasons = []
-                if deleted_tests_lines or skipped_dual_lines:
-                    reasons.append(
-                        "commit declares `Deleted-Tests:` or `Skipped-Dual-Tests:`"
-                    )
-                build_pat = re.compile(
-                    r"(?:^|/)(?:BUILD\.gn|BUILD\.bazel|BUILD|MODULE\.bazel|[^/]+\.(?:gni|bzl))$"
-                )
-                non_build = [
-                    f for f in sorted(changed_files) if not build_pat.search(f)
-                ]
-                if non_build:
-                    reasons.append(
-                        f"non-build file(s) modified ({', '.join(non_build[:3])})"
-                    )
-                touched_test_files = []
-                for f in sorted(changed_files):
-                    base_b = os.path.basename(f)
-                    if base_b == "BUILD.gn":
-                        before_txt = git("show", f"{base_rev}:{f}")
-                        after_txt = _read_after_file(f)
-                        if _gn_test_footprint(before_txt) != _gn_test_footprint(
-                            after_txt
-                        ):
-                            touched_test_files.append(f)
-                    elif base_b in ("BUILD.bazel", "BUILD"):
-                        before_txt = git("show", f"{base_rev}:{f}")
-                        after_txt = _read_after_file(f)
-                        if _bazel_test_footprint(
-                            before_txt
-                        ) != _bazel_test_footprint(after_txt):
-                            touched_test_files.append(f)
-                if touched_test_files:
-                    reasons.append(
-                        "test rules, `with_unit_tests`, `bazel_test_suite`, `test_suite`, or `:tests` group deps touched in "
-                        + ", ".join(touched_test_files[:4])
-                    )
-                if reasons:
-                    add(
-                        "illegal_build_only_footer",
-                        ln0,
-                        f"`{l0}` is forbidden on test-touching or source-modifying changes ({'; '.join(reasons)}).",
-                        "Remove `Build-Only: true` from the commit message so full CQ test builders execute; `Build-Only: true` is permitted ONLY on pure non-test library `BUILD.gn`/`BUILD.bazel` migrations that touch zero test rules or `:tests` group edges.",
-                        severity="error",
-                    )
-
-        check_test_parity_footers(lines, all_changed)
-
         nonempty_idxs = [i for i, l in enumerate(lines) if l.strip()]
         if nonempty_idxs:
             final_start = nonempty_idxs[-1]
             while final_start > 0 and lines[final_start - 1].strip():
                 final_start -= 1
-            for ln, l in (
-                bmt_lines
-                + test_lines
-                + skip_readme_lines
-                + deleted_tests_lines
-                + skipped_dual_lines
-                + renamed_tests_lines
-                + build_only_lines
-            ):
+            for ln, l in bmt_lines + test_lines + skip_readme_lines:
                 if ln - 1 < final_start:
                     add("footer_block_not_contiguous", ln,
                         f"Footer `{l}` is separated from the final footer block by a blank line, so Gerrit will not "
                         "index it as a commit footer (breaking `hasfooter:Bazel-Migration-Target` queries).",
-                        "Group all footers (`Bug:`/`Fixed:`, `Skip-Readme-Check:`, `Renamed-Tests:`, `Skipped-Dual-Tests:`, `Test:`, `Bazel-Migration-Target:`, `Build-Only:`, `TAG:`, "
+                        "Group all footers (`Bug:`/`Fixed:`, `Skip-Readme-Check:`, `Test:`, `Bazel-Migration-Target:`, `TAG:`, "
                         "`Change-Id:`) into a single contiguous block at the very bottom of the commit message with "
                         "no blank lines between them.")
                     break

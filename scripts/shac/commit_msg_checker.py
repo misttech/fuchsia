@@ -27,7 +27,7 @@ URL_REGEX = re.compile(r"https?://[^\s]+")
 # footers that stay on a single line (e.g. for `hasfooter:` queries), so
 # footers whose values are labels or commands must not be wrapped.
 FOOTER_REGEX = re.compile(
-    r"^(Bug|Fixed|Test|Bazel-Migration-Target|Build-Only|Deleted-Tests|Renamed-Tests|Skipped-Dual-Tests|Skip-Readme-Check|Change-Id|Cq-Include-Trybots|Fuchsia-Auto-Submit|Multiply|Depends-on|Run-All-Tests|Exempt|No-Tree-Checks|No-Presubmit|No-Try|TAG|CONV)[:=]"
+    r"^(Bug|Fixed|Test|Bazel-Migration-Target|Change-Id|Cq-Include-Trybots|Fuchsia-Auto-Submit|Multiply|Depends-on|Run-All-Tests|Exempt|No-Tree-Checks|No-Presubmit|No-Try|TAG|CONV)[:=]"
 )
 # Line prefixes (in addition to footers) that are exempt from line length
 # checks. Gerrit's IfThisThenThat check (`IfThisThenAnalyzer`) requires

@@ -14,13 +14,10 @@ _FOOTERS = [
     "Cq-Do-Not-Cancel-Tryjobs",
     "Cq-Exclude-Trybots",
     "Cq-Include-Trybots",
-    "Deleted-Tests",
     "Depends-On",
     "Depends-on",
     "Multiply",
-    "Renamed-Tests",
     "Run-All-Tests",
-    "Skipped-Dual-Tests",
     "Want-Review",
     # keep-sorted end
 ]
