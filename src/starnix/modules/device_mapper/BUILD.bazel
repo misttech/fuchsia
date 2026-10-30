@@ -1,0 +1,96 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "device_mapper",
+    srcs = ["lib.rs"],
+    crate_name = "starnix_modules_device_mapper",
+    crate_root = "lib.rs",
+    edition = "2024",
+    lint_config = "//src/starnix/build:kernel_library_config",
+    visibility = ["//src/starnix/modules:__pkg__"],
+    deps = [
+        "//src/lib/mundane",
+        "//src/starnix/kernel/core",
+        "//src/starnix/lib/linux_uapi",
+        "//src/starnix/lib/starnix_ext",
+        "//src/starnix/lib/starnix_logging",
+        "//src/starnix/lib/starnix_sync",
+        "//src/starnix/lib/starnix_syscalls",
+        "//src/starnix/lib/starnix_uapi",
+        "//src/storage/lib/dm_verity",
+        "//third_party/rust_crates/vendor:bitflags",
+    ],
+)
+
+# TODO(https://fxbug.dev/42059075): Re-enable starnix in these environments.
+# @bazel2gn:raw_attribute:exclude_toolchain_tags = [ "asan", "hwasan" ]
+# @bazel2gn:raw_attribute:output_name = "starnix_modules_device_mapper_lib_test"
+rustc_test(
+    name = "device_mapper_test",
+    crate = ":device_mapper",
+    edition = "2024",
+    lint_config = "//src/starnix/config:starnix_clippy_lints_test",
+    deps = ["//src/lib/fuchsia"],
+)
+
+fx_packaged_binary(
+    name = "device_mapper_test_packaged_bin",
+    testonly = True,
+    binary = ":device_mapper_test",
+    binary_name = "starnix_modules_device_mapper_lib_test",
+)
+
+fx_component_manifest(
+    name = "starnix-device-mapper-tests-manifest",
+    testonly = True,
+    component_name = "starnix-device-mapper-tests",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/starnix:unit_test.shard.cml",
+    ],
+    manifest = "meta/starnix_device_mapper_tests.cml",
+)
+
+fx_test_component(
+    name = "starnix-device-mapper-tests-component",
+    compiled_manifest = ":starnix-device-mapper-tests-manifest",
+    component_name = "starnix-device-mapper-tests",
+    test_type = "starnix",
+    deps = [
+        ":device_mapper_test_packaged_bin",
+        # In GN, //src/starnix/kernel/vdso is a resource() propagated through
+        # //src/starnix/kernel/core's deps.
+        "//src/starnix/kernel/vdso",
+    ],
+)
+
+fx_package(
+    name = "starnix-device-mapper-tests-package",
+    package_name = "starnix-device-mapper-tests",
+    test_components = [":starnix-device-mapper-tests-component"],
+)
+
+fx_test(
+    name = "starnix-device-mapper-tests",
+    max_log_severity = "ERROR",
+    package = ":starnix-device-mapper-tests-package",
+)
