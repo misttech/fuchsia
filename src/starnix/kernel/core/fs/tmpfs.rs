@@ -286,12 +286,13 @@ impl FsNodeOps for TmpFsDirectory {
         mode: FileMode,
         owner: FsCred,
     ) -> Result<FsNodeHandle, Errno> {
-        node.update_info(|info| {
+        let casefold = node.update_info(|info| {
             info.link_count += 1;
+            info.casefold
         });
         self.child_count.fetch_add(1, Ordering::Release);
         let mut info = FsNodeInfo::new(mode, owner);
-        info.casefold = node.info().casefold;
+        info.casefold = casefold;
         Ok(node.fs().create_node_and_allocate_node_id(TmpFsDirectory::new(), info))
     }
 

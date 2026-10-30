@@ -1905,12 +1905,16 @@ impl FsNode {
     ) -> Result<(), Errno> {
         let mut permission_flags = access.into();
         if permission_flags.contains(security::PermissionFlags::WRITE)
+            && let Err(err) = mount.check_readonly_filesystem()
             && !self.info().mode.is_special()
         {
-            mount.check_readonly_filesystem()?;
+            return Err(err);
         }
-        if permission_flags.contains(security::PermissionFlags::EXEC) && !self.is_dir() {
-            mount.check_noexec_filesystem()?;
+        if permission_flags.contains(security::PermissionFlags::EXEC)
+            && let Err(err) = mount.check_noexec_filesystem()
+            && !self.is_dir()
+        {
+            return Err(err);
         }
         if reason == CheckAccessReason::Access {
             permission_flags |= PermissionFlags::ACCESS;
@@ -2631,16 +2635,15 @@ fn check_access(
     mode: FileMode,
 ) -> Result<(), Errno> {
     // Determine which of the access bits apply to the `current_task`.
-    let (fsuid, is_in_group) = {
+    let granted = {
         let current_creds = current_task.current_creds();
-        (current_creds.fsuid, current_creds.is_in_group(node_gid))
-    };
-    let granted = if fsuid == node_uid {
-        mode.user_access()
-    } else if is_in_group {
-        mode.group_access()
-    } else {
-        mode.other_access()
+        if current_creds.fsuid == node_uid {
+            mode.user_access()
+        } else if current_creds.is_in_group(node_gid) {
+            mode.group_access()
+        } else {
+            mode.other_access()
+        }
     };
 
     let access = permission_flags.as_access();
