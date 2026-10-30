@@ -1,0 +1,28 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+###############################################################################
+# SOURCES
+###############################################################################
+fx_cc_library(
+    name = "component",
+    srcs = ["component.cc"],
+    hdrs = ["component.h"],
+    implementation_deps = ["//src/lib/files"],
+    visibility = ["//src/developer/forensics:__subpackages__"],
+    deps = [
+        "//sdk/lib/async-loop:async-loop-cpp",
+        "//sdk/lib/async-loop:async-loop-default",
+        "//sdk/lib/inspect/component/cpp",
+        "//sdk/lib/sys/cpp",
+        "//sdk/lib/syslog/cpp",
+        "//src/lib/timekeeper",
+        "//src/lib/timekeeper:system",
+    ],
+    alwayslink = True,
+)
