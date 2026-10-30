@@ -9,9 +9,14 @@ test_suite(
     target_compatible_with = ["@platforms//os:fuchsia"],
     tests = [
         "//zircon/system/utest/cleanup:cleanup-test",
+        "//zircon/system/utest/compiler:compiler-test",
         "//zircon/system/utest/cprng:cprng-test",
         "//zircon/system/utest/errno:errno-test",
+        "//zircon/system/utest/exit:exit-test",
+        "//zircon/system/utest/fpu:fpu-test",
         "//zircon/system/utest/getentropy:getentropy-test",
+        "//zircon/system/utest/int-types:int-types-test",
         "//zircon/system/utest/posixio:posixio-test",
+        "//zircon/system/utest/qsort:qsort-test",
     ],
 )

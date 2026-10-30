@@ -1,0 +1,39 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+build_flags(
+    name = "integer-paranoia",
+    cflags = [
+        "-fsanitize=integer-divide-by-zero,signed-integer-overflow",
+        "-fsanitize-undefined-trap-on-error",
+    ],
+    visibility = ["//visibility:private"],
+)
+
+fx_cc_binary(
+    name = "compiler",
+    testonly = True,
+    srcs = [
+        "integer.cc",
+        "no-unique-address.cc",
+    ],
+    build_flags = [":integer-paranoia"],
+    tags = ["manual"],
+    deps = [
+        "//sdk/lib/fdio",
+        "//zircon/system/ulib/zxtest",
+    ],
+)
+
+fx_unittest_package(
+    name = "compiler-test",
+    unit_tests = [":compiler"],
+    visibility = ["//zircon/system/utest:__pkg__"],
+)
