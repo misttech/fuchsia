@@ -37,6 +37,32 @@ uint64_t ReadUfsInspectUint(Ufs& ufs, const char* name) {
   return property->value();
 }
 
+// Returns the total number of samples recorded by the exponential histogram |name| of the driver's
+// "ufs" inspect node.
+uint64_t ReadUfsInspectHistogramSampleCount(Ufs& ufs, const char* name) {
+  fpromise::result<inspect::Hierarchy> hierarchy =
+      fpromise::run_single_threaded(inspect::ReadFromInspector(ufs.inspect()));
+  if (hierarchy.is_error()) {
+    ADD_FAILURE() << "Failed to read inspect";
+    return 0;
+  }
+  const auto* node = hierarchy.value().GetByPath({"ufs"});
+  if (node == nullptr) {
+    ADD_FAILURE() << "No ufs inspect node";
+    return 0;
+  }
+  const auto* property = node->node().get_property<inspect::UintArrayValue>(name);
+  if (property == nullptr) {
+    ADD_FAILURE() << "No inspect histogram " << name;
+    return 0;
+  }
+  uint64_t samples = 0;
+  for (const auto& bucket : property->GetBuckets()) {
+    samples += bucket.count;
+  }
+  return samples;
+}
+
 // Number of VMOs currently pinned on the mock device's fake BTI. A PMT handle that is closed
 // without zx_pmt_unpin() keeps its VMO in this list, the fake-bti analogue of BTI quarantine.
 size_t CountPinnedVmos(UfsMockDevice& mock_device) {
@@ -63,6 +89,24 @@ class PowerTest : public UfsTest {
           });
     });
     return replied;
+  }
+
+  // The link-idle vote is recorded after the PHY call returns, so poll for the resulting state.
+  void WaitForLinkIdle(bool idle) {
+    const zx::time deadline = zx::deadline_after(zx::sec(5));
+    while (dut_->IsLinkIdle() != idle && zx::clock::get_monotonic() < deadline) {
+      zx::nanosleep(zx::deadline_after(zx::msec(1)));
+    }
+  }
+
+  // Simulates the controller having parked the link in Auto-Hibern8: the mock never does this on
+  // its own, and HandleLinkIdleTimer() only votes LINK_IDLE once HCS shows DP / UTRLRDY clear.
+  void ParkLinkInAutoHibernate() {
+    HostControllerStatusReg::Get()
+        .ReadFrom(mock_device_.GetRegisters())
+        .set_device_present(false)
+        .set_utp_transfer_request_list_ready(false)
+        .WriteTo(mock_device_.GetRegisters());
   }
 
   void SetPowerLevelSync(fuchsia_power_broker::PowerLevel level) {
@@ -1663,6 +1707,144 @@ TEST_F(PowerTest, FailedLinkRecoveryFailsIoUntilNextResume) {
     driver_test().runtime().RunUntilIdle();
   }
   EXPECT_OK(ok_tx.get());
+}
+
+// Verifies runtime link-idle platform voting (NotifyEvent::kLinkIdle / kLinkActive): the idle
+// timer votes LINK_IDLE only once the link is parked in Auto-Hibern8 and nothing holds it active,
+// and any guard, UIC command or doorbell restores ACTIVE before touching the controller.
+TEST_F(PowerTest, RuntimeLinkIdleAndWakeVotes) {
+  TestUfs::SetSupportsRuntimePowerManagement(true);
+  CapabilityReg::Get()
+      .ReadFrom(mock_device_.GetRegisters())
+      .set_auto_hibernation_support(true)
+      .WriteTo(mock_device_.GetRegisters());
+  ASSERT_NO_FATAL_FAILURE(StartDriver(/*supply_power_framework=*/true));
+
+  std::atomic<uint32_t> link_idle_events{0};
+  std::atomic<uint32_t> link_active_events{0};
+  dut_->SetHostControllerCallback([&](NotifyEvent event, uint64_t data) -> zx::result<> {
+    if (event == NotifyEvent::kLinkIdle) {
+      link_idle_events.fetch_add(1);
+    } else if (event == NotifyEvent::kLinkActive) {
+      link_active_events.fetch_add(1);
+    }
+    return Ufs::NotifyEventCallback(event, data);
+  });
+  // Leaving Auto-Hibern8 brings DP / UTRLRDY back.
+  mock_device_.GetUicCmdProcessor().SetHook(
+      UicCommandOpcode::kDmeHibernateExit,
+      [&](UfsMockDevice& mock_device, uint32_t ucmdarg1, uint32_t ucmdarg2, uint32_t ucmdarg3) {
+        HostControllerStatusReg::Get()
+            .ReadFrom(mock_device.GetRegisters())
+            .set_device_present(true)
+            .set_utp_transfer_request_list_ready(true)
+            .WriteTo(mock_device.GetRegisters());
+        UicCmdProcessor::DefaultDmeHibernateExitHandler(mock_device, ucmdarg1, ucmdarg2, ucmdarg3);
+      });
+  auto reset_hooks = fit::defer([&] {
+    mock_device_.GetUicCmdProcessor().Reset();
+    mock_device_.GetRegisterMmioProcessor().Reset();
+  });
+  dut_->SetLinkIdleTimeoutForTesting(zx::msec(10));
+
+  // 1. While a guard is held the timer never votes idle, even with the link parked.
+  {
+    Ufs::ScopedLinkActive guard(*dut_);
+    ParkLinkInAutoHibernate();
+    dut_->ScheduleRuntimeIdleTimers();
+    zx::nanosleep(zx::deadline_after(zx::msec(60)));
+    EXPECT_FALSE(dut_->IsLinkIdle());
+    EXPECT_EQ(link_idle_events.load(), 0u);
+  }
+
+  // 2. Releasing the last guard re-arms the timer, which votes idle once it sees the link parked.
+  WaitForLinkIdle(true);
+  EXPECT_TRUE(dut_->IsLinkIdle());
+  EXPECT_EQ(link_idle_events.load(), 1u);
+
+  // 3. A DME access (ScopedAutoHibernateDisable) restores ACTIVE first, then wakes the link out of
+  //    Auto-Hibern8 before the caller's command.
+  {
+    Ufs::ScopedAutoHibernateDisable guard(*dut_);
+    EXPECT_FALSE(dut_->IsLinkIdle());
+    EXPECT_EQ(link_active_events.load(), 1u);
+    auto hcs = HostControllerStatusReg::Get().ReadFrom(mock_device_.GetRegisters());
+    EXPECT_TRUE(hcs.device_present() && hcs.utp_transfer_request_list_ready());
+  }
+
+  // 4. The timer does not vote idle while the link is still active (not parked); after a bounded
+  //    number of re-arms it waits for the next activity instead of polling forever.
+  zx::nanosleep(zx::deadline_after(zx::msec(10) * (kMaxLinkIdleRearms + 3)));
+  EXPECT_FALSE(dut_->IsLinkIdle());
+  EXPECT_EQ(link_idle_events.load(), 1u);
+
+  // 5. Block I/O issued while idle wakes the link before the doorbell is rung.
+  scsi::BlockDevice* block_device = nullptr;
+  {
+    std::scoped_lock lock(dut_->lock());
+    ASSERT_TRUE(dut_->block_devs().contains(0) && !dut_->block_devs().at(0).empty());
+    block_device = dut_->block_devs().at(0).at(0).get();
+  }
+  std::unique_ptr<block_client::RemoteBlockDevice> client;
+  EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync([&] {
+    auto client_end = driver_test().Connect<fuchsia_hardware_block_volume::Service::Volume>(
+        block_device->DeviceName().c_str());
+    ASSERT_OK(client_end);
+    auto remote_device_result =
+        block_client::RemoteBlockDevice::Create(std::move(client_end.value()));
+    ASSERT_OK(remote_device_result);
+    client = std::move(remote_device_result.value());
+  }));
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(ufs_mock_device::kMockBlockSize, 0, &vmo));
+  storage::Vmoid owned_vmoid;
+  EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync(
+      [&] { ASSERT_OK(client->BlockAttachVmo(vmo, &owned_vmoid)); }));
+  auto detach = fit::defer([&] {
+    EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync(
+        [&] { ASSERT_OK(client->BlockDetachVmo(std::move(owned_vmoid))); }));
+  });
+
+  std::atomic<bool> doorbell_rung_while_idle{false};
+  mock_device_.GetRegisterMmioProcessor().SetHook(
+      RegisterMap::kUTRLDBR, [&](UfsMockDevice& mock_device, uint32_t value) {
+        if (dut_->IsLinkIdle()) {
+          doorbell_rung_while_idle = true;
+        }
+        RegisterMmioProcessor::DefaultUTRLDBRHandler(mock_device, value);
+      });
+
+  // Park again (the attach above may have re-armed the timer; the park makes the next firing
+  // vote idle) and wait for the vote.
+  ParkLinkInAutoHibernate();
+  dut_->ScheduleRuntimeIdleTimers();
+  WaitForLinkIdle(true);
+  ASSERT_TRUE(dut_->IsLinkIdle());
+  const uint32_t active_events_before_io = link_active_events.load();
+
+  BlockFifoRequest request = {
+      .command = {.opcode = BLOCK_OPCODE_READ},
+      .vmoid = owned_vmoid.get(),
+      .length = 1,
+      .vmo_offset = 0,
+      .dev_offset = 0,
+  };
+  std::future<zx_status_t> tx =
+      std::async(std::launch::async, [&] { return client->FifoTransaction(&request, 1); });
+  while (tx.wait_for(std::chrono::milliseconds(10)) != std::future_status::ready) {
+    driver_test().runtime().RunUntilIdle();
+  }
+  EXPECT_OK(tx.get());
+  EXPECT_FALSE(doorbell_rung_while_idle.load());
+  EXPECT_EQ(link_active_events.load(), active_events_before_io + 1);
+  EXPECT_FALSE(dut_->IsLinkIdle());
+
+  // 6. Every transition above was timed: the idle vote (2, 5), the ACTIVE restore (3, 5) and the
+  //    DME_HIBERNATE_EXIT out of the parked link (3).
+  EXPECT_GE(ReadUfsInspectHistogramSampleCount(*dut_, "link_idle_latency_us"), 2u);
+  EXPECT_GE(ReadUfsInspectHistogramSampleCount(*dut_, "link_active_latency_us"), 2u);
+  EXPECT_GE(ReadUfsInspectHistogramSampleCount(*dut_, "ah8_exit_latency_us"), 1u);
+  EXPECT_EQ(ReadUfsInspectUint(*dut_, "link_vote_error_count"), 0u);
 }
 
 }  // namespace

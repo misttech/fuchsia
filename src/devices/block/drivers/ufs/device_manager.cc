@@ -985,10 +985,13 @@ zx::result<> DeviceManager::SetPowerCondition(scsi::PowerCondition target_power_
 }
 
 zx::result<> DeviceManager::SuspendPower() {
+  // Hold the link active for the whole sequence; the runtime idle timer re-arms on release and
+  // stays out of the way while the device is suspended (IsResumed() is false).
+  Ufs::ScopedLinkActive link_active(controller_);
+
   // PowerDown removes VCC/VCCQ from the device, which clears fPowerOnWPEn (JESD220) and would
-  // silently turn a power-on write-protected LU writable. Linux keeps VCC when
-  // dev_info.is_lu_power_on_wp is set; we achieve the same by staying in Sleep (device Idle, link
-  // Hibern8) instead, which only drops the link.
+  // silently turn a power-on write-protected LU writable. We achieve protection by staying in
+  // Sleep (device Idle, link Hibern8, VCC retained) instead, which only drops the link.
   const bool supports_power_down = controller_.SupportsPowerDownSuspend();
   bool power_down = supports_power_down && !IsLogicalLunPowerOnWriteProtect();
   if (supports_power_down && !power_down && !power_down_blocked_) {
@@ -1161,6 +1164,7 @@ zx::result<> DeviceManager::SuspendPowerLocked(bool power_down, UfsPowerMode tar
 }
 
 zx::result<> DeviceManager::ResumePower() {
+  Ufs::ScopedLinkActive link_active(controller_);
   const UfsPowerMode target_power_mode = UfsPowerMode::kActive;
   const scsi::PowerCondition target_power_condition =
       GetPowerModeInfo(target_power_mode).power_condition;

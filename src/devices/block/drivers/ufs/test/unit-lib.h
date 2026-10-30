@@ -258,9 +258,15 @@ class TestUfs : public UfsPci {
   inspect::ComponentInspector& GetInspector() { return *component_inspector_; }
 
   bool SupportsPowerDownSuspend() const override { return supports_power_down_suspend_; }
+  bool SupportsRuntimePowerManagement() const override {
+    return supports_runtime_power_management_;
+  }
 
   static void SetSupportsPowerDownSuspend(bool supports) {
     supports_power_down_suspend_ = supports;
+  }
+  static void SetSupportsRuntimePowerManagement(bool supports) {
+    supports_runtime_power_management_ = supports;
   }
 
   // Marks |slot| as holding a programmed inline encryption key, bypassing the inline encryption
@@ -281,6 +287,7 @@ class TestUfs : public UfsPci {
   // RegisterMmioProcessor to the TestUfs class.
   static ufs_mock_device::UfsMockDevice* mock_device_;
   static bool supports_power_down_suspend_;
+  static bool supports_runtime_power_management_;
 };
 
 class Environment : public fdf_testing::Environment {

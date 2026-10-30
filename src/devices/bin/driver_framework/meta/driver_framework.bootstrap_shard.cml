@@ -143,6 +143,7 @@
             config: [
                 "fuchsia.storage.ufs.AutoHibernateTimerUs",
                 "fuchsia.storage.ufs.EnableAutoHibernate",
+                "fuchsia.storage.ufs.LinkIdleAhitMultiplier",
                 "fuchsia.usb.dwc3.BypassPlatformExtension",
             ],
             from: "void",

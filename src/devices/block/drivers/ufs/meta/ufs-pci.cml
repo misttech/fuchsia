@@ -52,6 +52,13 @@
             default: true,
             availability: "optional",
         },
+        {
+            config: "fuchsia.storage.ufs.LinkIdleAhitMultiplier",
+            key: "link_idle_ahit_multiplier",
+            type: "uint32",
+            default: 2,
+            availability: "optional",
+        },
         { protocol: "fuchsia.power.system.CpuElementManager" },
         { protocol: "fuchsia.scheduler.RoleManager" },
         { service: "fuchsia.hardware.pci.Service" },

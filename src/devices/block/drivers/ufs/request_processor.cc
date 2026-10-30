@@ -59,10 +59,17 @@ RequestProcessor::Create<TaskManagementRequestProcessor, TaskManagementRequestDe
     Ufs &ufs, zx::unowned_bti bti, const fdf::MmioView mmio, uint8_t entry_count);
 
 void RequestProcessor::ReclaimTimedOutSlotsLocked() {
-  const uint32_t doorbell = ReadDoorBellRegister();
+  std::optional<uint32_t> doorbell;
   ForEachAllocatedSlotLocked(
-      [this, doorbell](uint8_t slot_num, RequestSlot &slot) TA_REQ(slot_lock_) {
-        if (slot.state == SlotState::kTimeout && (doorbell & (1u << slot_num)) == 0) {
+      [this, &doorbell](uint8_t slot_num, RequestSlot &slot) TA_REQ(slot_lock_) {
+        if (slot.state != SlotState::kTimeout) {
+          return;
+        }
+        if (!doorbell.has_value()) {
+          // A timed-out slot is still allocated and so holds the link active.
+          doorbell = ReadDoorBellRegister();
+        }
+        if ((*doorbell & (1u << slot_num)) == 0) {
           if (zx::result<> result = ClearSlotLocked(slot); result.is_error()) {
             fdf::error("Failed to clear timed out slot[{}]: {}", slot_num, result);
           }
@@ -87,6 +94,10 @@ zx::result<uint8_t> RequestProcessor::ReserveSlot() {
     const uint8_t slot_num = static_cast<uint8_t>(std::countr_zero(free_slots_mask));
     allocated_slots_mask_ |= (1u << slot_num);
     slots_.GetSlot(slot_num).Reset(SlotState::kReserved);
+    // An allocated slot holds the link active until ClearSlotLocked() releases it (slots cannot
+    // carry a ScopedLinkActive guard: RequestSlot lives in request_list.h and has no Ufs
+    // reference), so the pairing is explicit here and in ClearSlotLocked().
+    controller_.AcquireLinkActive();
     return zx::ok(slot_num);
   }
   fdf::debug("Failed to reserve a request slot");
@@ -105,9 +116,17 @@ zx::result<> RequestProcessor::ClearSlotLocked(RequestSlot &request_slot, bool u
 
   uint8_t slot_num = slots_.GetSlotNum(request_slot);
   request_slot.Reset(SlotState::kFree);
+  const bool was_allocated = (allocated_slots_mask_ & (1u << slot_num)) != 0;
   allocated_slots_mask_ &= ~(1u << slot_num);
-  if (slot_allocation_blocked_) {
-    slot_released_.notify_all();
+  if (was_allocated) {
+    // BlockSlotAllocation() waits for allocated_slots_mask_ to drain, so only an actual release
+    // can make progress for it; clearing an already-free slot would be a spurious wakeup.
+    if (slot_allocation_blocked_) {
+      slot_released_.notify_all();
+    }
+    // Pairs with the AcquireLinkActive() in ReserveSlot() / ReserveAdminSlot(). Keyed on the
+    // allocated bit (not on the call) so that clearing a slot twice cannot under-count.
+    controller_.ReleaseLinkActive();
   }
   return zx::ok();
 }

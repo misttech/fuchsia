@@ -46,6 +46,15 @@
             availability: "optional",
             default: true,
         },
+        {
+            // Runtime link-idle timer as a multiple of the Auto-Hibern8 idle timer: once the link
+            // has been idle this long the PHY is asked to drop its link-idle clock votes.
+            config: "fuchsia.storage.ufs.LinkIdleAhitMultiplier",
+            key: "link_idle_ahit_multiplier",
+            type: "uint32",
+            availability: "optional",
+            default: 2,
+        },
         { protocol: "fuchsia.power.system.CpuElementManager" },
         { protocol: "fuchsia.scheduler.RoleManager" },
         {

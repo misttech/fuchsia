@@ -12,6 +12,9 @@
 namespace ufs {
 
 zx::result<std::optional<uint32_t>> UicCommand::SendCommand() {
+  // Every UIC command needs the link (and its clocks) up; attribute accesses additionally need
+  // Auto-Hibern8 held off (ScopedAutoHibernateDisable implies ScopedLinkActive).
+  std::optional<Ufs::ScopedLinkActive> link_active;
   std::optional<Ufs::ScopedAutoHibernateDisable> ah8_guard;
   switch (GetOpcode()) {
     case UicCommandOpcode::kDmeGet:
@@ -21,6 +24,7 @@ zx::result<std::optional<uint32_t>> UicCommand::SendCommand() {
       ah8_guard.emplace(GetController());
       break;
     default:
+      link_active.emplace(GetController());
       break;
   }
 

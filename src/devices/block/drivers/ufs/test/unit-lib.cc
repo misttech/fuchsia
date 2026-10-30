@@ -14,9 +14,11 @@ namespace ufs {
 
 ufs_mock_device::UfsMockDevice *TestUfs::mock_device_;
 bool TestUfs::supports_power_down_suspend_ = false;
+bool TestUfs::supports_runtime_power_management_ = false;
 
 void UfsTest::InitMockDevice() {
   TestUfs::SetSupportsPowerDownSuspend(false);
+  TestUfs::SetSupportsRuntimePowerManagement(false);
   std::unique_ptr<zx::interrupt> irq = std::make_unique<zx::interrupt>();
   ZX_ASSERT(zx::interrupt::create(zx::resource(), 0, ZX_INTERRUPT_VIRTUAL, irq.get()) == ZX_OK);
 
@@ -68,6 +70,7 @@ void UfsTest::StartDriver(bool supply_power_framework) {
     fake_config.storage_power_management_enabled() = supply_power_framework;
     fake_config.enable_auto_hibernate() = true;
     fake_config.auto_hibernate_timer_us() = 1000;
+    fake_config.link_idle_ahit_multiplier() = 2;
     args.config(fake_config.ToVmo());
     if (power_args.has_value()) {
       args.power_element_args(std::move(power_args.value()));

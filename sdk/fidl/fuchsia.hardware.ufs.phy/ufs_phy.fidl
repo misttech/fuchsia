@@ -121,6 +121,13 @@ open protocol UfsPhy {
     ///   back any partial changes (best-effort) and remains in its previous state.
     /// - **Transitions to `POWER_DOWN`**: Every power-down step is attempted even if an earlier
     ///   step fails, the first error is returned, and the PHY transitions to `POWER_DOWN`.
+    ///
+    /// ## Reentrancy
+    ///
+    /// The UFS driver may call `SetPowerState` while holding the locks that serialize its own
+    /// UIC traffic (it does so for the `ACTIVE` and `LINK_IDLE` votes issued around doorbells and
+    /// interrupts). Implementations must therefore complete `SetPowerState` without calling back
+    /// into `Ufshci` (`DmeGet`/`DmeSet`); any DME work belongs in `Init` or `PrePowerModeChange`.
     flexible SetPowerState(struct {
         state PowerState;
     }) -> () error zx.Status;

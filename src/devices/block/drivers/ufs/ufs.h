@@ -53,6 +53,9 @@ constexpr uint32_t kHostControllerTimeoutUs = 1000;
 // Bound on the HCS DP/UTRLRDY wait after a DME_HIBERNATE_EXIT issued to leave Auto-Hibern8 (M-PHY
 // T_ACTIVATE is in the order of hundreds of microseconds).
 constexpr uint32_t kAutoHibernateExitTimeoutUs = 10000;
+// How many times the runtime link-idle timer re-arms itself when it fires while HCS still shows
+// the link active (not yet parked in Auto-Hibern8) before waiting for the next activity.
+constexpr uint32_t kMaxLinkIdleRearms = 2;
 constexpr int kMaxRetries = 3;
 constexpr uint32_t kMaxTransferSize1MiB = 1024 * 1024;
 constexpr uint8_t kPlaceholderTarget = 0;
@@ -95,6 +98,8 @@ enum NotifyEvent {
   kPostSuspend,
   kPreResume,
   kPostResume,
+  kLinkIdle,
+  kLinkActive,
 };
 
 // struct representing a pending block request for a logical unit
@@ -112,6 +117,13 @@ struct InspectProperties {
   inspect::UintProperty auto_hibern8_error_count;     // Incremented on AH8 entry/exit errors.
   inspect::UintProperty uic_error_count;              // Incremented on every UIC error interrupt.
   inspect::UintProperty link_recovery_count;          // Incremented when RecoverLink() succeeds.
+  inspect::UintProperty link_idle_count;              // Incremented when kLinkIdle is entered.
+  inspect::UintProperty link_vote_error_count;        // Incremented when a PHY link vote fails.
+  inspect::BoolProperty link_idle;  // True while runtime link-idle votes are dropped.
+  // Latency histograms (microseconds) of successful runtime link power transitions.
+  inspect::ExponentialUintHistogram link_active_latency_us;  // LINK_IDLE -> ACTIVE PHY restore.
+  inspect::ExponentialUintHistogram link_idle_latency_us;    // ACTIVE -> LINK_IDLE PHY vote.
+  inspect::ExponentialUintHistogram ah8_exit_latency_us;     // ExitAutoHibernate(), to DP/UTRLRDY.
   // Controller
   inspect::UintProperty max_transfer_bytes;  // Set once by the init thread.
   inspect::UintProperty logical_unit_count;  // Set once by the init thread.
@@ -298,11 +310,27 @@ class Ufs : public fdf::DriverBase2, public fdf_power::Suspendable<Ufs>, public 
   void DumpRegisters();
   void DumpErrorRegisters();
 
+  // Keeps the UFSHCI link and its platform clocks active for the lifetime of the guard: restores
+  // the PHY's ACTIVE vote if the runtime idle timer had voted LINK_IDLE, and keeps the timer from
+  // voting LINK_IDLE again until the last guard (and the last allocated request slot, which holds
+  // one implicitly) is gone. Must be held across every register access that can start link
+  // activity: doorbells, UIC commands, suspend/resume and recovery sequences, the ISR.
+  class ScopedLinkActive {
+   public:
+    explicit ScopedLinkActive(Ufs &ufs) : ufs_(ufs) { ufs_.AcquireLinkActive(); }
+    ~ScopedLinkActive() { ufs_.ReleaseLinkActive(); }
+    ScopedLinkActive(const ScopedLinkActive &) = delete;
+    ScopedLinkActive &operator=(const ScopedLinkActive &) = delete;
+
+   private:
+    Ufs &ufs_;
+  };
+
   // Temporarily disables hardware Auto-Hibern8 (AHIT = 0) during DME/PHY accesses so the link
-  // cannot enter Hibern8 mid-access. Ref-counted across nested scopes.
+  // cannot enter Hibern8 mid-access. Ref-counted across nested scopes; implies ScopedLinkActive.
   class ScopedAutoHibernateDisable {
    public:
-    explicit ScopedAutoHibernateDisable(Ufs &ufs) : ufs_(ufs) {
+    explicit ScopedAutoHibernateDisable(Ufs &ufs) : link_active_(ufs), ufs_(ufs) {
       ufs_.AcquireAutoHibernateDisable();
     }
     ~ScopedAutoHibernateDisable() { ufs_.ReleaseAutoHibernateDisable(); }
@@ -310,8 +338,20 @@ class Ufs : public fdf::DriverBase2, public fdf_power::Suspendable<Ufs>, public 
     ScopedAutoHibernateDisable &operator=(const ScopedAutoHibernateDisable &) = delete;
 
    private:
+    ScopedLinkActive link_active_;
     Ufs &ufs_;
   };
+
+  void AcquireLinkActive() TA_EXCL(ah8_lock_);
+  void ReleaseLinkActive() TA_EXCL(ah8_lock_);
+  // Arms the runtime link-idle timer if nothing holds the link active. Called where Auto-Hibern8
+  // is (re-)enabled outside of a guard; guard release re-arms it otherwise.
+  void ScheduleRuntimeIdleTimers() TA_EXCL(ah8_lock_);
+  bool IsLinkIdle() TA_EXCL(ah8_lock_) {
+    std::scoped_lock lock(ah8_lock_);
+    return link_idle_;
+  }
+  void SetLinkIdleTimeoutForTesting(zx::duration timeout) { link_idle_timeout_ = timeout; }
 
   void ScheduleLinkRecovery() TA_EXCL(link_recovery_lock_);
   void RecoverLink() TA_EXCL(link_recovery_lock_);
@@ -340,6 +380,7 @@ class Ufs : public fdf::DriverBase2, public fdf_power::Suspendable<Ufs>, public 
   bool qemu_quirk() const { return qemu_quirk_; }
 
   virtual bool SupportsPowerDownSuspend() const { return false; }
+  virtual bool SupportsRuntimePowerManagement() const { return SupportsPowerDownSuspend(); }
 
   // Returns true if any inline encryption key slot has been programmed. Key slot state (UFSHCI
   // CRYPTOCFG and, on platforms where the key table lives inside the host controller power domain,
@@ -561,11 +602,41 @@ class Ufs : public fdf::DriverBase2, public fdf_power::Suspendable<Ufs>, public 
   // Issues DME_HIBERNATE_EXIT and waits for the link to report active again. Called by the
   // outermost AcquireAutoHibernateDisable() when HCS shows the link parked in Auto-Hibern8.
   void ExitAutoHibernate() TA_EXCL(ah8_lock_, uic_lock_);
-  mutable std::mutex ah8_lock_;
+  void ScheduleRuntimeIdleTimersLocked() TA_REQ(ah8_lock_);
+  void ArmLinkIdleTimer(uint64_t generation) TA_EXCL(ah8_lock_);
+  void HandleLinkIdleTimer(async_dispatcher_t *dispatcher, async::TaskBase *task,
+                           zx_status_t status) TA_EXCL(ah8_lock_);
+  // Runs on exception_event_dispatcher_ only, as do the two fields below.
+  async::TaskMethod<Ufs, &Ufs::HandleLinkIdleTimer> link_idle_task_{this};
+  uint64_t scheduled_link_idle_gen_ = 0;
+  uint32_t link_idle_rearm_count_ = 0;
+  zx::duration link_idle_timeout_ = zx::msec(4);
+
+  // Link power lock. Guards the Auto-Hibern8 state and the runtime link-idle state below. The PHY
+  // LINK_IDLE / ACTIVE votes (Notify(kLinkIdle/kLinkActive)) are issued while it is held so that a
+  // guard acquisition and the idle timer cannot interleave; fuchsia.hardware.ufs.phy requires that
+  // SetPowerState() does not call back into Ufshci, whose DME commands take this lock.
+  //
+  // Lock order: power_lock_ -> admin_slot_lock_ -> slot_lock_ -> ah8_lock_,
+  // uic_lock_ -> ah8_lock_ (StopHostControllerForPowerDown() / StopHostControllerForRecovery()),
+  // and power_lock_ -> link_recovery_lock_ (leaf). Nothing may be acquired while ah8_lock_ is held
+  // other than the PHY call above; in particular not lock_, slot_lock_, uic_lock_ or power_lock_.
+  mutable std::mutex ah8_lock_ TA_ACQ_AFTER(uic_lock_);
   uint32_t ah8_disable_depth_ TA_GUARDED(ah8_lock_) = 0;
   uint32_t saved_ahit_reg_ TA_GUARDED(ah8_lock_) = 0;
   bool ah8_enabled_ TA_GUARDED(ah8_lock_) = false;
   bool ah8_logged_ TA_GUARDED(ah8_lock_) = false;
+  // Number of link-active holders: ScopedLinkActive guards plus one per allocated request slot.
+  // Slots cannot embed a guard (RequestSlot lives in request_list.h and has no Ufs reference), so
+  // RequestProcessor::ReserveSlot() / ClearSlotLocked() call Acquire/ReleaseLinkActive() directly;
+  // the release is keyed on the allocated_slots_mask_ bit so a double clear cannot under-count.
+  // The idle timer only votes LINK_IDLE while this and ah8_disable_depth_ are zero.
+  uint32_t link_active_depth_ TA_GUARDED(ah8_lock_) = 0;
+  // True while the PHY holds our LINK_IDLE vote.
+  bool link_idle_ TA_GUARDED(ah8_lock_) = false;
+  // Bumped whenever the link becomes active or a new idle timer is armed; a timer whose
+  // generation no longer matches is stale and does nothing.
+  uint64_t idle_timer_generation_ TA_GUARDED(ah8_lock_) = 0;
   // Recovery bookkeeping: ScheduleLinkRecovery() bumps |link_recoveries_scheduled_| before it
   // posts RecoverLink() and the posted task's cleanup bumps |link_recoveries_finished_| when it
   // finishes (or if the dispatcher drops it on shutdown), so at most one recovery is outstanding

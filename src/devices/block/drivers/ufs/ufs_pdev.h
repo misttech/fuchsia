@@ -19,6 +19,19 @@ class UfsPdev final : public Ufs, public fidl::Server<fuchsia_hardware_ufs_phy::
   using Ufs::Ufs;
 
   bool SupportsPowerDownSuspend() const override { return supports_power_down_suspend_; }
+  // Assumed when POWER_DOWN suspend is supported until the PHY returns ZX_ERR_NOT_SUPPORTED.
+  bool SupportsRuntimePowerManagement() const override {
+    return supports_power_down_suspend_ &&
+           !runtime_power_state_unsupported_.load(std::memory_order_acquire);
+  }
+
+  // Ufshci Server methods
+  void DmeSet(DmeSetRequest& request, DmeSetCompleter::Sync& completer) override;
+  void DmeGet(DmeGetRequest& request, DmeGetCompleter::Sync& completer) override;
+  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_hardware_ufs_phy::Ufshci> metadata,
+                             fidl::UnknownMethodCompleter::Sync& completer) override {
+    fdf::error("Unknown method in Ufshci server: {}", metadata.method_ordinal);
+  }
 
  protected:
   zx::result<> InitResources() override;
@@ -31,6 +44,7 @@ class UfsPdev final : public Ufs, public fidl::Server<fuchsia_hardware_ufs_phy::
   zx::result<> PrePowerModeChange();
   zx::result<> PostSuspend();
   zx::result<> PreResume();
+  zx::result<> SetPhyPowerState(fuchsia_hardware_ufs_phy::wire::PowerState state);
   zx::result<> SetBandwidthVote(bool enable);
 
   // Asks the connected PHY driver (UfsPhy.GetProperties) whether it supports POWER_DOWN suspend.
@@ -39,19 +53,13 @@ class UfsPdev final : public Ufs, public fidl::Server<fuchsia_hardware_ufs_phy::
   zx::result<fidl::ClientEnd<fuchsia_hardware_ufs_phy::Ufshci>> StartUfshciServer();
   void StopUfshciServer();
 
-  // Ufshci Server methods
-  void DmeSet(DmeSetRequest& request, DmeSetCompleter::Sync& completer) override;
-  void DmeGet(DmeGetRequest& request, DmeGetCompleter::Sync& completer) override;
-  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_hardware_ufs_phy::Ufshci> metadata,
-                             fidl::UnknownMethodCompleter::Sync& completer) override {
-    fdf::error("Unknown method in Ufshci server: {}", metadata.method_ordinal);
-  }
-
  private:
   fidl::WireSyncClient<fuchsia_hardware_ufs_phy::UfsPhy> ufs_phy_;
   fidl::WireSyncClient<fuchsia_hardware_interconnect::Path> interconnect_client_;
   // Set by QueryPowerDownSuspendSupport() during InitResources().
   bool supports_power_down_suspend_ = false;
+  // Set once the PHY rejects LINK_IDLE with ZX_ERR_NOT_SUPPORTED, so the idle timer stops asking.
+  std::atomic<bool> runtime_power_state_unsupported_{false};
 
   fdf::Dispatcher ufshci_dispatcher_;
   libsync::Completion ufshci_dispatcher_shutdown_completion_;

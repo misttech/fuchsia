@@ -55,6 +55,8 @@ zx::result<> Ufs::NotifyEventCallback(NotifyEvent event, uint64_t data) {
     case NotifyEvent::kPostSuspend:
     case NotifyEvent::kPreResume:
     case NotifyEvent::kPostResume:
+    case NotifyEvent::kLinkIdle:
+    case NotifyEvent::kLinkActive:
       return zx::ok();
     default:
       return zx::error(ZX_ERR_INVALID_ARGS);
@@ -333,6 +335,9 @@ zx::result<> Ufs::Isr() {
     return zx::ok();
   }
 
+  // Keep the link (and its clocks) up for the duration of the ISR; the idle timer re-arms when the
+  // guard and the last allocated slot are released.
+  ScopedLinkActive link_active(*this);
   const fdf::MmioBuffer& mmio = mmio_.value();
   auto interrupt_status = InterruptStatusReg::Get().ReadFrom(&mmio);
   bool trigger_link_recovery = false;
@@ -898,9 +903,14 @@ zx_status_t Ufs::Init() {
   properties_.logical_unit_count =
       controller_node.CreateUint("logical_unit_count", logical_unit_count_);
   // 14 buckets spanning from 1us to ~8ms.
-  properties_.wake_latency_us = inspect_node_.CreateExponentialUintHistogram(
-      "wake_latency_us", /*floor=*/1, /*initial_step=*/1, /*step_multiplier=*/2,
-      /*buckets=*/14);
+  auto make_latency_histogram = [this](const char* name) {
+    return inspect_node_.CreateExponentialUintHistogram(name, /*floor=*/1, /*initial_step=*/1,
+                                                        /*step_multiplier=*/2, /*buckets=*/14);
+  };
+  properties_.wake_latency_us = make_latency_histogram("wake_latency_us");
+  properties_.link_active_latency_us = make_latency_histogram("link_active_latency_us");
+  properties_.link_idle_latency_us = make_latency_histogram("link_idle_latency_us");
+  properties_.ah8_exit_latency_us = make_latency_histogram("ah8_exit_latency_us");
 
   if (component_inspector_) {
     component_inspector_->inspector().emplace(std::move(controller_node));
@@ -919,6 +929,15 @@ zx_status_t Ufs::Init() {
       rpmb_device_.reset();
     }
   }
+
+  // Size the link-idle timer to a multiple of AHIT (default 2x) so the link has normally entered
+  // Auto-Hibern8 before the timer fires; HandleLinkIdleTimer() verifies that against HCS.
+  if (config_.enable_auto_hibernate()) {
+    const uint32_t multiplier = std::max<uint32_t>(config_.link_idle_ahit_multiplier(), 1);
+    link_idle_timeout_ =
+        std::max(link_idle_timeout_, zx::usec(config_.auto_hibernate_timer_us()) * multiplier);
+  }
+  ScheduleRuntimeIdleTimers();
 
   link_recovery_enabled_.store(true, std::memory_order_release);
   fdf::info("Bind Success");
@@ -1159,8 +1178,11 @@ zx::result<> Ufs::InitDeviceInterface(inspect::Node& controller_node) {
     }
   }
   properties_.power_suspended = inspect_node_.CreateBool("power_suspended", false);
+  properties_.link_idle = inspect_node_.CreateBool("link_idle", false);
   properties_.suspend_failures = inspect_node_.CreateUint("suspend_failures", 0);
   properties_.resume_failures = inspect_node_.CreateUint("resume_failures", 0);
+  properties_.link_idle_count = inspect_node_.CreateUint("link_idle_count", 0);
+  properties_.link_vote_error_count = inspect_node_.CreateUint("link_vote_error_count", 0);
   properties_.auto_hibern8_error_count = inspect_node_.CreateUint("auto_hibern8_error_count", 0);
   properties_.uic_error_count = inspect_node_.CreateUint("uic_error_count", 0);
   properties_.link_recovery_count = inspect_node_.CreateUint("link_recovery_count", 0);
@@ -1198,6 +1220,7 @@ zx::result<> Ufs::ConfigureAutoHibernate() {
     return zx::ok();
   }
 
+  ScopedLinkActive link_active(*this);
   const fdf::MmioBuffer& mmio = mmio_.value();
   if (!CapabilityReg::Get().ReadFrom(&mmio).auto_hibernation_support()) {
     fdf::info("UFS Auto-Hibernate not supported by controller");
@@ -1237,6 +1260,7 @@ zx::result<> Ufs::DisableAutoHibernate() {
   if (qemu_quirk_) {
     return zx::ok();
   }
+  ScopedLinkActive link_active(*this);
   const fdf::MmioBuffer& mmio = mmio_.value();
   if (!CapabilityReg::Get().ReadFrom(&mmio).auto_hibernation_support()) {
     return zx::ok();
@@ -1547,6 +1571,7 @@ void Ufs::DumpRegisters() {
   if (IsHardwarePoweredOff() || !mmio_.has_value()) {
     return;
   }
+  ScopedLinkActive link_active(*this);
   const fdf::MmioBuffer& mmio = mmio_.value();
   CapabilityReg::Get().ReadFrom(&mmio).Print(
       [](const char* arg) { fdf::debug("CapabilityReg::{}", arg); });
@@ -1599,6 +1624,7 @@ void Ufs::DumpErrorRegisters() {
   if (IsHardwarePoweredOff() || !mmio_.has_value()) {
     return;
   }
+  ScopedLinkActive link_active(*this);
   const fdf::MmioBuffer& mmio = mmio_.value();
   auto hcs = HostControllerStatusReg::Get().ReadFrom(&mmio);
   auto is = InterruptStatusReg::Get().ReadFrom(&mmio);
@@ -1645,6 +1671,7 @@ void Ufs::ExitAutoHibernate() {
   // Issued outside ah8_lock_: SendCommand() nests its own ScopedAutoHibernateDisable (a no-op at
   // depth > 0) and takes uic_lock(). UHES/UHXS interrupts are masked by the outermost acquire, so
   // the command can poll IS.UHXS without racing the ISR.
+  const zx::time start = zx::clock::get_monotonic();
   DmeHibernateExitCommand dme_hibernate_exit_command(*this);
   if (auto result = dme_hibernate_exit_command.SendCommand(); result.is_error()) {
     fdf::error("Failed to exit Auto-Hibern8 before link management access: {}", result);
@@ -1666,7 +1693,9 @@ void Ufs::ExitAutoHibernate() {
       status != ZX_OK) {
     properties_.auto_hibern8_error_count.Add(1);
     ScheduleLinkRecovery();
+    return;
   }
+  properties_.ah8_exit_latency_us.Insert((zx::clock::get_monotonic() - start).to_usecs());
 }
 
 void Ufs::ReleaseAutoHibernateDisable() {
@@ -1688,6 +1717,114 @@ void Ufs::ReleaseAutoHibernateDisable() {
           .set_uic_hibernate_exit_status_enable(true)
           .WriteTo(&mmio);
     }
+  }
+}
+
+void Ufs::AcquireLinkActive() {
+  std::scoped_lock lock(ah8_lock_);
+  ++link_active_depth_;
+  // Any armed or pending idle timer is stale from here on.
+  ++idle_timer_generation_;
+  if (!link_idle_) {
+    return;
+  }
+  // Wake the link under ah8_lock_ so that HandleLinkIdleTimer() cannot vote LINK_IDLE between
+  // this check and the PHY call (see the lock comment in ufs.h).
+  const zx::time start = zx::clock::get_monotonic();
+  zx::result<> res = Notify(NotifyEvent::kLinkActive, 0);
+  // Either the link is active again or the PHY failed to make it so; in both cases stop asking on
+  // every access. A failed PHY vote is not a link error: the UniPro link itself was never torn
+  // down, so it is logged and counted rather than escalated to RecoverLink().
+  link_idle_ = false;
+  properties_.link_idle.Set(false);
+  if (res.is_error()) {
+    fdf::error("Failed to restore the link-idle platform vote: {}", res);
+    properties_.link_vote_error_count.Add(1);
+    return;
+  }
+  properties_.link_active_latency_us.Insert((zx::clock::get_monotonic() - start).to_usecs());
+}
+
+void Ufs::ReleaseLinkActive() {
+  std::scoped_lock lock(ah8_lock_);
+  ZX_DEBUG_ASSERT(link_active_depth_ > 0);
+  if (--link_active_depth_ == 0) {
+    ScheduleRuntimeIdleTimersLocked();
+  }
+}
+
+void Ufs::ScheduleRuntimeIdleTimers() {
+  std::scoped_lock lock(ah8_lock_);
+  if (link_active_depth_ == 0) {
+    ScheduleRuntimeIdleTimersLocked();
+  }
+}
+
+void Ufs::ScheduleRuntimeIdleTimersLocked() {
+  if (!SupportsRuntimePowerManagement() || !ah8_enabled_ || link_idle_ || stopping_ ||
+      !exception_event_dispatcher_.get()) {
+    return;
+  }
+  const uint64_t generation = ++idle_timer_generation_;
+  // link_idle_task_ is confined to exception_event_dispatcher_.
+  if (zx_status_t status = async::PostTask(exception_event_dispatcher_.async_dispatcher(),
+                                           [this, generation] { ArmLinkIdleTimer(generation); });
+      status != ZX_OK) {
+    fdf::debug("Failed to schedule the link-idle timer: {}", zx_status_get_string(status));
+  }
+}
+
+void Ufs::ArmLinkIdleTimer(uint64_t generation) {
+  {
+    std::scoped_lock lock(ah8_lock_);
+    if (stopping_ || idle_timer_generation_ != generation || link_active_depth_ > 0) {
+      return;
+    }
+  }
+  link_idle_task_.Cancel();
+  scheduled_link_idle_gen_ = generation;
+  link_idle_rearm_count_ = 0;
+  link_idle_task_.PostDelayed(exception_event_dispatcher_.async_dispatcher(), link_idle_timeout_);
+}
+
+void Ufs::HandleLinkIdleTimer(async_dispatcher_t* dispatcher, async::TaskBase* task,
+                              zx_status_t status) {
+  if (status != ZX_OK || stopping_ || !device_manager_) {
+    return;
+  }
+  // Checked outside ah8_lock_ (lock order): queued commands are about to allocate slots, and a
+  // device that is not resumed is handled by the suspend/resume sequence.
+  if (GetPendingCommandsCount() > 0 || !device_manager_->IsResumed()) {
+    return;
+  }
+  std::scoped_lock lock(ah8_lock_);
+  if (idle_timer_generation_ != scheduled_link_idle_gen_ || link_active_depth_ > 0 ||
+      ah8_disable_depth_ > 0 || !ah8_enabled_ || link_idle_ || IsHardwarePoweredOff() ||
+      !mmio_.has_value()) {
+    return;
+  }
+  // Only drop the link-idle clocks once the controller has actually parked the link in
+  // Auto-Hibern8 (DP / UTRLRDY clear in HCS); waking the M-PHY out of Hibern8 needs them. If the
+  // link is still active (the device kept it up, or AHIT has not expired yet) try again a bounded
+  // number of times, then wait for the next activity to re-arm.
+  auto hcs = HostControllerStatusReg::Get().ReadFrom(&*mmio_);
+  if (hcs.device_present() && hcs.utp_transfer_request_list_ready()) {
+    if (++link_idle_rearm_count_ <= kMaxLinkIdleRearms) {
+      scheduled_link_idle_gen_ = ++idle_timer_generation_;
+      link_idle_task_.PostDelayed(exception_event_dispatcher_.async_dispatcher(),
+                                  link_idle_timeout_);
+    }
+    return;
+  }
+  const zx::time start = zx::clock::get_monotonic();
+  if (zx::result<> res = Notify(NotifyEvent::kLinkIdle, 0); res.is_ok()) {
+    link_idle_ = true;
+    properties_.link_idle.Set(true);
+    properties_.link_idle_count.Add(1);
+    properties_.link_idle_latency_us.Insert((zx::clock::get_monotonic() - start).to_usecs());
+  } else if (res.status_value() != ZX_ERR_NOT_SUPPORTED) {
+    fdf::warn("Failed to vote the link idle: {}", res);
+    properties_.link_vote_error_count.Add(1);
   }
 }
 
@@ -1747,6 +1884,8 @@ void Ufs::RecoverLink() {
   task_management_request_processor_->SetSlotAllocationBlocked(true);
   task_management_request_processor_->DisableCompletion();
 
+  // Hold the link active for the whole sequence; the idle timer re-arms on release.
+  ScopedLinkActive link_active(*this);
   {
     std::scoped_lock ah8_lock(ah8_lock_);
     ah8_enabled_ = false;
@@ -2169,13 +2308,16 @@ zx::result<uint8_t> Ufs::ProgramKeySlot(fidl::VectorView<uint8_t> wrapped_key,
 
 zx::result<> Ufs::ConfigureCryptoSlot(uint8_t slot, uint32_t data_unit_size) {
   ZX_DEBUG_ASSERT(slot < kMaxCryptoSlots);
-  // CRYPTOCFG lives in the UFSHCI register space, which is gated during a PowerDown suspend.
-  std::lock_guard<std::mutex> lock(uic_lock_);
-  if (IsHardwarePoweredOff()) {
-    return zx::error(ZX_ERR_BAD_STATE);
+  {
+    // CRYPTOCFG lives in the UFSHCI register space, which is gated during a PowerDown suspend.
+    ScopedLinkActive link_active(*this);
+    std::scoped_lock lock(uic_lock_);
+    if (IsHardwarePoweredOff()) {
+      return zx::error(ZX_ERR_BAD_STATE);
+    }
+    WriteCryptoConfigLocked(slot, data_unit_size);
+    crypto_slot_data_unit_size_[slot] = data_unit_size;
   }
-  WriteCryptoConfigLocked(slot, data_unit_size);
-  crypto_slot_data_unit_size_[slot] = data_unit_size;
   return zx::ok();
 }
 
@@ -2209,6 +2351,7 @@ zx::result<> Ufs::RestoreCryptoState() {
 
   uint32_t restored_slots = 0;
   {
+    ScopedLinkActive link_active(*this);
     std::lock_guard<std::mutex> lock(uic_lock_);
     if (IsHardwarePoweredOff()) {
       return zx::error(ZX_ERR_BAD_STATE);

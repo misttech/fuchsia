@@ -123,6 +123,7 @@ zx::result<uint8_t> TransferRequestProcessor::ReserveAdminSlot() {
   }
   allocated_slots_mask_ |= (1u << kAdminCommandSlotNumber);
   slots_.GetSlot(kAdminCommandSlotNumber).Reset(SlotState::kReserved);
+  controller_.AcquireLinkActive();
   return zx::ok(kAdminCommandSlotNumber);
 }
 

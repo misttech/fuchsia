@@ -193,6 +193,7 @@
             config: [
                 "fuchsia.storage.ufs.AutoHibernateTimerUs",
                 "fuchsia.storage.ufs.EnableAutoHibernate",
+                "fuchsia.storage.ufs.LinkIdleAhitMultiplier",
             ],
             from: "void",
             to: "#base-drivers",

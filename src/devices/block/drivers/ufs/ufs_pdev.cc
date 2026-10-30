@@ -121,9 +121,46 @@ zx::result<> UfsPdev::PdevNotifyEventCallback(NotifyEvent event, uint64_t data) 
       return PostSuspend();
     case NotifyEvent::kPreResume:
       return PreResume();
+    case NotifyEvent::kLinkIdle:
+      return SetPhyPowerState(PowerState::kLinkIdle);
+    case NotifyEvent::kLinkActive:
+      return SetPhyPowerState(PowerState::kActive);
     default:
       return Ufs::NotifyEventCallback(event, data);
   }
+}
+
+zx::result<> UfsPdev::SetPhyPowerState(PowerState state) {
+  if (!ufs_phy_.is_valid()) {
+    return zx::ok();
+  }
+  auto res = ufs_phy_->SetPowerState(state);
+  if (!res.ok()) {
+    // A PHY built against an older protocol has no SetPowerState at all: that only rules out the
+    // optional runtime LINK_IDLE voting. PowerDown suspend / resume do need the call to succeed.
+    if (res.reason() == fidl::Reason::kUnknownMethod && state == PowerState::kLinkIdle) {
+      if (!runtime_power_state_unsupported_.exchange(true, std::memory_order_acq_rel)) {
+        fdf::info("PHY does not implement SetPowerState; disabling runtime link-idle voting");
+      }
+      return zx::error(ZX_ERR_NOT_SUPPORTED);
+    }
+    fdf::error("Failed to call SetPowerState({}): {}", static_cast<uint8_t>(state),
+               res.status_string());
+    return zx::error(res.status());
+  }
+  if (res->is_error()) {
+    if (res->error_value() == ZX_ERR_NOT_SUPPORTED && state == PowerState::kLinkIdle) {
+      if (!runtime_power_state_unsupported_.exchange(true, std::memory_order_acq_rel)) {
+        fdf::info("PHY does not implement PowerState {}; disabling runtime link-idle voting",
+                  static_cast<uint8_t>(state));
+      }
+      return zx::error(ZX_ERR_NOT_SUPPORTED);
+    }
+    fdf::error("SetPowerState({}) returned error status: {}", static_cast<uint8_t>(state),
+               zx_status_get_string(res->error_value()));
+    return zx::error(res->error_value());
+  }
+  return zx::ok();
 }
 
 zx::result<> UfsPdev::SetBandwidthVote(bool enable) {
@@ -152,17 +189,8 @@ zx::result<> UfsPdev::SetBandwidthVote(bool enable) {
 }
 
 zx::result<> UfsPdev::PostSuspend() {
-  if (ufs_phy_.is_valid()) {
-    auto res = ufs_phy_->SetPowerState(PowerState::kPowerDown);
-    if (!res.ok()) {
-      fdf::error("Failed to call SetPowerState(POWER_DOWN): {}", res.status_string());
-      return zx::error(res.status());
-    }
-    if (res->is_error()) {
-      fdf::error("SetPowerState(POWER_DOWN) returned error status: {}",
-                 zx_status_get_string(res->error_value()));
-      return zx::error(res->error_value());
-    }
+  if (zx::result<> res = SetPhyPowerState(PowerState::kPowerDown); res.is_error()) {
+    return res.take_error();
   }
   return SetBandwidthVote(false);
 }
@@ -193,19 +221,7 @@ zx::result<> UfsPdev::PreResume() {
   if (zx::result<> bw_res = SetBandwidthVote(true); bw_res.is_error()) {
     return bw_res.take_error();
   }
-  if (ufs_phy_.is_valid()) {
-    auto res = ufs_phy_->SetPowerState(PowerState::kActive);
-    if (!res.ok()) {
-      fdf::error("Failed to call SetPowerState(ACTIVE): {}", res.status_string());
-      return zx::error(res.status());
-    }
-    if (res->is_error()) {
-      fdf::error("SetPowerState(ACTIVE) returned error status: {}",
-                 zx_status_get_string(res->error_value()));
-      return zx::error(res->error_value());
-    }
-  }
-  return zx::ok();
+  return SetPhyPowerState(PowerState::kActive);
 }
 
 // Triggers dynamic PHY calibration prior to UIC power mode / gear change
