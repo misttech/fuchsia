@@ -1072,7 +1072,25 @@ def inspect_gn_target_deps(gbody, pkg_dir, pre_targets, bazel_names):
         # Check whether a dependency's BUILD.bazel defines the target directly
         # or via a macro that generates <base>_<suffix> sub-targets (such as
         # fidl_library language bindings), rather than unrelated exports_files.
+        # Legacy OOT BUILD.bazel files that depend on @fuchsia_sdk// while their
+        # BUILD.gn has no BAZEL2GN SENTINEL or bazel_* bridge are not usable
+        # under --config=fuchsia_platform and count as unmigrated.
         def _bazel_pkg_has_target(dep_bz_txt, dep_target, dep_gn_path):
+            if "@fuchsia_sdk//" in dep_bz_txt and os.path.isfile(dep_gn_path):
+                try:
+                    gn_raw = open(dep_gn_path, encoding="utf-8").read()
+                    if not any(
+                        tok in gn_raw
+                        for tok in (
+                            "BAZEL2GN SENTINEL",
+                            "bazel_test_suite",
+                            "bazel_fuchsia_package",
+                            "bazel_host_tool",
+                        )
+                    ):
+                        return False
+                except Exception:
+                    pass
             norm_target = dep_target.replace("-", "_")
             bz_names = [
                 m.group(1)
@@ -2968,6 +2986,50 @@ for pkg_dir in sorted(candidate_dirs):
 
     check_unused_gn_imports(gn_info, gn_rel, pkg_dir)
 
+    # Record non-blocking INFO unmatched_target coverage when a pre-sentinel GN target
+    # in a dual-build BUILD.gn is legitimately retained above ## BAZEL2GN SENTINEL
+    # (e.g. blocked by unmigrated external GN-only dependencies or GN-only test blockers).
+    base_gn_target_lines_by_name = {}
+    if gn_info and gn_info.get("has_sentinel"):
+        for rev_cand in dict.fromkeys((change_base, "HEAD~1", "HEAD", "origin/main")):
+            if not rev_cand:
+                continue
+            try:
+                rev_gn_raw = subprocess.check_output(
+                    ["git", "-C", workdir, "show", f"{rev_cand}:{gn_rel}"],
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                )
+                rev_parsed = parse_gn_text(rev_gn_raw)
+                for rev_map in (
+                    rev_parsed.get("pre_targets", {}),
+                    rev_parsed.get("post_targets", {}),
+                ):
+                    for r_name, (_, r_ln, _) in rev_map.items():
+                        base_gn_target_lines_by_name.setdefault(r_name, set()).add(r_ln)
+            except Exception:
+                pass
+
+    def record_retained_pre_sentinel_unmatched_info(gname, gtmpl, gline, info_rem):
+        cand_lines = {gline} | base_gn_target_lines_by_name.get(gname, set())
+        for cand_ln in sorted(cand_lines):
+            for unm_msg in (
+                f'GN target "{gname}" ({gtmpl} at {gn_rel}:{cand_ln}) remains '
+                "hand-written in BUILD.gn (above the bazel2gn sentinel) and is not "
+                "migrated to BUILD.bazel",
+                f'GN target "{gname}" ({gtmpl} at {gn_rel}:{cand_ln}) has no '
+                "corresponding target in BUILD.bazel",
+            ):
+                findings.append({
+                    "source": "migration_sanity",
+                    "category": "unmatched_target",
+                    "severity": "INFO",
+                    "file": gn_rel,
+                    "line": cand_ln,
+                    "message": unm_msg,
+                    "remediation": info_rem,
+                })
+
     if gn_info and gn_info["has_sentinel"]:
         bazel_names = {t["name"] for t in bazel_targets}
         bazel_rules_by_name = {t["name"]: t["rule"] for t in bazel_targets}
@@ -3543,6 +3605,12 @@ for pkg_dir in sorted(candidate_dirs):
             # and fx_packaged_binary on a rustc_binary with transitive rustc_dylib deps fails in
             # _build_fuchsia_package_impl with duplicate lib/lib*.so runfiles).
             if gtmpl in ("fuchsia_package", "fuchsia_package_with_single_component") and not fx_pkgs:
+                pkg_rem = (
+                    f"Keep `{gtmpl}(\"{gname}\")` above `## BAZEL2GN SENTINEL` in '{gn_rel}' "
+                    "(wrapping the `bazel2gn`-generated `fuchsia_component` below the "
+                    f"sentinel) and do not add `fx_package(name = \"{gname}\")` or GN-only "
+                    f"caller visibility in '{bazel_rel}'."
+                )
                 findings.append({
                     "source": "migration_sanity",
                     "category": "gn_package_kept_above_sentinel",
@@ -3558,13 +3626,11 @@ for pkg_dir in sorted(candidate_dirs):
                         "`lib/lib*.so` runfile collisions when a packaged `rustc_binary` has "
                         "transitive `rustc_dylib` deps)."
                     ),
-                    "remediation": (
-                        f"Keep `{gtmpl}(\"{gname}\")` above `## BAZEL2GN SENTINEL` in '{gn_rel}' "
-                        "(wrapping the `bazel2gn`-generated `fuchsia_component` below the "
-                        f"sentinel) and do not add `fx_package(name = \"{gname}\")` or GN-only "
-                        f"caller visibility in '{bazel_rel}'."
-                    ),
+                    "remediation": pkg_rem,
                 })
+                record_retained_pre_sentinel_unmatched_info(
+                    gname, gtmpl, gline, pkg_rem
+                )
                 continue
             # Reject hand-written check-cfg GN config() targets above the sentinel when
             # bazel2gn natively converts rustc_check_cfg_build_flags() below the sentinel.
@@ -3698,6 +3764,16 @@ for pkg_dir in sorted(candidate_dirs):
                             ),
                         })
                     else:
+                        test_kept_rem = (
+                            "If Bazel can run it unchanged, move it to Bazel "
+                            "(`with_unit_tests`/`with_host_unit_tests` on the `rustc_*` target, "
+                            "or `rustc_test`/`go_test`, without `# @bazel2gn:skip`), delete it "
+                            f"here, re-run `fx bazel2gn -d {pkg_dir}` so the GN copy is "
+                            "generated, list that GN copy in `group(\"tests\")` and export the "
+                            "Bazel test with a `bazel_test_suite`. Otherwise keep it with its "
+                            "GN deps and output name, depending on the generated library, and "
+                            "name the blocker in the summary and commit message."
+                        )
                         findings.append({
                             "source": "migration_sanity",
                             "category": "gn_test_kept_above_sentinel",
@@ -3711,14 +3787,12 @@ for pkg_dir in sorted(candidate_dirs):
                                 "reading files at a path relative to the GN build directory, which a Bazel host test's runtime "
                                 "directory cannot reproduce)."
                             ),
-                            "remediation": (
-                                "If Bazel can run it unchanged, move it to Bazel (`with_unit_tests`/`with_host_unit_tests` on the "
-                                "`rustc_*` target, or `rustc_test`/`go_test`, without `# @bazel2gn:skip`), delete it here, re-run "
-                                f"`fx bazel2gn -d {pkg_dir}` so the GN copy is generated, list that GN copy in `group(\"tests\")` and "
-                                "export the Bazel test with a `bazel_test_suite`. Otherwise keep it with its GN deps and output name, depending on "
-                                "the generated library, and name the blocker in the summary and commit message."
-                            ),
+                            "remediation": test_kept_rem,
                         })
+                        if gname not in bazel_names:
+                            record_retained_pre_sentinel_unmatched_info(
+                                gname, gtmpl, gline, test_kept_rem
+                            )
                 continue
             gn_only_matches = (
                 sorted({m.group(0).strip() for m in GN_ONLY_ATTR_RE.finditer(re.sub(r"#[^\n]*", "", gbody))})
@@ -3726,6 +3800,14 @@ for pkg_dir in sorted(candidate_dirs):
                 else []
             )
             if gn_only_matches:
+                gn_only_rem = (
+                    "bazel2gn can also generate it below the sentinel: define it in "
+                    f"'{bazel_rel}' and name the GN-only constructs there with "
+                    "`# @bazel2gn:raw_attribute:` lines (or the dedicated tags/attributes the "
+                    "checkout's build/tools/bazel2gn/README.md documents, e.g. "
+                    "`disable_instrumentation`, `disable_build_flags`), as described in "
+                    "\"GN-only attributes on generated targets\" in the coder prompt."
+                )
                 findings.append({
                     "source": "migration_sanity",
                     "category": "gn_only_attr_target_kept_above_sentinel",
@@ -3737,27 +3819,57 @@ for pkg_dir in sorted(candidate_dirs):
                         f"`## BAZEL2GN SENTINEL` in '{gn_rel}' because it uses GN-only constructs "
                         f"({', '.join(f'`{x}`' for x in gn_only_matches)}). This is allowed."
                     ),
-                    "remediation": (
-                        "bazel2gn can also generate it below the sentinel: define it in "
-                        f"'{bazel_rel}' and name the GN-only constructs there with "
-                        "`# @bazel2gn:raw_attribute:` lines (or the dedicated tags/attributes the "
-                        "checkout's build/tools/bazel2gn/README.md documents, e.g. "
-                        "`disable_instrumentation`, `disable_build_flags`), as described in "
-                        "\"GN-only attributes on generated targets\" in the coder prompt."
-                    ),
+                    "remediation": gn_only_rem,
                 })
+                if gname not in bazel_names:
+                    record_retained_pre_sentinel_unmatched_info(
+                        gname, gtmpl, gline, gn_only_rem
+                    )
             if gtmpl in CONVERTIBLE_GN_TEMPLATES and not GN_ONLY_ATTR_RE.search(gbody):
                 if is_inputs_only_gn_source_set(gtmpl, gbody, gname):
+                    if gname not in bazel_names:
+                        record_retained_pre_sentinel_unmatched_info(
+                            gname,
+                            gtmpl,
+                            gline,
+                            "Inputs-only GN `source_set` wrapper for non-code files stays "
+                            "above `## BAZEL2GN SENTINEL`.",
+                        )
                     continue
                 if is_ancillary_pkg and base_had_sentinel and gname in base_pre_gn_names:
+                    if gname not in bazel_names:
+                        record_retained_pre_sentinel_unmatched_info(
+                            gname,
+                            gtmpl,
+                            gline,
+                            "Pre-existing pre-sentinel target in ancillary package outside "
+                            "the primary migrated directories; out of scope for this CL.",
+                        )
                     continue
                 if is_packaged_testonly_gn_binary(
                     gname, gtmpl, gbody, gn_info["pre_targets"], bazel_names
                 ):
+                    record_retained_pre_sentinel_unmatched_info(
+                        gname,
+                        gtmpl,
+                        gline,
+                        f'Retaining `{gtmpl}("{gname}")` above `## BAZEL2GN SENTINEL` in '
+                        f"'{gn_rel}' is expected while the GN test package that consumes it "
+                        "remains above the sentinel.",
+                    )
                     continue
                 if is_gn_component_target_blocked(
                     gname, gtmpl, gbody, gn_info["pre_targets"], bazel_targets, pkg_dir
                 ):
+                    if gname not in bazel_names:
+                        record_retained_pre_sentinel_unmatched_info(
+                            gname,
+                            gtmpl,
+                            gline,
+                            f'Retaining `{gtmpl}("{gname}")` above `## BAZEL2GN SENTINEL` in '
+                            f"'{gn_rel}' is expected because it uses GN-only component "
+                            "attributes or unmigrated dependencies.",
+                        )
                     continue
                 unmigrated_deps, declare_args_deps, gn_blocked_dep = inspect_gn_target_deps(
                     gbody, pkg_dir, gn_info["pre_targets"], bazel_names
@@ -3773,6 +3885,19 @@ for pkg_dir in sorted(candidate_dirs):
                         for t in bazel_targets
                     )
                 ):
+                    dep_note = (
+                        f" ({', '.join(unmigrated_deps[:4])})"
+                        if unmigrated_deps
+                        else ""
+                    )
+                    record_retained_pre_sentinel_unmatched_info(
+                        gname,
+                        gtmpl,
+                        gline,
+                        f'Retaining `{gtmpl}("{gname}")` above `## BAZEL2GN SENTINEL` in '
+                        f"'{gn_rel}' is expected because its dependencies{dep_note} are not "
+                        "yet migrated to Bazel.",
+                    )
                     continue
 
                 attr_hints = []
@@ -3933,6 +4058,22 @@ for pkg_dir in sorted(candidate_dirs):
                     text = f.read()
             except OSError:
                 return False
+            dep_gn_path = os.path.join(workdir, path, "BUILD.gn")
+            if "@fuchsia_sdk//" in text and os.path.isfile(dep_gn_path):
+                try:
+                    gn_raw = open(dep_gn_path, encoding="utf-8").read()
+                    if not any(
+                        tok in gn_raw
+                        for tok in (
+                            "BAZEL2GN SENTINEL",
+                            "bazel_test_suite",
+                            "bazel_fuchsia_package",
+                            "bazel_host_tool",
+                        )
+                    ):
+                        return False
+                except OSError:
+                    pass
             return re.search(r'\bname\s*=\s*"' + re.escape(name or os.path.basename(path)) + '"', text) is not None
 
         def has_gn_only_test_inputs(raw_body):
@@ -4123,6 +4264,32 @@ for pkg_dir in sorted(candidate_dirs):
             langs = {test_language(l) for l in labels}
             if blockers or not labels or not langs <= set(MIGRATABLE_TEST_LANGUAGES):
                 gn_kept_pkg_test_deps.update(pkg_test_deps)
+                if gn_info.get("has_sentinel") and gname not in bazel_rules:
+                    blk_note = (
+                        f" ({', '.join(dict.fromkeys(blockers))})"
+                        if blockers
+                        else " (unmigrated test dependencies)"
+                    )
+                    pkg_test_rem = (
+                        f'Retaining `{gtmpl}("{gname}")` above `## BAZEL2GN SENTINEL` in '
+                        f"'{gn_rel}' is expected while its test binary or dependencies "
+                        f"cannot be built in Bazel yet{blk_note}."
+                    )
+                    record_retained_pre_sentinel_unmatched_info(
+                        gname, gtmpl, gline, pkg_test_rem
+                    )
+                    for td_name in sorted(pkg_test_deps):
+                        if td_name in gn_info["pre_targets"] and td_name not in bazel_rules:
+                            td_tmpl, td_line, _ = gn_info["pre_targets"][td_name]
+                            record_retained_pre_sentinel_unmatched_info(
+                                td_name,
+                                td_tmpl,
+                                td_line,
+                                f'Retaining `{td_tmpl}("{td_name}")` above '
+                                f"`## BAZEL2GN SENTINEL` in '{gn_rel}' is expected while "
+                                "its dependencies or enclosing GN test package remain "
+                                "GN-only.",
+                            )
                 continue
             is_rust = "rust" in langs
             findings.append({
