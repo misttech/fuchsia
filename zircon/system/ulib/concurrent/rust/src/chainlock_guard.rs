@@ -24,14 +24,14 @@ pub struct ChainLockGuard<'a, T: Transaction> {
 
 impl<'a, T: Transaction> ChainLockGuard<'a, T> {
     /// Unconditionally acquires the given chain lock as the first lock in the chain.
-    #[inline]
+    #[inline(always)]
     pub fn new(lock: &'a ChainLock<T>, token: &'a ChainLockTransactionToken<T>) -> Self {
         lock.acquire_first_in_chain(token);
         Self { lock, held: true, token: ChainLockTransactionToken::new() }
     }
 
     /// Adopts the given chain lock that is already acquired via some other mechanism.
-    #[inline]
+    #[inline(always)]
     pub const fn adopt(lock: &'a ChainLock<T>, _token: &'a ChainLockTransactionToken<T>) -> Self {
         Self { lock, held: true, token: ChainLockTransactionToken::new() }
     }
@@ -50,7 +50,7 @@ impl<'a, T: Transaction> ChainLockGuard<'a, T> {
     ///     // scope.
     /// }
     /// ```
-    #[inline]
+    #[inline(always)]
     pub const fn defer(lock: &'a ChainLock<T>, _token: &'a ChainLockTransactionToken<T>) -> Self {
         Self { lock, held: false, token: ChainLockTransactionToken::new() }
     }
@@ -59,7 +59,7 @@ impl<'a, T: Transaction> ChainLockGuard<'a, T> {
     /// lock acquisition deeper into the call stack in certain locking patterns.
     ///
     /// Asserts in debug builds that `other` actually holds `lock`.
-    #[inline]
+    #[inline(always)]
     pub fn from_taken(mut other: Self, lock: &'a ChainLock<T>) -> Self {
         debug_assert!(other.held);
         debug_assert!(core::ptr::eq(other.lock, lock));
@@ -71,7 +71,7 @@ impl<'a, T: Transaction> ChainLockGuard<'a, T> {
     /// returning a moved guard intended to be passed to [`Self::from_taken`] or a callee.
     ///
     /// Asserts in debug builds that this guard currently holds the lock.
-    #[inline]
+    #[inline(always)]
     pub fn take(self) -> Self {
         debug_assert!(self.held);
         self
@@ -80,7 +80,7 @@ impl<'a, T: Transaction> ChainLockGuard<'a, T> {
     /// Conditionally acquires the lock or returns `false` because of backoff.
     ///
     /// Asserts in debug builds that the lock is not already held by this guard.
-    #[inline]
+    #[inline(always)]
     #[must_use]
     pub fn acquire_or_backoff(&mut self) -> bool {
         debug_assert!(!self.held);
@@ -92,7 +92,7 @@ impl<'a, T: Transaction> ChainLockGuard<'a, T> {
     /// `RecordBackoff::Yes`) or returns `false` if failed.
     ///
     /// Asserts in debug builds that the lock is not already held by this guard.
-    #[inline]
+    #[inline(always)]
     #[must_use]
     pub fn try_acquire(&mut self) -> bool {
         self.try_acquire_with_options(AllowFinalized::No, RecordBackoff::Yes)
@@ -101,7 +101,7 @@ impl<'a, T: Transaction> ChainLockGuard<'a, T> {
     /// Conditionally acquires the lock with the specified options or returns `false` if failed.
     ///
     /// Asserts in debug builds that the lock is not already held by this guard.
-    #[inline]
+    #[inline(always)]
     #[must_use]
     pub fn try_acquire_with_options(
         &mut self,
@@ -119,7 +119,7 @@ impl<'a, T: Transaction> ChainLockGuard<'a, T> {
     /// injected into the lock condition.
     ///
     /// Asserts in debug builds that the lock is not already held by this guard.
-    #[inline]
+    #[inline(always)]
     #[must_use]
     pub fn try_acquire_with<F>(&mut self, callable: F) -> bool
     where
@@ -133,7 +133,7 @@ impl<'a, T: Transaction> ChainLockGuard<'a, T> {
     /// Releases the guarded lock and its capability.
     ///
     /// Asserts in debug builds that the lock is currently held by this guard.
-    #[inline]
+    #[inline(always)]
     pub fn release(&mut self) {
         debug_assert!(self.held);
         self.lock.release(&self.token);
@@ -183,30 +183,31 @@ impl<'a, T: Transaction> ChainLockGuard<'a, T> {
     /// considered.
     ///
     /// Asserts in debug builds that the lock is currently held by this guard.
-    #[inline]
+    #[inline(always)]
     pub fn unguard(&mut self) {
         debug_assert!(self.held);
         self.held = false;
     }
 
     /// Returns `true` if this guard currently holds the lock.
-    #[inline]
+    #[inline(always)]
     pub const fn is_held(&self) -> bool {
         self.held
     }
 
     /// Returns a reference to the underlying [`ChainLock`].
-    #[inline]
+    #[inline(always)]
     pub const fn lock(&self) -> &'a ChainLock<T> {
         self.lock
     }
 }
 
 impl<T: Transaction> Drop for ChainLockGuard<'_, T> {
-    #[inline]
+    #[inline(always)]
     fn drop(&mut self) {
         if self.held {
-            self.lock.assert_held(&self.token);
+            // `release` already asserts in debug builds that `self.lock` is held by the active
+            // transaction.
             self.lock.release(&self.token);
         }
     }

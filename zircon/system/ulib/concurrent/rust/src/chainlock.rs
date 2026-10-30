@@ -101,12 +101,48 @@ pub struct ChainLock<T: Transaction> {
     _pin: PhantomData<PhantomPinned>,
 }
 
+#[cold]
+#[inline(never)]
+#[track_caller]
+fn panic_cycle_detected() -> ! {
+    panic!("ChainLock cycle detected");
+}
+
+#[cold]
+#[inline(never)]
+#[track_caller]
+fn panic_release_mismatch(tx_token: Token, lock_token: Token) -> ! {
+    panic!(
+        "ChainLock::release token mismatch (our token {:#x}, lock token {:#x}).",
+        tx_token.value(),
+        lock_token.value()
+    );
+}
+
+#[cold]
+#[inline(never)]
+#[track_caller]
+fn panic_assert_held(lock_token: Token, tx_token: Token) -> ! {
+    panic!(
+        "Failed to assert ChainLock is held (lock token {:#x}, our token {:#x}).",
+        lock_token.value(),
+        tx_token.value()
+    );
+}
+
+#[cold]
+#[inline(never)]
+#[track_caller]
+fn panic_drop_locked(lock_token: Token) -> ! {
+    panic!("Destroying locked ChainLock: token={}", lock_token.value());
+}
+
 impl<T: Transaction> ChainLock<T> {
     const UNLOCKED_TOKEN: Token = Token::UNLOCKED;
     const MAX_TOKEN: Token = Token::MAX;
 
     /// Creates a new unlocked `ChainLock`.
-    #[inline]
+    #[inline(always)]
     pub const fn new() -> Self {
         Self {
             state: AtomicToken::new(Self::UNLOCKED_TOKEN),
@@ -120,7 +156,7 @@ impl<T: Transaction> ChainLock<T> {
     /// when no other chain locks are held.
     ///
     /// Asserts if a cycle is detected or if any chain locks are currently held.
-    #[inline]
+    #[inline(always)]
     pub fn acquire_first_in_chain(&self, token: &ChainLockTransactionToken<T>) {
         let transaction = T::active_ref(token);
         transaction.assert_not_finalized();
@@ -136,7 +172,9 @@ impl<T: Transaction> ChainLock<T> {
 
             transaction.on_contention(token);
 
-            debug_assert_ne!(result.lock_result, Result::Cycle);
+            if cfg!(debug_assertions) && result.lock_result == Result::Cycle {
+                panic_cycle_detected();
+            }
             T::yield_cpu();
         }
     }
@@ -145,7 +183,7 @@ impl<T: Transaction> ChainLock<T> {
     /// back off due to contention with a higher priority transaction. Returns `true` if the lock
     /// was acquired or `false` if the current transaction should back off. Asserts if a cycle is
     /// detected.
-    #[inline]
+    #[inline(always)]
     #[must_use]
     pub fn acquire_or_backoff(&self, token: &ChainLockTransactionToken<T>) -> bool {
         let transaction = T::active_ref(token);
@@ -175,7 +213,9 @@ impl<T: Transaction> ChainLock<T> {
                 return false;
             }
 
-            debug_assert_ne!(result.lock_result, Result::Cycle);
+            if cfg!(debug_assertions) && result.lock_result == Result::Cycle {
+                panic_cycle_detected();
+            }
             T::yield_cpu();
         }
     }
@@ -183,7 +223,7 @@ impl<T: Transaction> ChainLock<T> {
     /// Acquires the lock, spinning until acquired or returning `Err` with [`Result::Backoff`] or
     /// [`Result::Cycle`]. Returns `Ok(())` if the lock was acquired or `Err(result)` if acquiring
     /// the lock failed.
-    #[inline]
+    #[inline(always)]
     pub fn acquire_or_result(
         &self,
         token: &ChainLockTransactionToken<T>,
@@ -226,7 +266,7 @@ impl<T: Transaction> ChainLock<T> {
     /// Attempts to acquire the lock with default options (`AllowFinalized::No`,
     /// `RecordBackoff::Yes`). Returns `true` if the lock was acquired or `false` if acquiring the
     /// lock failed. Asserts if a cycle is detected.
-    #[inline]
+    #[inline(always)]
     #[must_use]
     pub fn try_acquire(&self, token: &ChainLockTransactionToken<T>) -> bool {
         self.try_acquire_with_options(AllowFinalized::No, RecordBackoff::Yes, token)
@@ -235,7 +275,7 @@ impl<T: Transaction> ChainLock<T> {
     /// Attempts to acquire the lock with the specified `allow_finalized` and `record_backoff`
     /// options. Returns `true` if the lock was acquired or `false` if acquiring the lock failed.
     /// Asserts if a cycle is detected.
-    #[inline]
+    #[inline(always)]
     #[must_use]
     pub fn try_acquire_with_options(
         &self,
@@ -266,15 +306,23 @@ impl<T: Transaction> ChainLock<T> {
             );
         }
 
-        debug_assert_ne!(result.lock_result, Result::Cycle);
+        if cfg!(debug_assertions) && result.lock_result == Result::Cycle {
+            panic_cycle_detected();
+        }
         false
     }
 
     /// Releases the lock.
-    #[inline]
+    #[inline(always)]
     pub fn release(&self, token: &ChainLockTransactionToken<T>) {
         let transaction = T::active_ref(token);
-        debug_assert_eq!(transaction.token(), self.state.load(Ordering::Relaxed));
+        if cfg!(debug_assertions) {
+            let tx_token = transaction.token();
+            let lock_token = self.state.load(Ordering::Relaxed);
+            if tx_token != lock_token {
+                panic_release_mismatch(tx_token, lock_token);
+            }
+        }
 
         transaction.on_release(token);
 
@@ -317,46 +365,47 @@ impl<T: Transaction> ChainLock<T> {
     }
 
     /// Asserts in debug builds that the lock is held by the current transaction.
-    #[inline]
+    #[inline(always)]
     pub fn assert_held(&self, token: &ChainLockTransactionToken<T>) {
         if cfg!(debug_assertions) {
             let transaction = T::active_ref(token);
             let tx_token = transaction.token();
             let lock_token = self.state.load(Ordering::Relaxed);
-            debug_assert_eq!(
-                lock_token,
-                tx_token,
-                "Failed to assert ChainLock is held (lock token {:#x}, our token {:#x}).",
-                lock_token.value(),
-                tx_token.value()
-            );
+            if lock_token != tx_token {
+                panic_assert_held(lock_token, tx_token);
+            }
         }
     }
 
     /// Asserts in debug builds that the lock is held by the current transaction and must be
     /// released by the caller's scope.
-    #[inline]
+    #[inline(always)]
     pub fn assert_acquired(&self, token: &ChainLockTransactionToken<T>) {
         self.assert_held(token);
     }
 
     /// Returns `true` if the lock is held by the current transaction.
-    #[inline]
+    #[inline(always)]
     pub fn is_held(&self, token: &ChainLockTransactionToken<T>) -> bool {
         let transaction = T::active_ref(token);
-        let tx_token = transaction.token();
+        self.is_held_by_token(transaction.token())
+    }
+
+    /// Returns `true` if the lock's current state matches `tx_token` (`Relaxed` load).
+    #[inline(always)]
+    pub fn is_held_by_token(&self, tx_token: Token) -> bool {
         self.state.load(Ordering::Relaxed) == tx_token
     }
 
     /// Returns `true` if the lock is unlocked.
-    #[inline]
+    #[inline(always)]
     pub fn is_unlocked(&self) -> bool {
         self.state.load(Ordering::Relaxed) == Self::UNLOCKED_TOKEN
     }
 
     /// Syncs the held token value of this lock with the current transaction token. Used for saving
     /// and restoring state in special circumstances that use reserved tokens.
-    #[inline]
+    #[inline(always)]
     pub fn sync_token(&self, token: &ChainLockTransactionToken<T>) {
         let transaction = T::active_ref(token);
         let tx_token = transaction.token();
@@ -365,12 +414,12 @@ impl<T: Transaction> ChainLock<T> {
 
     /// Returns the currently stored [`Token`] of this lock with `Relaxed` memory ordering for
     /// testing.
-    #[inline]
+    #[inline(always)]
     pub fn state_for_testing(&self) -> Token {
         self.state.load(Ordering::Relaxed)
     }
 
-    #[inline]
+    #[inline(always)]
     fn attempt_acquire_common(&self, token: Token) -> AttemptResult {
         match self.state.compare_exchange(
             Self::UNLOCKED_TOKEN,
@@ -394,29 +443,28 @@ impl<T: Transaction> ChainLock<T> {
 }
 
 impl<T: Transaction> Default for ChainLock<T> {
-    #[inline]
+    #[inline(always)]
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl<T: Transaction> Drop for ChainLock<T> {
-    #[inline]
+    #[inline(always)]
     fn drop(&mut self) {
-        let lock_token = self.state.load(Ordering::Relaxed);
-        debug_assert_eq!(
-            lock_token,
-            Self::UNLOCKED_TOKEN,
-            "Destroying locked ChainLock: token={}",
-            lock_token.value()
-        );
+        if cfg!(debug_assertions) {
+            let lock_token = self.state.load(Ordering::Relaxed);
+            if lock_token != Self::UNLOCKED_TOKEN {
+                panic_drop_locked(lock_token);
+            }
+        }
     }
 }
 
 /// Utility to simplify expressions where two chain locks need to be acquired with backoff.
 /// Returns `true` if both locks were acquired or `false` if the current transaction needs to
 /// back off.
-#[inline]
+#[inline(always)]
 #[must_use]
 pub fn acquire_both_or_backoff<T: Transaction>(
     first: &ChainLock<T>,

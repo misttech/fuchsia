@@ -81,26 +81,41 @@ zr::static_assert!(align_of::<ChainLock>() == 8);
 zr::static_assert!(size_of::<ChainLockGuard<'static>>() == 16);
 zr::static_assert!(align_of::<ChainLockGuard<'static>>() == 8);
 
+#[cold]
+#[inline(never)]
+#[track_caller]
+fn panic_lock_already_held() -> ! {
+    panic!("ChainLock is already held by the active transaction on this CPU");
+}
+
+#[cold]
+#[inline(never)]
+#[track_caller]
+fn panic_transaction_already_active() -> ! {
+    panic!("ChainLockTransaction is already active on this CPU");
+}
+
 /// Asserts that `lock` is not currently held by the active transaction on the current CPU.
 ///
 /// # Safety-usable invariant
 ///
 /// If this function returns normally, `lock` is not currently held by an active
 /// [`ChainLockTransaction`] on the current CPU.
-#[inline]
+#[inline(always)]
 #[track_caller]
 pub fn assert_lock_not_held<C>(lock: &ClassedChainLock<C>) {
-    assert!({
-        if crate::arch_rs::ints_disabled() && ChainLockTransaction::active().is_some() {
-            // SAFETY: Interrupts are disabled and `ChainLockTransaction::active().is_some()`
-            // confirmed a transaction is currently registered on the current CPU; `token` does not
-            // escape this block.
-            let token = unsafe { ChainLockTransaction::mark_active() };
-            !lock.is_held(&token)
-        } else {
-            true
+    if crate::arch_rs::ints_disabled() {
+        let active = crate::kernel::percpu::PerCpu::get_current().active_cl_transaction();
+        if !active.is_null() {
+            // SAFETY: `ints_disabled()` is true and `active` is non-null, so by
+            // `PerCpu::active_cl_transaction`'s safety invariant `active` points to the live,
+            // stack-pinned `ChainLockTransaction` on this CPU with no mutable aliases.
+            let tx_token = unsafe { (*active).token() };
+            if lock.is_held_by_token(tx_token) {
+                panic_lock_already_held();
+            }
         }
-    });
+    }
 }
 
 /// Asserts in debug builds that `lock` is not currently held by the active transaction on the
@@ -109,7 +124,7 @@ pub fn assert_lock_not_held<C>(lock: &ClassedChainLock<C>) {
 /// Unlike [`assert_lock_not_held`], this provides no guarantee in release builds, so it is only
 /// suitable where the condition is already an obligation of the caller (for example, a
 /// precondition stated in an `unsafe fn`'s `# Safety` section).
-#[inline]
+#[inline(always)]
 #[track_caller]
 pub fn debug_assert_lock_not_held<C>(lock: &ClassedChainLock<C>) {
     if cfg!(debug_assertions) {
@@ -118,10 +133,17 @@ pub fn debug_assert_lock_not_held<C>(lock: &ClassedChainLock<C>) {
 }
 
 /// Asserts in debug builds that a [`ChainLockTransaction`] is currently active on the current CPU.
-#[inline]
+#[inline(always)]
+#[track_caller]
 pub fn assert_transaction_active(_clt_token: &ChainLockTransactionToken) {
-    debug_assert!(crate::arch_rs::ints_disabled());
-    debug_assert!(ChainLockTransaction::active().is_some());
+    if cfg!(debug_assertions) {
+        let ints_off = crate::arch_rs::ints_disabled();
+        if !ints_off
+            || crate::kernel::percpu::PerCpu::get_current().active_cl_transaction().is_null()
+        {
+            super::chainlock_transaction::panic_no_active_transaction(ints_off);
+        }
+    }
 }
 
 /// Asserts that no [`ChainLockTransaction`] is currently active on the current CPU.
@@ -130,10 +152,14 @@ pub fn assert_transaction_active(_clt_token: &ChainLockTransactionToken) {
 ///
 /// If this function returns normally, no [`ChainLockTransaction`] is currently active on the
 /// current CPU.
-#[inline]
+#[inline(always)]
 #[track_caller]
 pub fn assert_no_transaction_active() {
-    assert!(!crate::arch_rs::ints_disabled() || ChainLockTransaction::active().is_none());
+    if crate::arch_rs::ints_disabled()
+        && !crate::kernel::percpu::PerCpu::get_current().active_cl_transaction().is_null()
+    {
+        panic_transaction_already_active();
+    }
 }
 
 /// Asserts in debug builds that no [`ChainLockTransaction`] is active on the current CPU.
@@ -141,7 +167,7 @@ pub fn assert_no_transaction_active() {
 /// Unlike [`assert_no_transaction_active`], this provides no guarantee in release builds, so it is
 /// only suitable where the condition is already an obligation of the caller (for example, a
 /// precondition stated in an `unsafe fn`'s `# Safety` section).
-#[inline]
+#[inline(always)]
 #[track_caller]
 pub fn debug_assert_no_transaction_active() {
     if cfg!(debug_assertions) {
@@ -151,7 +177,7 @@ pub fn debug_assert_no_transaction_active() {
 
 /// Acquires both `lock1` and `lock2`, returning `true` if both were acquired or `false` if neither
 /// stays held and the caller should back off.
-#[inline]
+#[inline(always)]
 #[must_use]
 pub fn acquire_both_or_backoff(
     lock1: &ChainLock,

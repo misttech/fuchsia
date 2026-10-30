@@ -269,14 +269,14 @@ impl<T> TransactionResult<T> {
 }
 
 impl<T> From<Action> for TransactionResult<T> {
-    #[inline]
+    #[inline(always)]
     fn from(action: Action) -> Self {
         Self::Action(action)
     }
 }
 
 impl From<DoneType> for TransactionResult<()> {
-    #[inline]
+    #[inline(always)]
     fn from(_: DoneType) -> Self {
         Self::Value(())
     }
@@ -299,7 +299,7 @@ pub trait IntoTransactionResult {
 impl IntoTransactionResult for DoneType {
     type Output = ();
 
-    #[inline]
+    #[inline(always)]
     fn into_transaction_result(self) -> TransactionResult<()> {
         TransactionResult::Value(())
     }
@@ -308,7 +308,7 @@ impl IntoTransactionResult for DoneType {
 impl<T> IntoTransactionResult for TransactionResult<T> {
     type Output = T;
 
-    #[inline]
+    #[inline(always)]
     fn into_transaction_result(self) -> TransactionResult<T> {
         self
     }
@@ -442,32 +442,32 @@ pub struct AccountingStorageEnabled {
 impl AccountingStorage for AccountingStorageEnabled {
     const ENABLED: bool = true;
 
-    #[inline]
+    #[inline(always)]
     fn new(locks_held: u32, finalized: bool) -> Self {
         Self { locks_held: Cell::new(locks_held), finalized: Cell::new(finalized) }
     }
 
-    #[inline]
+    #[inline(always)]
     fn locks_held(&self) -> u32 {
         self.locks_held.get()
     }
 
-    #[inline]
+    #[inline(always)]
     fn finalized(&self) -> bool {
         self.finalized.get()
     }
 
-    #[inline]
+    #[inline(always)]
     fn on_acquire(&self) {
-        self.locks_held.set(self.locks_held.get() + 1);
+        self.locks_held.set(self.locks_held.get().wrapping_add(1));
     }
 
-    #[inline]
+    #[inline(always)]
     fn on_release(&self) {
-        self.locks_held.set(self.locks_held.get() - 1);
+        self.locks_held.set(self.locks_held.get().wrapping_sub(1));
     }
 
-    #[inline]
+    #[inline(always)]
     fn set_finalized(&self, finalized: bool) {
         self.finalized.set(finalized);
     }
@@ -481,28 +481,28 @@ pub struct AccountingStorageDisabled;
 impl AccountingStorage for AccountingStorageDisabled {
     const ENABLED: bool = false;
 
-    #[inline]
+    #[inline(always)]
     fn new(_locks_held: u32, _finalized: bool) -> Self {
         Self
     }
 
-    #[inline]
+    #[inline(always)]
     fn locks_held(&self) -> u32 {
         0
     }
 
-    #[inline]
+    #[inline(always)]
     fn finalized(&self) -> bool {
         false
     }
 
-    #[inline]
+    #[inline(always)]
     fn on_acquire(&self) {}
 
-    #[inline]
+    #[inline(always)]
     fn on_release(&self) {}
 
-    #[inline]
+    #[inline(always)]
     fn set_finalized(&self, _finalized: bool) {}
 }
 
@@ -585,18 +585,18 @@ pub struct TraceStorageDisabled;
 impl<C: Copy> TraceStorage<C> for TraceStorageDisabled {
     const ENABLED: bool = false;
 
-    #[inline]
+    #[inline(always)]
     fn new(_callsite_info: C) -> Self {
         Self
     }
 
-    #[inline]
+    #[inline(always)]
     fn on_contention<E: TransactionHooks<CallsiteInfo = C>>(&self) {}
 
-    #[inline]
+    #[inline(always)]
     fn on_finalized<E: TransactionHooks<CallsiteInfo = C>>(&self) {}
 
-    #[inline]
+    #[inline(always)]
     fn set_callsite_info(&self, _callsite_info: C) {}
 }
 
@@ -674,10 +674,66 @@ impl<O> Option<O> {
 impl<T, O: StateOption<T>> StateOption<T> for Option<O> {
     type Saver = O::Saver;
 
-    #[inline]
+    #[inline(always)]
     fn save_state(&self) -> Self::Saver {
         self.0.save_state()
     }
+}
+
+#[cold]
+#[inline(never)]
+#[track_caller]
+fn panic_unregister_mismatch() -> ! {
+    panic!("ChainLockTransaction::unregister: transaction is not currently active");
+}
+
+#[cold]
+#[inline(never)]
+#[track_caller]
+fn panic_no_locks_held() -> ! {
+    panic!("ChainLockTransaction::assert_at_least_one_lock_held: locks_held == 0");
+}
+
+#[cold]
+#[inline(never)]
+#[track_caller]
+fn panic_too_many_locks_held(actual: u32) -> ! {
+    panic!("ChainLockTransaction::assert_at_most_one_lock_held: locks_held={actual}");
+}
+
+#[cold]
+#[inline(never)]
+#[track_caller]
+fn panic_num_locks_mismatch(expected: u32, actual: u32) -> ! {
+    panic!("expected={expected}, actual={actual}");
+}
+
+#[cold]
+#[inline(never)]
+#[track_caller]
+fn panic_not_finalized() -> ! {
+    panic!("ChainLockTransaction::assert_finalized: transaction is not finalized");
+}
+
+#[cold]
+#[inline(never)]
+#[track_caller]
+fn panic_already_finalized() -> ! {
+    panic!("ChainLockTransaction::assert_not_finalized: transaction is already finalized");
+}
+
+#[cold]
+#[inline(never)]
+#[track_caller]
+fn panic_unexpected_state(expected: State, actual: State) -> ! {
+    panic!("ChainLockTransaction unexpected state: expected={expected:?}, actual={actual:?}");
+}
+
+#[cold]
+#[inline(never)]
+#[track_caller]
+fn panic_relax_transaction_mismatch() -> ! {
+    panic!("ChainLockTransaction::until_done: active transaction mismatch after relax");
 }
 
 /// Environment-specific hooks required by [`ChainLockTransaction`].
@@ -721,6 +777,51 @@ pub unsafe trait TransactionHooks: Sized + 'static {
     /// `ChainLockTransaction<Self>` that remains alive and pinned at its memory address for as
     /// long as it remains registered as the active transaction on the current execution context.
     unsafe fn set_active(transaction: core::option::Option<NonNull<ChainLockTransaction<Self>>>);
+
+    /// Returns a pointer to the active chain lock transaction, asserting in debug builds that a
+    /// transaction is currently active.
+    ///
+    /// # Safety
+    ///
+    /// A `ChainLockTransaction<Self>` must currently be registered as active on the current
+    /// execution context.
+    #[inline(always)]
+    unsafe fn active_unchecked() -> NonNull<ChainLockTransaction<Self>> {
+        let ptr = Self::active();
+        debug_assert!(ptr.is_some());
+        // SAFETY: The caller guarantees an active transaction is currently registered on the
+        // current execution context.
+        unsafe { ptr.unwrap_unchecked() }
+    }
+
+    /// Asserts that no transaction is currently active and registers `transaction` as the active
+    /// transaction on the current execution context.
+    ///
+    /// # Safety
+    ///
+    /// Same requirements as [`Self::set_active`] with `Some(transaction)`.
+    #[inline(always)]
+    unsafe fn register_active(transaction: NonNull<ChainLockTransaction<Self>>) {
+        assert!(Self::active().is_none());
+        // SAFETY: Forwarded from the caller.
+        unsafe { Self::set_active(Some(transaction)) };
+    }
+
+    /// Asserts in debug builds that `transaction` is the currently active transaction and clears
+    /// the active transaction on the current execution context.
+    ///
+    /// # Safety
+    ///
+    /// `transaction` must currently be the active transaction on the current execution context.
+    #[inline(always)]
+    unsafe fn unregister_active(transaction: NonNull<ChainLockTransaction<Self>>) {
+        if cfg!(debug_assertions) && Self::active() != Some(transaction) {
+            panic_unregister_mismatch();
+        }
+        // SAFETY: Passing `None` clears the active transaction pointer on the current execution
+        // context.
+        unsafe { Self::set_active(None) };
+    }
 
     /// Performs an architecture-specific CPU relax/yield operation.
     fn yield_cpu();
@@ -804,14 +905,14 @@ impl<E: TransactionHooks> ChainLockTransaction<E> {
     pub const DONE: DoneType = DONE;
 
     /// Returns the current [`Token`] of this transaction.
-    #[inline]
+    #[inline(always)]
     pub fn token(&self) -> Token {
         self.token.get()
     }
 
     /// Allocates the next monotonically increasing dynamic transaction [`Token`] from the global
     /// token generator.
-    #[inline]
+    #[inline(always)]
     pub fn next_token() -> Token {
         // SAFETY: Accessing the extern static `concurrent_chainlock_transaction_token_generator`
         // and calling `fetch_add` on it is sound because it is defined in C++ with static storage
@@ -825,20 +926,20 @@ impl<E: TransactionHooks> ChainLockTransaction<E> {
     /// Returns the reserved [`Token`] for `reserved_index` (e.g., a CPU number).
     ///
     /// Asserts in debug builds that `reserved_index < Self::RESERVED_TOKEN_VALUES`.
-    #[inline]
+    #[inline(always)]
     pub fn reserved_token(reserved_index: usize) -> Token {
         debug_assert!((reserved_index as u64) < Self::RESERVED_TOKEN_VALUES);
         Token::from_raw((reserved_index as u64) + 1)
     }
 
     /// Returns the current [`State`] of this transaction.
-    #[inline]
+    #[inline(always)]
     pub fn state(&self) -> State {
         self.state.get()
     }
 
     /// Updates the [`State`] of this transaction.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn set_state(&self, state: State) {
         self.state.set(state);
     }
@@ -926,7 +1027,7 @@ impl<E: TransactionHooks> ChainLockTransaction<E> {
     ///     do_transaction,
     /// );
     /// ```
-    #[inline]
+    #[inline(always)]
     pub fn until_done<O, F, R>(
         option: O,
         callsite_info: E::CallsiteInfo,
@@ -964,22 +1065,28 @@ impl<E: TransactionHooks> ChainLockTransaction<E> {
             match result {
                 TransactionResult::Value(value) => {
                     if transaction.state() == State::Started {
-                        Self::finalize(&token);
+                        transaction.finalize_self(&token);
                     }
                     transaction.set_state(State::Complete);
                     return value;
                 }
                 TransactionResult::Action(Action::Backoff) => {
-                    debug_assert_eq!(transaction.state(), State::Started);
+                    if cfg!(debug_assertions) && transaction.state() != State::Started {
+                        panic_unexpected_state(State::Started, transaction.state());
+                    }
                     transaction.assert_num_locks_held(0);
                     transaction.assert_not_finalized();
-                    transaction.backoff_count.set(transaction.backoff_count.get() + 1);
+                    transaction.backoff_count.set(transaction.backoff_count.get().wrapping_add(1));
                     E::on_backoff(&transaction); // Notify after updating backoff_count.
                     state_saver.relax(&transaction);
-                    debug_assert_eq!(E::active(), Some(NonNull::from(&transaction)));
+                    if cfg!(debug_assertions) && E::active() != Some(NonNull::from(&transaction)) {
+                        panic_relax_transaction_mismatch();
+                    }
                 }
                 TransactionResult::Action(Action::Restart) => {
-                    debug_assert_eq!(transaction.state(), State::Finalized);
+                    if cfg!(debug_assertions) && transaction.state() != State::Finalized {
+                        panic_unexpected_state(State::Finalized, transaction.state());
+                    }
                     transaction.restart(callsite_info, &token);
                 }
             }
@@ -987,59 +1094,64 @@ impl<E: TransactionHooks> ChainLockTransaction<E> {
     }
 
     /// Returns the number of times this transaction has backed off.
-    #[inline]
+    #[inline(always)]
     pub fn backoff_count(&self) -> u64 {
         self.backoff_count.get()
     }
 
     /// Returns a reference to the environment-specific extra state (e.g., `conflict_id_` in the
     /// kernel).
-    #[inline]
+    #[inline(always)]
     pub const fn extra(&self) -> &E::ExtraState {
         &self.extra
     }
 
     /// Asserts that at least one lock is currently held by this transaction (when debug accounting
     /// is enabled).
-    #[inline]
+    #[inline(always)]
     pub fn assert_at_least_one_lock_held(&self) {
-        if Self::DEBUG_ACCOUNTING_ENABLED {
-            assert!(self.accounting.locks_held() > 0);
+        if Self::DEBUG_ACCOUNTING_ENABLED && self.accounting.locks_held() == 0 {
+            panic_no_locks_held();
         }
     }
 
     /// Asserts that at most one lock is currently held by this transaction (when debug accounting
     /// is enabled).
-    #[inline]
+    #[inline(always)]
     pub fn assert_at_most_one_lock_held(&self) {
         if Self::DEBUG_ACCOUNTING_ENABLED {
-            assert!(self.accounting.locks_held() <= 1);
+            let actual = self.accounting.locks_held();
+            if actual > 1 {
+                panic_too_many_locks_held(actual);
+            }
         }
     }
 
     /// Asserts that exactly `expected` locks are currently held by this transaction (when debug
     /// accounting is enabled).
-    #[inline]
+    #[inline(always)]
     pub fn assert_num_locks_held(&self, expected: u32) {
         if Self::DEBUG_ACCOUNTING_ENABLED {
             let actual = self.accounting.locks_held();
-            assert_eq!(expected, actual, "expected={expected}, actual={actual}");
+            if expected != actual {
+                panic_num_locks_mismatch(expected, actual);
+            }
         }
     }
 
     /// Asserts that this transaction has been finalized (when debug accounting is enabled).
-    #[inline]
+    #[inline(always)]
     pub fn assert_finalized(&self) {
-        if Self::DEBUG_ACCOUNTING_ENABLED {
-            assert!(self.accounting.finalized());
+        if Self::DEBUG_ACCOUNTING_ENABLED && !self.accounting.finalized() {
+            panic_not_finalized();
         }
     }
 
     /// Asserts that this transaction has not been finalized (when debug accounting is enabled).
-    #[inline]
+    #[inline(always)]
     pub fn assert_not_finalized(&self) {
-        if Self::DEBUG_ACCOUNTING_ENABLED {
-            assert!(!self.accounting.finalized());
+        if Self::DEBUG_ACCOUNTING_ENABLED && self.accounting.finalized() {
+            panic_already_finalized();
         }
     }
 
@@ -1051,7 +1163,7 @@ impl<E: TransactionHooks> ChainLockTransaction<E> {
     /// The caller must ensure that a `ChainLockTransaction<E>` is currently registered as active
     /// on the current execution context, and that the returned token is not used while that
     /// transaction is unregistered or after it is dropped.
-    #[inline]
+    #[inline(always)]
     pub unsafe fn assert_active() -> ChainLockTransactionToken<Self> {
         debug_assert!(E::active().is_some());
         ChainLockTransactionToken::new()
@@ -1065,28 +1177,26 @@ impl<E: TransactionHooks> ChainLockTransaction<E> {
     /// The caller must ensure that a `ChainLockTransaction<E>` is currently registered as active
     /// on the current execution context, and that the returned token is not used while that
     /// transaction is unregistered or after it is dropped.
-    #[inline]
+    #[inline(always)]
     pub unsafe fn mark_active() -> ChainLockTransactionToken<Self> {
         ChainLockTransactionToken::new()
     }
 
     /// Returns a pointer to the active transaction, or `None` if none is active.
-    #[inline]
+    #[inline(always)]
     pub fn active() -> core::option::Option<NonNull<Self>> {
         E::active()
     }
 
     /// Returns a reference to the active transaction. Asserts in debug builds that a transaction
     /// is active.
-    #[inline]
+    #[inline(always)]
     pub fn active_ref(_token: &ChainLockTransactionToken<Self>) -> &Self {
-        let ptr = E::active();
-        debug_assert!(ptr.is_some());
         // SAFETY: `_token` is a valid `ChainLockTransactionToken<Self>`, which by its safety
-        // invariant guarantees that `E::active()` is `Some` and points to a valid, initialized
-        // `ChainLockTransaction<E>` that remains alive and pinned at its memory address on the
-        // current execution context, with all interior mutations mediated through `Cell`.
-        unsafe { ptr.unwrap_unchecked().as_ref() }
+        // invariant guarantees that an active `ChainLockTransaction<E>` is currently registered,
+        // alive, and pinned at its memory address on the current execution context, with all
+        // interior mutations mediated through `Cell`.
+        unsafe { E::active_unchecked().as_ref() }
     }
 
     /// Saves the pointer to the current transaction and allocates a reserved token to sync leaf
@@ -1131,11 +1241,18 @@ impl<E: TransactionHooks> ChainLockTransaction<E> {
 
     /// Directly finalizes the active transaction, ending an active contention tracing duration,
     /// if any.
-    #[inline]
+    #[inline(always)]
     pub fn finalize(token: &ChainLockTransactionToken<Self>) {
         let transaction = Self::active_ref(token);
-        transaction.assert_not_finalized();
-        transaction.set_finalized(true);
+        transaction.finalize_self(token);
+    }
+
+    /// Finalizes `self` directly without looking up the active transaction pointer via
+    /// [`TransactionHooks::active`].
+    #[inline(always)]
+    pub fn finalize_self(&self, _token: &ChainLockTransactionToken<Self>) {
+        self.assert_not_finalized();
+        self.set_finalized(true);
     }
 
     /// Restarts this transaction, resetting key state including the callsite info.
@@ -1184,7 +1301,7 @@ impl<E: TransactionHooks> ChainLockTransaction<E> {
     /// [`Self::restore_state`] with [`Self::save_state_initial`]). Note that `Drop` for
     /// [`ChainLockTransaction`] unconditionally calls [`Self::unregister`], so the transaction
     /// must be registered as active before it is dropped.
-    #[inline]
+    #[inline(always)]
     pub fn new_unregistered(
         callsite_info: E::CallsiteInfo,
         locks_held: u32,
@@ -1215,12 +1332,11 @@ impl<E: TransactionHooks> ChainLockTransaction<E> {
     ///   transaction on the current execution context.
     /// - The returned [`ChainLockTransactionToken<Self>`] is not used while `self` is unregistered
     ///   or after `self` is dropped.
-    #[inline]
+    #[inline(always)]
     pub unsafe fn register(&self) -> ChainLockTransactionToken<Self> {
-        assert!(E::active().is_none());
         // SAFETY: The caller guarantees `self` remains alive and pinned at its memory address
         // while registered as the active transaction on the current execution context.
-        unsafe { E::set_active(Some(NonNull::from(self))) };
+        unsafe { E::register_active(NonNull::from(self)) };
         ChainLockTransactionToken::new()
     }
 
@@ -1234,15 +1350,14 @@ impl<E: TransactionHooks> ChainLockTransaction<E> {
     /// - `self` is currently the active transaction on the current execution context.
     /// - No [`ChainLockTransactionToken<Self>`] associated with `self` is used to access the
     ///   active transaction while `self` is unregistered.
-    #[inline]
+    #[inline(always)]
     pub unsafe fn unregister(&self) {
-        debug_assert_eq!(E::active(), Some(NonNull::from(self)));
-        // SAFETY: Passing `None` to `E::set_active` clears the active transaction pointer on the
-        // current execution context.
-        unsafe { E::set_active(None) };
+        // SAFETY: The caller guarantees `self` is currently the active transaction on the current
+        // execution context.
+        unsafe { E::unregister_active(NonNull::from(self)) };
     }
 
-    #[inline]
+    #[inline(always)]
     pub(crate) fn set_finalized(&self, finalized: bool) {
         self.set_state(if finalized { State::Finalized } else { State::Started });
         if Self::DEBUG_ACCOUNTING_ENABLED {
@@ -1255,7 +1370,7 @@ impl<E: TransactionHooks> ChainLockTransaction<E> {
 }
 
 impl<E: TransactionHooks> Drop for ChainLockTransaction<E> {
-    #[inline]
+    #[inline(always)]
     fn drop(&mut self) {
         // SAFETY: Unconditionally unregister `self` on drop (matching C++
         // `~ChainLockTransaction`), asserting in debug builds that `self` is the active
@@ -1270,58 +1385,58 @@ impl<E: TransactionHooks> Drop for ChainLockTransaction<E> {
 impl<E: TransactionHooks> Transaction for ChainLockTransaction<E> {
     type ContentionState = E::ContentionState;
 
-    #[inline]
+    #[inline(always)]
     fn active() -> core::option::Option<NonNull<Self>> {
         E::active()
     }
 
-    #[inline]
+    #[inline(always)]
     fn active_ref(token: &ChainLockTransactionToken<Self>) -> &Self {
         Self::active_ref(token)
     }
 
-    #[inline]
+    #[inline(always)]
     fn yield_cpu() {
         E::yield_cpu();
     }
 
-    #[inline]
+    #[inline(always)]
     fn token(&self) -> Token {
         Self::token(self)
     }
 
-    #[inline]
+    #[inline(always)]
     fn assert_not_finalized(&self) {
         Self::assert_not_finalized(self);
     }
 
-    #[inline]
+    #[inline(always)]
     fn assert_num_locks_held(&self, expected: u32) {
         Self::assert_num_locks_held(self, expected);
     }
 
-    #[inline]
+    #[inline(always)]
     fn on_acquire(&self, _token: &ChainLockTransactionToken<Self>) {
         if Self::DEBUG_ACCOUNTING_ENABLED {
             self.accounting.on_acquire();
         }
     }
 
-    #[inline]
+    #[inline(always)]
     fn on_release(&self, _token: &ChainLockTransactionToken<Self>) {
         if Self::DEBUG_ACCOUNTING_ENABLED {
             self.accounting.on_release();
         }
     }
 
-    #[inline]
+    #[inline(always)]
     fn on_contention(&self, _token: &ChainLockTransactionToken<Self>) {
         if Self::CONTENTION_TRACING_ENABLED {
             self.tracing.on_contention::<E>();
         }
     }
 
-    #[inline]
+    #[inline(always)]
     fn record_backoff_or_retry(
         &self,
         observed_token: Token,
@@ -1332,7 +1447,7 @@ impl<E: TransactionHooks> Transaction for ChainLockTransaction<E> {
         E::record_backoff_or_retry(self, observed_token, lock_state, contention_state)
     }
 
-    #[inline]
+    #[inline(always)]
     fn release_and_notify<F: FnOnce()>(
         &self,
         contention_state: &Self::ContentionState,

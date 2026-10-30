@@ -98,6 +98,37 @@ pub struct KernelTransactionHooks;
 //   while a transaction is active, neither same-CPU interrupt reentrancy nor cross-CPU thread
 //   migration can occur while registered, ensuring the backing `PerCpu` slot is strictly local to
 //   the current execution context.
+#[cold]
+#[inline(never)]
+#[track_caller]
+fn panic_ints_enabled() -> ! {
+    panic!("ChainLockTransaction accessed with interrupts enabled");
+}
+
+#[cold]
+#[inline(never)]
+#[track_caller]
+pub(super) fn panic_no_active_transaction(ints_off: bool) -> ! {
+    if !ints_off {
+        panic!("ChainLockTransaction accessed with interrupts enabled");
+    }
+    panic!("No active ChainLockTransaction on current CPU");
+}
+
+#[cold]
+#[inline(never)]
+#[track_caller]
+fn panic_already_active() -> ! {
+    panic!("ChainLockTransaction::register: transaction already active on current CPU");
+}
+
+#[cold]
+#[inline(never)]
+#[track_caller]
+fn panic_unregister_wrong_transaction() -> ! {
+    panic!("ChainLockTransaction::unregister: transaction does not match active transaction");
+}
+
 unsafe impl TransactionHooks for KernelTransactionHooks {
     type ContentionState = AtomicU32;
     type CallsiteInfo = CallsiteInfo;
@@ -105,9 +136,11 @@ unsafe impl TransactionHooks for KernelTransactionHooks {
     type Tracing = SelectTracing<CLT_TRACING_ENABLED, CallsiteInfo>;
     type ExtraState = Cell<u64>;
 
-    #[inline]
+    #[inline(always)]
     fn active() -> core::option::Option<NonNull<ChainLockTransaction>> {
-        debug_assert!(ints_disabled());
+        if cfg!(debug_assertions) && !ints_disabled() {
+            panic_ints_enabled();
+        }
         NonNull::new(PerCpu::get_current().active_cl_transaction())
     }
 
@@ -121,9 +154,11 @@ unsafe impl TransactionHooks for KernelTransactionHooks {
     ///   [`ChainLockTransaction`] owned by the current execution context that remains valid and
     ///   free of mutable aliases (with interrupts disabled) until cleared or replaced by a
     ///   subsequent call to `set_active`.
-    #[inline]
+    #[inline(always)]
     unsafe fn set_active(transaction: core::option::Option<NonNull<ChainLockTransaction>>) {
-        debug_assert!(ints_disabled());
+        if cfg!(debug_assertions) && !ints_disabled() {
+            panic_ints_enabled();
+        }
         let ptr = transaction.map_or(core::ptr::null_mut(), NonNull::as_ptr);
         // SAFETY: The caller of `TransactionHooks::set_active` guarantees that interrupts are
         // disabled on the current CPU and that `transaction` is either `None` or points to a live,
@@ -134,7 +169,54 @@ unsafe impl TransactionHooks for KernelTransactionHooks {
         }
     }
 
-    #[inline]
+    #[inline(always)]
+    unsafe fn active_unchecked() -> NonNull<ChainLockTransaction> {
+        let ptr = PerCpu::get_current().active_cl_transaction();
+        if cfg!(debug_assertions) {
+            let ints_off = ints_disabled();
+            if !ints_off || ptr.is_null() {
+                panic_no_active_transaction(ints_off);
+            }
+        }
+        // SAFETY: Guaranteed by caller (`ChainLockTransactionToken` invariant) and verified above
+        // in debug builds.
+        unsafe { NonNull::new_unchecked(ptr) }
+    }
+
+    #[inline(always)]
+    unsafe fn register_active(transaction: NonNull<ChainLockTransaction>) {
+        if cfg!(debug_assertions) && !ints_disabled() {
+            panic_ints_enabled();
+        }
+        let percpu = PerCpu::get_current();
+        if !percpu.active_cl_transaction().is_null() {
+            panic_already_active();
+        }
+        // SAFETY: Interrupts are disabled and the caller guarantees `transaction` points to a live,
+        // stack-pinned `ChainLockTransaction` without mutable aliases while registered.
+        unsafe {
+            percpu.set_active_cl_transaction(transaction.as_ptr());
+        }
+    }
+
+    #[inline(always)]
+    unsafe fn unregister_active(transaction: NonNull<ChainLockTransaction>) {
+        let percpu = PerCpu::get_current();
+        if cfg!(debug_assertions) {
+            if !ints_disabled() {
+                panic_ints_enabled();
+            }
+            if percpu.active_cl_transaction() != transaction.as_ptr() {
+                panic_unregister_wrong_transaction();
+            }
+        }
+        // SAFETY: Interrupts are disabled and clearing to null requires no target lifetime.
+        unsafe {
+            percpu.set_active_cl_transaction(core::ptr::null_mut());
+        }
+    }
+
+    #[inline(always)]
     fn yield_cpu() {
         libarch::r#yield();
     }
@@ -213,7 +295,7 @@ unsafe impl TransactionHooks for KernelTransactionHooks {
         false
     }
 
-    #[inline]
+    #[inline(always)]
     fn release_and_notify<F: FnOnce()>(
         _transaction: &ChainLockTransaction,
         contention_state: &Self::ContentionState,
@@ -221,7 +303,7 @@ unsafe impl TransactionHooks for KernelTransactionHooks {
     ) {
         // Sample the contention state before releasing the chainlock. The caller will ensure that
         // contention state will not be modified until after do_release is called.
-        let mut wake_mask = contention_state.swap(0, Ordering::AcqRel);
+        let wake_mask = contention_state.swap(0, Ordering::AcqRel);
 
         // Perform the actual chainlock release operation, allowing contenders to attempt to
         // acquire the lock. The contention state MUST NOT be accessed after the release to avoid
@@ -229,11 +311,22 @@ unsafe impl TransactionHooks for KernelTransactionHooks {
         do_release();
 
         // Use the sampled contention state to poke any backed-off contenders.
-        while wake_mask != 0 {
-            let cpu = wake_mask.trailing_zeros();
-            PerCpu::get(cpu).chain_lock_conflict_id.fetch_add(1, Ordering::Release);
-            wake_mask &= wake_mask - 1;
+        if wake_mask != 0 {
+            notify_contenders(wake_mask);
         }
+    }
+}
+
+/// Pokes any backed-off contenders recorded in `wake_mask` after a contended [`ChainLock`] is
+/// released. Kept cold and out-of-line so uncontended `ChainLock::release` sites do not inline the
+/// per-CPU notification loop.
+#[cold]
+#[inline(never)]
+fn notify_contenders(mut wake_mask: u32) {
+    while wake_mask != 0 {
+        let cpu = wake_mask.trailing_zeros();
+        PerCpu::get(cpu).chain_lock_conflict_id.fetch_add(1, Ordering::Release);
+        wake_mask &= wake_mask - 1;
     }
 }
 
@@ -281,9 +374,11 @@ impl StateSaver<ChainLockTransaction> for NoIrqSaveStateSaver {
 impl StateOption<ChainLockTransaction> for NoIrqSave {
     type Saver = NoIrqSaveStateSaver;
 
-    #[inline]
+    #[inline(always)]
     fn save_state(&self) -> Self::Saver {
-        assert!(ints_disabled());
+        if !ints_disabled() {
+            panic_ints_enabled();
+        }
         NoIrqSaveStateSaver { _byte: 0, _not_send: PhantomData }
     }
 }
@@ -302,14 +397,14 @@ zr::static_assert!(align_of::<IrqSaveStateSaver>() == align_of::<InterruptSavedS
 
 impl IrqSaveStateSaver {
     /// Saves current interrupt state and disables interrupts.
-    #[inline]
+    #[inline(always)]
     fn new() -> Self {
         Self { interrupt_state: arch_interrupt_save(), _not_send: PhantomData }
     }
 }
 
 impl Drop for IrqSaveStateSaver {
-    #[inline]
+    #[inline(always)]
     fn drop(&mut self) {
         arch_interrupt_restore(self.interrupt_state);
     }
@@ -345,7 +440,7 @@ impl StateSaver<ChainLockTransaction> for IrqSaveStateSaver {
 impl StateOption<ChainLockTransaction> for IrqSave {
     type Saver = IrqSaveStateSaver;
 
-    #[inline]
+    #[inline(always)]
     fn save_state(&self) -> Self::Saver {
         IrqSaveStateSaver::new()
     }
@@ -365,7 +460,7 @@ zr::static_assert!(align_of::<PreemptDisableStateSaver>() == align_of::<Interrup
 
 impl PreemptDisableStateSaver {
     /// Disables preemption and saves/disables interrupts.
-    #[inline]
+    #[inline(always)]
     fn new() -> Self {
         preempt_disable();
         let interrupt_state = arch_interrupt_save();
@@ -374,7 +469,7 @@ impl PreemptDisableStateSaver {
 }
 
 impl Drop for PreemptDisableStateSaver {
-    #[inline]
+    #[inline(always)]
     fn drop(&mut self) {
         arch_interrupt_restore(self.interrupt_state);
         // SAFETY: This matches the `preempt_disable()` in `Self::new` (or the one re-taken at the
@@ -419,7 +514,7 @@ impl StateSaver<ChainLockTransaction> for PreemptDisableStateSaver {
 impl StateOption<ChainLockTransaction> for PreemptDisable {
     type Saver = PreemptDisableStateSaver;
 
-    #[inline]
+    #[inline(always)]
     fn save_state(&self) -> Self::Saver {
         PreemptDisableStateSaver::new()
     }
@@ -441,7 +536,7 @@ zr::static_assert!(
 
 impl EagerReschedDisableStateSaver {
     /// Disables eager rescheduling and saves/disables interrupts.
-    #[inline]
+    #[inline(always)]
     fn new() -> Self {
         eager_resched_disable();
         let interrupt_state = arch_interrupt_save();
@@ -450,7 +545,7 @@ impl EagerReschedDisableStateSaver {
 }
 
 impl Drop for EagerReschedDisableStateSaver {
-    #[inline]
+    #[inline(always)]
     fn drop(&mut self) {
         arch_interrupt_restore(self.interrupt_state);
         // SAFETY: This matches the `eager_resched_disable()` in `Self::new` (or the one re-taken
@@ -496,7 +591,7 @@ impl StateSaver<ChainLockTransaction> for EagerReschedDisableStateSaver {
 impl StateOption<ChainLockTransaction> for EagerReschedDisable {
     type Saver = EagerReschedDisableStateSaver;
 
-    #[inline]
+    #[inline(always)]
     fn save_state(&self) -> Self::Saver {
         EagerReschedDisableStateSaver::new()
     }
@@ -537,7 +632,7 @@ impl<'a, O: StateOption<ChainLockTransaction>> SingleChainLockGuard<'a, O> {
     ///
     /// The caller must ensure that the returned [`SingleChainLockScope`] is dropped (and not
     /// passed to `core::mem::forget`) before `slot` is overwritten, moved, or deallocated.
-    #[inline]
+    #[inline(always)]
     pub unsafe fn new_in_place<'slot>(
         slot: &'slot mut MaybeUninit<Self>,
         option: O,
@@ -559,12 +654,12 @@ impl<'a, O: StateOption<ChainLockTransaction>> SingleChainLockGuard<'a, O> {
         //   `SingleChainLockScope::drop` drops it, discharging `register()`'s pinning
         //   precondition.
         // - `token` is written into `(*base_ptr).token` before borrowing `&(*base_ptr).token` for
-        //   `ChainLockGuard::new` and `ChainLockTransaction::finalize`.
+        //   `ChainLockGuard::new` and `ChainLockTransaction::finalize_self`.
         // - After `register()`, only disjoint sibling fields (`token`, `guard`) are accessed via
         //   raw field projections and no `&mut Self` covering `transaction` is created while it is
         //   registered in `PerCpu`.
-        // - `ChainLockGuard::new` and `ChainLockTransaction::finalize` are infallible and do not
-        //   unwind once `transaction` is registered.
+        // - `ChainLockGuard::new` and `ChainLockTransaction::finalize_self` are infallible and do
+        //   not unwind once `transaction` is registered.
         unsafe {
             (&raw mut (*base_ptr).state_saver).write(core::mem::ManuallyDrop::new(state_saver));
             (&raw mut (*base_ptr).transaction).write(core::mem::ManuallyDrop::new(transaction));
@@ -573,7 +668,7 @@ impl<'a, O: StateOption<ChainLockTransaction>> SingleChainLockGuard<'a, O> {
 
             let guard = ChainLockGuard::new(lock, &(*base_ptr).token);
             (&raw mut (*base_ptr).guard).write(core::mem::ManuallyDrop::new(guard));
-            ChainLockTransaction::finalize(&(*base_ptr).token);
+            (*base_ptr).transaction.finalize_self(&(*base_ptr).token);
 
             SingleChainLockScope { ptr: NonNull::new_unchecked(base_ptr), _marker: PhantomData }
         }
@@ -581,7 +676,7 @@ impl<'a, O: StateOption<ChainLockTransaction>> SingleChainLockGuard<'a, O> {
 
     /// Executes `f` while holding `lock` inside a finalized single-lock [`ChainLockTransaction`]
     /// configured with `option`.
-    #[inline]
+    #[inline(always)]
     pub fn scope<R, F: FnOnce(&Self) -> R>(
         option: O,
         lock: &'a ChainLock,
@@ -595,19 +690,19 @@ impl<'a, O: StateOption<ChainLockTransaction>> SingleChainLockGuard<'a, O> {
     }
 
     /// Returns a reference to the [`ChainLockTransactionToken`] for this active transaction.
-    #[inline]
+    #[inline(always)]
     pub const fn token(&self) -> &ChainLockTransactionToken {
         &self.token
     }
 
     /// Returns a reference to the active [`ChainLockTransaction`].
-    #[inline]
+    #[inline(always)]
     pub fn transaction(&self) -> &ChainLockTransaction {
         &self.transaction
     }
 
     /// Returns a reference to the underlying [`ChainLockGuard`].
-    #[inline]
+    #[inline(always)]
     pub fn guard(&self) -> &ChainLockGuard<'a> {
         &self.guard
     }
@@ -626,7 +721,7 @@ pub struct SingleChainLockScope<'slot, 'a, O: StateOption<ChainLockTransaction>>
 impl<'slot, 'a, O: StateOption<ChainLockTransaction>> Deref for SingleChainLockScope<'slot, 'a, O> {
     type Target = SingleChainLockGuard<'a, O>;
 
-    #[inline]
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
         // SAFETY: By `SingleChainLockScope` and `SingleChainLockGuard`'s safety invariants,
         // `self.ptr` is properly aligned and points to an initialized `SingleChainLockGuard` valid
@@ -638,7 +733,7 @@ impl<'slot, 'a, O: StateOption<ChainLockTransaction>> Deref for SingleChainLockS
 }
 
 impl<'slot, 'a, O: StateOption<ChainLockTransaction>> Drop for SingleChainLockScope<'slot, 'a, O> {
-    #[inline]
+    #[inline(always)]
     fn drop(&mut self) {
         let base_ptr = self.ptr.as_ptr();
         // SAFETY:
@@ -656,8 +751,8 @@ impl<'slot, 'a, O: StateOption<ChainLockTransaction>> Drop for SingleChainLockSc
         //   3. Dropping `(*base_ptr).state_saver` runs after `transaction` has been unregistered
         //      and dropped, safely restoring interrupt and preemption state.
         unsafe {
-            core::mem::ManuallyDrop::drop(&mut (*base_ptr).guard);
-            core::mem::ManuallyDrop::drop(&mut (*base_ptr).transaction);
+            (*base_ptr).guard.release();
+            (*base_ptr).transaction.unregister();
             core::mem::ManuallyDrop::drop(&mut (*base_ptr).state_saver);
         }
     }
@@ -725,7 +820,7 @@ impl<'slot, 'a, Owner: ChainLocked, O: StateOption<ChainLockTransaction>>
     ///
     /// As [`SingleChainLockGuard::new_in_place`]: the returned scope must be dropped (and not
     /// passed to `core::mem::forget`) before `slot` is overwritten, moved, or deallocated.
-    #[inline]
+    #[inline(always)]
     pub unsafe fn new_in_place(
         slot: &'slot mut MaybeUninit<SingleChainLockGuard<'a, O>>,
         owner: &'a Owner,
@@ -748,7 +843,7 @@ impl<'slot, 'a, Owner: ChainLocked, O: StateOption<ChainLockTransaction>>
 
     /// Mints a proof that `owner.lock()` is held: this scope acquired it and holds it until
     /// dropped; the `&mut` borrow allows one live proof per scope.
-    #[inline]
+    #[inline(always)]
     pub fn proof(&mut self) -> ChainLockProof<'_, Owner> {
         // SAFETY: Acquired and held: the type's safety invariant. Lifetime and uniqueness: the
         // proof is bounded by this `&mut self` borrow.
@@ -756,19 +851,19 @@ impl<'slot, 'a, Owner: ChainLocked, O: StateOption<ChainLockTransaction>>
     }
 
     /// Returns the owner whose lock this scope holds.
-    #[inline]
+    #[inline(always)]
     pub const fn owner(&self) -> &'a Owner {
         self.owner
     }
 
     /// Returns a reference to the [`ChainLockTransactionToken`] for this active transaction.
-    #[inline]
+    #[inline(always)]
     pub fn token(&self) -> &ChainLockTransactionToken {
         self.scope.token()
     }
 
     /// Returns a reference to the active [`ChainLockTransaction`].
-    #[inline]
+    #[inline(always)]
     pub fn transaction(&self) -> &ChainLockTransaction {
         self.scope.transaction()
     }
