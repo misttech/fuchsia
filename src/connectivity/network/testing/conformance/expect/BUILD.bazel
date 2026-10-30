@@ -1,0 +1,30 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_go_test.bzl", "host_go_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+test_suite(
+    name = "host_tests",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    tests = [":expect_test"],
+    visibility = ["//src/connectivity/network/testing/conformance:__pkg__"],
+)
+
+go_library(
+    name = "expect",
+    srcs = ["expect.go"],
+    importpath = "go.fuchsia.dev/fuchsia/src/connectivity/network/testing/conformance/expect",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+)
+
+host_go_test(
+    name = "expect_test",
+    srcs = ["expect_test.go"],
+    embed = [":expect"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+)
