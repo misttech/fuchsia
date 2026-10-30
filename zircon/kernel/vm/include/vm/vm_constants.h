@@ -53,7 +53,11 @@ constexpr size_t kVmAddressRegionOrMappingStateAlign = 8;
 constexpr bool kRefCountedAdoptionValidator = ZX_DEBUG_ASSERT_IMPLEMENTED;
 
 // Size and alignment for VmCowPages state stored in C++ OpaqueStorage.
+#if EXPERIMENTAL_CONTINUOUS_PER_VMO_ATTRIBUTION_ENABLED
+constexpr size_t kVmCowPagesStateSize = 96;
+#else
 constexpr size_t kVmCowPagesStateSize = 88;
+#endif
 constexpr size_t kVmCowPagesStateAlign = 8;
 
 // Size and alignment for VmAddressRegion state stored in C++ OpaqueStorage.

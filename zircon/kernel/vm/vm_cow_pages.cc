@@ -216,7 +216,7 @@ void VmCowPages::DebugDumpReclaimCounters() {
 
 uint32_t VmCowPages::DebugGetPopulatedSlotsCount() const {
   Guard<CriticalMutex> guard{lock()};
-  return continuous_attribution_tracker_.FetchCurrent();
+  return continuous_attribution_tracker_locked().FetchCurrent();
 }
 
 // Helper for walking up a VmCowPages hierarchy where the start node is locked, and the immediate
@@ -1180,7 +1180,7 @@ VmCowPages::~VmCowPages() {
   DEBUG_ASSERT(page_list_locked().HasNoPageRefOrMarker());
 
   if constexpr (EXPERIMENTAL_CONTINUOUS_PER_VMO_ATTRIBUTION_ENABLED) {
-    const uint32_t tracked_slots = continuous_attribution_tracker_.FetchCurrent();
+    const uint32_t tracked_slots = continuous_attribution_tracker_locked().FetchCurrent();
     // This assertion is likely to fail when there is untracked removal of content: removal of
     // pages, references, or parent content markers from the page_list_ that are not paired with
     // updates to the continuous_attribution_tracker_.
@@ -1410,7 +1410,7 @@ bool VmCowPages::DedupZeroPage(vm_page_t* page, uint64_t offset) {
       old_page = page_list_locked().RemoveContent(offset);
       // This branch directly modifies the page_list_, so we do the accounting here. The next branch
       // does the modification through CompleteAddPageLocked, which does its own accounting.
-      continuous_attribution_tracker_.Decrement(1);
+      continuous_attribution_tracker_locked().Decrement(1);
     } else {
       // Replace the slot with a marker.
       __UNINITIALIZED auto result =
@@ -1719,15 +1719,15 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CloneNewHiddenParentLocked(
     ASSERT(status == ZX_OK);
     page_backlink_updater.Flush();
     if (populated_slots_removed_from_this > 0) {
-      continuous_attribution_tracker_.Decrement(populated_slots_removed_from_this);
+      continuous_attribution_tracker_locked().Decrement(populated_slots_removed_from_this);
     }
   }
 
   // Move our pagelist before adding ourselves as its child, because we cannot be added as a child
   // unless we have no pages.
   hidden_parent.locked().page_list_locked() = ktl::move(page_list_locked());
-  hidden_parent.locked().continuous_attribution_tracker_ =
-      ktl::move(continuous_attribution_tracker_);
+  hidden_parent.locked().continuous_attribution_tracker_locked() =
+      ktl::move(continuous_attribution_tracker_locked());
 
   hidden_parent.locked().TransitionToAliveLocked();
 
@@ -1759,9 +1759,9 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CloneNewHiddenParentLocked(
   hidden_parent.locked().AddChildLocked(this, 0, size_locked());
   hidden_parent.locked().AddChildLocked(&cow_clone.locked(), offset, limit);
   page_list_locked() = ktl::move(temp_list);
-  continuous_attribution_tracker_ = ktl::move(temp_list_tracker);
+  continuous_attribution_tracker_locked() = ktl::move(temp_list_tracker);
   cow_clone.locked().page_list_locked() = ktl::move(initial_page_list);
-  cow_clone.locked().continuous_attribution_tracker_ = ktl::move(initial_page_list_tracker);
+  cow_clone.locked().continuous_attribution_tracker_locked() = ktl::move(initial_page_list_tracker);
 
   // Hidden parent immediately inherits the once-pinned pages, so it must carry the ever_pinned_
   // flag. Propagation to the sibling clone is delayed until the once-pinned pages are actually
@@ -1817,7 +1817,8 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CloneChildLocked(
   // If given a non-empty initial_page_list then place it in the clone.
   if (!initial_page_list.IsEmpty()) {
     cow_clone.locked().page_list_locked() = ktl::move(initial_page_list);
-    cow_clone.locked().continuous_attribution_tracker_ = ktl::move(initial_page_list_tracker);
+    cow_clone.locked().continuous_attribution_tracker_locked() =
+        ktl::move(initial_page_list_tracker);
   }
 
   // Checking this node's hierarchy will also check the parent's hierarchy.
@@ -2205,13 +2206,13 @@ bool VmCowPages::MergeContentWithChildLocked() {
   page_backlink_updater.Flush();
 
   if (removed_from_src_page_list > 0) {
-    continuous_attribution_tracker_.Decrement(removed_from_src_page_list);
+    continuous_attribution_tracker_locked().Decrement(removed_from_src_page_list);
   }
   if (added_to_dst_page_list > 0) {
-    child.continuous_attribution_tracker_.Increment(added_to_dst_page_list);
+    child.continuous_attribution_tracker_locked().Increment(added_to_dst_page_list);
   }
   if (removed_from_dst_page_list > 0) {
-    child.continuous_attribution_tracker_.Decrement(removed_from_dst_page_list);
+    child.continuous_attribution_tracker_locked().Decrement(removed_from_dst_page_list);
   }
 
   // If MergeRangeOnto failed then there is still relevant content in our page_list_ and we cannot
@@ -2537,9 +2538,9 @@ VmPageOrMarker VmCowPages::CompleteAddPageLocked(AddPageTransaction& transaction
 
   const bool before_was_populated = old.IsPageOrRef() || old.IsParentContent();
   if (before_was_populated && !after_is_populated) {
-    continuous_attribution_tracker_.Decrement(1);
+    continuous_attribution_tracker_locked().Decrement(1);
   } else if (!before_was_populated && after_is_populated) {
-    continuous_attribution_tracker_.Increment(1);
+    continuous_attribution_tracker_locked().Increment(1);
   }
 
   if (deferred) {
@@ -2655,7 +2656,7 @@ zx_status_t VmCowPages::AddNewPagesLocked(uint64_t start_offset, VmPageDoublyLin
         page_remover.Flush();
         freed_list.FreePages(this);
         if (populated_slots_removed > 0) {
-          continuous_attribution_tracker_.Decrement(populated_slots_removed);
+          continuous_attribution_tracker_locked().Decrement(populated_slots_removed);
         }
       }
 
@@ -2727,7 +2728,7 @@ zx_status_t VmCowPages::CloneCowPageLocked(uint64_t offset, VmPageDoublyLinkedLi
   } else {
     // Remove the page from the owner.
     VmPageOrMarker removed = page_owner->page_list_locked().RemoveContent(owner_offset);
-    page_owner->continuous_attribution_tracker_.Decrement(1);
+    page_owner->continuous_attribution_tracker_locked().Decrement(1);
     vm_page* removed_page = removed.ReleasePage();
     DEBUG_ASSERT(removed_page == page);
     // TODO: This could be optimized to a ChangeObjectOffset instead of doing a Remove here and an
@@ -2827,7 +2828,7 @@ void VmCowPages::DecrementCowContentShareCount(const VmPageOrMarker& content, ui
       // Remove the page from the owner.
       VmPageOrMarker removed = page_list_locked().RemoveContent(offset);
       vm_page* removed_page = removed.ReleasePage();
-      continuous_attribution_tracker_.Decrement(1);
+      continuous_attribution_tracker_locked().Decrement(1);
       DEBUG_ASSERT(removed_page == page);
       Pmm::Node().GetPageQueues()->Remove(removed_page);
       DEBUG_ASSERT(!page->is_loaned());
@@ -2842,7 +2843,7 @@ void VmCowPages::DecrementCowContentShareCount(const VmPageOrMarker& content, ui
     } else {
       VmPageOrMarker removed = page_list_locked().RemoveContent(offset);
       compression->Free(removed.ReleaseReference());
-      continuous_attribution_tracker_.Decrement(1);
+      continuous_attribution_tracker_locked().Decrement(1);
     }
   }
 }
@@ -2859,7 +2860,7 @@ void VmCowPages::ReleaseOwnedPagesRangeLocked(uint64_t offset, uint64_t len,
   auto do_record = fit::defer([&]() {
     if (populated_slots_removed_from_this > 0) {
       AssertHeld(lock_ref());
-      continuous_attribution_tracker_.Decrement(populated_slots_removed_from_this);
+      continuous_attribution_tracker_locked().Decrement(populated_slots_removed_from_this);
     }
   });
 
@@ -2915,7 +2916,7 @@ void VmCowPages::ReleaseOwnedPagesRangeLocked(uint64_t offset, uint64_t len,
           vm_page_t* page = p->Page();
           if (page->object.share_count == 0) {
             AssertHeld(owner->lock_ref());
-            owner->continuous_attribution_tracker_.Decrement(1);
+            owner->continuous_attribution_tracker_locked().Decrement(1);
             page_remover.PushContent(p);
           } else {
             page->object.share_count--;
@@ -2924,7 +2925,7 @@ void VmCowPages::ReleaseOwnedPagesRangeLocked(uint64_t offset, uint64_t len,
           const uint32_t share_count = compression->GetMetadata(p->Reference());
           if (share_count == 0) {
             AssertHeld(owner->lock_ref());
-            owner->continuous_attribution_tracker_.Decrement(1);
+            owner->continuous_attribution_tracker_locked().Decrement(1);
             page_remover.PushContent(p);
           } else {
             compression->SetMetadata(p->Reference(), share_count - 1);
@@ -4165,7 +4166,7 @@ zx::result<uint64_t> VmCowPages::UnmapAndFreePagesLocked(uint64_t offset, uint64
       offset, offset + len);
   page_remover.Flush();
   if (populated_slots_removed > 0) {
-    continuous_attribution_tracker_.Decrement(populated_slots_removed);
+    continuous_attribution_tracker_locked().Decrement(populated_slots_removed);
   }
 
   CONTINUOUS_ATTRIBUTION_VALIDATION_ASSERT(DebugValidateContinuousAttribution());
@@ -4385,7 +4386,7 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesDirectUserPagerLocked(
             page_list_locked().ReplacePageWithZeroInterval(state.start, required_state);
         DEBUG_ASSERT(page->object.pin_count == 0);
         RemovePageLocked(page, deferred);
-        continuous_attribution_tracker_.Decrement(1);
+        continuous_attribution_tracker_locked().Decrement(1);
       } else if (state.overwrite_interval) {
         uint64_t old_start = state.start;
         uint64_t old_end = state.end;
@@ -4610,7 +4611,7 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesNoDirectPageSourceLocked(
             // compressed reference wasn't mapped in the first place, we don't have to do an unmap
             // here.
             DEBUG_ASSERT(node_has_parent_content_markers());
-            continuous_attribution_tracker_.Decrement(1);
+            continuous_attribution_tracker_locked().Decrement(1);
             FreeReference(slot->ReleaseReference());
             zeroed_len += kPageSize;
             return ZX_ERR_NEXT;
@@ -4622,7 +4623,7 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesNoDirectPageSourceLocked(
           if (slot->IsPage() && !is_root_source_user_pager_backed()) {
             // We have a page in an anonymous hierarchy, so we can just remove the content.
             DEBUG_ASSERT(node_has_parent_content_markers());
-            continuous_attribution_tracker_.Decrement(1);
+            continuous_attribution_tracker_locked().Decrement(1);
             vm_page_t* page = slot->ReleasePage();
             RemovePageLocked(page, deferred);
             zeroed_len += kPageSize;
@@ -4652,7 +4653,7 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesNoDirectPageSourceLocked(
             return status;
           }
           // An empty slot is safe to represent zero in non- user pager hierarchies.
-          continuous_attribution_tracker_.Decrement(1);
+          continuous_attribution_tracker_locked().Decrement(1);
           *slot = VmPageOrMarker::Empty();
           zeroed_len += kPageSize;
           return ZX_ERR_NEXT;
@@ -5240,7 +5241,7 @@ int64_t PriorityChanger::ChangeSingleHighPriorityCountLockedHelper(
     page_remover->Flush();
   }
   if (populated_slots_removed > 0) {
-    current.continuous_attribution_tracker_.Decrement(populated_slots_removed);
+    current.continuous_attribution_tracker_locked().Decrement(populated_slots_removed);
   }
 
   vm_vmo_high_priority.Add(delta);
@@ -5853,7 +5854,7 @@ zx_status_t VmCowPages::TakePages(VmCowRange range, uint64_t splice_offset, VmPa
     ASSERT(found_page || !page_list_locked().IsOffsetInZeroInterval(range.offset));
 
     if (populated_slots_removed > 0) {
-      continuous_attribution_tracker_.Decrement(populated_slots_removed);
+      continuous_attribution_tracker_locked().Decrement(populated_slots_removed);
     }
     CONTINUOUS_ATTRIBUTION_VALIDATION_ASSERT(DebugValidateContinuousAttribution());
     if (status != ZX_OK) {
@@ -5878,7 +5879,7 @@ zx_status_t VmCowPages::TakePages(VmCowRange range, uint64_t splice_offset, VmPa
     auto do_record = fit::defer([&]() {
       AssertHeld(lock_ref());
       if (populated_slots_removed > 0) {
-        continuous_attribution_tracker_.Decrement(populated_slots_removed);
+        continuous_attribution_tracker_locked().Decrement(populated_slots_removed);
       }
       CONTINUOUS_ATTRIBUTION_VALIDATION_ASSERT(DebugValidateContinuousAttribution());
     });
@@ -7007,7 +7008,7 @@ void VmCowPages::DetachSource() {
 
   page_remover.Flush();
   if (populated_slots_removed > 0) {
-    continuous_attribution_tracker_.Decrement(populated_slots_removed);
+    continuous_attribution_tracker_locked().Decrement(populated_slots_removed);
   }
 }
 
@@ -7351,7 +7352,7 @@ VmCowReclaimResult VmCowPages::ReclaimRangeForEviction(uint64_t offset, size_t l
                     ("offset", offset), ("length", length), ("num_pages", num_evicted_pages),
                     ("num_loaned_pages", num_evicted_pages), ("vmo_name", get_vmo_name()));
 
-  continuous_attribution_tracker_.Decrement(
+  continuous_attribution_tracker_locked().Decrement(
       static_cast<uint32_t>(num_evicted_pages + num_evicted_loaned));
   vm_reclaim_evict_range.Add(1);
   vm_reclaim_evict_range_pages.Add(static_cast<uint32_t>(num_evicted_pages + num_evicted_loaned));
@@ -7407,7 +7408,7 @@ zx_status_t VmCowPages::EvictLoanedPage(vm_page_t* page, uint64_t offset) {
   // Use RemovePage over just writing to page_or_marker so that the page list has the opportunity
   // to release any now empty intermediate nodes.
   vm_page_t* p = page_list_locked().RemoveContent(offset).ReleasePage();
-  continuous_attribution_tracker_.Decrement(1);
+  continuous_attribution_tracker_locked().Decrement(1);
   DEBUG_ASSERT(p == page);
   RemovePageLocked(page, deferred);
 
@@ -7541,7 +7542,7 @@ VmCowReclaimResult VmCowPages::ReclaimPageForCompression(vm_page_t* page, uint64
       } else {
         ASSERT(ktl::holds_alternative<VmCompressor::ZeroTag>(compression_result));
         old_ref = slot->ReleaseReference();
-        continuous_attribution_tracker_.Decrement(1);
+        continuous_attribution_tracker_locked().Decrement(1);
         // Check if we can clear the slot, or if we need to insert a marker. Unlike the full zero
         // pages this simply needs to check if there's any visible content above us, and then if
         // there isn't if the root is immutable or not (i.e. if it has a page source).
@@ -7820,7 +7821,7 @@ bool VmCowPages::DebugValidateContinuousAttribution() const TA_REQ(lock()) {
       });
   DEBUG_ASSERT(status == ZX_OK);
 
-  const uint32_t tracked_size = continuous_attribution_tracker_.FetchCurrent();
+  const uint32_t tracked_size = continuous_attribution_tracker_locked().FetchCurrent();
   const bool okay = populated_slots == tracked_size;
   if (unlikely(!okay)) {
     printf("%s: found %" PRIu32 " populated slots, but we are tracking %" PRIu32

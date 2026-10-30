@@ -166,3 +166,9 @@ pub extern "C" fn rust_continuous_attribution_tracker_decrement(
 ) {
     tracker.decrement(by);
 }
+
+#[cfg(feature = "experimental_continuous_per_vmo_attribution_enabled")]
+pub type AttributionTracker = ContinuousAttributionTracker;
+
+#[cfg(not(feature = "experimental_continuous_per_vmo_attribution_enabled"))]
+pub type AttributionTracker = StubContinuousAttributionTracker;

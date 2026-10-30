@@ -1659,11 +1659,8 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   VmPageList& page_list_locked() TA_REQ(lock());
   const VmPageList& page_list_locked() const TA_REQ(lock());
 
-  // Tracks the populated bytes count and its high-water mark.
-  //
-  // Mark it as __NO_UNIQUE_ADDRESS so that we don't pessimize the
-  // case when AttributionTracker may be empty.
-  __NO_UNIQUE_ADDRESS AttributionTracker continuous_attribution_tracker_ TA_GUARDED(lock());
+  AttributionTracker& continuous_attribution_tracker_locked() TA_REQ(lock());
+  const AttributionTracker& continuous_attribution_tracker_locked() const TA_REQ(lock());
 
   // Reference back to a VmObjectPaged, which should be valid at all times after creation until the
   // VmObjectPaged has been destroyed, unless this is a hidden node. We use this in places where we
@@ -2300,6 +2297,7 @@ void rust_vm_cow_pages_set_parent_limit_locked(const VmCowPages* cow, uint64_t v
 __PURE uint64_t rust_vm_cow_pages_root_parent_offset_locked(const VmCowPages* cow);
 void rust_vm_cow_pages_set_root_parent_offset_locked(const VmCowPages* cow, uint64_t v);
 VmPageList* rust_vm_cow_pages_page_list_locked(const VmCowPages* cow);
+AttributionTracker* rust_vm_cow_pages_continuous_attribution_tracker_locked(const VmCowPages* cow);
 __PURE uint64_t rust_vm_cow_pages_heap_allocation_bytes_locked(const VmCowPages* cow);
 __PURE uint32_t rust_vm_cow_pages_children_list_len_locked(const VmCowPages* cow);
 void rust_vm_cow_pages_set_children_list_len_locked(const VmCowPages* cow, uint32_t v);
@@ -2362,6 +2360,12 @@ inline VmPageList& VmCowPages::page_list_locked() {
 }
 inline const VmPageList& VmCowPages::page_list_locked() const {
   return *rust_vm_cow_pages_page_list_locked(this);
+}
+inline AttributionTracker& VmCowPages::continuous_attribution_tracker_locked() {
+  return *rust_vm_cow_pages_continuous_attribution_tracker_locked(this);
+}
+inline const AttributionTracker& VmCowPages::continuous_attribution_tracker_locked() const {
+  return *rust_vm_cow_pages_continuous_attribution_tracker_locked(this);
 }
 inline uint64_t VmCowPages::HeapAllocationBytesLocked() const {
   return rust_vm_cow_pages_heap_allocation_bytes_locked(this);

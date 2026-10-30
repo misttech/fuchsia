@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 use super::anonymous_page_request::AnonymousPageRequest;
+use super::continuous_attribution_tracker::AttributionTracker;
 use super::page::{VmPageDoublyLinkedList, VmPagePtr};
 use super::page_queues::PageQueues;
 use super::page_state::VmPageState;
@@ -1085,6 +1086,9 @@ struct VmCowPagesState {
     /// accumulated offsets needs to be maintained.
     root_parent_offset: KCell<u64, VmCowPagesLockClass>,
 
+    /// Tracks the populated bytes count and its high-water mark.
+    continuous_attribution_tracker: KCell<AttributionTracker, VmCowPagesLockClass>,
+
     /// a tree of pages
     page_list: KCell<VmPageList, VmCowPagesLockClass>,
 }
@@ -2009,6 +2013,15 @@ impl VmCowPages {
     }
 
     #[inline]
+    fn continuous_attribution_tracker_locked_ptr(
+        &self,
+        token: &mut LockToken<'_, VmCowPagesLockClass>,
+    ) -> *mut AttributionTracker {
+        // SAFETY: The VmCowPages lock is held.
+        unsafe { self.state().continuous_attribution_tracker.as_mut_ptr(token) }
+    }
+
+    #[inline]
     pub(crate) fn heap_allocation_bytes_locked(
         &self,
         token: &LockToken<'_, VmCowPagesLockClass>,
@@ -2062,6 +2075,7 @@ extern "C" fn rust_vm_cow_pages_state_init(
         parent_offset: KCell::new(0),
         parent_limit: KCell::new(0),
         root_parent_offset: KCell::new(0),
+        continuous_attribution_tracker: KCell::new(AttributionTracker::new()),
         page_list: KCell::new(VmPageList::new()),
     });
 }
@@ -2421,6 +2435,21 @@ unsafe extern "C" fn rust_vm_cow_pages_page_list_locked(this: &VmCowPages) -> *m
     // SAFETY: the C++ caller holds the lock (TA_REQ).
     let mut token = unsafe { LockToken::new() };
     this.page_list_locked_ptr(&mut token)
+}
+
+/// # Safety
+///
+/// * `this` must point to a valid `VmCowPages`.
+/// * The C++ caller must hold `lock()`.
+/// * The returned pointer is valid only while the lock is held and the object lives.
+/// * C++ must not retain the returned pointer across a lock drop.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_vm_cow_pages_continuous_attribution_tracker_locked(
+    this: &VmCowPages,
+) -> *mut AttributionTracker {
+    // SAFETY: the C++ caller holds the lock (TA_REQ).
+    let mut token = unsafe { LockToken::new() };
+    this.continuous_attribution_tracker_locked_ptr(&mut token)
 }
 
 /// # Safety
