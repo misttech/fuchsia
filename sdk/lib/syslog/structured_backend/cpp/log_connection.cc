@@ -4,8 +4,6 @@
 
 #include <lib/syslog/structured_backend/cpp/log_connection.h>
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(29)
-
 namespace fuchsia_logging::internal {
 
 zx::result<std::pair<LogConnection, std::optional<FuchsiaLogSeverity>>> LogConnection::Create(
@@ -55,5 +53,3 @@ zx::result<> LogConnection::FlushSpan(cpp20::span<const uint8_t> data) const {
 }
 
 }  // namespace fuchsia_logging::internal
-
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(29)

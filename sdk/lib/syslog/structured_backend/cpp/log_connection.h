@@ -5,10 +5,6 @@
 #ifndef LIB_SYSLOG_STRUCTURED_BACKEND_CPP_LOG_CONNECTION_H_
 #define LIB_SYSLOG_STRUCTURED_BACKEND_CPP_LOG_CONNECTION_H_
 
-#include <zircon/availability.h>
-
-#if FUCHSIA_API_LEVEL_AT_LEAST(29)
-
 #include <fidl/fuchsia.logger/cpp/fidl.h>
 #include <lib/syslog/structured_backend/cpp/log_buffer.h>
 #include <lib/zx/iob.h>
@@ -52,5 +48,4 @@ class LogConnection {
 
 }  // namespace fuchsia_logging
 
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(29)
 #endif  // LIB_SYSLOG_STRUCTURED_BACKEND_CPP_LOG_CONNECTION_H_

@@ -34,7 +34,6 @@ sdk_source_set("structured_backend") {
     "cpp/logger.cc",
   ]
   public = [
-    "cpp/fuchsia_syslog.h",
     "cpp/log_buffer.h",
     "cpp/log_connection.h",
     "cpp/logger.h",

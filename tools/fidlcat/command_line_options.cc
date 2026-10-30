@@ -343,9 +343,6 @@ cmdline::Status ProcessLogOptions(const CommandLineOptions* options) {
   if (settings.disable_interest_listener) {
     builder.DisableInterestListener();
   }
-  if (!settings.wait_for_initial_interest) {
-    builder.DisableWaitForInitialInterest();
-  }
 #endif
   builder.BuildAndInitialize();
   return cmdline::Status::Ok();

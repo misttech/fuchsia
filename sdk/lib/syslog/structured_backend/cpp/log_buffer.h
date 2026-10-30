@@ -5,27 +5,18 @@
 #ifndef LIB_SYSLOG_STRUCTURED_BACKEND_CPP_LOG_BUFFER_H_
 #define LIB_SYSLOG_STRUCTURED_BACKEND_CPP_LOG_BUFFER_H_
 
-#include <lib/fit/function.h>
 #include <lib/stdcompat/span.h>
 #include <lib/syslog/structured_backend/fuchsia_syslog.h>
 #include <lib/zx/time.h>
-#include <zircon/availability.h>
-
-#if FUCHSIA_API_LEVEL_LESS_THAN(29)
-#include <lib/zx/socket.h>
-#else
 #include <zircon/types.h>
-#endif
 
 #include <cstdint>
+#include <cstring>
 #include <optional>
 #include <string>
 #include <string_view>
 
 namespace fuchsia_logging {
-
-class LogBuffer;
-struct FlushConfig;
 
 namespace internal {
 
@@ -34,8 +25,8 @@ namespace internal {
 // touch these values.
 // LogBuffers store the state of a log record that is in the process of being
 // encoded.
-// A LogBuffer is initialized by calling BeginRecord, and is written to
-// the LogSink by calling FlushRecord.
+// A LogBuffer is initialized by calling BeginRecord, and is finalized by
+// calling EndRecord.
 // Calling BeginRecord on a LogBuffer will always initialize it to its
 // clean state.
 struct LogBufferData {
@@ -46,12 +37,6 @@ struct LogBufferData {
   // for this is backend-specific.
   uint64_t data[4096];
 };
-
-#if FUCHSIA_API_LEVEL_LESS_THAN(29)
-using FlushCallback = fit::callback<bool(cpp20::span<const uint8_t>, FlushConfig)>;
-void SetFlushCallback(LogBuffer& buffer, FlushCallback flush_callback);
-#endif
-bool FlushToSocket(zx_handle_t socket, cpp20::span<const uint8_t> data, FlushConfig flush_config);
 
 }  // namespace internal
 
@@ -68,20 +53,13 @@ class KeyValue final {
   Value value_;
 };
 
-// Configuration for flushing a log record.
-struct FlushConfig {
-  // If true, the call to flush will block if the socket is full.
-  // If false, the call to flush will return immediately if the socket is full.
-  bool block_if_full = false;
-};
-
 // Opaque structure representing the backend encode state.
 // This structure only has meaning to the backend and application code shouldn't
 // touch these values.
 // LogBuffers store the state of a log record that is in the process of being
 // encoded.
 // A LogBuffer is initialized by calling BeginRecord,
-// and is written to the LogSink by calling FlushRecord.
+// and is finalized by calling EndRecord.
 // Calling BeginRecord on a LogBuffer will always initialize it to its
 // clean state.
 class LogBuffer final {
@@ -102,32 +80,11 @@ class LogBuffer final {
                    unsigned int line, std::optional<std::string_view> message,
                    uint32_t dropped_count, zx_koid_t pid, zx_koid_t tid);
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(24)
   // Initializes a LogBuffer with a specified boot timestamp.
   void BeginRecord(zx::basic_time<ZX_CLOCK_BOOT> time, FuchsiaLogSeverity severity,
                    std::optional<std::string_view> file_name, unsigned int line,
                    std::optional<std::string_view> message, uint32_t dropped_count, zx_koid_t pid,
                    zx_koid_t tid);
-#else
-  // Initializes a LogBuffer with a specified monotonic timestamp.
-  void BeginRecord(zx::basic_time<ZX_CLOCK_MONOTONIC> time, FuchsiaLogSeverity severity,
-                   std::optional<std::string_view> file_name, unsigned int line,
-                   std::optional<std::string_view> message, uint32_t dropped_count, zx_koid_t pid,
-                   zx_koid_t tid);
-#endif
-
-#if FUCHSIA_API_LEVEL_LESS_THAN(29)
-  void BeginRecord(FuchsiaLogSeverity severity, std::optional<std::string_view> file_name,
-                   unsigned int line, std::optional<std::string_view> message,
-                   zx::unowned_socket socket, uint32_t dropped_count, zx_koid_t pid, zx_koid_t tid);
-
-  void BeginRecord(FuchsiaLogSeverity severity, std::optional<std::string_view> file_name,
-                   unsigned int line, std::optional<std::string_view> message, zx_handle_t socket,
-                   uint32_t dropped_count, zx_koid_t pid, zx_koid_t tid) {
-    BeginRecord(severity, file_name, line, message, zx::unowned_socket(socket), dropped_count, pid,
-                tid);
-  }
-#endif
 
   // Writes a key/value pair to the buffer.
   void WriteKeyValue(std::string_view key, const char* value) {
@@ -215,23 +172,8 @@ class LogBuffer final {
   // Encodes a boolean value
   void Encode(KeyValue<const char*, bool> value) { WriteKeyValue(value.key(), value.value()); }
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(29)
-  // Writes the LogBuffer to the socket.
-  bool FlushRecord(FlushConfig flush_config = {});
-
-  // Writes the LogBuffer to the socket.
-  bool Flush() { return FlushRecord(); }
-#endif
-
  private:
-#if FUCHSIA_API_LEVEL_LESS_THAN(29)
-  friend void internal::SetFlushCallback(LogBuffer&, internal::FlushCallback flush_callback);
-#endif
-
   internal::LogBufferData data_;
-#if FUCHSIA_API_LEVEL_LESS_THAN(29)
-  internal::FlushCallback flush_callback_;
-#endif
 };
 
 }  // namespace fuchsia_logging

@@ -1403,7 +1403,6 @@ inline constexpr std::string_view kRestrictedDriverRuntimeSymbols[] = {
     // Technically, these aren't driver runtime symbols, but for the time being, it's not worth
     // adding a separate list just for these right now. We don't want drivers using the global
     // syslog logger which is indicated with the following symbols.
-    "FuchsiaLogAcquireState",
     "FuchsiaLogGetGlobalLogger",
     "FuchsiaLogInitGlobalLogger",
     //

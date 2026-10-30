@@ -5,10 +5,6 @@
 #ifndef LIB_SYSLOG_STRUCTURED_BACKEND_CPP_LOGGER_H_
 #define LIB_SYSLOG_STRUCTURED_BACKEND_CPP_LOGGER_H_
 
-#include <zircon/availability.h>
-
-#if FUCHSIA_API_LEVEL_AT_LEAST(29)
-
 #include <lib/fit/function.h>
 #include <lib/syslog/structured_backend/cpp/log_buffer.h>
 #include <lib/syslog/structured_backend/cpp/raw_log_settings.h>
@@ -70,7 +66,5 @@ class Logger {
 };
 
 }  // namespace fuchsia_logging
-
-#endif
 
 #endif  // LIB_SYSLOG_STRUCTURED_BACKEND_CPP_LOGGER_H_

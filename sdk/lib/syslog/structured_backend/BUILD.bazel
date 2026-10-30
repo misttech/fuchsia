@@ -15,7 +15,6 @@ idk_cc_source_library(
         "cpp/logger.cc",
     ],
     hdrs = [
-        "cpp/fuchsia_syslog.h",
         "cpp/log_buffer.h",
         "cpp/log_connection.h",
         "cpp/logger.h",

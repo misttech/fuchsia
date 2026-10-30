@@ -5,7 +5,6 @@
 #ifndef LIB_SYSLOG_CPP_LOGGING_BACKEND_FUCHSIA_GLOBALS_H_
 #define LIB_SYSLOG_CPP_LOGGING_BACKEND_FUCHSIA_GLOBALS_H_
 
-#include <zircon/availability.h>
 #include <zircon/types.h>
 
 namespace fuchsia_logging {
@@ -22,24 +21,6 @@ extern "C" {
 
 // Returns the current thread's koid.
 zx_koid_t FuchsiaLogGetCurrentThreadKoid();
-
-#if FUCHSIA_API_LEVEL_LESS_THAN(29)
-
-class LogState;
-
-// Acquires the state lock.
-void FuchsiaLogAcquireState();
-
-// Updates the log state, requires that the state lock is held.
-void FuchsiaLogSetStateLocked(LogState* new_state);
-
-// Releases the state lock.
-void FuchsiaLogReleaseState();
-
-// Returns the current log state.
-LogState* FuchsiaLogGetStateLocked();
-
-#else
 
 class Logger;
 
@@ -60,8 +41,6 @@ zx_status_t FuchsiaLogWrite(const Logger* logger, const void* buffer, size_t len
 // Calls `callback` for each tag for the logger.
 void FuchsiaLogForEachTag(const Logger* logger, void* context,
                           void (*callback)(void* context, const char* tag));
-
-#endif
 
 }  // extern "C"
 

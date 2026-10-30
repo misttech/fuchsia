@@ -4,8 +4,10 @@
 
 #include <lib/syslog/structured_backend/cpp/log_buffer.h>
 #include <lib/zx/clock.h>
-#include <lib/zx/socket.h>
 #include <stdlib.h>
+
+#include <cassert>
+#include <cstring>
 
 namespace fuchsia_logging {
 namespace {
@@ -343,14 +345,8 @@ class Encoder final {
   explicit Encoder(T& buffer) { buffer_ = &buffer; }
 
   // Begins the log record.
-
-#if FUCHSIA_API_LEVEL_AT_LEAST(24)
   void Begin(RecordState& state, zx::basic_time<ZX_CLOCK_BOOT> timestamp,
              FuchsiaLogSeverity severity) {
-#else
-  void Begin(RecordState& state, zx::basic_time<ZX_CLOCK_MONOTONIC> timestamp,
-             FuchsiaLogSeverity severity) {
-#endif
     state.raw_severity = severity;
     state.header = buffer_->data();
     log_word_t empty_header = 0;
@@ -467,66 +463,10 @@ std::string_view StripDots(std::string_view path) {
 
 }  // namespace
 
-namespace internal {
-
-#if FUCHSIA_API_LEVEL_LESS_THAN(29)
-void SetFlushCallback(LogBuffer& buffer, internal::FlushCallback flush_callback) {
-  buffer.flush_callback_ = std::move(flush_callback);
-}
-#endif
-
-bool FlushToSocket(zx_handle_t socket_handle, cpp20::span<const uint8_t> data,
-                   FlushConfig flush_config) {
-  zx::unowned_socket socket(socket_handle);
-  zx_status_t status;
-  while (true) {
-    status = socket->write(0, data.data(), data.size(), nullptr);
-    if (status != ZX_ERR_SHOULD_WAIT || !flush_config.block_if_full) {
-      break;
-    }
-    zx_signals_t observed;
-    status = socket->wait_one(ZX_SOCKET_WRITABLE | ZX_SOCKET_PEER_CLOSED, zx::time::infinite(),
-                              &observed);
-    if (status != ZX_OK) {
-      break;
-    }
-    if (observed & ZX_SOCKET_PEER_CLOSED) {
-      status = ZX_ERR_PEER_CLOSED;
-      break;
-    }
-    if (!(observed & ZX_SOCKET_WRITABLE)) {
-      continue;
-    }
-  }
-
-  return status != ZX_ERR_BAD_STATE && status != ZX_ERR_PEER_CLOSED;
-}
-
-}  // namespace internal
-
-#if FUCHSIA_API_LEVEL_LESS_THAN(29)
-void LogBuffer::BeginRecord(FuchsiaLogSeverity severity, std::optional<std::string_view> file_name,
-                            unsigned int line, std::optional<std::string_view> message,
-                            zx::unowned_socket socket, uint32_t dropped_count, zx_koid_t pid,
-                            zx_koid_t tid) {
-  BeginRecord(severity, file_name, line, message, dropped_count, pid, tid);
-  internal::SetFlushCallback(*this, [socket](cpp20::span<const uint8_t> data, FlushConfig config) {
-    return internal::FlushToSocket(socket->get(), data, config);
-  });
-}
-#endif
-
-#if FUCHSIA_API_LEVEL_AT_LEAST(24)
 void LogBuffer::BeginRecord(zx::basic_time<ZX_CLOCK_BOOT> time, FuchsiaLogSeverity severity,
                             std::optional<std::string_view> file_name, unsigned int line,
                             std::optional<std::string_view> message, uint32_t dropped_count,
                             zx_koid_t pid, zx_koid_t tid) {
-#else
-void LogBuffer::BeginRecord(zx::basic_time<ZX_CLOCK_MONOTONIC> time, FuchsiaLogSeverity severity,
-                            std::optional<std::string_view> file_name, unsigned int line,
-                            std::optional<std::string_view> message, uint32_t dropped_count,
-                            zx_koid_t pid, zx_koid_t tid) {
-#endif
   auto* state = RecordState::CreatePtr(&data_);
   RecordState& record = *state;
   // Invoke the constructor of RecordState to construct a valid RecordState
@@ -561,14 +501,7 @@ void LogBuffer::BeginRecord(FuchsiaLogSeverity severity, std::optional<std::stri
                             unsigned int line, std::optional<std::string_view> message,
                             uint32_t dropped_count, zx_koid_t pid, zx_koid_t tid) {
   // Initialize the encoder targeting the passed buffer, and begin the record.
-
-#if FUCHSIA_API_LEVEL_AT_LEAST(24)
-  auto time = zx::clock::get_boot();
-#else
-  auto time = zx::clock::get_monotonic();
-#endif
-
-  BeginRecord(time, severity, file_name, line, message, dropped_count, pid, tid);
+  BeginRecord(zx::clock::get_boot(), severity, file_name, line, message, dropped_count, pid, tid);
 }
 
 void LogBuffer::WriteKeyValue(std::string_view key, std::string_view value) {
@@ -622,16 +555,6 @@ void LogBuffer::WriteKeyValue(std::string_view key, bool value) {
                                                     ByteOffset::Unbounded(key.size()))));
   encoder.AppendArgumentValue(*state, value);
 }
-
-#if FUCHSIA_API_LEVEL_LESS_THAN(29)
-bool LogBuffer::FlushRecord(FlushConfig flush_config) {
-  auto span = EndRecord();
-  if (span.empty() || !flush_callback_) {
-    return false;
-  }
-  return flush_callback_(span, flush_config);
-}
-#endif
 
 cpp20::span<const uint8_t> LogBuffer::EndRecord() {
   auto* state = RecordState::CreatePtr(&data_);

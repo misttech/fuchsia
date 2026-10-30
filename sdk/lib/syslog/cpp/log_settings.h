@@ -13,7 +13,6 @@
 #include <lib/async/dispatcher.h>
 #include <lib/zx/channel.h>
 #endif
-#include <zircon/availability.h>
 
 #include <string>
 
@@ -23,10 +22,6 @@ namespace fuchsia_logging {
 enum InterestListenerBehavior : uint8_t {
   /// Disable interest listening completely
   Disabled = 0,
-#if FUCHSIA_API_LEVEL_LESS_THAN(29)
-  /// Enable the interest listener, but don't wait for an initial interest.
-  EnabledNonBlocking = 1,
-#endif
   /// Enable the interest listener, and block logging startup on an initial interest
   Enabled = 2,
 };
@@ -62,12 +57,8 @@ struct LogSettings {
   // in the pogram incoming namespace will be used.
   zx_handle_t log_sink = ZX_HANDLE_INVALID;
   /// Interest listener callback, or nullptr
-#if FUCHSIA_API_LEVEL_LESS_THAN(29)
-  void (*severity_change_callback)(fuchsia_logging::RawLogSeverity severity) = nullptr;
-#else
   void (*severity_change_callback)(void*, fuchsia_logging::RawLogSeverity severity) = nullptr;
   void* severity_change_callback_context = nullptr;
-#endif
   fuchsia_logging::InterestListenerBehavior interest_listener_config_ = fuchsia_logging::Enabled;
 #endif
 };
@@ -97,24 +88,12 @@ class LogSettingsBuilder {
   /// Disables the interest listener.
   LogSettingsBuilder& DisableInterestListener();
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(29)
-  /// Disables waiting for the initial interest from Archivist.
-  /// The level specified in SetMinLogSeverity or INFO will be used
-  /// as the default.
-  LogSettingsBuilder& DisableWaitForInitialInterest();
-#endif
-
   /// Configures the interest listener settings.
   LogSettingsBuilder& WithInterestListenerConfiguration(InterestListenerBehavior config);
 
   /// Sets a callback that is invoked when the severity changes.
-#if FUCHSIA_API_LEVEL_LESS_THAN(29)
-  LogSettingsBuilder& WithSeverityChangedListener(
-      void (*callback)(fuchsia_logging::RawLogSeverity severity));
-#else
   LogSettingsBuilder& WithSeverityChangedListener(
       void* context, void (*callback)(void* context, fuchsia_logging::RawLogSeverity severity));
-#endif
 #endif
 
   /// Configures the log settings
@@ -124,13 +103,6 @@ class LogSettingsBuilder {
  private:
   LogSettings settings_;
 };
-
-// Moved to log_message_impl.h.
-#if FUCHSIA_API_LEVEL_LESS_THAN(29)
-/// Gets the minimum log severity for the current process. Never returns a value
-/// higher than LOG_FATAL.
-fuchsia_logging::RawLogSeverity GetMinLogSeverity();
-#endif
 
 }  // namespace fuchsia_logging
 

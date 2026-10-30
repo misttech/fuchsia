@@ -4,32 +4,29 @@
 
 #include "lib/syslog/cpp/logging_backend_fuchsia_globals.h"
 
+#include <lib/zx/result.h>
+#include <zircon/assert.h>
+#include <zircon/availability.h>
+#include <zircon/compiler.h>
+#include <zircon/process.h>
+#include <zircon/syscalls.h>
+
+#include <atomic>
+#include <mutex>
+
 #include "sdk/lib/syslog/structured_backend/cpp/log_connection.h"
 #include "sdk/lib/syslog/structured_backend/cpp/logger.h"
 #include "sdk/lib/syslog/structured_backend/cpp/raw_log_settings.h"
 #include "sdk/lib/syslog/structured_backend/fuchsia_syslog.h"
 
-#ifndef _ALL_SOURCE
-#define _ALL_SOURCE  // To get MTX_INIT
-#endif
-
-#include <lib/zx/result.h>
-#include <zircon/assert.h>
-#include <zircon/compiler.h>
-#include <zircon/process.h>
-#include <zircon/syscalls.h>
-
-#include <condition_variable>
-#include <mutex>
-
 namespace fuchsia_logging::internal {
 
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
 class LogState;
+#endif
 
 namespace {
 
-LogState* state = nullptr;
-std::mutex state_lock;
 // This thread's koid.
 // Initialized on first use.
 thread_local zx_koid_t tls_thread_koid{ZX_KOID_INVALID};
@@ -42,8 +39,6 @@ zx_koid_t GetKoid(zx_handle_t handle) {
 }
 
 }  // namespace
-
-#if FUCHSIA_API_LEVEL_AT_LEAST(29)
 
 // This is internal::Logger which is distinct from the public one. This is currently only used for
 // the global logger.
@@ -112,8 +107,6 @@ std::once_flag Logger::once_;
 Logger* Logger::global_instance_;
 std::atomic<FuchsiaLogSeverity> Logger::min_severity_;
 
-#endif
-
 extern "C" {
 
 __EXPORT
@@ -125,23 +118,16 @@ zx_koid_t FuchsiaLogGetCurrentThreadKoid() {
   return tls_thread_koid;
 }
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(29)
-// FuchsiaLogSetStateLocked, FuchsiaLogAcquireState, FuchsiaLogReleaseState and
-// FuchsiaLogGetStateLocked can can be removed once the API level mentioned above and all preceding
-// levels, have been retired.
-#endif
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
 
-__EXPORT
-void FuchsiaLogSetStateLocked(LogState* new_state) { state = new_state; }
+// Retained as no-op stubs so frozen .ifs goldens for API levels 29-33 continue to match.
+// These were only declared at API levels < 29 and can be removed once API level 33 is retired.
+__EXPORT void FuchsiaLogSetStateLocked(LogState* new_state) {}
+__EXPORT void FuchsiaLogAcquireState() {}
+__EXPORT void FuchsiaLogReleaseState() {}
+__EXPORT LogState* FuchsiaLogGetStateLocked() { return nullptr; }
 
-__EXPORT void FuchsiaLogAcquireState() __TA_NO_THREAD_SAFETY_ANALYSIS { state_lock.lock(); }
-
-__EXPORT void FuchsiaLogReleaseState() __TA_NO_THREAD_SAFETY_ANALYSIS { state_lock.unlock(); }
-
-__EXPORT
-LogState* FuchsiaLogGetStateLocked() { return state; }
-
-#if FUCHSIA_API_LEVEL_AT_LEAST(29)
+#endif  // FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
 
 __EXPORT
 void FuchsiaLogInitGlobalLogger(const RawLogSettings* settings) {
@@ -166,8 +152,6 @@ void FuchsiaLogForEachTag(const Logger* logger, void* context,
   logger->ForEachTag(
       [callback, context](const std::string& tag) { callback(context, tag.c_str()); });
 }
-
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(29)
 
 }  // extern "C"
 

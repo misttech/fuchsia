@@ -6,14 +6,12 @@
 #define LIB_SYSLOG_CPP_LOG_MESSAGE_IMPL_H_
 
 #include <lib/syslog/cpp/log_level.h>
-#include <zircon/availability.h>
 #include <zircon/types.h>
 
 #include <cstdint>
 #include <optional>
 #ifdef __Fuchsia__
 #include <lib/syslog/cpp/logging_backend_fuchsia_globals.h>
-#include <lib/syslog/structured_backend/cpp/fuchsia_syslog.h>
 #include <lib/syslog/structured_backend/cpp/log_buffer.h>
 #else
 #include <lib/syslog/cpp/host/log_buffer.h>
@@ -55,13 +53,6 @@ class LogBufferBuilder {
     return *this;
   }
 
-#if defined(__Fuchsia__) && FUCHSIA_API_LEVEL_LESS_THAN(29)
-  /// Sets the socket for the log message
-  LogBufferBuilder& WithSocket(zx_handle_t socket) {
-    socket_ = socket;
-    return *this;
-  }
-#endif
   /// Builds the LogBuffer
   fuchsia_logging::LogBuffer Build();
 
@@ -70,9 +61,6 @@ class LogBufferBuilder {
   unsigned int line_ = 0;
   std::optional<std::string_view> msg_;
   std::optional<std::string_view> condition_;
-#if defined(__Fuchsia__) && FUCHSIA_API_LEVEL_LESS_THAN(29)
-  zx_handle_t socket_ = ZX_HANDLE_INVALID;
-#endif
   fuchsia_logging::RawLogSeverity severity_;
 };
 
@@ -81,10 +69,8 @@ class LogMessageVoidify final {
   void operator&(std::ostream&) {}
 };
 
-#if !defined(__Fuchsia__) || FUCHSIA_API_LEVEL_AT_LEAST(29)
 // Flushes `buffer` to the global logger.
 zx::result<> FlushToGlobalLogger(LogBuffer& buffer);
-#endif
 
 namespace internal {
 
@@ -154,11 +140,7 @@ void WriteStructuredLog(fuchsia_logging::LogSeverity severity, const char* file,
   }
   auto buffer = builder.Build();
   (buffer.Encode(args), ...);
-#if defined(__Fuchsia__) && FUCHSIA_API_LEVEL_LESS_THAN(29)
-  buffer.Flush();
-#else
   [[maybe_unused]] zx::result<> result = FlushToGlobalLogger(buffer);
-#endif
 }
 
 }  // namespace internal
@@ -197,10 +179,10 @@ class LogFirstNState final {
   std::atomic<uint32_t> counter_{0};
 };
 
-RawLogSeverity GetMinLogSeverity();
-
-#if defined(__Fuchsia__) && FUCHSIA_API_LEVEL_AT_LEAST(29)
+#ifdef __Fuchsia__
 inline RawLogSeverity GetMinLogSeverity() { return internal::FuchsiaLogGetGlobalMinSeverity(); }
+#else
+RawLogSeverity GetMinLogSeverity();
 #endif
 
 /// Returns true if |severity| is at or above the current minimum log level.
@@ -208,18 +190,5 @@ inline RawLogSeverity GetMinLogSeverity() { return internal::FuchsiaLogGetGlobal
 inline bool IsSeverityEnabled(RawLogSeverity severity) { return severity >= GetMinLogSeverity(); }
 
 }  // namespace fuchsia_logging
-
-#if FUCHSIA_API_LEVEL_LESS_THAN(29)
-
-namespace syslog_runtime {
-
-template <typename K, typename V>
-using KeyValue = ::fuchsia_logging::KeyValue<K, V>;
-using LogBuffer = ::fuchsia_logging::LogBuffer;
-using LogBufferBuilder = ::fuchsia_logging::LogBufferBuilder;
-
-}  // namespace syslog_runtime
-
-#endif
 
 #endif  // LIB_SYSLOG_CPP_LOG_MESSAGE_IMPL_H_

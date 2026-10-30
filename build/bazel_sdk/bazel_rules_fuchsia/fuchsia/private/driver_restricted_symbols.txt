@@ -1,4 +1,3 @@
-FuchsiaLogAcquireState
 FuchsiaLogGetGlobalLogger
 FuchsiaLogInitGlobalLogger
 a64l

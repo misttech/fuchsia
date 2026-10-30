@@ -4,8 +4,6 @@
 
 #include "lib/syslog/structured_backend/cpp/logger.h"
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(29)
-
 #include <fidl/fuchsia.logger/cpp/fidl.h>
 #include <lib/syslog/structured_backend/cpp/log_connection.h>
 
@@ -162,5 +160,3 @@ void Logger::ForEachTag(fit::inline_function<void(const std::string&)> callback)
 }
 
 }  // namespace fuchsia_logging
-
-#endif
