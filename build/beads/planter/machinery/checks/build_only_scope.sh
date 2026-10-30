@@ -145,7 +145,7 @@ for d in raw_tdirs:
         if nd.startswith("build/secondary/"):
             check_dirs.append(nd[len("build/secondary/"):])
 head_subj = (git_lines(["log", "-1", "--format=%s", "HEAD"]) or [""])[0]
-if head_subj.startswith("[bazel_migration]"):
+if head_subj.startswith(("[bazel_migration]", "[bazel2gn]", "[bazel]")):
     head_sha = (git_lines(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]) or [""])[0]
     parent_sha = (git_lines(["rev-parse", "--verify", "--quiet", "HEAD~1^{commit}"]) or [""])[0]
     base_sha = (
@@ -538,21 +538,26 @@ for path in sorted(changed):
         continue
     msg_text = (
         f"Migration modifies non-build file '{path}'. GN-to-Bazel migrations must not "
-        "change source code, tests, manifests, or data files (see "
-        "//build/beads/references/migration/scoping_changelists.md)."
+        "change source code, tests, manifests, submodule gitlinks/symlinks, or data files "
+        "(see //build/beads/references/migration/scoping_changelists.md)."
     )
     rem_text = (
-        "Revert this file to its pre-migration contents (git checkout $PLANTER_CHANGE_BASE "
-        "-- <file> or git checkout -- <file>). If the Bazel build surfaces lint or compile "
-        "errors on a target built in GN, fix the BUILD.bazel attributes (lint_config, "
-        "rustc_flags, configs, features, deps) instead of editing sources (for a C/C++ "
-        "'#include <sdk/lib/...>' on an idk_cc_source_library with include_base = '//sdk', "
-        "rewrite only that include to '<lib/...>' and run 'fx format-code --changed-lines "
-        "--files=<file>'). If a target was not being built in GN and has pre-existing source "
-        "bitrot (or may be dead code), do not fix source files in the migration CL: either "
-        "omit an unreferenced unit test target with a `# TODO` comment in BUILD.bazel and "
-        "note it in the commit message, or leave the broken target unmigrated so its code "
-        "and GN build graph can be fixed (or deleted) in a separate precursor CL."
+        "Revert this path to its pre-migration contents (`git checkout HEAD~1 -- <file>` "
+        "and `git commit --amend --no-edit` if committed in HEAD, or `git checkout "
+        "$PLANTER_CHANGE_BASE -- <file>`). Never stage or commit worktree symlinks that "
+        "replace third-party submodule gitlinks during rebase or `git commit -a`, as "
+        "replacing a gitlink with a symlink causes CQ `checkout.jiri update` to fail with "
+        "`could not create work tree dir ...: File exists`. If the Bazel build surfaces "
+        "lint or compile errors on a target built in GN, fix the BUILD.bazel attributes "
+        "(lint_config, rustc_flags, configs, features, deps) instead of editing sources "
+        "(for a C/C++ '#include <sdk/lib/...>' on an idk_cc_source_library with "
+        "include_base = '//sdk', rewrite only that include to '<lib/...>' and run "
+        "'fx format-code --changed-lines --files=<file>'). If a target was not being built "
+        "in GN and has pre-existing source bitrot (or may be dead code), do not fix source "
+        "files in the migration CL: either omit an unreferenced unit test target with a "
+        "`# TODO` comment in BUILD.bazel and note it in the commit message, or leave the "
+        "broken target unmigrated so its code and GN build graph can be fixed (or deleted) "
+        "in a separate precursor CL."
     )
     findings.append({
         "source": "build_only_scope",

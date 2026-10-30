@@ -107,6 +107,29 @@ def git_lines(args):
     return [l.strip() for l in out.splitlines() if l.strip()]
 
 
+def git_out(args):
+    try:
+        return subprocess.check_output(
+            ["git", "-C", workdir] + args, stderr=subprocess.DEVNULL, text=True
+        ).strip()
+    except Exception:
+        return ""
+
+
+def is_ancestor(anc: str, desc: str) -> bool:
+    if not anc or not desc:
+        return False
+    return (
+        subprocess.run(
+            ["git", "-C", workdir, "merge-base", "--is-ancestor", anc, desc],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        ).returncode
+        == 0
+    )
+
+
 def normalize_git_rev(rev: str) -> str:
     """Map jj relative revsets (@, @-, @--) to git HEAD equivalents for git commands."""
     rev = (rev or "").strip() or "HEAD"
@@ -116,7 +139,42 @@ def normalize_git_rev(rev: str) -> str:
     return rev
 
 
-change_base = normalize_git_rev(change_base)
+# Advance change_base to merge-base(origin/main, HEAD) or HEAD~1 when HEAD was rebased
+# onto a newer origin/main after PLANTER_CHANGE_BASE was pinned.
+def resolve_effective_change_base(raw_base: str) -> str:
+    base = normalize_git_rev(raw_base)
+    head_sha = git_out(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])
+    parent_sha = git_out(["rev-parse", "--verify", "--quiet", "HEAD~1^{commit}"])
+    base_sha = git_out(["rev-parse", "--verify", "--quiet", f"{base}^{{commit}}"])
+    origin_main = git_out(["rev-parse", "--verify", "--quiet", "origin/main^{commit}"])
+    merge_base = (
+        git_out(["merge-base", origin_main, head_sha]) if (origin_main and head_sha) else ""
+    )
+    if (
+        base_sha
+        and merge_base
+        and base_sha != merge_base
+        and is_ancestor(base_sha, merge_base)
+    ):
+        base = merge_base
+        base_sha = merge_base
+    elif head_sha and base_sha and not is_ancestor(base_sha, head_sha):
+        base = merge_base or "HEAD~1"
+        base_sha = git_out(["rev-parse", "--verify", "--quiet", f"{base}^{{commit}}"])
+    head_subj = (git_lines(["log", "-1", "--format=%s", "HEAD"]) or [""])[0]
+    if parent_sha and head_subj.startswith(("[bazel_migration]", "[bazel2gn]", "[bazel]")):
+        head_files = git_lines(["diff", "--name-only", "HEAD~1", "HEAD"])
+        if not target_dirs or any(
+            any(p == td or p.startswith(td + "/") for td in target_dirs) for p in head_files
+        ):
+            if base == "HEAD" or base_sha == head_sha or (
+                base_sha and base_sha != parent_sha and is_ancestor(base_sha, parent_sha)
+            ):
+                return "HEAD~1"
+    return base
+
+
+change_base = resolve_effective_change_base(change_base)
 changed = set()
 changed.update(git_lines(["diff", "--name-only", change_base]))
 # Untracked agent report files (CoderReport*.json) at the checkout root are not part of the
@@ -127,14 +185,6 @@ untracked = [
     if "/" in f or not re.fullmatch(r"CoderReport[\w.-]*\.json", f)
 ]
 changed.update(untracked)
-head_subj = git_lines(["log", "-1", "--format=%s", "HEAD"])
-if change_base == "HEAD" and head_subj and head_subj[0].startswith("[bazel_migration]"):
-    head_files = git_lines(["diff", "--name-only", "HEAD~1", "HEAD"])
-    if not target_dirs or any(
-        any(p == td or p.startswith(td + "/") for td in target_dirs) for p in head_files
-    ):
-        change_base = "HEAD~1"
-        changed.update(head_files)
 
 
 def get_pkg_area(pkg: str) -> str:
@@ -2759,6 +2809,669 @@ check_generated_vendor_build_hygiene()
 check_starlark_copyright_headers(starlark_rels)
 check_cml_shard_targets(starlark_rels)
 
+
+# Check compiled_action() target hygiene in BUILD.bazel files and rule/converter invariants
+# when build/bazel/rules/compiled_action.bzl or build/tools/bazel2gn/* is modified.
+def check_compiled_action_hygiene(starlark_files):
+    loc_re = re.compile(r"\$\((?:location|execpath)\s+([^()\s]+)\s*\)")
+
+    def resolve_tool_gn_output_name(cur_pkg, tool_lbl):
+        if tool_lbl.startswith("@"):
+            return "", ""
+        if tool_lbl.startswith("//"):
+            pkg_part, has_c, t_part = tool_lbl[2:].partition(":")
+            t_pkg = pkg_part.strip("/")
+            t_name = t_part if has_c else os.path.basename(t_pkg)
+        else:
+            t_pkg = cur_pkg
+            t_name = tool_lbl.lstrip(":")
+        if not t_name:
+            return "", ""
+        cand_bz = os.path.join(workdir, t_pkg, "BUILD.bazel") if t_pkg else ""
+        if not cand_bz or not os.path.isfile(cand_bz):
+            return t_name, t_name
+        try:
+            with open(cand_bz, "r", encoding="utf-8") as f:
+                bz_src = f.read()
+            bz_tree = ast.parse(bz_src, filename=cand_bz)
+        except Exception:
+            return t_name, t_name
+        for node in ast.walk(bz_tree):
+            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
+                continue
+            r_id = node.func.id
+            if r_id not in (
+                "rustc_binary",
+                "rust_binary",
+                "fx_cc_binary",
+                "cc_binary",
+                "go_binary",
+                "py_binary",
+            ):
+                continue
+            k_strs = {
+                kw.arg: kw.value.value
+                for kw in node.keywords
+                if kw.arg
+                and isinstance(kw.value, ast.Constant)
+                and isinstance(kw.value.value, str)
+            }
+            if k_strs.get("name") != t_name:
+                continue
+            if r_id in ("rustc_binary", "rust_binary"):
+                gn_out = (
+                    k_strs.get("binary_name")
+                    or k_strs.get("crate_name")
+                    or t_name.replace("-", "_")
+                )
+            else:
+                gn_out = k_strs.get("output_name") or k_strs.get("binary_name") or t_name
+            return t_name, gn_out
+        return t_name, t_name
+
+    # 1. Check compiled_action() target invocations in BUILD.bazel files.
+    for rel in sorted(starlark_files):
+        if not os.path.basename(rel).startswith("BUILD"):
+            continue
+        try:
+            with open(os.path.join(workdir, rel), "r", encoding="utf-8") as f:
+                st_src = f.read()
+            st_tree = ast.parse(st_src, filename=rel)
+        except Exception:
+            continue
+        base_flat = re.sub(
+            r"\s+", "", "\n".join(git_lines(["show", f"{change_base}:{rel}"]))
+        )
+        st_lines = st_src.splitlines()
+        cur_pkg = os.path.dirname(rel).strip("/")
+        for node in ast.walk(st_tree):
+            if not (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "compiled_action"
+            ):
+                continue
+            seg = ast.get_source_segment(st_src, node) or ""
+            if seg and base_flat and re.sub(r"\s+", "", seg) in base_flat:
+                continue
+            ca_name = ""
+            depfile_val = ""
+            tool_val = ""
+            tool_out_val = ""
+            tool_out_line = getattr(node, "lineno", 1)
+            unannotated_deps = set()
+            all_deps = set()
+            args_nodes = []
+            for kw in node.keywords:
+                if kw.arg == "name" and isinstance(kw.value, ast.Constant):
+                    ca_name = str(kw.value.value)
+                elif kw.arg == "depfile" and isinstance(kw.value, ast.Constant):
+                    depfile_val = str(kw.value.value)
+                elif kw.arg == "tool" and isinstance(kw.value, ast.Constant):
+                    tool_val = str(kw.value.value)
+                elif kw.arg == "tool_output_name" and isinstance(kw.value, ast.Constant):
+                    tool_out_val = str(kw.value.value)
+                    tool_out_line = kw.lineno
+                elif kw.arg == "deps":
+                    for sub in ast.walk(kw.value):
+                        if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                            dlbl = sub.value
+                            dline = (
+                                st_lines[sub.lineno - 1]
+                                if 1 <= getattr(sub, "lineno", 0) <= len(st_lines)
+                                else ""
+                            )
+                            forms = {dlbl}
+                            if not dlbl.startswith(("//", "@")):
+                                bare = dlbl.lstrip(":")
+                                forms.update({bare, ":" + bare})
+                            all_deps.update(forms)
+                            if "@bazel2gn:path_overwrite:" not in dline:
+                                unannotated_deps.update(forms)
+                elif kw.arg == "args":
+                    for sub in ast.walk(kw.value):
+                        if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                            args_nodes.append(sub)
+            depfile_forms = (
+                {depfile_val, depfile_val.lstrip(":"), ":" + depfile_val.lstrip(":")}
+                if depfile_val
+                else set()
+            )
+            for a_node in args_nodes:
+                aline = (
+                    st_lines[a_node.lineno - 1]
+                    if 1 <= getattr(a_node, "lineno", 0) <= len(st_lines)
+                    else ""
+                )
+                if "@bazel2gn:raw_overwrite:" in aline:
+                    continue
+                for m in loc_re.finditer(a_node.value):
+                    ref_lbl = m.group(1)
+                    if depfile_forms and ref_lbl in depfile_forms:
+                        clean_df = depfile_val.lstrip(":")
+                        findings.append({
+                            "source": "bazel_minimality",
+                            "category": "compiled_action_depfile_location_substitution",
+                            "severity": "error",
+                            "file": rel,
+                            "line": getattr(a_node, "lineno", node.lineno),
+                            "message": (
+                                f"Target '{ca_name}' (compiled_action) references depfile "
+                                f"'{depfile_val}' via `{m.group(0)}` in `args`. `depfile` is "
+                                "a string attribute unused by Bazel and forwarded to GN by "
+                                "bazel2gn, so `$(location ...)` / `$(execpath ...)` cannot "
+                                "expand it in Bazel."
+                            ),
+                            "remediation": (
+                                f"Replace `{m.group(0)}` with `$(RULEDIR)/{clean_df}` in "
+                                f"`args` of `{ca_name}` in '{rel}' (`bazel2gn` translates "
+                                "`$(RULEDIR)` to `rebase_path(target_gen_dir, root_build_dir)`)."
+                            ),
+                        })
+                    elif ref_lbl in all_deps:
+                        findings.append({
+                            "source": "bazel_minimality",
+                            "category": "compiled_action_deps_location_substitution",
+                            "severity": "error",
+                            "file": rel,
+                            "line": getattr(a_node, "lineno", node.lineno),
+                            "message": (
+                                f"Target '{ca_name}' (compiled_action) references `deps` "
+                                f"entry '{ref_lbl}' via `{m.group(0)}` in `args`. "
+                                "`compiled_action` only expands `$(location ...)` for `srcs` "
+                                "and `outs`, and `bazel2gn` rejects un-annotated `deps` "
+                                "labels in `args`."
+                            ),
+                            "remediation": (
+                                f"Move '{ref_lbl}' from `deps` to `srcs` in `{ca_name}` in "
+                                f"'{rel}' (adding `# @bazel2gn:path_overwrite:<gn_path>` if "
+                                "its GN path differs), or avoid `$(location ...)` on `deps`."
+                            ),
+                        })
+            if tool_val:
+                t_name, gn_out = resolve_tool_gn_output_name(cur_pkg, tool_val)
+                if t_name and gn_out and gn_out != t_name and not tool_out_val:
+                    findings.append({
+                        "source": "bazel_minimality",
+                        "category": "compiled_action_missing_tool_output_name",
+                        "severity": "error",
+                        "file": rel,
+                        "line": getattr(node, "lineno", 1),
+                        "message": (
+                            f"Target '{ca_name}' (compiled_action) uses `tool = "
+                            f"\"{tool_val}\"` whose GN output filename is `{gn_out}` "
+                            f"(different from target name `{t_name}`), but omits "
+                            f"`tool_output_name = \"{gn_out}\"` (`bazel2gn` does not "
+                            "auto-infer `tool_output_name`)."
+                        ),
+                        "remediation": (
+                            f"Add `tool_output_name = \"{gn_out}\"` to `{ca_name}` in "
+                            f"'{rel}' and re-run `fx bazel2gn -d {cur_pkg}`."
+                        ),
+                    })
+                elif t_name and tool_out_val and tool_out_val == t_name:
+                    findings.append({
+                        "source": "bazel_minimality",
+                        "category": "redundant_default_attribute",
+                        "severity": "error",
+                        "file": rel,
+                        "line": tool_out_line,
+                        "message": (
+                            f"Target '{ca_name}' (compiled_action) sets "
+                            f"`tool_output_name = \"{tool_out_val}\"` matching the target "
+                            f"name of `tool = \"{tool_val}\"`, which is already the default."
+                        ),
+                        "remediation": (
+                            f"Remove `tool_output_name = \"{tool_out_val}\"` from "
+                            f"`{ca_name}` in '{rel}'."
+                        ),
+                    })
+
+    # 2. Check build/bazel/rules/compiled_action.bzl when modified in the change.
+    ca_bzl = "build/bazel/rules/compiled_action.bzl"
+    if ca_bzl in changed and os.path.isfile(os.path.join(workdir, ca_bzl)):
+        bzl_txt = open(os.path.join(workdir, ca_bzl), encoding="utf-8").read()
+        if (
+            "ctx.attr.deps" in bzl_txt.split("ctx.actions.run")[0]
+            or re.search(r"`srcs`,\s*`deps`", bzl_txt)
+            or re.search(
+                r'"deps"\s*:\s*attr\.label_list\([^)]*\$\(location', bzl_txt, re.S
+            )
+        ):
+            findings.append({
+                "source": "bazel_minimality",
+                "category": "compiled_action_bzl_deps_in_expand_location",
+                "severity": "error",
+                "file": ca_bzl,
+                "line": 54,
+                "message": (
+                    f"'{ca_bzl}' includes `deps` in `ctx.expand_location` targets or "
+                    "documents `deps` as supported in `$(location ...)`. `deps` are plain "
+                    "action inputs and `bazel2gn` cannot translate an un-annotated `deps` "
+                    "label in `args` to its GN output path."
+                ),
+                "remediation": (
+                    f"In '{ca_bzl}', pass `targets = ctx.attr.srcs` directly to "
+                    "`ctx.expand_location` (removing `location_targets = ctx.attr.srcs + "
+                    "ctx.attr.deps`), and remove `deps` from the `$(location ...)` "
+                    "documentation at the top of the file and in the `deps` docstring."
+                ),
+            })
+        if (
+            re.search(r'"depfile"\s*:\s*attr\.output\b', bzl_txt)
+            or "ctx.outputs.depfile" in bzl_txt
+            or re.search(r"`outs`,\s*or\s*`depfile`", bzl_txt)
+        ):
+            findings.append({
+                "source": "bazel_minimality",
+                "category": "compiled_action_bzl_depfile_output",
+                "severity": "error",
+                "file": ca_bzl,
+                "line": 126,
+                "message": (
+                    f"'{ca_bzl}' declares `depfile` as `attr.output` / action output or "
+                    "lists `depfile` under `$(location ...)`. Fuchsia's Bazel build does "
+                    "not consume depfiles, so declaring `depfile` as a Bazel output "
+                    "requires tools to write a file Bazel ignores."
+                ),
+                "remediation": (
+                    f"In '{ca_bzl}', change `depfile` to `attr.string` documented as unused "
+                    "by Bazel and forwarded to GN `compiled_action()` by `bazel2gn`, remove "
+                    "`ctx.outputs.depfile` from `_compiled_action_impl` so `outputs = "
+                    "ctx.outputs.outs`, and drop `depfile` from the `$(location ...)` list "
+                    "in the module docstring (pass `$(RULEDIR)/<depfile>` in `args` instead)."
+                ),
+            })
+
+    # 3. Check build/tools/bazel2gn/ compiled_action converter invariants when modified.
+    ca_go = "build/tools/bazel2gn/compiled_action.go"
+    if ca_go in changed and os.path.isfile(os.path.join(workdir, ca_go)):
+        go_txt = open(os.path.join(workdir, ca_go), encoding="utf-8").read()
+        b2gn_go_path = os.path.join(workdir, "build/tools/bazel2gn/bazel2gn.go")
+        b2gn_txt = (
+            open(b2gn_go_path, encoding="utf-8").read()
+            if os.path.isfile(b2gn_go_path)
+            else ""
+        )
+        readme_path = os.path.join(workdir, "build/tools/bazel2gn/README.md")
+        readme_txt = (
+            open(readme_path, encoding="utf-8").read()
+            if os.path.isfile(readme_path)
+            else ""
+        )
+        agents_path = os.path.join(workdir, "build/tools/bazel2gn/AGENTS.md")
+        agents_txt = (
+            open(agents_path, encoding="utf-8").read()
+            if os.path.isfile(agents_path)
+            else ""
+        )
+        if (
+            "resolveCompiledActionTargets" in go_txt
+            or "hasRawToolOutputNameAttr" in go_txt
+            or "rawToolOutputNameRE" in go_txt
+            or "resolveCompiledActionTargets" in b2gn_txt
+            or re.search(
+                r"infer\w*[^.\n]*tool_output_name|tool_output_name[^.\n]*infer\w*",
+                readme_txt + "\n" + agents_txt,
+                re.I,
+            )
+        ):
+            findings.append({
+                "source": "bazel_minimality",
+                "category": "bazel2gn_compiled_action_tool_output_name_inference",
+                "severity": "error",
+                "file": ca_go,
+                "line": 97,
+                "message": (
+                    f"'{ca_go}' (or companion bazel2gn files) implements or documents "
+                    "same-file `tool_output_name` auto-inference "
+                    "(`resolveCompiledActionTargets`), adding a whole-file rewrite pass "
+                    "when `tool_output_name` should be specified explicitly."
+                ),
+                "remediation": (
+                    "Remove `hasRawToolOutputNameAttr`, `rawToolOutputNameRE`, and "
+                    f"`resolveCompiledActionTargets` from '{ca_go}', remove the "
+                    "`resolveCompiledActionTargets` call from "
+                    "'build/tools/bazel2gn/bazel2gn.go', remove "
+                    "`TestCompiledActionFileToGN` from "
+                    "'build/tools/bazel2gn/compiled_action_test.go', and remove the "
+                    "`tool_output_name` inference sentences from "
+                    "'build/tools/bazel2gn/README.md' and 'build/tools/bazel2gn/AGENTS.md'."
+                ),
+            })
+        if (
+            not re.search(r'case\s+"deps"|case\s+"srcs",\s*"deps"', go_txt)
+            or "path_overwrite" not in go_txt
+        ):
+            findings.append({
+                "source": "bazel_minimality",
+                "category": "bazel2gn_compiled_action_unannotated_deps_location",
+                "severity": "error",
+                "file": ca_go,
+                "line": 392,
+                "message": (
+                    f"'{ca_go}' does not inspect `deps` in `compiledActionPaths` to reject "
+                    "`$(location <label>)` / `$(execpath <label>)` on un-annotated `deps` "
+                    "entries in `compiledActionArgToGN`."
+                ),
+                "remediation": (
+                    f"In `compiledActionPaths` in '{ca_go}', collect `deps` labels (both "
+                    "`:x` and `x` forms) that lack `@bazel2gn:path_overwrite`, map "
+                    "path-overwritten `deps` entries the same way as path-overwritten "
+                    "`srcs`, and in `compiledActionArgToGN` return an error when an arg's "
+                    "label refers to an un-annotated `deps` entry. Update doc comments in "
+                    "`compiled_action.go`, `compiled_action.bzl`, and `README.md` to match."
+                ),
+            })
+
+
+check_compiled_action_hygiene(starlark_rels)
+
+
+# Check Fuchsia Rust wrapper macro (.bzl) and bazel2gn converter invariants when modified.
+def check_rust_wrapper_macro_hygiene():
+    # Audit changed rustc_*.bzl wrapper macros for custom wrapper rules, deprecated
+    # with_*_unit_tests attributes, and unprefixed bazel2gn passthrough attributes.
+    def _check_rustc_macro_bzl(rel, bzl_txt):
+        if (
+            "_rustc_staticlib_cc_wrapper" in bzl_txt
+            or "create_crate_info" in bzl_txt
+            or re.search(r'"(?:hdrs|non_test_deps)"\s*:\s*attr\.', bzl_txt)
+        ):
+            findings.append({
+                "source": "bazel_minimality",
+                "category": "rustc_macro_custom_wrapper_rule",
+                "severity": "error",
+                "file": rel,
+                "line": 28,
+                "message": (
+                    f"'{rel}' defines a custom `rule()` wrapper (`_rustc_staticlib_cc_wrapper`) "
+                    "or exposes `hdrs` / `non_test_deps` / archive-renaming `output_name`. "
+                    "`rustc_staticlib()` must be a thin `rust_static_library` macro like "
+                    "`rustc_library()`: GN never writes `lib<output_name>.a` (`output_name` is "
+                    "a GN-only attribute ignored in Bazel), C/C++ headers use "
+                    "`cc_library(hdrs = [...], deps = [\":<staticlib>\"])`, and tests that "
+                    "exclude a library dependency use a standalone `rustc_test()` with own "
+                    "`srcs`/`crate_root`/`deps`."
+                ),
+                "remediation": (
+                    f"In '{rel}', drop `_rustc_staticlib_cc_wrapper_impl` and "
+                    "`_rustc_staticlib_cc_wrapper` (and unused `@bazel_tools//tools/cpp:...`, "
+                    "`@rules_cc//...`, and `rust_common` loads), remove `hdrs` and "
+                    "`non_test_deps`, accept `output_name` as a `bazel2gn`-only attribute "
+                    "ignored in Bazel (`output_name,  # buildifier: disable=unused-variable`), "
+                    "and call `rust_static_library(name = name, ...)` directly."
+                ),
+            })
+        if (
+            "generate_unit_tests" in bzl_txt
+            or re.search(r'"(?:with_unit_tests|with_host_unit_tests|test_deps)"\s*:', bzl_txt)
+        ):
+            findings.append({
+                "source": "bazel_minimality",
+                "category": "rustc_macro_deprecated_with_unit_tests",
+                "severity": "error",
+                "file": rel,
+                "line": 180,
+                "message": (
+                    f"'{rel}' supports deprecated `with_unit_tests` / `with_host_unit_tests` "
+                    "(`test_deps`, `generate_unit_tests`). New `rustc_*` macros must not "
+                    "support `with_*_unit_tests`; unit tests must use standalone `rustc_test()` "
+                    "or `host_rustc_test()` targets."
+                ),
+                "remediation": (
+                    f"In '{rel}', remove the `generate_unit_tests` load and call, "
+                    "`test_lint_config`, and the `with_host_unit_tests`, `with_unit_tests`, "
+                    "`test_deps`, and `non_test_deps` parameters/attributes and docstrings."
+                ),
+            })
+        if re.search(r'"(?:quiet_clippy|disable_rustdoc)"\s*:\s*attr\.', bzl_txt):
+            findings.append({
+                "source": "bazel_minimality",
+                "category": "rustc_macro_unprefixed_gn_passthrough_attrs",
+                "severity": "error",
+                "file": rel,
+                "line": 190,
+                "message": (
+                    f"'{rel}' declares unprefixed `quiet_clippy` / `disable_rustdoc` "
+                    "attributes. Attributes on `rustc_*` macros that exist only for `bazel2gn` "
+                    "passthrough to GN must be prefixed with `gn_` (`gn_quiet_clippy` and "
+                    "`gn_disable_rustdoc`)."
+                ),
+                "remediation": (
+                    f"In '{rel}', rename `quiet_clippy` and `disable_rustdoc` to "
+                    "`gn_quiet_clippy` and `gn_disable_rustdoc` (both ignored in Bazel with "
+                    "`# buildifier: disable=unused-variable`), and map "
+                    "`\"gn_disable_rustdoc\": \"disable_rustdoc\"` and "
+                    "`\"gn_quiet_clippy\": \"quiet_clippy\"` in `rustCommonAttrMap` in "
+                    "'build/tools/bazel2gn/constants.go'."
+                ),
+            })
+
+    # Audit companion clippy_test.bzl and rustc_staticlib.gni files when modified.
+    def _check_rustc_macro_tests_and_gni():
+        ct_bzl = "build/bazel/rules/rust/tests/clippy_test.bzl"
+        if ct_bzl in changed and os.path.isfile(os.path.join(workdir, ct_bzl)):
+            ct_txt = open(os.path.join(workdir, ct_bzl), encoding="utf-8").read()
+            if (
+                re.search(r"rustc_staticlib\([^)]*with_unit_tests", ct_txt, re.S)
+                or "staticlib_default_test" in ct_txt
+                or "staticlib_disabled_test" in ct_txt
+            ):
+                findings.append({
+                    "source": "bazel_minimality",
+                    "category": "rustc_macro_deprecated_with_unit_tests",
+                    "severity": "error",
+                    "file": ct_bzl,
+                    "line": 139,
+                    "message": (
+                        f"'{ct_bzl}' passes `with_unit_tests = True` to `rustc_staticlib` or "
+                        "references `staticlib_*_test` targets, which `rustc_staticlib` must "
+                        "not generate."
+                    ),
+                    "remediation": (
+                        f"In '{ct_bzl}', remove `with_unit_tests = True` from "
+                        "`staticlib_default` and `staticlib_disabled` and remove the "
+                        "`staticlib_default_unit_test` and `staticlib_disabled_unit_test` "
+                        "entries from `clippy_test_suite`."
+                    ),
+                })
+
+        gni_rel = "build/rust/rustc_staticlib.gni"
+        if gni_rel in changed and os.path.isfile(os.path.join(workdir, gni_rel)):
+            gni_txt = open(os.path.join(workdir, gni_rel), encoding="utf-8").read()
+            if 'assert(_with_unit_tests, "use deps if not generating unit tests")' not in gni_txt:
+                findings.append({
+                    "source": "bazel_minimality",
+                    "category": "gn_staticlib_non_test_deps_assert_removed",
+                    "severity": "error",
+                    "file": gni_rel,
+                    "line": 298,
+                    "message": (
+                        f"'{gni_rel}' removes `assert(_with_unit_tests, \"use deps if not "
+                        "generating unit tests\")` on `non_test_deps`. In Bazel, a standalone "
+                        "`rustc_test()` with its own `srcs`/`crate_root`/`deps` excludes "
+                        "non-test dependencies without filtering, so the GN side uses plain "
+                        "`deps` when `with_unit_tests` is not set."
+                    ),
+                    "remediation": (
+                        f"In '{gni_rel}', restore `assert(_with_unit_tests, \"use deps if not "
+                        "generating unit tests\")` and the original `non_test_deps` doc comment."
+                    ),
+                })
+
+    # Audit bazel2gn converter and tests for rustc_staticlib attribute hygiene.
+    def _check_bazel2gn_rust_staticlib_hygiene():
+        if not any(p.strip("/").startswith("build/tools/bazel2gn/") for p in changed):
+            return
+        const_go = "build/tools/bazel2gn/constants.go"
+        if const_go in changed and os.path.isfile(os.path.join(workdir, const_go)):
+            c_txt = open(os.path.join(workdir, const_go), encoding="utf-8").read()
+            if "rustc_staticlib" in c_txt and (
+                '"gn_quiet_clippy"' not in c_txt or '"gn_disable_rustdoc"' not in c_txt
+            ):
+                findings.append({
+                    "source": "bazel_minimality",
+                    "category": "bazel2gn_missing_gn_prefixed_rust_attrs",
+                    "severity": "error",
+                    "file": const_go,
+                    "line": 328,
+                    "message": (
+                        f"'{const_go}' does not map `gn_quiet_clippy` to `quiet_clippy` and "
+                        "`gn_disable_rustdoc` to `disable_rustdoc` in `rustCommonAttrMap`."
+                    ),
+                    "remediation": (
+                        f"In `rustCommonAttrMap` in '{const_go}', add "
+                        "`\"gn_disable_rustdoc\": \"disable_rustdoc\"` and "
+                        "`\"gn_quiet_clippy\": \"quiet_clippy\"`."
+                    ),
+                })
+
+        b2gn_go = "build/tools/bazel2gn/bazel2gn.go"
+        if b2gn_go in changed and os.path.isfile(os.path.join(workdir, b2gn_go)):
+            b_txt = open(os.path.join(workdir, b2gn_go), encoding="utf-8").read()
+            if '"non_test_deps"' in b_txt or re.search(
+                r'case\s+"api",\s*"outputs",\s*"public"', b_txt
+            ):
+                findings.append({
+                    "source": "bazel_minimality",
+                    "category": "bazel2gn_unneeded_staticlib_attr_transformers",
+                    "severity": "error",
+                    "file": b2gn_go,
+                    "line": 831,
+                    "message": (
+                        f"'{b2gn_go}' adds `\"non_test_deps\"` or `\"public\"` to "
+                        "`attrAssignmentToGN`, which are not used by `rustc_staticlib` "
+                        "(and adding `\"public\"` alters `hdrs` path-overwrite behavior)."
+                    ),
+                    "remediation": (
+                        f"In '{b2gn_go}', remove `\"non_test_deps\"` and `\"public\"` from "
+                        "`attrAssignmentToGN` (keeping `\"applicable_licenses\"`), and revert "
+                        "the change to `TestPathOverwriteAnnotations` in "
+                        "'build/tools/bazel2gn/bazel2gn_test.go'."
+                    ),
+                })
+
+        b2gn_test = "build/tools/bazel2gn/bazel2gn_test.go"
+        if b2gn_test in changed and os.path.isfile(os.path.join(workdir, b2gn_test)):
+            bt_txt = open(os.path.join(workdir, b2gn_test), encoding="utf-8").read()
+            m_st = re.search(
+                r'name:\s*"rustc_staticlib".*?wantGN:\s*`.*?`\s*,', bt_txt, re.S
+            )
+            st_blk = m_st.group(0) if m_st else ""
+            if (
+                any(
+                    k in st_blk
+                    for k in (
+                        "hdrs =",
+                        "non_test_deps =",
+                        "test_deps =",
+                        "with_unit_tests =",
+                        "with_host_unit_tests =",
+                    )
+                )
+                or re.search(r"(?<![_\w])(?:quiet_clippy|disable_rustdoc)\s*=\s*True", st_blk)
+                or "should_be_ignored.h" not in bt_txt
+            ):
+                findings.append({
+                    "source": "bazel_minimality",
+                    "category": "bazel2gn_test_deprecated_staticlib_attrs",
+                    "severity": "error",
+                    "file": b2gn_test,
+                    "line": 392,
+                    "message": (
+                        f"'{b2gn_test}' tests removed attributes (`hdrs`, `non_test_deps`, "
+                        "`test_deps`, `with_unit_tests`, `with_host_unit_tests`) or unprefixed "
+                        "`quiet_clippy` / `disable_rustdoc` on `rustc_staticlib` / "
+                        "`rust_static_library`, or modifies `TestPathOverwriteAnnotations`."
+                    ),
+                    "remediation": (
+                        f"In '{b2gn_test}', update the `rustc_staticlib` test case to use "
+                        "`gn_disable_rustdoc = True` and `gn_quiet_clippy = True`, remove "
+                        "`hdrs`, `non_test_deps`, `test_deps`, `with_unit_tests`, and "
+                        "`with_host_unit_tests` (and their `wantGN` lines), and restore "
+                        "`should_be_ignored.h` in `TestPathOverwriteAnnotations`."
+                    ),
+                })
+
+        rtc_test = "build/tools/bazel2gn/rust_test_crate_test.go"
+        if rtc_test in changed and os.path.isfile(os.path.join(workdir, rtc_test)):
+            rt_txt = open(os.path.join(workdir, rtc_test), encoding="utf-8").read()
+            if "non_test_deps" in rt_txt:
+                findings.append({
+                    "source": "bazel_minimality",
+                    "category": "bazel2gn_test_deprecated_staticlib_attrs",
+                    "severity": "error",
+                    "file": rtc_test,
+                    "line": 277,
+                    "message": (
+                        f"'{rtc_test}' passes `non_test_deps` on `rustc_staticlib` in "
+                        "`TestRustTestStaticlibCrate` (`rustc_staticlib` does not have "
+                        "`non_test_deps`)."
+                    ),
+                    "remediation": (
+                        f"Remove `non_test_deps` from `bazel` and `wantGN` in "
+                        f"`TestRustTestStaticlibCrate` in '{rtc_test}'."
+                    ),
+                })
+
+        for tag_f in ("build/tools/bazel2gn/tags.go", "build/tools/bazel2gn/tags_test.go"):
+            if tag_f in changed and os.path.isfile(os.path.join(workdir, tag_f)):
+                t_txt = open(os.path.join(workdir, tag_f), encoding="utf-8").read()
+                if "rustc_staticlib" in t_txt:
+                    findings.append({
+                        "source": "bazel_minimality",
+                        "category": "bazel2gn_tags_staticlib_with_unit_tests",
+                        "severity": "error",
+                        "file": tag_f,
+                        "line": 34,
+                        "message": (
+                            f"'{tag_f}' adds `rustc_staticlib` `with_unit_tests` handling for "
+                            "`exclude_toolchain_tags`, but `rustc_staticlib` does not support "
+                            "`with_unit_tests`."
+                        ),
+                        "remediation": (
+                            f"Revert '{tag_f}' (`git checkout {change_base} -- {tag_f}`)."
+                        ),
+                    })
+
+    st_bzl = "build/bazel/rules/rust/rustc_staticlib.bzl"
+    if st_bzl in changed and os.path.isfile(os.path.join(workdir, st_bzl)):
+        _check_rustc_macro_bzl(
+            st_bzl, open(os.path.join(workdir, st_bzl), encoding="utf-8").read()
+        )
+    _check_rustc_macro_tests_and_gni()
+    _check_bazel2gn_rust_staticlib_hygiene()
+
+    # Verify the commit message body does not claim removed wrapper features.
+    if st_bzl in changed:
+        msg_body = "\n".join(git_lines(["log", "-1", "--format=%B", "HEAD"]))
+        if any(
+            w in msg_body
+            for w in ("LinkerInput", "TestCrateInfo", "non_test_deps", "hdrs (via CcInfo)")
+        ):
+            findings.append({
+                "source": "bazel_minimality",
+                "category": "commit_body_stale_staticlib_wrapper_claims",
+                "severity": "error",
+                "file": "build/bazel/rules/rust/rustc_staticlib.bzl",
+                "line": 1,
+                "message": (
+                    "Commit message body still describes removed `_rustc_staticlib_cc_wrapper` "
+                    "features (`hdrs`, `LinkerInput` re-owning, `non_test_deps` / "
+                    "`TestCrateInfo` filtering)."
+                ),
+                "remediation": (
+                    "Amend the commit message body so it describes `rustc_staticlib` as a "
+                    "thin `rust_static_library` macro supporting `output_name`, "
+                    "`dynamic_libstd`, `gn_quiet_clippy`, `gn_disable_rustdoc`, "
+                    "`applicable_licenses`, and `validations`."
+                ),
+            })
+
+
+check_rust_wrapper_macro_hygiene()
+
 # 4a. Reject newly added private external rule loads (@...//.../private/...) or duplicate
 #     loads of the same rule symbol from both a public and a private .bzl location.
 for rel in sorted(starlark_rels):
@@ -2815,6 +3528,60 @@ for rel in sorted(starlark_rels):
                     ),
                 })
             loaded_symbols.setdefault(orig_name, mod_label)
+
+# Detect .bzl files shared with GN: a .gni/.gn file `import()`s them, so they must stay valid
+# GN syntax, where a triple-quoted Starlark docstring breaks `gn gen`.
+_gn_imported_bzl_cache = {}
+
+
+def bzl_imported_by_gn(rel):
+    if not rel.endswith(".bzl"):
+        return False
+    if rel in _gn_imported_bzl_cache:
+        return _gn_imported_bzl_cache[rel]
+    base = os.path.basename(rel)
+    found = False
+    try:
+        proc = subprocess.run(
+            ["git", "grep", "-l", "-E", r"import\(\"[^\"]*" + re.escape(base) + r"\"\)",
+             "--", "*.gni", "*.gn", "*/BUILD.gn"],
+            cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+            timeout=60,
+        )
+        for gn_rel in proc.stdout.split():
+            try:
+                with open(os.path.join(workdir, gn_rel), "r", encoding="utf-8") as f:
+                    gn_txt = f.read()
+            except Exception:
+                continue
+            for m in re.finditer(r'import\("([^"]+)"\)', gn_txt):
+                p = m.group(1)
+                resolved = p[2:] if p.startswith("//") else os.path.normpath(
+                    os.path.join(os.path.dirname(gn_rel), p))
+                if resolved == rel:
+                    found = True
+                    break
+            if found:
+                break
+    except Exception:
+        found = False
+    _gn_imported_bzl_cache[rel] = found
+    return found
+
+
+def head_txt_full(rel):
+    try:
+        with open(os.path.join(workdir, rel), "r", encoding="utf-8") as f:
+            return f.read(4096)
+    except Exception:
+        return ""
+
+
+GN_SHARED_DOCSTRING_REMEDIATION = (
+    "'{f}' is import()ed by GN ({{.gni,.gn}} files), so a triple-quoted docstring would break\n"
+    "`gn gen`. Instead add `# buildifier: disable=module-docstring` on its own line right after\n"
+    "the copyright header, with a comment saying the file is shared with GN."
+)
 
 buildifier_bin = None
 for cand_rel in (
@@ -2879,9 +3646,19 @@ if buildifier_bin and starlark_rels:
                     w_cat = w.get("category", "buildifier_lint")
                     if w_cat == "module-docstring" and is_autogen:
                         continue
+                    # A GN-shared .bzl may suppress module-docstring with a comment (the only
+                    # GN-compatible form), which buildifier may still report: accept it.
+                    if (
+                        w_cat == "module-docstring"
+                        and re.search(r"#\s*buildifier:\s*disable=module-docstring", head_txt_full(fname))
+                        and bzl_imported_by_gn(fname)
+                    ):
+                        continue
                     w_line = w.get("start", {}).get("line", 1) or 1
                     w_msg = (w.get("message") or "").strip()
-                    if w_cat == "module-docstring":
+                    if w_cat == "module-docstring" and bzl_imported_by_gn(fname):
+                        rem = GN_SHARED_DOCSTRING_REMEDIATION.format(f=fname)
+                    elif w_cat == "module-docstring":
                         rem = (
                             f"Add a top-level module docstring (`\"\"\"...\"\"\"` string literal, not a `#` comment) "
                             f"as the first statement of '{fname}' immediately after the copyright header comments "
@@ -2917,7 +3694,17 @@ if not buildifier_ran:
             tree = ast.parse(src, filename=rel)
         except Exception:
             continue
+        if re.search(r"#\s*buildifier:\s*disable=module-docstring", src) and bzl_imported_by_gn(rel):
+            continue
         if tree.body and ast.get_docstring(tree, clean=False) is None:
+            if bzl_imported_by_gn(rel):
+                fallback_rem = GN_SHARED_DOCSTRING_REMEDIATION.format(f=rel)
+            else:
+                fallback_rem = (
+                    f"Add a top-level module docstring (`\"\"\"...\"\"\"` string literal, not a `#` "
+                    f"comment) as the first statement of '{rel}' immediately after the copyright "
+                    "header comments (before any `load()` or assignments)."
+                )
             findings.append({
                 "source": "bazel_minimality",
                 "category": "buildifier_lint",
@@ -2929,11 +3716,7 @@ if not buildifier_ran:
                     "A module docstring is a string literal (not a comment) which should be the first "
                     "statement of a file (it may follow comment lines)."
                 ),
-                "remediation": (
-                    f"Add a top-level module docstring (`\"\"\"...\"\"\"` string literal, not a `#` comment) "
-                    f"as the first statement of '{rel}' immediately after the copyright header comments "
-                    "(before any `load()` or assignments)."
-                ),
+                "remediation": fallback_rem,
             })
 
 print(json.dumps(findings, indent=2))

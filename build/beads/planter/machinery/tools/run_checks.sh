@@ -40,6 +40,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 
 USAGE = """\
@@ -198,10 +199,12 @@ def matches_subject_dir(pkg, sdir):
     return pkg == sdir
 
 
-# Check whether a [bazel_migration] HEAD commit belongs to the current task's
-# target_dirs rather than a stacked parent migration commit.
+# Check whether a [bazel_migration] or [bazel2gn]/[bazel] HEAD commit belongs to the
+# current task's target_dirs rather than a stacked parent migration commit.
 def is_task_migration_head(wdir, head_sha, parent_sha, subj, tdirs):
-    if not head_sha or not parent_sha or not subj.startswith("[bazel_migration]"):
+    if not head_sha or not parent_sha or not subj.startswith(
+        ("[bazel_migration]", "[bazel2gn]", "[bazel]")
+    ):
         return False
     env_dirs = os.environ.get("PLANTER_TARGET_DIRS", "").split()
     if os.environ.get("PLANTER_TARGET_DIR", "").strip():
@@ -1968,9 +1971,21 @@ if os.environ.get("PLANTER_SERIAL_CHECKS", "").strip() in ("1", "true"):
 SERIAL_BUILD_CHECKS = {"build_verification", "tests_json_parity"}
 
 
+# Serialize the checks that regenerate the shared build directory. build_verification and
+# tests_json_parity both run `fx gen` (tests_json_parity also swaps args.gn and the tree to
+# $PLANTER_CHANGE_BASE and back), so running them at the same time races in the regenerator
+# (e.g. FileNotFoundError under regenerator_outputs/) and fails nondeterministically.
+OUT_DIR_CHECKS = {"build_verification", "tests_json_parity"}
+_out_dir_lock = threading.Lock()
+
+
 def _exec_check(spec):
     started = time.monotonic()
-    findings = run_check(spec)
+    if spec["name"] in OUT_DIR_CHECKS:
+        with _out_dir_lock:
+            findings = run_check(spec)
+    else:
+        findings = run_check(spec)
     duration = time.monotonic() - started
     return spec, findings, duration
 

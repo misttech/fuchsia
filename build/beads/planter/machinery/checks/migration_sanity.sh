@@ -7843,11 +7843,26 @@ def check_helper_components_and_dead_selects(dirs):
                         "copy and cannot be used from Bazel either."
                     ),
                     "remediation": (
-                        f"Declare '{name}' with `fx_component(testonly = True, ...)` and `visibility` "
-                        "from find_rdeps, delete its hand-written GN copy above `## BAZEL2GN SENTINEL` in "
-                        f"'{gn_rel}', and run `fx bazel2gn -d {pkg_dir}`. A GN `fuchsia_test_component` "
-                        "without `test_type` is just a `testonly` `fuchsia_component`, which is what "
-                        "bazel2gn emits."
+                        (
+                            f"'{name}' sets `test_type`, which `fx_component` cannot carry and "
+                            "bazel2gn only emits for an `fx_test_component` listed in the "
+                            "`test_components` of a test `fx_package` in the same BUILD.bazel. "
+                            "If a Bazel test package uses it, list it there. Otherwise (its only "
+                            "users are GN test packages) delete the Bazel target and its "
+                            "Bazel-only manifest/binary helpers, and keep the GN "
+                            f"`fuchsia_test_component` hand-written above `## BAZEL2GN SENTINEL` in "
+                            f"'{gn_rel}' (no `# @bazel2gn:skip` twin); name the reason in the summary."
+                        )
+                        if "test_type" in kws
+                        or "test_type" in gn_pre_targets.get(name, ("", ""))[1]
+                        else (
+                            f"Declare '{name}' with `fx_component(testonly = True, ...)` and "
+                            "`visibility` from find_rdeps, delete its hand-written GN copy above "
+                            f"`## BAZEL2GN SENTINEL` in '{gn_rel}', and run "
+                            f"`fx bazel2gn -d {pkg_dir}`. A GN `fuchsia_test_component` without "
+                            "`test_type` is just a `testonly` `fuchsia_component`, which is what "
+                            "bazel2gn emits."
+                        )
                     ),
                 })
             if rule == "fx_component" and has_skip_comment(lines, lineno):
