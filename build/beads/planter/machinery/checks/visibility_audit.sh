@@ -1965,34 +1965,124 @@ def record_intentional_visibility_narrowing(
     })
 
 
+# Discover candidate planter executables for diffengine alignment queries.
+# Prioritizes ancestor and non-`diff` planter daemon processes in /proc/<pid>/exe
+# (resolving to their stable on-disk readlink path unless unlinked after a rebuild)
+# before PATH fallbacks so transient sibling `planter diff` subprocesses cannot
+# shadow the daemon or cause FileNotFoundError races.
+def find_planter_bins():
+    bins = []
+    seen = set()
+
+    def is_transient_diff_proc(pid_val):
+        try:
+            with open(f"/proc/{pid_val}/cmdline", "rb") as cf:
+                parts = cf.read().split(b"\x00")
+                return len(parts) > 1 and parts[1] == b"diff"
+        except OSError:
+            return True
+
+    def add_candidate(path):
+        if not path:
+            return
+        resolved = path
+        if path.startswith("/proc/"):
+            try:
+                target = os.readlink(path)
+            except OSError:
+                return
+            if (
+                not target.endswith(" (deleted)")
+                and os.path.isfile(target)
+                and os.access(target, os.X_OK)
+            ):
+                resolved = target
+        if not os.access(resolved, os.X_OK):
+            return
+        try:
+            st = os.stat(resolved)
+        except OSError:
+            return
+        key = (resolved.startswith("/proc/"), st.st_dev, st.st_ino)
+        if key not in seen:
+            seen.add(key)
+            bins.append(resolved)
+
+    pid = os.getppid()
+    visited_pids = set()
+    while pid > 1 and pid not in visited_pids:
+        visited_pids.add(pid)
+        next_pid = 0
+        try:
+            with open(f"/proc/{pid}/comm", encoding="utf-8") as cf:
+                if cf.read().strip() == "planter" and not is_transient_diff_proc(pid):
+                    add_candidate(f"/proc/{pid}/exe")
+            with open(f"/proc/{pid}/status", encoding="utf-8") as sf:
+                for line in sf:
+                    if line.startswith("PPid:"):
+                        next_pid = int(line.split()[1])
+                        break
+        except (OSError, ValueError):
+            break
+        pid = next_pid
+
+    try:
+        for entry in os.listdir("/proc"):
+            if not entry.isdigit() or int(entry) in visited_pids:
+                continue
+            try:
+                with open(f"/proc/{entry}/comm", encoding="utf-8") as cf:
+                    if cf.read().strip() != "planter":
+                        continue
+            except OSError:
+                continue
+            if is_transient_diff_proc(entry):
+                continue
+            add_candidate(f"/proc/{entry}/exe")
+    except OSError:
+        pass
+
+    add_candidate(shutil.which("planter"))
+    cand = os.path.expanduser("~/.local/bin/planter")
+    if os.path.isfile(cand):
+        add_candidate(cand)
+    return bins
+
+
+def find_planter_bin():
+    bins = find_planter_bins()
+    return bins[0] if bins else None
+
+
 # Query planter diff for any additional visibility_narrowed findings on targets that
 # passed visibility_audit without error so review_diff deduplicates them as confirmed INFO.
 def record_diff_visibility_narrowed_info(clean_targets):
     if not clean_targets or os.environ.get("PLANTER_SKIP_DIFF_COVERAGE") == "1":
         return
-    planter_bin = shutil.which("planter")
-    if not planter_bin:
-        cand = os.path.expanduser("~/.local/bin/planter")
-        if os.path.isfile(cand) and os.access(cand, os.X_OK):
-            planter_bin = cand
-    if not planter_bin:
+    planter_bins = find_planter_bins()
+    if not planter_bins:
         return
     env = dict(os.environ)
     env["PLANTER_SKIP_DIFF_COVERAGE"] = "1"
-    try:
-        out = subprocess.run(
-            [planter_bin, "diff", "--local", "--check-findings", f"--workdir={workdir}"],
-            cwd=workdir,
-            env=env,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-            timeout=15,
-        ).stdout.strip()
-        diff_list = json.loads(out) if out.startswith("[") else []
-    except Exception:
-        diff_list = []
+    diff_list = []
+    for planter_bin in planter_bins:
+        try:
+            out = subprocess.run(
+                [planter_bin, "diff", "--local", "--check-findings", f"--workdir={workdir}"],
+                cwd=workdir,
+                env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=15,
+            ).stdout.strip()
+            if out.startswith("["):
+                parsed = json.loads(out)
+                if isinstance(parsed, list):
+                    diff_list.extend(parsed)
+        except Exception:
+            continue
 
     seen_keys = {
         (f.get("category"), f.get("file"), f.get("line"), f.get("message"))

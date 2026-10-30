@@ -21,7 +21,9 @@ set -euo pipefail
 #    of the same package that still exists, e.g. a GN-only `<lib>_static`
 #    wrapper above the dependency's BAZEL2GN SENTINEL replaced by the `<lib>`
 #    it wraps. Such wrappers exist to add GN configs or link settings; the swap
-#    builds in Bazel but breaks GN links. Pure forwarding groups are exempt.
+#    builds in Bazel but breaks GN links. Pure forwarding groups and GN groups
+#    replacing a migrated GN test target with `bazel_test_suite` and/or its
+#    renamed `<package_name>-gn` dual-build test package are exempt.
 # 2. dep_link_settings_dropped (error): a removed dependency carries
 #    link-affecting settings (public_configs, all_dependent_configs, ldflags,
 #    libs, rustflags, complete_static_lib). A removed test_deps entry of a
@@ -52,6 +54,18 @@ change_base = os.environ.get("PLANTER_CHANGE_BASE", "").strip() or "HEAD"
 GN_DEP_ATTRS = ("deps", "public_deps", "non_rust_deps", "test_deps", "proc_macro_deps", "link_deps", "data_deps", "non_test_deps")
 LINK_ATTRS = ("public_configs", "all_dependent_configs", "ldflags", "libs", "rustflags", "complete_static_lib")
 FORWARDING_ONLY_ATTRS = {"public_deps", "deps", "visibility", "testonly"}
+GN_TEST_PACKAGE_TEMPLATES = {"fuchsia_unittest_package", "fuchsia_test_package"}
+GN_TEST_TEMPLATES = GN_TEST_PACKAGE_TEMPLATES | {
+    "fuchsia_unittest_component",
+    "fuchsia_test_component",
+    "fuchsia_test",
+    "python_host_test",
+    "host_test",
+    "rustc_test",
+    "go_test",
+    "test",
+    "cc_test_executable",
+}
 SENTINEL = re.compile(r"^##\s*BAZEL2GN SENTINEL|#LOCAL_BAZEL_BUILD_SENTINEL", re.M)
 GN_TARGET = re.compile(r'\b([A-Za-z_]\w*)\(\s*"([^"$]+)"\s*\)\s*\{')
 GN_STRING = re.compile(r'"((?:[^"\\]|\\.)*)"')
@@ -277,6 +291,7 @@ def resolve(label, now=False):
         def labels(attr):
             return {l for l in (normalize(s, path) for s in lists.get(attr, [])) if l}
 
+        pkg_name_m = re.search(r'\bpackage_name\s*=\s*"([^"$]+)"', body)
         attrs = set(re.findall(r"(?m)^\s*([A-Za-z_]\w*)\s*[+-]?=", body))
         info = {
             "tmpl": t["tmpl"],
@@ -287,14 +302,65 @@ def resolve(label, now=False):
             "public_deps": labels("public_deps"),
             "deps": labels("deps"),
             "forwarding_group": t["tmpl"] == "group" and attrs <= FORWARDING_ONLY_ATTRS and not link,
+            "package_name": pkg_name_m.group(1) if pkg_name_m else name,
         }
     now_bazel = new_text(f"{path}/BUILD.bazel") or ""
     in_bazel = bool(re.search(r'\bname\s*=\s*"%s"' % re.escape(name), now_bazel))
-    exists_now = in_bazel or name in parsed(gn_rel, "new")[1]
+    in_gn_now = name in parsed(gn_rel, "new")[1]
+    exists_now = in_bazel or in_gn_now
     if info is not None:
         info["gn_only"] = not in_bazel
+        info["in_gn_now"] = in_gn_now
+        info["in_bazel_now"] = in_bazel
     _resolved[key] = (info, exists_now)
     return _resolved[key]
+
+
+# Check whether a GN group dependency on a migrated test target was replaced by
+# bazel_test_suite and/or a renamed dual-build GN test package (<package_name>-gn).
+def is_migrated_test_group_dep(group_tmpl, label, info, old_all, subs, new_all):
+    if group_tmpl != "group" or not info or not subs:
+        return False
+    if info["tmpl"] not in GN_TEST_TEMPLATES or info["link"] or info.get("in_gn_now"):
+        return False
+    dep_pkg = split(label)[0]
+    if not new_text(f"{dep_pkg}/BUILD.bazel"):
+        return False
+    old_pkg_names = set()
+    for old_lbl in old_all:
+        if split(old_lbl)[0] != dep_pkg:
+            continue
+        oi, _ = resolve(old_lbl)
+        if oi and oi["tmpl"] in GN_TEST_PACKAGE_TEMPLATES:
+            old_pkg_names.add(oi["package_name"])
+    allowed_gn_pkg_names = old_pkg_names | {f"{p}-gn" for p in old_pkg_names}
+    has_suite = False
+    for s in subs:
+        si, _ = resolve(s, now=True)
+        if not si:
+            return False
+        if si["tmpl"] == "bazel_test_suite":
+            has_suite = True
+        elif (
+            si["tmpl"] in GN_TEST_PACKAGE_TEMPLATES
+            and si["package_name"] in allowed_gn_pkg_names
+        ):
+            continue
+        else:
+            return False
+    if info["tmpl"] in GN_TEST_PACKAGE_TEMPLATES:
+        expected_names = {info["package_name"], f"{info['package_name']}-gn"}
+        for n_lbl in new_all:
+            if split(n_lbl)[0] != dep_pkg:
+                continue
+            ni, _ = resolve(n_lbl, now=True)
+            if (
+                ni
+                and ni["tmpl"] in GN_TEST_PACKAGE_TEMPLATES
+                and ni["package_name"] in expected_names
+            ):
+                return True
+    return bool(info.get("in_bazel_now") or has_suite)
 
 
 def reach(labels):
@@ -510,6 +576,8 @@ for pkg in sorted(candidate_dirs):
                     for s in subs
                 )
             ):
+                continue
+            if is_migrated_test_group_dep(tmpl, label, info, old_all, subs, new_all):
                 continue
             if subs and exists_now:
                 findings.append({

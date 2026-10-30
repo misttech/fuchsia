@@ -128,9 +128,14 @@ changed = set()
 # The task's change: everything since PLANTER_CHANGE_BASE ("HEAD~1" when HEAD is the task's own
 # commit, "HEAD" when HEAD is unrelated upstream history or a stacked parent commit) plus untracked files.
 change_base = resolve_effective_change_base(os.environ.get("PLANTER_CHANGE_BASE", ""))
+# Resolve target package directories from environment overrides or CLI arguments
 raw_tdirs = re.split(
     r"[\s,]+",
-    (os.environ.get("PLANTER_TARGET_DIRS", "") or raw_dirs).strip(),
+    (
+        os.environ.get("PLANTER_TARGET_DIRS", "")
+        or os.environ.get("PLANTER_TARGET_DIR", "")
+        or raw_dirs
+    ).strip(),
 )
 check_dirs = []
 for d in raw_tdirs:

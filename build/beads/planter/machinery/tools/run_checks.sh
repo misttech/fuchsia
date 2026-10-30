@@ -848,14 +848,72 @@ def commit_msg_only_since_upload():
         return False
 
 
-# Prefer any running planter daemon executable in /proc/<pid>/exe so standalone
-# review_diff runs match the in-memory daemon binary even after an on-disk rebuild.
-def find_planter_bin():
+# Discover candidate planter executables, prioritizing ancestor and non-`diff`
+# planter daemon processes in /proc/<pid>/exe (resolving to their stable on-disk
+# readlink path unless unlinked after a rebuild) before PATH fallbacks so
+# standalone review_diff runs match the in-memory daemon binary without racing
+# short-lived sibling `planter diff` processes.
+def find_planter_bins():
     import shutil
+
+    bins = []
+    seen = set()
+
+    def is_transient_diff_proc(pid_val):
+        try:
+            with open(f"/proc/{pid_val}/cmdline", "rb") as cf:
+                parts = cf.read().split(b"\x00")
+                return len(parts) > 1 and parts[1] == b"diff"
+        except OSError:
+            return True
+
+    def add_candidate(exe):
+        if not exe:
+            return
+        resolved = exe
+        if exe.startswith("/proc/"):
+            try:
+                target = os.readlink(exe)
+            except OSError:
+                return
+            if (
+                not target.endswith(" (deleted)")
+                and os.path.isfile(target)
+                and os.access(target, os.X_OK)
+            ):
+                resolved = target
+        if not os.access(resolved, os.X_OK):
+            return
+        try:
+            st = os.stat(resolved)
+        except OSError:
+            return
+        key = (resolved.startswith("/proc/"), st.st_dev, st.st_ino)
+        if key not in seen:
+            seen.add(key)
+            bins.append(resolved)
+
+    pid = os.getppid()
+    visited = set()
+    while pid > 1 and pid not in visited:
+        visited.add(pid)
+        next_pid = 0
+        try:
+            with open(f"/proc/{pid}/comm", encoding="utf-8") as cf:
+                if cf.read().strip() == "planter" and not is_transient_diff_proc(pid):
+                    add_candidate(f"/proc/{pid}/exe")
+            with open(f"/proc/{pid}/status", encoding="utf-8") as sf:
+                for line in sf:
+                    if line.startswith("PPid:"):
+                        next_pid = int(line.split()[1])
+                        break
+        except (OSError, ValueError):
+            break
+        pid = next_pid
 
     try:
         for entry in os.listdir("/proc"):
-            if not entry.isdigit():
+            if not entry.isdigit() or int(entry) in visited:
                 continue
             try:
                 with open(f"/proc/{entry}/comm", encoding="utf-8") as cf:
@@ -863,18 +921,22 @@ def find_planter_bin():
                         continue
             except OSError:
                 continue
-            exe = f"/proc/{entry}/exe"
-            if os.access(exe, os.X_OK):
-                return exe
+            if is_transient_diff_proc(entry):
+                continue
+            add_candidate(f"/proc/{entry}/exe")
     except OSError:
         pass
-    p = shutil.which("planter")
-    if p:
-        return p
+
+    add_candidate(shutil.which("planter"))
     cand = os.path.expanduser("~/.local/bin/planter")
-    if os.path.isfile(cand) and os.access(cand, os.X_OK):
-        return cand
-    return None
+    if os.path.isfile(cand):
+        add_candidate(cand)
+    return bins
+
+
+def find_planter_bin():
+    bins = find_planter_bins()
+    return bins[0] if bins else None
 
 
 # Fallback filter for standalone `--only review_diff` runs or mixed missing
@@ -1779,8 +1841,8 @@ def is_benign_review_diff_finding(f):
 
 
 def run_review_diff(existing_findings):
-    planter_bin = find_planter_bin()
-    if not planter_bin or not workdir:
+    planter_bins = find_planter_bins()
+    if not planter_bins or not workdir:
         return None
     env = dict(os.environ)
     env.update(
@@ -1790,13 +1852,17 @@ def run_review_diff(existing_findings):
             "PLANTER_CHANGE_BASE": change_base,
         }
     )
-    out, _, _ = execute(
-        [planter_bin, "diff", "--local", "--check-findings", f"--workdir={workdir}"],
-        workdir,
-        env,
-        "review_diff",
-    )
-    findings, parsed_ok = parse_findings(out.strip())
+    findings, parsed_ok = [], False
+    for planter_bin in planter_bins:
+        out, _, err_text = execute(
+            [planter_bin, "diff", "--local", "--check-findings", f"--workdir={workdir}"],
+            workdir,
+            env,
+            "review_diff",
+        )
+        findings, parsed_ok = parse_findings(out.strip())
+        if parsed_ok or err_text is None:
+            break
     if not parsed_ok:
         return []
     downgrade_check_cfg_diff_findings(findings)
@@ -1896,6 +1962,11 @@ max_workers = min(8, os.cpu_count() or 4)
 if os.environ.get("PLANTER_SERIAL_CHECKS", "").strip() in ("1", "true"):
     max_workers = 1
 
+# Checks that invoke `fx build` / `fx gen` (regenerator.py) or temporarily revert
+# working-tree build files and args.gn must never run concurrently with static
+# checks or with each other when builds are enabled.
+SERIAL_BUILD_CHECKS = {"build_verification", "tests_json_parity"}
+
 
 def _exec_check(spec):
     started = time.monotonic()
@@ -1904,14 +1975,43 @@ def _exec_check(spec):
     return spec, findings, duration
 
 
+# Run read-only static checks in parallel first, then execute mutating/build
+# checks serially while preserving checks/manifest.json output order.
+def run_check_batch(specs_to_run):
+    total = len(specs_to_run)
+    if builds_skipped or max_workers <= 1:
+        parallel_specs = list(specs_to_run)
+        serial_specs = []
+    else:
+        parallel_specs = [s for s in specs_to_run if s["name"] not in SERIAL_BUILD_CHECKS]
+        serial_specs = [s for s in specs_to_run if s["name"] in SERIAL_BUILD_CHECKS]
+
+    results_by_idx = {}
+    idx_map = {id(s): idx for idx, s in enumerate(specs_to_run)}
+    done_count = 0
+
+    if parallel_specs:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(_exec_check, spec) for spec in parallel_specs]
+            for fut in futures:
+                spec, findings, duration = fut.result()
+                done_count += 1
+                log(f"({done_count}/{total}) {spec['name']} done ({fmt_secs(duration)})")
+                results_by_idx[idx_map[id(spec)]] = (spec, findings, duration)
+
+    for spec in serial_specs:
+        spec, findings, duration = _exec_check(spec)
+        done_count += 1
+        log(f"({done_count}/{total}) {spec['name']} done ({fmt_secs(duration)})")
+        results_by_idx[idx_map[id(spec)]] = (spec, findings, duration)
+
+    batch_rows = [results_by_idx[i] for i in range(total)]
+    batch_findings = [f for _, flist, _ in batch_rows for f in flist]
+    return batch_rows, batch_findings
+
+
 try:
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(_exec_check, spec) for spec in enabled]
-        for n, fut in enumerate(futures, 1):
-            spec, findings, duration = fut.result()
-            log(f"({n}/{len(enabled)}) {spec['name']} done ({fmt_secs(duration)})")
-            rows.append((spec, findings, duration))
-            all_findings.extend(findings)
+    rows, all_findings = run_check_batch(enabled)
     if not commit_msg_only and (not only or "review_diff" in only):
         started = time.monotonic()
         diff_findings = run_review_diff(all_findings)
@@ -1946,7 +2046,17 @@ try:
             disabled = [s for s in disabled if s["name"] in wanted]
         if commit_msg_only:
             re_enabled = [s for s in re_enabled if s["name"] in COMMIT_MSG_CHECKS]
-        bv_rows = {s["name"]: (s, f, t) for s, f, t in rows if s["name"] == "build_verification"}
+        fp_before = {fn: (mt, sz) for fn, mt, sz in initial_fp}
+        fp_after = {fn: (mt, sz) for fn, mt, sz in machinery_fingerprint()}
+        bv_rows = {
+            s["name"]: (s, f, t)
+            for s, f, t in rows
+            if s["name"] == "build_verification"
+            or (
+                s["name"] in SERIAL_BUILD_CHECKS
+                and fp_before.get(s["script_file"]) == fp_after.get(s["script_file"])
+            )
+        }
         rows = []
         all_findings = []
         for s in re_enabled:

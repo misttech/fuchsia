@@ -2525,14 +2525,74 @@ def collect_local_template_and_sentinel_targets():
     return expanded_tmpl_targets, sentinel_targets
 
 
-# Locate the planter binary (preferring PLANTER_BIN or a live /proc/<pid>/exe daemon if running).
-def find_planter_bin():
+# Discover candidate planter executables for diffengine alignment queries.
+# Prioritizes PLANTER_BIN, ancestor and non-`diff` planter daemon processes in /proc/<pid>/exe
+# (resolving to their stable on-disk readlink path unless unlinked after a rebuild)
+# before PATH and standard install fallbacks so transient sibling `planter diff` subprocesses
+# cannot shadow the daemon or cause FileNotFoundError races.
+def find_planter_bins():
+    bins = []
+    seen = set()
+
+    def is_transient_diff_proc(pid_val):
+        try:
+            with open(f"/proc/{pid_val}/cmdline", "rb") as cf:
+                parts = cf.read().split(b"\x00")
+                return len(parts) > 1 and parts[1] == b"diff"
+        except OSError:
+            return True
+
+    def add_candidate(path):
+        if not path:
+            return
+        resolved = path
+        if path.startswith("/proc/"):
+            try:
+                target = os.readlink(path)
+            except OSError:
+                return
+            if (
+                not target.endswith(" (deleted)")
+                and os.path.isfile(target)
+                and os.access(target, os.X_OK)
+            ):
+                resolved = target
+        if not os.access(resolved, os.X_OK):
+            return
+        try:
+            st = os.stat(resolved)
+        except OSError:
+            return
+        key = (resolved.startswith("/proc/"), st.st_dev, st.st_ino)
+        if key not in seen:
+            seen.add(key)
+            bins.append(resolved)
+
     env_bin = os.environ.get("PLANTER_BIN", "").strip()
-    if env_bin and os.path.isfile(env_bin) and os.access(env_bin, os.X_OK):
-        return env_bin
+    if env_bin and os.path.isfile(env_bin):
+        add_candidate(env_bin)
+
+    pid = os.getppid()
+    visited_pids = set()
+    while pid > 1 and pid not in visited_pids:
+        visited_pids.add(pid)
+        next_pid = 0
+        try:
+            with open(f"/proc/{pid}/comm", encoding="utf-8") as cf:
+                if cf.read().strip() == "planter" and not is_transient_diff_proc(pid):
+                    add_candidate(f"/proc/{pid}/exe")
+            with open(f"/proc/{pid}/status", encoding="utf-8") as sf:
+                for line in sf:
+                    if line.startswith("PPid:"):
+                        next_pid = int(line.split()[1])
+                        break
+        except (OSError, ValueError):
+            break
+        pid = next_pid
+
     try:
         for entry in os.listdir("/proc"):
-            if not entry.isdigit():
+            if not entry.isdigit() or int(entry) in visited_pids:
                 continue
             try:
                 with open(f"/proc/{entry}/comm", encoding="utf-8") as cf:
@@ -2540,27 +2600,34 @@ def find_planter_bin():
                         continue
             except OSError:
                 continue
-            exe = f"/proc/{entry}/exe"
-            if os.access(exe, os.X_OK):
-                return exe
+            if is_transient_diff_proc(entry):
+                continue
+            add_candidate(f"/proc/{entry}/exe")
     except OSError:
         pass
-    which_bin = shutil.which("planter")
-    if which_bin:
-        return which_bin
+
+    add_candidate(shutil.which("planter"))
     for cand in (
         os.path.expanduser("~/.local/bin/planter"),
         os.path.expanduser("~/go/bin/planter"),
         "/tmp/planter",
     ):
-        if os.path.isfile(cand) and os.access(cand, os.X_OK):
-            return cand
-    return None
+        if os.path.isfile(cand):
+            add_candidate(cand)
+    return bins
+
+
+# Return the highest-priority planter executable for diffengine queries.
+def find_planter_bin():
+    bins = find_planter_bins()
+    return bins[0] if bins else None
 
 
 # Reconcile diffengine attribute_alignment permutations for mapped rules and
 # file-local GN template expansions / sentinel target pairings / forwarding groups.
 def collect_diffengine_alignment_findings(allowed_targets, crate_test_targets=()):
+    if os.environ.get("PLANTER_SKIP_DIFF_COVERAGE") == "1":
+        return []
     expanded_tmpl_targets, sentinel_targets = collect_local_template_and_sentinel_targets()
     if (
         not allowed_targets
@@ -2570,33 +2637,39 @@ def collect_diffengine_alignment_findings(allowed_targets, crate_test_targets=()
         and not dirs
     ):
         return []
-    planter_bin = find_planter_bin()
-    if not planter_bin:
+    planter_bins = find_planter_bins()
+    if not planter_bins:
         return []
     env = dict(os.environ)
     env["PLANTER_WORKDIR"] = workdir
     env["PLANTER_CHANGE_BASE"] = change_base
+    env["PLANTER_SKIP_DIFF_COVERAGE"] = "1"
     if target_dir:
         env["PLANTER_TARGET_DIRS"] = target_dir
-    try:
-        raw = subprocess.run(
-            [planter_bin, "diff", "--local", "--check-findings", f"--workdir={workdir}"],
-            cwd=workdir,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        ).stdout
-    except Exception:
-        return []
-    start, end = raw.find("["), raw.rfind("]")
-    if start < 0 or end <= start:
-        return []
-    try:
-        items = json.loads(raw[start : end + 1])
-    except Exception:
-        return []
-    if not isinstance(items, list):
+    items = []
+    for planter_bin in planter_bins:
+        try:
+            raw = subprocess.run(
+                [planter_bin, "diff", "--local", "--check-findings", f"--workdir={workdir}"],
+                cwd=workdir,
+                env=env,
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            ).stdout
+        except Exception:
+            continue
+        start, end = raw.find("["), raw.rfind("]")
+        if start < 0 or end <= start:
+            continue
+        try:
+            parsed = json.loads(raw[start : end + 1])
+        except Exception:
+            continue
+        if isinstance(parsed, list):
+            items.extend(parsed)
+    if not items:
         return []
     out = []
     attr_pat = re.compile(r'^Target "([^"]+)" \(Target Attributes\): (.+)$')

@@ -79,6 +79,7 @@ fi
 
 python3 - "$WORKDIR" "$TARGET_DIRS" "${BASH_SOURCE[0]}" <<'PYEOF'
 import ast
+import fcntl
 import hashlib
 import json
 import os
@@ -105,6 +106,30 @@ def git_lines(args):
     except Exception:
         return []
     return [l.strip() for l in out.splitlines() if l.strip()]
+
+
+# Serialize active builds against tests_json_parity working-tree reversion and `fx gen`
+# runs so concurrent check invocations never collide in regenerator.py.
+def acquire_workdir_build_lock(wdir):
+    if skip_build or dry_run:
+        return None
+    try:
+        gdir = subprocess.check_output(
+            ["git", "-C", wdir, "rev-parse", "--absolute-git-dir"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        if not gdir or not os.path.isdir(gdir):
+            return None
+        lf = open(os.path.join(gdir, "planter-workdir-build.lock"), "a+", encoding="utf-8")
+        os.set_inheritable(lf.fileno(), False)
+        fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
+        return lf
+    except (OSError, subprocess.CalledProcessError):
+        return None
+
+
+_workdir_build_lock = acquire_workdir_build_lock(workdir)
 
 
 EXCLUDED_GLOBAL_DIRS = (

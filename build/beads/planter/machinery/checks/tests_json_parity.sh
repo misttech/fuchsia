@@ -74,6 +74,7 @@ fi
 # exec, so that whoever stops this check signals the process that edits the
 # working tree, and its `finally` restores it.
 exec python3 - "$WORKDIR" "$TARGET_DIRS" <<'PYEOF'
+import fcntl
 import hashlib
 import json
 import os
@@ -260,6 +261,22 @@ def report_restore_failure(error):
         "right content, then delete both and run the checks again.",
     )
 
+
+# Serialize working-tree reversion and `fx gen` runs against build_verification
+# so concurrent check invocations never collide in regenerator.py.
+def acquire_workdir_build_lock(gdir):
+    if (skip_build and not os.path.exists(journal_path)) or dry_run:
+        return None
+    try:
+        lf = open(os.path.join(gdir, "planter-workdir-build.lock"), "a+", encoding="utf-8")
+        os.set_inheritable(lf.fileno(), False)
+        fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
+        return lf
+    except OSError:
+        return None
+
+
+_workdir_build_lock = acquire_workdir_build_lock(git_dir)
 
 if os.path.exists(journal_path):
     try:

@@ -41,10 +41,13 @@ set -euo pipefail
 #      error). A pure single-target forwarding `group("<outer>")` whose sole
 #      same-package convertible target `:<inner>` has no external callers may
 #      also fold `:<inner>` directly into `<tmpl>("<outer>")`. A
-#      `fuchsia_test_component` without `test_type` may become a `testonly`
-#      `fuchsia_component` (what bazel2gn emits for `fx_component(testonly =
-#      True)`), because `//build/components/fuchsia_test_component.gni` only
-#      adds `testonly = true` and `test_type` metadata to `fuchsia_component`.
+#      `fuchsia_test_component` without `test_type` and a `testonly`
+#      `fuchsia_component` may convert in either direction (helper components
+#      become `fuchsia_component` via `fx_component(testonly = True)`, while
+#      test roots in `fx_package(test_components = [...])` become
+#      `fuchsia_test_component` via `fx_test_component`), because
+#      `//build/components/fuchsia_test_component.gni` only adds
+#      `testonly = true` and `test_type` metadata to `fuchsia_component`.
 #      A GN `cc_test_executable` may become the testonly `executable` that
 #      bazel2gn emits for `fx_cc_binary(testonly = True)`, but:
 #   6. cc_test_executable_lost_lto_config (error): the `executable` lacks the
@@ -361,6 +364,63 @@ def gn_target_body(text, tmpl, name):
     if not m:
         return None
     return code[m.end() - 1 : call_end(code, m.end() - 1)]
+
+
+# Check whether a GN component target body (or its enclosing BUILD.gn file scope) sets testonly.
+def is_gn_component_testonly(gn_text, comp_body):
+    if not comp_body or re.search(r"\btestonly\s*=\s*false\b", comp_body):
+        return False
+    if re.search(r"\btestonly\s*=\s*true\b", comp_body):
+        return True
+    if not gn_text:
+        return False
+    code = blank_comments(gn_text)
+    top_chars = []
+    depth, quote, i = 0, None, 0
+    while i < len(code):
+        c = code[i]
+        if quote:
+            if c == "\\":
+                i += 2
+                continue
+            if c == quote:
+                quote = None
+        elif c in "\"'":
+            quote = c
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth = max(0, depth - 1)
+        elif depth == 0:
+            top_chars.append(c)
+        i += 1
+    return re.search(r"(?m)^\s*testonly\s*=\s*true\b", "".join(top_chars)) is not None
+
+
+# Check bidirectional equivalence between `fuchsia_test_component` without `test_type`
+# and `testonly` `fuchsia_component` (//build/components/fuchsia_test_component.gni).
+def equivalent_test_component_templates(before_gn, after_gn, orig_name, name, old_types, new_types):
+    if old_types == {"fuchsia_test_component"} and new_types == {"fuchsia_component"}:
+        old_body = gn_target_body(before_gn, "fuchsia_test_component", orig_name)
+        new_body = gn_target_body(after_gn, "fuchsia_component", name)
+        if (
+            old_body is not None
+            and new_body is not None
+            and not re.search(r"\btest_type\s*=", old_body)
+            and is_gn_component_testonly(after_gn, new_body)
+        ):
+            return ("fuchsia_test_component", "fuchsia_component")
+    elif old_types == {"fuchsia_component"} and new_types == {"fuchsia_test_component"}:
+        old_body = gn_target_body(before_gn, "fuchsia_component", orig_name)
+        new_body = gn_target_body(after_gn, "fuchsia_test_component", name)
+        if (
+            old_body is not None
+            and new_body is not None
+            and is_gn_component_testonly(before_gn, old_body)
+            and not re.search(r"\btest_type\s*=", new_body)
+        ):
+            return ("fuchsia_component", "fuchsia_test_component")
+    return None
 
 
 def gn_types(text):
@@ -989,32 +1049,6 @@ for pkg in sorted(candidate_dirs):
                     was_tmpl,
                     "executable",
                 )
-            # Without `test_type`, `fuchsia_test_component` is a `testonly` `fuchsia_component`
-            # (//build/components/fuchsia_test_component.gni), which is what bazel2gn emits for
-            # `fx_component(testonly = True)`. Helper components packaged next to a test (mocks,
-            # fakes, servers) often use it, and keeping it as a hand-written GN target only to
-            # satisfy this check leaves the Bazel copy skipped or misdeclared.
-            is_test_component_unwrap = False
-            if old_types == {"fuchsia_test_component"} and new_types == {"fuchsia_component"}:
-                old_body = gn_target_body(before, "fuchsia_test_component", orig_name)
-                new_body = gn_target_body(after, "fuchsia_component", name)
-                is_test_component_unwrap = (
-                    old_body is not None
-                    and new_body is not None
-                    and not re.search(r"\btest_type\s*=", old_body)
-                    and re.search(r"\btestonly\s*=\s*true\b", new_body) is not None
-                )
-                if is_test_component_unwrap:
-                    append_template_parity_info(
-                        findings,
-                        bazel_text,
-                        bazel_rel,
-                        gn_rel,
-                        name,
-                        line,
-                        "fuchsia_test_component",
-                        "fuchsia_component",
-                    )
             # Accept a GN `fuchsia_unittest_package` or `fuchsia_unittest_component` that
             # becomes `fuchsia_test_package` or `fuchsia_test_component` below the sentinel
             # when migrated to `fx_package(test_components = [...])`, `fx_test_component`, or
@@ -1087,6 +1121,27 @@ for pkg in sorted(candidate_dirs):
                     "fuchsia_test_component",
                     old_name=orig_name,
                 )
+            # Without `test_type`, `fuchsia_test_component` and `testonly` `fuchsia_component`
+            # expand identically (//build/components/fuchsia_test_component.gni): helper
+            # components migrate to `fx_component(testonly = True)` (`fuchsia_component`),
+            # while test roots in `fx_package(test_components = [...])` require
+            # `fx_test_component` (`fuchsia_test_component`).
+            equiv_test_comp = equivalent_test_component_templates(
+                before, after, orig_name, name, old_types, new_types
+            )
+            if equiv_test_comp and not is_unittest_component_unwrap and name in bazel_names:
+                old_tmpl, new_tmpl = equiv_test_comp
+                append_template_parity_info(
+                    findings,
+                    bazel_text,
+                    bazel_rel,
+                    gn_rel,
+                    name,
+                    line,
+                    old_tmpl,
+                    new_tmpl,
+                    old_name=orig_name,
+                )
             if new_types != old_types and not (
                 is_cc_test_executable_conversion
                 or is_test_suite_conversion
@@ -1094,11 +1149,13 @@ for pkg in sorted(candidate_dirs):
                 or is_bazel_input_transition
                 or is_fuchsia_package_conversion
                 or is_feature_set_expansion
-                or is_test_component_unwrap
                 or is_unittest_package_unwrap
                 or is_unittest_component_unwrap
+                or equiv_test_comp
             ):
-                findings.append(type_change_finding(label, name, pkg, gn_rel, line, old_types, new_types))
+                findings.append(
+                    type_change_finding(label, name, pkg, gn_rel, line, old_types, new_types)
+                )
         elif name in cc_libs:
             rule, alwayslink, line = cc_libs[name]
             f = alwayslink_finding(label, name, pkg, bazel_rel, rule, alwayslink, line, old_types)
