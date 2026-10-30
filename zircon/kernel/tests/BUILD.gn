@@ -114,7 +114,6 @@ if (toolchain_environment == "kernel") {
       "thread_dispatcher_tests.cc",
       "timer_tests.cc",
       "variant_tests.cc",
-      "wait_queue_ordering_tests.cc",
     ]
     deps = [
       ":arch_rs_tests",

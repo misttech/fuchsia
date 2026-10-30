@@ -4,18 +4,18 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#include <assert.h>
-#include <lib/kconcurrent/chainlock.h>
 #include <lib/ktrace.h>
+#include <stdint.h>
 
 #include <kernel/ffi.h>
-#include <kernel/wait.h>
 #include <kernel/wait_ffi.h>
 
-static_assert(static_cast<uint32_t>(ChainLock::Result::Ok) == 0);
-static_assert(static_cast<uint32_t>(ChainLock::Result::Retry) == 1);
-static_assert(static_cast<uint32_t>(ChainLock::Result::Backoff) == 2);
-static_assert(static_cast<uint32_t>(ChainLock::Result::Cycle) == 3);
+#ifdef UNITTESTS_ENABLED
+#include <stddef.h>
+
+#include <kernel/thread.h>
+#include <kernel/wait.h>
+#endif
 
 #ifndef WAIT_QUEUE_DEPTH_TRACING_ENABLED
 #define WAIT_QUEUE_DEPTH_TRACING_ENABLED false
@@ -38,5 +38,30 @@ extern "C" {
 FFI_ALWAYS_INLINE void cpp_wq_trace_depth(const WaitQueueCollection* collection, uint32_t depth) {
   WqTraceDepth(collection, depth);
 }
+
+#ifdef UNITTESTS_ENABLED
+// TODO: Remove these test-only shims once C++ `WaitQueueCollection`'s `fbl::WAVLTree` read view is
+// retired.
+uint32_t cpp_wait_queue_test_tree_size(const WaitQueueCollection* collection);
+const Thread* cpp_wait_queue_test_tree_front(const WaitQueueCollection* collection);
+const Thread* cpp_wait_queue_test_tree_nth(const WaitQueueCollection* collection, size_t n);
+
+uint32_t cpp_wait_queue_test_tree_size(const WaitQueueCollection* collection) {
+  return collection->Count();
+}
+
+const Thread* cpp_wait_queue_test_tree_front(const WaitQueueCollection* collection) {
+  return collection->PeekFront();
+}
+
+// Walks the C++ view of the tree in order and returns the |n|th thread, or nullptr past the end.
+const Thread* cpp_wait_queue_test_tree_nth(const WaitQueueCollection* collection, size_t n) {
+  auto it = collection->threads().begin();
+  const auto end = collection->threads().end();
+  for (; it != end && n > 0; ++it, --n) {
+  }
+  return it == end ? nullptr : &*it;
+}
+#endif
 
 }  // extern "C"

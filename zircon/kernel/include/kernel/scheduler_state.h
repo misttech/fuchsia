@@ -635,11 +635,9 @@ class SchedulerState {
   friend class OwnedWaitQueue;
   friend class WaitQueue;
   friend class WaitQueueBase;
-  friend class WaitQueueCollection;
 
   // Allow tests to observe/modify our state.
   friend class LoadBalancerTest;
-  friend struct WaitQueueOrderingTests;
   friend class SchedulerRunQueueTestHelper;
   friend class unittest::ThreadEffectiveProfileObserver;
   friend Thread;

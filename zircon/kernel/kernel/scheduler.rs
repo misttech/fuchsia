@@ -933,6 +933,24 @@ pub struct SchedDeadlineParams {
     pub utilization: SchedUtilization,
 }
 
+impl SchedDeadlineParams {
+    /// Constructs a new [`SchedDeadlineParams`] from `capacity_ns` and `deadline_ns`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `deadline_ns` is zero, and asserts in debug builds that
+    /// `0 < capacity_ns <= deadline_ns`.
+    pub fn new(capacity_ns: SchedDuration, deadline_ns: SchedDuration) -> Self {
+        debug_assert!(SchedDuration::from_raw(0) < capacity_ns);
+        debug_assert!(capacity_ns <= deadline_ns);
+        Self {
+            capacity_ns,
+            deadline_ns,
+            utilization: SchedUtilization::from(capacity_ns / deadline_ns),
+        }
+    }
+}
+
 /// Specifies the type of scheduling algorithm applied to a thread.
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

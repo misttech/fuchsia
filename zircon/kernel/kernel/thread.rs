@@ -158,6 +158,12 @@ unsafe extern "C" {
     fn cpp_scoped_thread_exception_context_destroy(context: *mut CppScopedThreadExceptionContext);
     fn cpp_thread_create_empty() -> *mut Thread;
     fn cpp_thread_delete(thread: *mut Thread);
+    // TODO: Remove these test-only shims once `Thread` construction and destruction are ported to
+    // Rust.
+    #[cfg(ktest)]
+    fn cpp_thread_create_for_test() -> *mut Thread;
+    #[cfg(ktest)]
+    fn cpp_thread_destroy_for_test(thread: *mut Thread);
 }
 
 /// Stall accounting state of a thread.
@@ -2041,6 +2047,43 @@ impl Thread {
         // size and alignment are asserted after the struct definition. The caller ensures it is
         // not mutated while the reference is live.
         unsafe { &*(*stack).get().cast::<KernelStack>() }
+    }
+
+    /// Allocates a default-constructed, unscheduled test-only [`Thread`] on the heap, returning
+    /// null on allocation failure.
+    #[cfg(ktest)]
+    pub(super) fn create_for_test() -> *mut Self {
+        // SAFETY: The C++ shim uses `fbl::AllocChecker` to allocate and default-construct a
+        // standalone `Thread` without unwinding across FFI.
+        unsafe { cpp_thread_create_for_test() }
+    }
+
+    /// Destroys a test-only [`Thread`] previously returned by [`Self::create_for_test`] (or does
+    /// nothing if `ptr` is null).
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `ptr` is either null or was returned by
+    /// [`Self::create_for_test`], has not already been destroyed, is not queued or scheduled
+    /// anywhere, and has no live references to `*ptr` or any of its fields.
+    #[cfg(ktest)]
+    pub(super) unsafe fn destroy_for_test(ptr: *mut Self) {
+        // SAFETY: The caller upholds the pointer validity, exclusivity, and single-free contract.
+        unsafe { cpp_thread_destroy_for_test(ptr) };
+    }
+
+    /// Raw pointer to the [`scheduler::SchedulerState`] storage of this thread for unit tests.
+    ///
+    /// Never dereference this pointer into a whole-struct `&scheduler::SchedulerState` or
+    /// `&mut scheduler::SchedulerState` on a live/scheduled thread: `SchedulerState` has split
+    /// lock guardianship (`Thread::lock` vs. `Scheduler::queue_lock_` vs. lock-free `curr_cpu` and
+    /// `last_cpu` reads). Forming a whole-struct reference or mutating fields directly is only
+    /// sound on an unscheduled, unqueued test-only `Thread` when no other references to its
+    /// `SchedulerState` or any of its fields exist.
+    #[cfg(ktest)]
+    #[inline]
+    pub(super) fn scheduler_state_ptr(&self) -> *mut scheduler::SchedulerState {
+        self.scheduler_state.get().cast::<scheduler::SchedulerState>()
     }
 
     /// Returns a reference to the global thread list spinlock (`Thread::get_list_lock()`).

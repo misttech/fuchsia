@@ -6,7 +6,7 @@
 
 //! Types and structures for kernel scheduler state (`include/kernel/scheduler_state.h`).
 
-use crate::kernel::scheduler::{BaseProfile, SchedDeadlineParams, SchedDuration, SchedUtilization};
+use crate::kernel::scheduler::{BaseProfile, SchedDeadlineParams, SchedDuration};
 use crate::kernel::types::{cpu_mask_t, cpu_num_t};
 use crate::platform_rs::timer::{DurationMono, InstantMono};
 use core::mem::{align_of, size_of};
@@ -199,9 +199,8 @@ impl SchedulerStateBaseProfile {
         assert!(capacity.0 > 0 && capacity.0 <= deadline.0);
         let capacity_ns = SchedDuration::from_raw(capacity.0);
         let deadline_ns = SchedDuration::from_raw(deadline.0);
-        let utilization = SchedUtilization::from(capacity_ns / deadline_ns);
         Self(BaseProfile::new_deadline(
-            SchedDeadlineParams { capacity_ns, deadline_ns, utilization },
+            SchedDeadlineParams::new(capacity_ns, deadline_ns),
             critical,
         ))
     }

@@ -30,6 +30,10 @@
 #include <ktl/type_traits.h>
 #include <vm/vm_object_paged.h>
 
+#ifdef UNITTESTS_ENABLED
+#include <fbl/alloc_checker.h>
+#endif
+
 extern "C" {
 
 // LINT.IfChange(thread_state)
@@ -606,4 +610,20 @@ FFI_ALWAYS_INLINE Thread* cpp_thread_create_empty() {
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_thread_delete(Thread* thread) { delete thread; }
 
+#ifdef UNITTESTS_ENABLED
+// TODO: Remove these test-only shims once `Thread` construction and destruction are ported to Rust.
+Thread* cpp_thread_create_for_test();
+void cpp_thread_destroy_for_test(Thread* t);
+
+Thread* cpp_thread_create_for_test() {
+  fbl::AllocChecker ac;
+  Thread* t = new (&ac) Thread{};
+  if (!ac.check()) {
+    return nullptr;
+  }
+  return t;
+}
+
+void cpp_thread_destroy_for_test(Thread* t) { delete t; }
+#endif
 }  // extern "C"
