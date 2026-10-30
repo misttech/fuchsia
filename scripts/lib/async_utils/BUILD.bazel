@@ -1,0 +1,37 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@rules_python//python:py_library.bzl", "py_library")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_py_test.bzl", "host_py_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+py_library(
+    name = "async_utils",
+    srcs = [
+        "__init__.py",
+        "command.py",
+        "signals.py",
+    ],
+    imports = [".."],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//scripts/fxtest/python:__pkg__",
+        "//scripts/lib/ffx_cmd:__pkg__",
+        "//scripts/lib/fx_cmd:__pkg__",
+        "//scripts/lib/package_server:__pkg__",
+        "//src/developer/debug/e2e_tests/dap_integration_tests:__pkg__",
+        "//tools/devshell/python/status:__pkg__",
+    ],
+)
+
+host_py_test(
+    name = "lib_test",
+    srcs = ["tests/async_utils_test.py"],
+    main = "tests/async_utils_test.py",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    test_args = ["-v"],
+    deps = [":async_utils"],
+)

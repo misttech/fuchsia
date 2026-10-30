@@ -1,0 +1,33 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@rules_python//python:py_library.bzl", "py_library")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_py_test.bzl", "host_py_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+py_library(
+    name = "logging_utils",
+    srcs = ["__init__.py"],
+    imports = [".."],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//src/testing/end_to_end/mobly_base_tests/mobly_logger_extension:__pkg__",
+        "//src/testing/end_to_end/mobly_driver:__pkg__",
+    ],
+    deps = ["//third_party/colorama"],
+)
+
+host_py_test(
+    name = "logging_utils_test",
+    srcs = ["tests/logging_utils_test.py"],
+    main = "tests/logging_utils_test.py",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    test_args = ["-v"],
+    deps = [
+        ":logging_utils",
+        "//third_party/colorama",
+    ],
+)

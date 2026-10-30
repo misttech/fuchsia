@@ -1,0 +1,34 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@rules_python//python:py_library.bzl", "py_library")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_py_test.bzl", "host_py_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+# GN packages agents.txt as the `agents.data` resource package. Bazel has no
+# equivalent, so it is a runfile instead, which agents.py falls back to at its
+# source tree path.
+# @bazel2gn:raw_attribute:data_package_name = "data"
+# @bazel2gn:raw_attribute:data_sources = [ "//tools/devshell/lib/agents.txt" ]
+py_library(
+    name = "agents",
+    srcs = [
+        "__init__.py",
+        "agents.py",
+    ],
+    data = ["//tools/devshell/lib:agents.txt"],  # @bazel2gn:skip
+    imports = [".."],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//scripts/fxtest/python:__pkg__"],
+)
+
+host_py_test(
+    name = "agents_tests",
+    srcs = ["tests/agents_test.py"],
+    main = "tests/agents_test.py",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [":agents"],
+)

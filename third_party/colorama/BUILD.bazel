@@ -1,0 +1,41 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@rules_license//rules:license.bzl", "license")
+load("@rules_python//python:py_library.bzl", "py_library")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+
+package(default_applicable_licenses = [":license"])
+
+# @bazel2gn:skip
+license(
+    name = "license",
+    license_kinds = ["@rules_license//licenses/spdx:BSD-3-Clause"],
+    license_text = "colorama/LICENSE.txt",
+)
+
+# TODO: Verify whether colorama should use target_compatible_with (was not gated by if (is_host) in GN).
+# @bazel2gn:raw_attribute:enable_mypy = false
+# @bazel2gn:raw_attribute:source_root = "colorama/colorama"
+py_library(
+    name = "colorama",
+    srcs = [
+        "colorama/colorama/__init__.py",  # @bazel2gn:path_overwrite:__init__.py
+        "colorama/colorama/ansi.py",  # @bazel2gn:path_overwrite:ansi.py
+        "colorama/colorama/ansitowin32.py",  # @bazel2gn:path_overwrite:ansitowin32.py
+        "colorama/colorama/initialise.py",  # @bazel2gn:path_overwrite:initialise.py
+        "colorama/colorama/win32.py",  # @bazel2gn:path_overwrite:win32.py
+        "colorama/colorama/winterm.py",  # @bazel2gn:path_overwrite:winterm.py
+    ],
+    imports = ["colorama"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//scripts/fxtest/python:__pkg__",
+        "//scripts/fxtest/scripts:__pkg__",
+        "//scripts/lib/logging_utils:__pkg__",
+        "//scripts/lib/statusinfo:__pkg__",
+        "//scripts/lib/termout:__pkg__",
+        "//third_party/colorama/tests:__pkg__",
+    ],
+)

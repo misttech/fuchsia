@@ -1,0 +1,23 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@rules_python//python:py_library.bzl", "py_library")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+
+package(default_applicable_licenses = ["//:license"])
+
+# TODO: Verify whether build_dir should use target_compatible_with (was not gated by if (is_host) in GN).
+py_library(
+    name = "build_dir",
+    srcs = [
+        "__init__.py",
+        "lib.py",
+    ],
+    imports = [".."],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//scripts/lib/fx_cmd:__pkg__",
+        "//scripts/lib/package_server:__pkg__",
+    ],
+)

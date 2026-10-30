@@ -7,6 +7,7 @@ package(default_applicable_licenses = ["//:license"])
 exports_files(
     ["agents.txt"],
     visibility = [
+        "//scripts/lib/agents:__pkg__",
         "//src/lib/agents:__pkg__",
         "//tools/lib/agents:__pkg__",
     ],

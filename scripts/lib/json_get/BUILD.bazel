@@ -1,0 +1,22 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@rules_python//python:py_library.bzl", "py_library")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+
+package(default_applicable_licenses = ["//:license"])
+
+py_library(
+    name = "json_get",
+    srcs = [
+        "__init__.py",
+        "json_get.py",
+    ],
+    imports = [".."],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//scripts/disable_ctf_tests:__pkg__",
+        "//sdk/ctf:__pkg__",
+    ],
+)
