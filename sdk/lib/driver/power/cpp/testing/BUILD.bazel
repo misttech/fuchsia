@@ -1,0 +1,74 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# TODO(https://fxbug.dev/543568916): bazel2gn cannot emit a multi-dep
+# group(), so keep group("testing") hand-written above the sentinel in
+# BUILD.gn and skip syncing this target.
+# @bazel2gn:skip
+fx_cc_library(
+    name = "testing",
+    testonly = True,
+    visibility = [
+        "//examples:__subpackages__",
+        "//sdk/lib/driver/power/cpp:__subpackages__",
+        "//src/devices:__subpackages__",
+        "//src/graphics:__subpackages__",
+    ],
+    deps = [
+        ":fakes",
+        ":fidl_bound_server",
+        ":fidl_test_base_default",
+        ":scoped_background_loop",
+    ],
+    alwayslink = True,
+)
+
+fx_cc_library(
+    name = "fakes",
+    testonly = True,
+    hdrs = [
+        "fake_activity_governor.h",
+        "fake_element_control.h",
+        "fake_topology.h",
+    ],
+    deps = [
+        ":fidl_test_base_default",
+        "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_cpp",
+        "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_cpp",
+        "//sdk/lib/async:async-cpp",
+    ],
+    alwayslink = True,
+)
+
+fx_cc_library(
+    name = "fidl_bound_server",
+    testonly = True,
+    hdrs = ["fidl_bound_server.h"],
+    deps = ["//sdk/lib/fidl/hlcpp"],
+    alwayslink = True,
+)
+
+fx_cc_library(
+    name = "fidl_test_base_default",
+    testonly = True,
+    hdrs = ["fidl_test_base_default.h"],
+    deps = ["//sdk/lib/fidl/hlcpp"],
+    alwayslink = True,
+)
+
+fx_cc_library(
+    name = "scoped_background_loop",
+    hdrs = ["scoped_background_loop.h"],
+    deps = [
+        "//sdk/lib/async",
+        "//sdk/lib/async:async-cpp",
+        "//sdk/lib/async-loop:async-loop-cpp",
+        "//sdk/lib/async-loop:async-loop-default",
+    ],
+    alwayslink = True,
+)
