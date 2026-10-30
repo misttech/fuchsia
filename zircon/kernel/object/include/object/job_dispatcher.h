@@ -158,7 +158,10 @@ class JobDispatcher final
 
   // It's safe to return a raw pointer because the exceptionate is only used by the threads under
   // the current job.
-  Exceptionate* exceptionate();
+  Exceptionate* exceptionate() {
+    canary_.Assert();
+    return &exceptionate_;
+  }
 
   // Enumerate over a snapshot of debug exceptionates. |func| will be called without the lock held.
   zx_status_t ForEachDebugExceptionate(fit::inline_function<void(Exceptionate*)> func);

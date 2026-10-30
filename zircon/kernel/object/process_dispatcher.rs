@@ -658,6 +658,7 @@ impl ProcessDispatcher {
     }
 
     /// Returns the process's normal `Exceptionate`.
+    #[inline]
     pub fn exceptionate(&self) -> &super::exceptionate::Exceptionate {
         // SAFETY: `self` is a valid `ProcessDispatcher`, which owns `exceptionate_` for its entire
         // lifetime.
@@ -667,6 +668,7 @@ impl ProcessDispatcher {
     }
 
     /// Returns the process's debug `Exceptionate`.
+    #[inline]
     pub fn debug_exceptionate(&self) -> &super::exceptionate::Exceptionate {
         // SAFETY: `self` is a valid `ProcessDispatcher`, which owns `debug_exceptionate_` for its
         // entire lifetime.

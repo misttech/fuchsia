@@ -268,8 +268,14 @@ class ProcessDispatcher final
 
   bool CriticalToRootJob() const;
 
-  Exceptionate* exceptionate();
-  Exceptionate* debug_exceptionate();
+  Exceptionate* exceptionate() {
+    canary_.Assert();
+    return &exceptionate_;
+  }
+  Exceptionate* debug_exceptionate() {
+    canary_.Assert();
+    return &debug_exceptionate_;
+  }
 
   // This method can be slow and inaccurate and should only be called from
   // diagnostics code.

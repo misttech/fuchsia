@@ -136,6 +136,7 @@ crate::object::dispatcher::impl_dispatcher_facade_with_state!(
 
 impl ExceptionDispatcher {
     /// Returns the default rights for an `ExceptionDispatcher` handle.
+    #[inline]
     pub const fn default_rights() -> zx_rights_t {
         ZX_DEFAULT_EXCEPTION_RIGHTS
     }
@@ -186,6 +187,7 @@ impl ExceptionDispatcher {
     }
 
     /// Returns a reference to the exception's thread.
+    #[inline]
     pub fn thread(&self) -> &RefPtr<ThreadDispatcher> {
         let state = self.state();
         state.canary.assert();
@@ -193,6 +195,7 @@ impl ExceptionDispatcher {
     }
 
     /// Returns the exception type (`ZX_EXCP_*`).
+    #[inline]
     pub fn exception_type(&self) -> zx_excp_type_t {
         let state = self.state();
         state.canary.assert();

@@ -679,11 +679,6 @@ zx_status_t JobDispatcher::set_name(const char* name, size_t len) {
   return name_.set(name, len);
 }
 
-Exceptionate* JobDispatcher::exceptionate() {
-  canary_.Assert();
-  return &exceptionate_;
-}
-
 zx_status_t JobDispatcher::ForEachDebugExceptionate(
     fit::inline_function<void(Exceptionate*)> func) {
   Guard<CriticalMutex> guard{get_lock()};

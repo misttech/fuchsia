@@ -49,6 +49,7 @@ zr::static_assert_size_and_align!(
 impl Exceptionate {
     /// Returns a pinned initializer for a new `Exceptionate` of the given
     /// `ZX_EXCEPTION_CHANNEL_TYPE_*`.
+    #[inline]
     pub fn new(type_: u32) -> impl PinInit<Self, Infallible> {
         pin_init!(Self {
             type_,
@@ -71,6 +72,7 @@ impl Exceptionate {
     ///
     /// This is a lock-free fast-path check; the peer endpoint may have closed since the channel
     /// was bound. Call [`Self::has_valid_channel`] to also verify that the peer endpoint is open.
+    #[inline]
     pub fn has_channel(&self) -> bool {
         self.has_channel.load(Ordering::Acquire)
     }
@@ -133,10 +135,16 @@ impl Exceptionate {
     }
 
     /// Returns `true` if the channel exists and has a valid userspace peer.
+    #[inline]
     pub fn has_valid_channel(&self) -> bool {
         if !self.has_channel() {
             return false;
         }
+        self.has_valid_channel_slow()
+    }
+
+    #[cold]
+    fn has_valid_channel_slow(&self) -> bool {
         ksync::lock!(let guard = self.lock_lock());
         Self::has_valid_channel_locked(guard.fields().channel_handle)
     }
@@ -223,10 +231,10 @@ impl PinnedDrop for Exceptionate {
         // Shuts the underlying channel down if it's still connected to be sure the
         // userspace endpoint gets the PEER_CLOSED signal.
         //
-        // In most cases the task wants to manually shutdown the exceptionate when
-        // transitioning to a dead state, but in some cases tasks can be destroyed
-        // without registering the dead state e.g. childless jobs.
-        self.shutdown();
+        // In most cases the task manually shuts down the exceptionate when transitioning to a
+        // dead state, so `channel_handle` is already empty here. Since `drop` has exclusive
+        // `&mut Self` access, reset `channel_handle` directly without acquiring `self.lock`.
+        self.project().channel_handle.get_inner_mut().reset();
     }
 }
 
@@ -252,25 +260,34 @@ mod tests {
         zx_exception_report_t,
     };
 
-    /// Verifies channel binding, peer-close replacement, and `shutdown()`.
+    /// Verifies channel binding, peer-close replacement, drop cleanup, and `shutdown()`.
     #[test]
     fn channel_lifecycle() {
+        let (ch0, ch1, _rights) = unwrap_ok!(ChannelDispatcher::create(), "channel 0 created");
+        {
+            stack_pin_init!(let exceptionate = Exceptionate::new(ZX_EXCEPTION_CHANNEL_TYPE_THREAD));
+            expect_eq!(exceptionate.type_(), ZX_EXCEPTION_CHANNEL_TYPE_THREAD);
+            expect_false!(exceptionate.has_channel());
+            expect_false!(exceptionate.has_valid_channel());
+            expect_true!(
+                exceptionate.set_channel(KernelHandle::empty(), 0, 0) == Err(Status::INVALID_ARGS)
+            );
+
+            assert_ok!(exceptionate.set_channel(ch0, 0, 0), "initial set_channel succeeds");
+            expect_true!(exceptionate.has_channel());
+            expect_true!(exceptionate.has_valid_channel());
+            expect_false!(ch1.dispatcher().peer_has_closed());
+        }
+        // Dropping `Exceptionate` without `shutdown()` still closes the peer endpoint.
+        expect_true!(ch1.dispatcher().peer_has_closed());
+
         let (ch0, mut ch1, _rights) = unwrap_ok!(ChannelDispatcher::create(), "channel 0 created");
         let (ch2, _ch3, _rights) = unwrap_ok!(ChannelDispatcher::create(), "channel 1 created");
         let (ch4, ch5, _rights) = unwrap_ok!(ChannelDispatcher::create(), "channel 2 created");
         let (ch6, _ch7, _rights) = unwrap_ok!(ChannelDispatcher::create(), "channel 3 created");
 
         stack_pin_init!(let exceptionate = Exceptionate::new(ZX_EXCEPTION_CHANNEL_TYPE_THREAD));
-        expect_eq!(exceptionate.type_(), ZX_EXCEPTION_CHANNEL_TYPE_THREAD);
-        expect_false!(exceptionate.has_channel());
-        expect_false!(exceptionate.has_valid_channel());
-        expect_true!(
-            exceptionate.set_channel(KernelHandle::empty(), 0, 0) == Err(Status::INVALID_ARGS)
-        );
-
         assert_ok!(exceptionate.set_channel(ch0, 0, 0), "initial set_channel succeeds");
-        expect_true!(exceptionate.has_channel());
-        expect_true!(exceptionate.has_valid_channel());
         expect_true!(exceptionate.set_channel(ch2, 0, 0) == Err(Status::ALREADY_BOUND));
 
         // Closing the peer endpoint makes the channel invalid and allows replacing it.

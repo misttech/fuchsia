@@ -776,16 +776,6 @@ zx_status_t ProcessDispatcher::SetCriticalToJob(fbl::RefPtr<JobDispatcher> criti
   return ZX_OK;
 }
 
-Exceptionate* ProcessDispatcher::exceptionate() {
-  canary_.Assert();
-  return &exceptionate_;
-}
-
-Exceptionate* ProcessDispatcher::debug_exceptionate() {
-  canary_.Assert();
-  return &debug_exceptionate_;
-}
-
 VmObject::AttributionCounts ProcessDispatcher::GetAttributedMemory() const {
   canary_.Assert();
 

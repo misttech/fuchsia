@@ -200,6 +200,7 @@ impl JobDispatcher {
     }
 
     /// Returns the job's normal `Exceptionate`.
+    #[inline]
     pub fn exceptionate(&self) -> &Exceptionate {
         // SAFETY: `self` is a valid `JobDispatcher`, which owns `exceptionate_` for its entire
         // lifetime.

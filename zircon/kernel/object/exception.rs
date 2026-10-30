@@ -98,11 +98,6 @@ impl<'a> ExceptionHandlerIterator<'a> {
         loop {
             let sent;
 
-            // This state may change during the handling of the debugger exception
-            // channel. Accordingly, we check its value before the next round of
-            // handling to be sure of the proper sequencing.
-            let second_chance = self.exception.is_second_chance();
-
             match self.next_method {
                 ExceptionDeliveryMethod::FirstChanceDebugChannel => {
                     (*result, sent) = self.thread.handle_exception(
@@ -159,7 +154,10 @@ impl<'a> ExceptionHandlerIterator<'a> {
                         .thread
                         .handle_exception(self.thread.process().exceptionate(), &self.exception);
 
-                    if second_chance {
+                    // This state may change during the handling of the debugger exception
+                    // channel. Accordingly, we check its value dynamically rather than caching it
+                    // when the iterator is constructed.
+                    if self.exception.is_second_chance() {
                         self.next_method = ExceptionDeliveryMethod::SecondChanceDebugChannel;
                     } else {
                         self.next_method = ExceptionDeliveryMethod::JobChannel;

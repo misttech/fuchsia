@@ -311,17 +311,20 @@ impl ThreadDispatcher {
     }
 
     /// Asserts that the dispatcher state is valid.
+    #[inline]
     pub fn assert_canary(&self) {
         self.state().canary.assert();
     }
 
     /// Returns a reference to the parent process.
+    #[inline]
     pub fn process(&self) -> &ProcessDispatcher {
         self.assert_canary();
         &self.state().process
     }
 
     /// Returns the koid of the parent process.
+    #[inline]
     pub fn get_related_koid(&self) -> zx_types::zx_koid_t {
         self.process().get_koid()
     }
@@ -610,6 +613,7 @@ impl ThreadDispatcher {
     ///
     /// `token` must have been obtained from locking **this particular instance's** state lock
     /// (`self.state().lock`).
+    #[inline]
     pub(crate) unsafe fn set_exception_dispatcher_locked(
         &self,
         token: &mut ksync::LockToken<'_, ThreadDispatcherStateLockClass>,
@@ -632,6 +636,7 @@ impl ThreadDispatcher {
     ///
     /// `token` must have been obtained from locking **this particular instance's** state lock
     /// (`self.state().lock`).
+    #[inline]
     pub(crate) unsafe fn clear_exception_locked(
         &self,
         token: &mut ksync::LockToken<'_, ThreadDispatcherStateLockClass>,
@@ -655,6 +660,7 @@ impl ThreadDispatcher {
     ///
     /// `token` must have been obtained from locking **this particular instance's** state lock
     /// (`self.state().lock`).
+    #[inline]
     pub(crate) unsafe fn in_exception_locked(
         &self,
         token: &ksync::LockToken<'_, ThreadDispatcherStateLockClass>,
@@ -670,6 +676,7 @@ impl ThreadDispatcher {
     ///
     /// `token` must have been obtained from locking **this particular instance's** state lock
     /// (`self.state().lock`).
+    #[inline]
     pub(crate) unsafe fn suspended_or_in_exception_locked(
         &self,
         token: &ksync::LockToken<'_, ThreadDispatcherStateLockClass>,
@@ -717,6 +724,7 @@ impl ThreadDispatcher {
     }
 
     /// Returns whether this `ThreadDispatcher` is the current thread.
+    #[inline]
     pub fn is_current(&self) -> bool {
         // SAFETY: `self` is a valid `ThreadDispatcher` reference.
         unsafe { cpp_thread_dispatcher_is_current(self as *const _) }
@@ -1024,14 +1032,15 @@ impl ThreadDispatcher {
         // Dying -> Dead from underneath it), but that's life (or death :-)).
         //
         // Thread exit exceptions don't currently provide an iframe.
-        //
-        // SAFETY: `self` and `self.process()` are valid references, making the underlying
-        // pointers valid.
-        unsafe {
-            cpp_thread_handle_single_shot_exiting(
-                self.process().as_ffi_mut(),
-                self as *const _ as *mut ThreadDispatcher,
-            );
+        if self.process().debug_exceptionate().has_valid_channel() {
+            // SAFETY: `self` and `self.process()` are valid references, making the underlying
+            // pointers valid.
+            unsafe {
+                cpp_thread_handle_single_shot_exiting(
+                    self.process().as_ffi_mut(),
+                    self as *const _ as *mut ThreadDispatcher,
+                );
+            }
         }
 
         // Mark the thread as dead. Do this before removing the thread from the
@@ -1119,6 +1128,7 @@ impl ThreadDispatcher {
     /// Panics if the calling thread is a kernel thread, which has no `ThreadDispatcher`. Every
     /// caller sets or restores the blocked reason of a user thread blocking in a syscall or
     /// exception, where that already holds.
+    #[inline]
     pub fn with_current<R>(f: impl FnOnce(&ThreadDispatcher) -> R) -> R {
         // SAFETY: Foreign call to query the current user thread; it returns null (checked below)
         // rather than faulting when the caller is a kernel thread.
@@ -1132,6 +1142,7 @@ impl ThreadDispatcher {
     }
 
     /// Sets the blocked reason of the current thread and returns the previous one.
+    #[inline]
     pub fn set_blocked_reason(reason: Blocked) -> Blocked {
         Self::with_current(|current| {
             // Only the current thread ever writes its own `blocked_reason`; other threads only
@@ -1202,7 +1213,11 @@ impl ThreadDispatcher {
     ) -> (Result<(), Status>, bool) {
         self.state().canary.assert();
         ltrace_entry_obj!(self);
-        assert!(self.is_current());
+        debug_assert!(self.is_current());
+
+        if !exceptionate.has_channel() {
+            return (Err(Status::NEXT), false);
+        }
 
         // Mark as blocked before sending the exception, otherwise a handler could
         // potentially query our state before we've marked ourself blocked.
@@ -1348,6 +1363,7 @@ impl ThreadDispatcher {
     }
 
     /// Returns the thread's `Exceptionate`.
+    #[inline]
     pub fn exceptionate(&self) -> &Exceptionate {
         self.assert_canary();
         &self.state().exceptionate
