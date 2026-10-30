@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/bazel_test_suite.gni")
 import("//build/components.gni")
 import("//build/fidl/fidl.gni")
 import("//build/test.gni")
@@ -13,11 +14,21 @@ import("//tools/fidl/gidl/gidl.gni")
 group("conformance") {
   testonly = true
   deps = [
+    ":bazel_tests",
     ":fidl_llcpp_conformance_tests",
     ":fidl_llcpp_conformance_tests_bin($host_toolchain)",
   ]
 }
 
+bazel_test_suite("bazel_tests") {
+  target_tests =
+      [ "//src/lib/fidl/llcpp/tests/conformance:fidl_llcpp_conformance_tests" ]
+  host_tests = [
+    "//src/lib/fidl/llcpp/tests/conformance:fidl_llcpp_conformance_tests_bin",
+  ]
+}
+
+# LINT.IfChange
 gidl_output_prefix = "conformance_suite__"
 
 gidl_deps = []
@@ -51,9 +62,12 @@ test("fidl_llcpp_conformance_tests_bin") {
 }
 
 fuchsia_unittest_package("fidl_llcpp_conformance_tests") {
+  package_name = "fidl_llcpp_conformance_tests-gn"
   deps = [ ":fidl_llcpp_conformance_tests_bin" ]
   deprecated_legacy_test_execution = true
 }
+
+# LINT.ThenChange(//src/lib/fidl/llcpp/tests/conformance/BUILD.bazel)
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
