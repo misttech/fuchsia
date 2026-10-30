@@ -890,12 +890,12 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/24/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = ""
+  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
 }
 }
   tsan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
+  clang_rt = ""
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
@@ -4073,7 +4073,7 @@ graph without affecting gen times by default.
 
 **Current value (from the default):** `[]`
 
-From //build/testing/boot_tests/kernel_zbi_test.gni:25
+From //build/testing/boot_tests/kernel_zbi_test.gni:32
 
 ### extra_package_labels
 
@@ -9252,6 +9252,16 @@ Set to true to enable compiling with ccache
 **Current value (from the default):** `false`
 
 From //build/toolchain/ccache.gni:9
+
+### use_common_extra_kernel_test_images
+
+Run tests against the common set of kernel images that are useful for
+testing outside of eng. This controls the default value of
+extra_kernel_test_images.
+
+**Current value (from the default):** `false`
+
+From //build/testing/boot_tests/kernel_zbi_test.gni:24
 
 ### use_dbus
 
