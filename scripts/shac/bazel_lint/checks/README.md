@@ -9,6 +9,12 @@ Each check is implemented as a small module in this directory that subclasses
    subclassing `BazelCheck` from `framework` (see
    [`BazelCheck` Attributes](#bazelcheck-attributes) below) and decorating it
    with `@register_check`.
+   * Optionally, add implementation documentation, explanations, design
+     rationale, or caveats in `scripts/shac/bazel_lint/checks/<check_name>.md`
+     (the same base name as the check module) and reference it from the
+     docstring at the top of `<check_name>.py`. (User-facing style guidelines
+     belong in `//docs/development/languages/bazel/style/`, whereas
+     `<check_name>.md` is for check-specific implementation documentation.)
 2. **Import the module** in [`__init__.py`](./__init__.py) so the check is
    registered when `bazel_lint` loads.
 3. **Register the `shac` check** in
@@ -81,12 +87,16 @@ Each check is implemented as a small module in this directory that subclasses
    * **Full-workspace check (`--all`)** (also run this whenever modifying an
      allowlist):
      ```sh
-     fx host-tool shac check --only bazel_<check_name> --all
+     fx host-tool shac check --only bazel_<check_name> --all --fail-level warning
      ```
-     A new check MUST have no findings for this check (errors, warnings or
-     notices) across the entire workspace before landing so that developers
-     modifying an existing file do not encounter unrelated failures. Any
-     existing violations in the tree must either be fixed first or added to
+     Pass `--fail-level warning` so `shac` fails on `warning`-level findings
+     (such as those emitted on untouched files when
+     `enforcement = "unchanged_lines_warning_only"` is set, since `shac check`
+     defaults to `--fail-level error`), and verify the output reports zero
+     findings (errors, warnings, or notices). A new check MUST have no findings
+     across the entire workspace before landing so that developers modifying an
+     existing file do not encounter unrelated failures. Any existing violations
+     in the tree must either be fixed first or added to
      [`allowlists/bazel_<check_name>.json`](../allowlists/README.md) with a
      tracking bug.
 6. **Configure rollout enforcement**:
@@ -104,7 +114,7 @@ Each check is implemented as a small module in this directory that subclasses
    commands from Step 5 as `Test:` footers in the commit message:
    ```
    Test: fx test --host @//scripts/shac/tests:bazel_test
-   Test: fx host-tool shac check --only bazel_<check_name> --all
+   Test: fx host-tool shac check --only bazel_<check_name> --all --fail-level warning
    ```
 7. **Promote to full enforcement after rollout**:
    After landing a new or modified check, allow the period for which CQ results
@@ -116,7 +126,7 @@ Each check is implemented as a small module in this directory that subclasses
      `"all"`).
    * Run the full-workspace check:
      ```sh
-     fx host-tool shac check --all --only bazel_<check_name>
+     fx host-tool shac check --all --only bazel_<check_name> --fail-level warning
      ```
    * If new violations are found, fix them or update
      [`allowlists/bazel_<check_name>.json`](../allowlists/README.md).
@@ -343,12 +353,14 @@ def check_string(self, fc: FileContext, s: StringInfo) -> None:
 Both `fc.report()` and `fc.report_string()` require a keyword-only `url`
 argument (`str | None`):
 
-* **Provide a URL whenever documentation exists**: If the check enforces a
-  section of the Fuchsia Bazel style guide (under
-  `//docs/development/languages/bazel/style/`) or another documentation page,
-  pass its `https://fuchsia.dev/fuchsia-src/...` URL. `fc.report*` automatically
-  appends `" See <url>."` to `message`. Pass `url=None` only when no relevant
-  documentation exists.
+* **Link to the Fuchsia Bazel style guide**: `url` should generally come from
+  the Fuchsia Bazel style guide (under
+  `//docs/development/languages/bazel/style/`, using its
+  `https://fuchsia.dev/fuchsia-src/development/languages/bazel/style/...` URL).
+  `fc.report*` automatically appends `" See <url>."` to `message`. If the
+  Fuchsia Bazel style guide does not yet have an entry for the rule being
+  enforced, ask the user whether you should create one before falling back to
+  another documentation page or `url=None`.
 * **Verify explicit Markdown anchors**: When linking to a section heading in a
   Markdown file under `//docs/`, ensure the heading in the `.md` file defines an
   explicit `{:#anchor-name}` attribute and use that exact anchor to help ensure

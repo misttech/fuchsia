@@ -27,16 +27,21 @@ Before writing code, read these files in `//scripts/shac/bazel_lint/`:
 
 Inspect existing checks in `//scripts/shac/bazel_lint/checks/` (such as
 `load_visibility.py`, `package_default_visibility.py`, and
-`target_visibility.py`) and their tests in
-`//scripts/shac/bazel_lint/checks/tests/` as reference examples.
+`target_visibility.py`), any accompanying `<check_name>.md` documentation files,
+and their tests in `//scripts/shac/bazel_lint/checks/tests/` as reference
+examples.
 
 ---
 
 ## 2. Align with the Bazel Style Guide and Craft Messages
 
-1.  **Locate the style guide section**: Check
+1.  **Locate the style guide section**: Check URLs should generally come from
+    the Fuchsia Bazel style guide under
     `//docs/development/languages/bazel/style/` (`common.md`, `build_files.md`,
-    `bzl_files.md`, etc.) for the style guideline being enforced.
+    `bzl_files.md`, `rules_macros.md`, etc.).
+    * If the Fuchsia Bazel style guide does not yet have an entry for the rule
+      being enforced, ask the user whether you should create one before falling
+      back to another documentation page or `url=None`.
     * Verify that the target section heading defines an explicit
       `{:#anchor-name}` attribute using dashes (`-`) rather than underscores
       (`_`), e.g., `### Do not use public visibility
@@ -187,7 +192,10 @@ use the `bazel_<check_name>` prefix, whereas files under `checks/` use
 `<check_name>`):
 
 1.  `scripts/shac/bazel_lint/checks/<check_name>.py`: Implement the
-    `@register_check` class with `name = "bazel_<check_name>"`.
+    `@register_check` class with `name = "bazel_<check_name>"`. Optionally, add
+    implementation documentation, explanations, or caveats in
+    `scripts/shac/bazel_lint/checks/<check_name>.md` (the same base name) and
+    reference it from the docstring at the top of `<check_name>.py`.
 2.  `scripts/shac/bazel_lint/checks/__init__.py`: Import `<check_name>` in
     alphabetical order.
 3.  `scripts/shac/bazel.star`:
@@ -208,16 +216,22 @@ use the `bazel_<check_name>` prefix, whereas files under `checks/` use
 
 ## 5. Scan the Tree and Handle Existing Violations
 
-Run the new check across the entire checkout:
+Run the new check across the entire checkout with `--fail-level warning` so
+`shac` fails on `warning`-level findings (such as those emitted on untouched
+files when `enforcement = "unchanged_lines_warning_only"` is set):
 
 ```sh
-fx host-tool shac check --only bazel_<check_name> --all
+fx host-tool shac check --only bazel_<check_name> --all --fail-level warning
 ```
 
-*(Note: While `allowlists/README.md` prohibits AI agents from adding allowlist
-entries to bypass an existing check when editing Bazel files, authoring a
-**new** check requires ensuring `shac check --only bazel_<check_name> --all`
-passes with zero findings before landing.)*
+*(Note: By default, `shac check` only exits non-zero on `error` findings
+(`--fail-level error`), exiting `0` even when warnings exist. Always pass
+`--fail-level warning` and inspect the command output to verify zero findings --
+including zero warnings and zero notices -- are reported. While
+`allowlists/README.md` prohibits AI agents from adding allowlist entries to
+bypass an existing check when editing Bazel files, authoring a **new** check
+requires ensuring `shac check --only bazel_<check_name> --all --fail-level
+warning` passes with zero findings before landing.)*
 
 If existing files in the repository trigger findings:
 
@@ -276,8 +290,9 @@ If existing files in the repository trigger findings:
       `"vendor/google/"`.
 3.  Verify allowlist ordering (entries sorted by `"path"`/`"path_prefix"`,
     `"path"`/`"path_prefix"` first in each entry, and `"targets"` sorted) and
-    re-run `fx host-tool shac check --only bazel_<check_name> --all` to confirm
-    it exits 0 with zero findings (including zero warnings on untouched files):
+    re-run `fx host-tool shac check --only bazel_<check_name> --all --fail-level
+    warning` to confirm it exits 0 and outputs zero findings (including zero
+    warnings or notices on untouched files):
 
     ```sh
     python3 -c '
@@ -288,7 +303,7 @@ If existing files in the repository trigger findings:
     assert all(next(iter(e)) in ("path", "path_prefix") for e in entries), "path/path_prefix must be first key"
     assert all(e["targets"] == sorted(e["targets"]) for e in entries if "targets" in e), "targets not sorted"
     '
-    fx host-tool shac check --only bazel_<check_name> --all
+    fx host-tool shac check --only bazel_<check_name> --all --fail-level warning
     ```
 
 ---
@@ -418,11 +433,11 @@ commands and `scripts/fx` for `fx` commands):
 4.  **Full-workspace check**:
 
     ```sh
-    fx host-tool shac check --only bazel_<check_name> --all
+    fx host-tool shac check --only bazel_<check_name> --all --fail-level warning
     ```
 
-    Verify that this command exits with code 0 and outputs no findings
-    (including no warnings).
+    Verify that this command exits with code 0 and that its output contains no
+    findings (including no warnings or notices).
 
 5.  **Format and lint modified files**:
 
@@ -437,5 +452,5 @@ modified framework files such as `framework.py`, `allowlist.py`, `main.py`, or
 
 ```
 Test: fx test --host @//scripts/shac/tests:bazel_test
-Test: fx host-tool shac check --only bazel_<check_name> --all
+Test: fx host-tool shac check --only bazel_<check_name> --all --fail-level warning
 ```

@@ -20,9 +20,10 @@ migration) or a finding is a false positive:
 2. File a tracking bug in the Build > Bazel component:
    <https://issues.fuchsia.dev/issues/new?component=1477645>.
 3. Add an entry referencing that bug to `<check_name>.json` in this directory.
-4. Verify that the check passes across the entire workspace:
+4. Verify that the check passes across the entire workspace with zero findings
+   (errors, warnings, or notices):
    ```sh
-   fx host-tool shac check --only <check_name> --all
+   fx host-tool shac check --only <check_name> --all --fail-level warning
    ```
 5. Commit the change, including the following footers in the commit message:
    * `Bug:` specifying the tracking bug filed above

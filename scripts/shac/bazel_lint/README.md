@@ -32,17 +32,21 @@ To run a specific check on all files in a directory:
 fx host-tool shac check --only <check_name> path/to/dir/
 ```
 
-To run a specific check across all files in the checkout:
+To run a specific check across all files in the checkout (including `--fail-level
+warning` so `shac` fails on `warning`-level findings emitted when
+`enforcement = "unchanged_lines_warning_only"` is set, and inspecting the output
+for any `notice` findings):
 
 ```sh
-fx host-tool shac check --only <check_name> --all
+fx host-tool shac check --only <check_name> --all --fail-level warning
 ```
 
 ## Implementation Overview
 
 * [`checks/`](./checks/README.md): Contains the individual Bazel lint check
-  implementations. See [`checks/README.md`](./checks/README.md) for instructions
-  on adding or modifying a check.
+  implementations (`<check_name>.py`) and optional per-check documentation
+  (`<check_name>.md`). See [`checks/README.md`](./checks/README.md) for
+  instructions on adding or modifying a check.
 * [`allowlists/`](./allowlists/README.md): Contains optional per-check JSON
   allowlists. See [`allowlists/README.md`](./allowlists/README.md) for the JSON
   schema and guidelines.
