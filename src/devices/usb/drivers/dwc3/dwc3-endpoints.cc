@@ -530,7 +530,6 @@ void Dwc3::UserEpCompleteTransfers(UserEndpoint& uep) {
     return;
   }
 
-  // Complete all finished TRBs.
   while (!uep.server->active_reqs.empty()) {
     zx::result trb_res = uep.fifo.ReadOne();
     if (trb_res.is_error()) {
@@ -577,6 +576,18 @@ void Dwc3::UserEpCompleteTransfers(UserEndpoint& uep) {
     uep.server->RequestComplete(ZX_OK, current_req.completed_bytes, std::move(req),
                                 /*send_now=*/false);
     uep.server->active_reqs.pop();
+
+    // Complete at most one request per transfer event. Every request ends in a
+    // TRB_IOC TRB, and an IN request that needs a ZLP has a second TRB_IOC on the
+    // trailing ZLP TRB, so each request raises at least one event. Stopping after
+    // one request prevents racing ahead into a subsequent multi-TRB Bulk OUT
+    // request whose first TRB has TRB_HWO=0 due to a short packet while the
+    // controller is still skipping the rest of its chained TRBs without clearing
+    // their TRB_HWO bit. An extra event from an IN ZLP may complete the next IN
+    // request early, which is harmless because IN requests never skip TRBs.
+    // TODO(https://fxbug.dev/579572059): Make IN+ZLP raise a single event and
+    // drop this caveat.
+    break;
   }
 }
 

@@ -5992,6 +5992,204 @@ TEST_P(Dwc3EndpointsTest, MultiTrbOutShortPacketCompletesAndRetiresTrailingTrbs)
   });
 }
 
+TEST_F(Dwc3EndpointsTestBase, OutEndpointShortPacketCompletesOneRequestPerEvent) {
+  SetEnableEnqueueManyTrbs(true);
+  TriggerConnection();
+
+  const uint8_t ep_address = 0x02;
+  const uint8_t ep_num = UsbAddressToEpNum(ep_address);
+
+  SetupEndpoint(ep_address, fdescriptor::EndpointType::kBulk, 512);
+  RegisterVmo(1, 32768);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferNotReady(drv, ep_num, 0); });
+  dut_.runtime().RunUntilIdle();
+
+  // Queue two 16384-byte Bulk OUT requests (4 page-sized 4096-byte TRBs each = 8 TRBs total).
+  QueueRequests(2, 1, 0, 16384, fdescriptor::EndpointType::kBulk);
+  WaitForState(ep_num, TransferState::kStartingOngoing);
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferStarted(drv, ep_num, kResourceId); });
+  WaitForState(ep_num, TransferState::kActiveOngoing);
+  WaitForActiveCount(ep_num, 2u);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    auto& uep = GetUserEndpoint(drv, ep_num);
+    ASSERT_EQ(uep.fifo.GetActiveCount(), 8u);
+    dwc3_trb_t* trbs = uep.fifo.current_read();
+
+    // Request 1 receives a 512-byte short packet on its first TRB (trbs[0]), while hardware
+    // fast-forwards over trbs[1..3].
+    trbs[0].status = TRB_BUFSIZ(4096 - 512) | TRB_SPR;
+    trbs[0].control &= ~TRB_HWO;
+    dwc3_trb_t* trb0 = &trbs[0];
+    uep.fifo.Write(trb0);
+
+    // Before the driver processes Request 1's DEPEVT_XFER_IN_PROGRESS event, hardware also
+    // receives a 256-byte short packet into Request 2's first TRB (trbs[4]) and is still
+    // mid-fast-forward on Request 2's remaining chained TRBs (trbs[5..7] still have TRB_HWO=1).
+    trbs[4].status = TRB_BUFSIZ(4096 - 256) | TRB_SPR;
+    trbs[4].control &= ~TRB_HWO;
+    dwc3_trb_t* trb4 = &trbs[4];
+    uep.fifo.Write(trb4);
+
+    // Deliver Request 1's DEPEVT_XFER_IN_PROGRESS event. UserEpCompleteTransfers must complete
+    // only Request 1 and NOT race into Request 2's TRBs.
+    Dwc3TestHelper::HandleEpTransferInProgressEvent(drv, ep_num);
+
+    EXPECT_EQ(uep.server->active_reqs.size(), 1u);
+    EXPECT_EQ(uep.fifo.GetActiveCount(), 4u);
+    EXPECT_NE(trbs[5].control & TRB_HWO, 0u);
+    EXPECT_NE(trbs[6].control & TRB_HWO, 0u);
+    EXPECT_NE(trbs[7].control & TRB_HWO, 0u);
+  });
+
+  std::vector<CompletionResult> completions1 = event_handler_.WaitForCompletions(1);
+  ASSERT_EQ(completions1.size(), 1UL);
+  EXPECT_OK(completions1[0].status);
+  EXPECT_EQ(completions1[0].transfer_size, 512UL);
+
+  // Now deliver Request 2's DEPEVT_XFER_IN_PROGRESS event after hardware finishes fast-forwarding.
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    auto& uep = GetUserEndpoint(drv, ep_num);
+    dwc3_trb_t* req2_trbs = uep.fifo.current_read();
+    Dwc3TestHelper::HandleEpTransferInProgressEvent(drv, ep_num);
+    EXPECT_EQ(uep.server->active_reqs.size(), 0u);
+    EXPECT_EQ(uep.fifo.GetActiveCount(), 0u);
+    EXPECT_EQ(req2_trbs[1].control & TRB_HWO, 0u);
+    EXPECT_EQ(req2_trbs[2].control & TRB_HWO, 0u);
+    EXPECT_EQ(req2_trbs[3].control & TRB_HWO, 0u);
+  });
+
+  std::vector<CompletionResult> completions2 = event_handler_.WaitForCompletions(1);
+  ASSERT_EQ(completions2.size(), 1UL);
+  EXPECT_OK(completions2[0].status);
+  EXPECT_EQ(completions2[0].transfer_size, 256UL);
+}
+
+TEST_F(Dwc3EndpointsTestBase, SingleTransferInZlpReclaimsBothTrbsOnSingleTransferCompleteEvent) {
+  SetEnableEnqueueManyTrbs(false);
+  TriggerConnection();
+
+  const uint8_t ep_address = 0x82;
+  const uint8_t ep_num = UsbAddressToEpNum(ep_address);
+
+  SetupEndpoint(ep_address, fdescriptor::EndpointType::kBulk, 512);
+  RegisterVmo(1, 4096);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferNotReady(drv, ep_num, 0); });
+  dut_.runtime().RunUntilIdle();
+
+  // Queue a 512-byte IN request with short_bit=true in single-transfer mode:
+  // trbs[0] is the data TRB (TRB_IOC | TRB_HWO, no TRB_LST) and trbs[1] is the ZLP TRB
+  // (TRB_IOC | TRB_LST | TRB_HWO). Because single-transfer mode does not enable
+  // DEPCFG_XFER_IN_PROGRESS_EN, hardware only emits a single DEPEVT_XFER_COMPLETE at TRB_LST.
+  QueueRequest(1, 0, 512, fdescriptor::EndpointType::kBulk, /*short_bit=*/true);
+  WaitForState(ep_num, TransferState::kStartingSingle);
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferStarted(drv, ep_num, kResourceId); });
+  WaitForState(ep_num, TransferState::kActiveSingle);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    auto& uep = GetUserEndpoint(drv, ep_num);
+    ASSERT_EQ(uep.fifo.GetActiveCount(), 2u);
+    dwc3_trb_t* trbs = uep.fifo.current_read();
+    EXPECT_NE(trbs[0].control & TRB_IOC, 0u);
+    EXPECT_EQ(trbs[0].control & TRB_LST, 0u);
+    EXPECT_NE(trbs[1].control & TRB_LST, 0u);
+
+    // Hardware completes both the data TRB and the ZLP TRB and emits a single DEPEVT_XFER_COMPLETE.
+    trbs[0].status = TRB_BUFSIZ(0);
+    trbs[0].control &= ~TRB_HWO;
+    dwc3_trb_t* trb0 = &trbs[0];
+    uep.fifo.Write(trb0);
+
+    trbs[1].status = TRB_BUFSIZ(0);
+    trbs[1].control &= ~TRB_HWO;
+    dwc3_trb_t* trb1 = &trbs[1];
+    uep.fifo.Write(trb1);
+
+    Dwc3TestHelper::HandleEpTransferCompleteEvent(drv, ep_num);
+
+    EXPECT_EQ(uep.ep.transfer_state, TransferState::kIdle);
+    EXPECT_EQ(uep.fifo.GetActiveCount(), 0u);
+    EXPECT_TRUE(uep.server->active_reqs.empty());
+  });
+
+  std::vector<CompletionResult> completions = event_handler_.WaitForCompletions(1);
+  ASSERT_EQ(completions.size(), 1UL);
+  EXPECT_OK(completions[0].status);
+  EXPECT_EQ(completions[0].transfer_size, 512UL);
+}
+
+TEST_F(Dwc3EndpointsTestBase, OngoingInZlpRequestCompletesOneRequestPerEvent) {
+  SetEnableEnqueueManyTrbs(true);
+  TriggerConnection();
+
+  const uint8_t ep_address = 0x82;
+  const uint8_t ep_num = UsbAddressToEpNum(ep_address);
+
+  SetupEndpoint(ep_address, fdescriptor::EndpointType::kBulk, 512);
+  RegisterVmo(1, 4096);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferNotReady(drv, ep_num, 0); });
+  dut_.runtime().RunUntilIdle();
+
+  // Queue two 512-byte IN requests that each need a ZLP. In ongoing mode each request is a data
+  // TRB (TRB_IOC) followed by a ZLP TRB (TRB_IOC), so each request raises two events.
+  QueueRequests(2, 1, 0, 512, fdescriptor::EndpointType::kBulk, /*short_bit=*/true);
+  WaitForState(ep_num, TransferState::kStartingOngoing);
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferStarted(drv, ep_num, kResourceId); });
+  WaitForState(ep_num, TransferState::kActiveOngoing);
+  WaitForActiveCount(ep_num, 2u);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    auto& uep = GetUserEndpoint(drv, ep_num);
+    ASSERT_EQ(uep.fifo.GetActiveCount(), 4u);
+    dwc3_trb_t* trbs = uep.fifo.current_read();
+    for (size_t i = 0; i < 4; i++) {
+      EXPECT_NE(trbs[i].control & TRB_IOC, 0u);
+      EXPECT_EQ(trbs[i].control & TRB_LST, 0u);
+    }
+
+    // Only Request 1's data TRB is done; its ZLP TRB is still owned by hardware. The data TD's
+    // event must not complete Request 1.
+    trbs[0].status = TRB_BUFSIZ(0);
+    trbs[0].control &= ~TRB_HWO;
+    dwc3_trb_t* trb0 = &trbs[0];
+    uep.fifo.Write(trb0);
+    Dwc3TestHelper::HandleEpTransferInProgressEvent(drv, ep_num);
+    EXPECT_EQ(uep.server->active_reqs.size(), 2u);
+    EXPECT_EQ(uep.fifo.GetActiveCount(), 3u);
+
+    // Hardware now finishes the rest of both requests before the next event is handled. The
+    // next event must complete only Request 1.
+    for (size_t i = 1; i < 4; i++) {
+      trbs[i].status = TRB_BUFSIZ(0);
+      trbs[i].control &= ~TRB_HWO;
+      dwc3_trb_t* trb = &trbs[i];
+      uep.fifo.Write(trb);
+    }
+    Dwc3TestHelper::HandleEpTransferInProgressEvent(drv, ep_num);
+    EXPECT_EQ(uep.server->active_reqs.size(), 1u);
+    EXPECT_EQ(uep.fifo.GetActiveCount(), 2u);
+
+    // The following event completes Request 2.
+    Dwc3TestHelper::HandleEpTransferInProgressEvent(drv, ep_num);
+    EXPECT_TRUE(uep.server->active_reqs.empty());
+    EXPECT_EQ(uep.fifo.GetActiveCount(), 0u);
+
+    // Request 2's remaining events find nothing left to complete.
+    Dwc3TestHelper::HandleEpTransferInProgressEvent(drv, ep_num);
+    EXPECT_TRUE(uep.server->active_reqs.empty());
+  });
+
+  std::vector<CompletionResult> completions = event_handler_.WaitForCompletions(2);
+  ASSERT_EQ(completions.size(), 2UL);
+  EXPECT_OK(completions[0].status);
+  EXPECT_EQ(completions[0].transfer_size, 512UL);
+  EXPECT_OK(completions[1].status);
+  EXPECT_EQ(completions[1].transfer_size, 512UL);
+}
+
 namespace {
 INSTANTIATE_TEST_SUITE_P(Dwc3EndpointsTestCases, Dwc3EndpointsTest, testing::Bool());
 }  // namespace
