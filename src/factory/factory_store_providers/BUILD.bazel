@@ -2,9 +2,107 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+load(
+    "//build/bazel/rules/testing:fx_unittest_component.bzl",
+    "fx_unittest_component",
+)
+
 package(default_applicable_licenses = ["//:license"])
 
 exports_files(
     ["meta/factory_store_providers.core_shard.cml"],
     visibility = ["//bundles/assembly:__subpackages__"],
+)
+
+rustc_binary(
+    name = "bin",
+    srcs = [
+        "src/config.rs",
+        "src/main.rs",
+        "src/validators/mod.rs",
+        "src/validators/pass.rs",
+        "src/validators/size.rs",
+        "src/validators/text.rs",
+    ],
+    crate_name = "factory_store_providers",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust",
+        "//sdk/fidl/fuchsia.factory:fuchsia.factory_rust",
+        "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fdio/rust:fdio",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-fs",
+        "//src/storage/lib/vfs/rust:vfs",
+        "//src/sys/lib/fuchsia-bootfs",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+fx_packaged_binary(
+    name = "factory_store_providers_packaged_bin",
+    binary = ":bin",
+    binary_name = "factory_store_providers",
+)
+
+fx_component_manifest(
+    name = "factory_store_providers_manifest",
+    component_name = "factory_store_providers",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/factory_store_providers.cml",
+)
+
+fx_component(
+    name = "factory_store_providers_comp",
+    compiled_manifest = ":factory_store_providers_manifest",
+    component_name = "factory_store_providers",
+    visibility = ["//vendor/google:__subpackages__"],
+    deps = [":factory_store_providers_packaged_bin"],
+)
+
+rustc_test(
+    name = "bin_test",
+    crate = ":bin",
+    crate_name = "factory_store_providers_bin_test",
+    edition = "2024",
+)
+
+fx_unittest_component(
+    name = "factory_store_providers_bin_test_comp",
+    binary = ":bin_test",
+    component_name = "factory_store_providers_bin_test",
+)
+
+fx_package(
+    name = "factory_store_providers_tests_no_errors_package",
+    package_name = "factory_store_providers_tests_no_errors",
+    test_components = [":factory_store_providers_bin_test_comp"],
+)
+
+fx_test(
+    name = "factory_store_providers_tests_no_errors",
+    package = ":factory_store_providers_tests_no_errors_package",
 )

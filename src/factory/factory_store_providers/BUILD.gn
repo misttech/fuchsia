@@ -2,60 +2,17 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/bazel_test_suite.gni")
 import("//build/components.gni")
 import("//build/dist/resource.gni")
-import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_test.gni")
 import("//build/zbi/zbi.gni")
 
-rustc_binary("bin") {
-  name = "factory_store_providers"
-  edition = "2024"
-  with_unit_tests = true
-
-  deps = [
-    "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust",
-    "//sdk/fidl/fuchsia.factory:fuchsia.factory_rust",
-    "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_rust",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
-    "//sdk/rust/zx",
-    "//src/lib/fdio/rust:fdio",
-    "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia",
-    "//src/lib/fuchsia-component",
-    "//src/lib/fuchsia-fs",
-    "//src/storage/lib/vfs/rust:vfs",
-    "//src/sys/lib/fuchsia-bootfs",
-    "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:futures",
-    "//third_party/rust_crates:log",
-    "//third_party/rust_crates:serde",
-    "//third_party/rust_crates:serde_json",
-    "//third_party/rust_crates:thiserror",
-  ]
-
-  test_deps = []
-
-  sources = [
-    "src/config.rs",
-    "src/main.rs",
-    "src/validators/mod.rs",
-    "src/validators/pass.rs",
-    "src/validators/size.rs",
-    "src/validators/text.rs",
-  ]
-}
-
-fuchsia_component("factory_store_providers_comp") {
-  component_name = "factory_store_providers"
-  manifest = "meta/factory_store_providers.cml"
-  deps = [ ":bin" ]
-}
-
-fuchsia_package("factory_store_providers") {
-  deps = [ ":factory_store_providers_comp" ]
-}
-
+# `factory_store_providers_test` and `factory_store_providers_tests` stay in GN
+# because the test depends on GN driver groups
+# (`//src/devices/bus/drivers/platform` and
+# `//src/storage/testing:storage_drivers`) and a Ninja-generated ZBI resource
+# (`zbi("items")`).
 rustc_test("factory_store_providers_test") {
   edition = "2024"
   source_root = "tests/factory_store_providers_test.rs"
@@ -75,6 +32,11 @@ rustc_test("factory_store_providers_test") {
   sources = [ "tests/factory_store_providers_test.rs" ]
 }
 
+# `factory_store_providers_corruption_test` and
+# `factory_store_providers_corruption_tests` stay in GN because the test uses
+# RealmBuilder (`//src/lib/fuchsia-component-test/realm_builder_server` has no
+# Bazel build yet) and depends on the `//src/devices/bus/drivers/platform` GN
+# driver group.
 rustc_test("factory_store_providers_corruption_test") {
   edition = "2024"
   source_root = "tests/factory_store_providers_corruption_test.rs"
@@ -97,6 +59,10 @@ rustc_test("factory_store_providers_corruption_test") {
   sources = [ "tests/factory_store_providers_corruption_test.rs" ]
 }
 
+fuchsia_package("factory_store_providers") {
+  deps = [ ":factory_store_providers_comp" ]
+}
+
 test_files = [
   "alpha_file",
   "another_cast_file",
@@ -113,25 +79,27 @@ test_files = [
 
 zbi_deps = []
 foreach(file, test_files) {
-  name = "zbi_$file"
-  zbi_deps += [ ":$name" ]
+  foreach(name, [ "zbi_$file" ]) {
+    zbi_deps += [ ":$name" ]
 
-  resource(name) {
-    testonly = true
-    sources = [ "testdata/input/$file" ]
-    outputs = [ file ]
+    resource(name) {
+      testonly = true
+      sources = [ "testdata/input/$file" ]
+      outputs = [ file ]
+    }
   }
 }
 
 test_file_resources = []
 foreach(file, test_files) {
-  name = "test_resource_$file"
-  test_file_resources += [ ":$name" ]
+  foreach(name, [ "test_resource_$file" ]) {
+    test_file_resources += [ ":$name" ]
 
-  resource(name) {
-    testonly = true
-    sources = [ "testdata/input/$file" ]
-    outputs = [ "data/{{source_file_part}}" ]
+    resource(name) {
+      testonly = true
+      sources = [ "testdata/input/$file" ]
+      outputs = [ "data/{{source_file_part}}" ]
+    }
   }
 }
 
@@ -181,15 +149,8 @@ fuchsia_test_component("factory_store_providers_corruption_test_comp") {
   deps = [ ":factory_store_providers_corruption_test" ]
 }
 
-fuchsia_unittest_component("factory_store_providers_bin_test_comp") {
-  component_name = "factory_store_providers_bin_test"
-  deps = [ ":bin_test" ]
-}
-
-fuchsia_test_package("factory_store_providers_tests_no_errors") {
-  test_components = [ ":factory_store_providers_bin_test_comp" ]
-}
-
+# `factory_store_providers_tests` stays in GN because it depends on a
+# Ninja-generated ZBI resource (`zbi("items")`).
 fuchsia_test_package("factory_store_providers_tests") {
   test_components = [ ":factory_store_providers_test_comp" ]
   deps = [
@@ -207,6 +168,9 @@ fuchsia_test_package("factory_store_providers_tests") {
   }
 }
 
+# `factory_store_providers_corruption_tests` stays in GN because the test uses
+# RealmBuilder and `//src/lib/fuchsia-component-test/realm_builder_server` has
+# no Bazel build yet.
 fuchsia_test_package("factory_store_providers_corruption_tests") {
   test_components = [ ":factory_store_providers_corruption_test_comp" ]
   deps = [
@@ -236,11 +200,128 @@ resource("factory_store_providers_tests_config") {
   outputs = [ "data/{{source_file_part}}" ]
 }
 
+bazel_test_suite("bazel_tests") {
+  target_tests = [ "//src/factory/factory_store_providers:factory_store_providers_tests_no_errors" ]
+}
+
 group("tests") {
   testonly = true
   deps = [
+    ":bazel_tests",
     ":factory_store_providers_corruption_tests",
     ":factory_store_providers_tests",
-    ":factory_store_providers_tests_no_errors",
+    ":factory_store_providers_tests_no_errors_package",
   ]
+}
+
+## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
+#
+#  ________  _________  ________  ________
+# |\   ____\|\___   ___\\   __  \|\   __  \
+# \ \  \___|\|___ \  \_\ \  \|\  \ \  \|\  \
+#  \ \_____  \   \ \  \ \ \  \\\  \ \   ____\
+#   \|____|\  \   \ \  \ \ \  \\\  \ \  \___|
+#     ____\_\  \   \ \__\ \ \_______\ \__\
+#    |\_________\   \|__|  \|_______|\|__|
+#    \|_________|
+#
+#
+# AUTO-GENERATED - DO NOT EDIT
+#
+# The targets below are auto-generated based on the targets defined in the
+# BUILD.bazel file from the same directory. If you made changes to targets in
+# Bazel, instead of editing this file manually, run:
+#
+#   > fx bazel2gn
+#
+# Please do NOT edit this file directly. Instead, edit the BUILD.bazel file and
+# rerun bazel2gn.
+
+import("//build/tools/bazel2gn/bazel_migration.gni")
+
+rustc_binary("bin") {
+  sources = [
+    "src/config.rs",
+    "src/main.rs",
+    "src/validators/mod.rs",
+    "src/validators/pass.rs",
+    "src/validators/size.rs",
+    "src/validators/text.rs",
+  ]
+  output_name = "factory_store_providers"
+  edition = "2024"
+  deps = [
+    "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust",
+    "//sdk/fidl/fuchsia.factory:fuchsia.factory_rust",
+    "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_rust",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+    "//sdk/rust/zx",
+    "//src/lib/fdio/rust:fdio",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-component",
+    "//src/lib/fuchsia-fs",
+    "//src/storage/lib/vfs/rust:vfs",
+    "//src/sys/lib/fuchsia-bootfs",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:log",
+    "//third_party/rust_crates:serde",
+    "//third_party/rust_crates:serde_json",
+    "//third_party/rust_crates:thiserror",
+  ]
+}
+fuchsia_component_manifest("factory_store_providers_manifest") {
+  component_name = "factory_store_providers"
+  manifest = "meta/factory_store_providers.cml"
+}
+fuchsia_component("factory_store_providers_comp") {
+  cm_label = ":factory_store_providers_manifest"
+  component_name = "factory_store_providers"
+  visibility = [
+    ":*",
+    "//vendor/google/*",
+  ]
+  deps = [ ":bin" ]
+}
+rustc_test("bin_test") {
+  sources = [
+    "src/config.rs",
+    "src/main.rs",
+    "src/validators/mod.rs",
+    "src/validators/pass.rs",
+    "src/validators/size.rs",
+    "src/validators/text.rs",
+  ]
+  edition = "2024"
+  deps = [
+    "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust",
+    "//sdk/fidl/fuchsia.factory:fuchsia.factory_rust",
+    "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_rust",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+    "//sdk/rust/zx",
+    "//src/lib/fdio/rust:fdio",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-component",
+    "//src/lib/fuchsia-fs",
+    "//src/storage/lib/vfs/rust:vfs",
+    "//src/sys/lib/fuchsia-bootfs",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:log",
+    "//third_party/rust_crates:serde",
+    "//third_party/rust_crates:serde_json",
+    "//third_party/rust_crates:thiserror",
+  ]
+  source_root = "src/main.rs"
+  output_name = "factory_store_providers_bin_test"
+}
+fuchsia_unittest_component("factory_store_providers_bin_test_comp") {
+  deps = [ ":bin_test" ]
+  component_name = "factory_store_providers_bin_test"
+}
+fuchsia_test_package("factory_store_providers_tests_no_errors_package") {
+  package_name = "factory_store_providers_tests_no_errors-gn"
+  test_components = [ ":factory_store_providers_bin_test_comp" ]
 }
