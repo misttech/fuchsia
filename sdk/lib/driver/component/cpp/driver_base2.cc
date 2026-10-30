@@ -10,6 +10,8 @@
 #include <lib/fdf/cpp/arena.h>
 #include <lib/inspect/component/cpp/component.h>
 
+#include <atomic>
+
 namespace fdf {
 
 DriverContext::DriverContext(fuchsia_driver_framework::DriverStartArgs start_args)
@@ -38,7 +40,7 @@ void DriverContext::EnableServiceValidator() {
 
 namespace {
 
-std::string HealthStatusToString(std::optional<fuchsia_driver_framework::HealthStatus> status) {
+const char* HealthStatusToString(std::optional<fuchsia_driver_framework::HealthStatus> status) {
   if (!status.has_value()) {
     return "UNKNOWN";
   }
@@ -49,8 +51,6 @@ std::string HealthStatusToString(std::optional<fuchsia_driver_framework::HealthS
       return "DEGRADED";
     case fuchsia_driver_framework::HealthStatus::kUnhealthy:
       return "UNHEALTHY";
-    default:
-      return "UNKNOWN";
   }
 }
 
@@ -108,7 +108,7 @@ inspect::Node BuildHealthCheckNode(
   inspect::Node node = root.CreateChild("driver_health_check");
   // Property names and strings match the Rust mirror in fdf_component.
   if (level.has_value()) {
-    std::string level_str = "UNKNOWN";
+    const char* level_str = "UNKNOWN";
     switch (*level) {
       case fuchsia_driver_framework::HealthCheckRequest::kPing:
         level_str = "PING";
@@ -119,13 +119,11 @@ inspect::Node BuildHealthCheckNode(
       case fuchsia_driver_framework::HealthCheckRequest::kDeep:
         level_str = "DEEP";
         break;
-      default:
-        break;
     }
     node.RecordString("level", level_str);
   }
   if (result.is_error()) {
-    std::string error_str = "UNKNOWN";
+    const char* error_str = "UNKNOWN";
     switch (result.error_value()) {
       case fuchsia_driver_framework::HealthCheckError::kTimeout:
         error_str = "TIMEOUT";
@@ -190,10 +188,20 @@ inspect::Node BuildHealthCheckNode(
   return node;
 }
 
+using BuildHealthCheckNodeFn =
+    inspect::Node (*)(inspect::Node&, std::optional<fuchsia_driver_framework::HealthCheckRequest>,
+                      const fit::result<fuchsia_driver_framework::HealthCheckError,
+                                        fuchsia_driver_framework::HealthCheckResponse>&);
+
+// Populated by DriverContext::CreateInspector so BuildHealthCheckNode (and its libinspect
+// dependencies) can be dead-stripped by --gc-sections from drivers that never call CreateInspector.
+std::atomic<BuildHealthCheckNodeFn> g_build_health_check_node = nullptr;
+
 }  // namespace
 
 inspect::ComponentInspector DriverContext::CreateInspector(DriverBase2* driver,
                                                            inspect::Inspector inspector) const {
+  g_build_health_check_node.store(&BuildHealthCheckNode, std::memory_order_relaxed);
   driver->health_check_inspector_ = inspector;
   return inspect::ComponentInspector(
       driver->dispatcher(),
@@ -320,12 +328,13 @@ void DriverBase2::RecordHealthCheckToInspect(
     std::optional<fuchsia_driver_framework::HealthCheckRequest> level,
     const fit::result<fuchsia_driver_framework::HealthCheckError,
                       fuchsia_driver_framework::HealthCheckResponse>& result) {
-  if (!health_check_inspector_.has_value()) {
+  BuildHealthCheckNodeFn build_node = g_build_health_check_node.load(std::memory_order_relaxed);
+  if (!health_check_inspector_.has_value() || build_node == nullptr) {
     return;
   }
   // Destroy the previous record before creating the replacement so the two never coexist.
   health_check_node_.reset();
-  health_check_node_ = BuildHealthCheckNode(health_check_inspector_->GetRoot(), level, result);
+  health_check_node_ = build_node(health_check_inspector_->GetRoot(), level, result);
 }
 
 void DriverBase2::ReportHealthAlert(fuchsia_driver_framework::HealthAlert alert) {

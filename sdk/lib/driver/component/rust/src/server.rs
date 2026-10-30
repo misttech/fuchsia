@@ -810,9 +810,6 @@ mod tests {
 
                 let err = client.health_check(HealthCheckRequest::Deep).await.unwrap();
                 assert_eq!(err, Err(HealthCheckError::NotSupported));
-                let unknown =
-                    client.health_check(HealthCheckRequest::UnknownOrdinal_(99)).await.unwrap();
-                assert_eq!(unknown, Err(HealthCheckError::NotSupported));
 
                 client.stop().await.unwrap();
             },

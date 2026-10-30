@@ -779,12 +779,9 @@ impl Driver {
                             fdh::DriverRequest::HealthCheck { request, responder } => {
                                 let req_next = convert_health_check_request(request);
                                 let timeout = match req_next {
-                                    fidl_next_fdf::HealthCheckRequest::Ping => Some(PING_TIMEOUT),
-                                    fidl_next_fdf::HealthCheckRequest::Fast => Some(FAST_TIMEOUT),
-                                    fidl_next_fdf::HealthCheckRequest::Deep => Some(DEEP_TIMEOUT),
-                                    // A level this host does not know has no deadline to
-                                    // enforce, so it is not forwarded.
-                                    _ => None,
+                                    fidl_next_fdf::HealthCheckRequest::Ping => PING_TIMEOUT,
+                                    fidl_next_fdf::HealthCheckRequest::Fast => FAST_TIMEOUT,
+                                    fidl_next_fdf::HealthCheckRequest::Deep => DEEP_TIMEOUT,
                                 };
                                 // A suspended driver's dispatchers are stopped by the runtime,
                                 // so forwarding the check to the driver's `fdf::Health` server
@@ -798,11 +795,6 @@ impl Driver {
                                 // the `health_checks` arm below): a check that was forwarded
                                 // while resumed but whose deadline ran out while the driver was
                                 // suspending is answered INVALID_STATE rather than TIMEOUT.
-                                let Some(timeout) = timeout else {
-                                    let _ = responder
-                                        .send(Err(fidl_fdf::HealthCheckError::NotSupported));
-                                    continue;
-                                };
                                 let power_state =
                                     weak_self.upgrade().map(|driver| driver.inner.lock().power_state);
                                 if power_state != Some(DriverPowerState::Resumed) {
@@ -2128,22 +2120,6 @@ mod health_check_tests {
         assert_eq!(inflight_res.unwrap_err(), fidl_fdf::HealthCheckError::InvalidState);
 
         driver.inner.lock().power_state = DriverPowerState::Resumed;
-        driver_proxy.stop().unwrap();
-        drop(driver);
-        shutdown_rx.await.unwrap();
-        env.destroy_all_dispatchers();
-    }
-
-    #[fuchsia::test]
-    async fn test_run_termination_watcher_rejects_unknown_health_check_level() {
-        let env = fdf_env::Environment::start(0).unwrap();
-        let (driver, driver_proxy, shutdown_rx, _scope) = start_test_driver(&env).await;
-
-        // A level this host does not know is answered locally rather than forwarded.
-        let unknown = fidl_fdf::HealthCheckRequest::from_primitive_allow_unknown(0xdead);
-        let res = driver_proxy.health_check(unknown).await.unwrap();
-        assert_eq!(res.unwrap_err(), fidl_fdf::HealthCheckError::NotSupported);
-
         driver_proxy.stop().unwrap();
         drop(driver);
         shutdown_rx.await.unwrap();

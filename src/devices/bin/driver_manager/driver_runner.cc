@@ -281,7 +281,7 @@ zx_koid_t GetKoid(const zx::event& handle) {
 }
 
 // Returns the Inspect "level" string for the check that produced a record.
-std::string HealthCheckLevelString(fuchsia_driver_framework::HealthCheckRequest level) {
+const char* HealthCheckLevelString(fuchsia_driver_framework::HealthCheckRequest level) {
   switch (level) {
     case fuchsia_driver_framework::HealthCheckRequest::kPing:
       return "PING";
@@ -289,13 +289,11 @@ std::string HealthCheckLevelString(fuchsia_driver_framework::HealthCheckRequest 
       return "FAST";
     case fuchsia_driver_framework::HealthCheckRequest::kDeep:
       return "DEEP";
-    default:
-      return "UNKNOWN";
   }
 }
 
 // Returns the Inspect "error" string for a failed health check record.
-std::string HealthCheckErrorString(fuchsia_driver_framework::HealthCheckError error) {
+const char* HealthCheckErrorString(fuchsia_driver_framework::HealthCheckError error) {
   switch (error) {
     case fuchsia_driver_framework::HealthCheckError::kTimeout:
       return "TIMEOUT";
@@ -316,7 +314,7 @@ std::string HealthCheckErrorString(fuchsia_driver_framework::HealthCheckError er
   }
 }
 
-std::string HealthStatusString(std::optional<fuchsia_driver_framework::HealthStatus> status) {
+const char* HealthStatusString(std::optional<fuchsia_driver_framework::HealthStatus> status) {
   if (!status.has_value()) {
     return "UNKNOWN";
   }
@@ -327,8 +325,6 @@ std::string HealthStatusString(std::optional<fuchsia_driver_framework::HealthSta
       return "DEGRADED";
     case fuchsia_driver_framework::HealthStatus::kUnhealthy:
       return "UNHEALTHY";
-    default:
-      return "UNKNOWN";
   }
 }
 

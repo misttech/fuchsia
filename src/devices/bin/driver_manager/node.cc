@@ -3364,7 +3364,6 @@ zx::duration Node::HealthCheckBackstopDeadline(fuchsia_driver_framework::HealthC
     case fuchsia_driver_framework::HealthCheckRequest::kFast:
       return kFastHealthCheckDeadline + kHealthCheckBackstopSlack;
     case fuchsia_driver_framework::HealthCheckRequest::kDeep:
-    default:
       return kDeepHealthCheckDeadline + kHealthCheckBackstopSlack;
   }
 }

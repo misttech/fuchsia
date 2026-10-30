@@ -341,16 +341,22 @@ pub(crate) fn convert_start_args(
     }
 }
 
-// The health enums below are flexible on both sides with identical wire values, so converting
-// through the primitive preserves unknown ordinals instead of collapsing them to a guess.
 pub(crate) fn convert_health_check_request(
     req: fidl_fdf::HealthCheckRequest,
 ) -> fidl_next_fdf::HealthCheckRequest {
-    fidl_next_fdf::HealthCheckRequest::from(req.into_primitive())
+    match req {
+        fidl_fdf::HealthCheckRequest::Ping => fidl_next_fdf::HealthCheckRequest::Ping,
+        fidl_fdf::HealthCheckRequest::Fast => fidl_next_fdf::HealthCheckRequest::Fast,
+        fidl_fdf::HealthCheckRequest::Deep => fidl_next_fdf::HealthCheckRequest::Deep,
+    }
 }
 
 fn convert_health_status(status: fidl_next_fdf::HealthStatus) -> fidl_fdf::HealthStatus {
-    fidl_fdf::HealthStatus::from_primitive_allow_unknown(u32::from(status))
+    match status {
+        fidl_next_fdf::HealthStatus::Ok => fidl_fdf::HealthStatus::Ok,
+        fidl_next_fdf::HealthStatus::Degraded => fidl_fdf::HealthStatus::Degraded,
+        fidl_next_fdf::HealthStatus::Unhealthy => fidl_fdf::HealthStatus::Unhealthy,
+    }
 }
 
 fn convert_health_diagnostics(
@@ -450,12 +456,6 @@ mod tests {
             convert_health_check_request(fidl_fdf::HealthCheckRequest::Deep),
             fidl_next_fdf::HealthCheckRequest::Deep
         );
-
-        // Unknown levels round-trip losslessly instead of being coerced to FAST.
-        let unknown = convert_health_check_request(
-            fidl_fdf::HealthCheckRequest::from_primitive_allow_unknown(99),
-        );
-        assert_eq!(unknown, fidl_next_fdf::HealthCheckRequest::from(99));
     }
 
     #[fuchsia::test]
@@ -548,25 +548,7 @@ mod tests {
             fidl_fdf::HealthCheckError::NotFound
         );
 
-        // Unknown ordinals round-trip as unknown rather than collapsing to a known member.
-        let unknown_status = convert_health_check_response(fidl_next_fdf::HealthCheckResponse {
-            diagnostics: None,
-            conditions: Some(vec![fidl_next_fdf::HealthCondition {
-                status: Some(fidl_next_fdf::HealthStatus::from(99)),
-                reason_code: None,
-                message: None,
-                diagnostics: None,
-                first_observed: None,
-                last_observed: None,
-                occurrence_count: None,
-            }]),
-        })
-        .conditions
-        .expect("conditions")[0]
-            .status
-            .expect("status");
-        assert_eq!(unknown_status, fidl_fdf::HealthStatus::from_primitive_allow_unknown(99));
-        assert!(unknown_status.is_unknown());
+        // Unknown error ordinals round-trip as unknown rather than collapsing to a known member.
         let unknown_err = convert_health_check_error(fidl_next_fdf::HealthCheckError::from(99));
         assert_eq!(unknown_err, fidl_fdf::HealthCheckError::from_primitive_allow_unknown(99));
         assert!(unknown_err.is_unknown());

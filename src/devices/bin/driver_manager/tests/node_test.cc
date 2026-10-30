@@ -1997,10 +1997,6 @@ TEST_F(Dfv2NodeTest, HealthCheckBackstopDeadlineMirrorsDriverHost) {
             Node::HealthCheckBackstopDeadline(fuchsia_driver_framework::HealthCheckRequest::kFast));
   EXPECT_EQ(zx::sec(120) + Node::kHealthCheckBackstopSlack,
             Node::HealthCheckBackstopDeadline(fuchsia_driver_framework::HealthCheckRequest::kDeep));
-  // Unknown levels get the longest deadline.
-  EXPECT_EQ(zx::sec(120) + Node::kHealthCheckBackstopSlack,
-            Node::HealthCheckBackstopDeadline(
-                static_cast<fuchsia_driver_framework::HealthCheckRequest>(0xffff)));
 }
 
 TEST_F(Dfv2NodeTest, RunHealthCheckBackstopTimesOutWedgedDriverHost) {

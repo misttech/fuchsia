@@ -37,9 +37,9 @@ enum Outcome {
     /// `TIMEOUT`, `INTERNAL_ERROR`, or a FIDL transport error: the driver or the framework is in
     /// trouble.
     Error,
-    /// `NOT_SUPPORTED`, `UNAVAILABLE`, `COMMUNICATION_ERROR`, `INVALID_STATE`, `NOT_FOUND`, or an
-    /// unknown status: the level could not be evaluated, which is not evidence of a problem and
-    /// therefore does not fail `--all` (a single explicit target still fails on anything but OK).
+    /// `NOT_SUPPORTED`, `UNAVAILABLE`, `COMMUNICATION_ERROR`, `INVALID_STATE`, or `NOT_FOUND`:
+    /// the level could not be evaluated, which is not evidence of a problem and therefore does
+    /// not fail `--all` (a single explicit target still fails on anything but OK).
     NoInfo,
 }
 
@@ -47,11 +47,10 @@ fn derive_health_status(resp: &fdf::HealthCheckResponse) -> fdf::HealthStatus {
     let mut overall = fdf::HealthStatus::Ok;
     if let Some(conditions) = &resp.conditions {
         for condition in conditions {
-            let status = condition.status.unwrap_or(fdf::HealthStatus::Unhealthy);
-            if status == fdf::HealthStatus::Degraded {
-                overall = fdf::HealthStatus::Degraded;
-            } else if status != fdf::HealthStatus::Ok {
-                return fdf::HealthStatus::Unhealthy;
+            match condition.status.unwrap_or(fdf::HealthStatus::Unhealthy) {
+                fdf::HealthStatus::Ok => {}
+                fdf::HealthStatus::Degraded => overall = fdf::HealthStatus::Degraded,
+                fdf::HealthStatus::Unhealthy => return fdf::HealthStatus::Unhealthy,
             }
         }
     }
@@ -64,7 +63,6 @@ fn classify(res: &Result<fdf::HealthCheckResponse, fdf::HealthCheckError>) -> Ou
             fdf::HealthStatus::Ok => Outcome::Ok,
             fdf::HealthStatus::Degraded => Outcome::Degraded,
             fdf::HealthStatus::Unhealthy => Outcome::Unhealthy,
-            _ => Outcome::NoInfo,
         },
         Err(fdf::HealthCheckError::Timeout | fdf::HealthCheckError::InternalError) => {
             Outcome::Error
@@ -108,7 +106,7 @@ fn health_status_str(status: Option<fdf::HealthStatus>) -> &'static str {
         Some(fdf::HealthStatus::Ok) => "OK",
         Some(fdf::HealthStatus::Degraded) => "DEGRADED",
         Some(fdf::HealthStatus::Unhealthy) => "UNHEALTHY",
-        _ => "UNKNOWN",
+        None => "UNKNOWN",
     }
 }
 

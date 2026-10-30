@@ -34,16 +34,14 @@ const FAST_HEALTH_CHECK_DEADLINE: zx::MonotonicDuration = zx::MonotonicDuration:
 const DEEP_HEALTH_CHECK_DEADLINE: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(120);
 const HEALTH_CHECK_TIMEOUT_MARGIN: zx::MonotonicDuration = zx::MonotonicDuration::from_millis(100);
 
-/// Returns how long the server lets a check at `level` run before answering `TIMEOUT` itself,
-/// or `None` for unknown flexible enum levels.
-fn health_check_timeout(level: HealthCheckRequest) -> Option<zx::MonotonicDuration> {
+/// Returns how long the server lets a check at `level` run before answering `TIMEOUT` itself.
+fn health_check_timeout(level: HealthCheckRequest) -> zx::MonotonicDuration {
     let deadline = match level {
         HealthCheckRequest::Ping => PING_HEALTH_CHECK_DEADLINE,
         HealthCheckRequest::Fast => FAST_HEALTH_CHECK_DEADLINE,
         HealthCheckRequest::Deep => DEEP_HEALTH_CHECK_DEADLINE,
-        _ => return None,
     };
-    Some(deadline + HEALTH_CHECK_TIMEOUT_MARGIN)
+    deadline + HEALTH_CHECK_TIMEOUT_MARGIN
 }
 
 /// Confirms that `root_dispatcher` is still processing tasks.
@@ -74,9 +72,7 @@ pub(crate) async fn run_health_check<D: Driver>(
     root_dispatcher: DriverDispatcherRef<'static>,
     request: HealthCheckRequest,
 ) -> HealthCheckResult {
-    let Some(timeout) = health_check_timeout(request) else {
-        return Err(HealthCheckError::NotSupported);
-    };
+    let timeout = health_check_timeout(request);
     let check = async move {
         ping_root_dispatcher(root_dispatcher).await?;
         driver.health_check(request).await
@@ -284,18 +280,17 @@ impl HealthCheckInspect {
     }
 }
 
-/// Derives the overall status of `response` from its conditions: any non-`OK`, non-`DEGRADED`
+/// Derives the overall status of `response` from its conditions: any `UNHEALTHY` (or omitted)
 /// condition makes the whole response `UNHEALTHY`; otherwise any `DEGRADED` condition makes it
 /// `DEGRADED`.
 fn derive_health_status(response: &HealthCheckResponse) -> HealthStatus {
     let mut overall = HealthStatus::Ok;
     if let Some(conditions) = &response.conditions {
         for condition in conditions {
-            let status = condition.status.unwrap_or(HealthStatus::Unhealthy);
-            if status == HealthStatus::Degraded {
-                overall = HealthStatus::Degraded;
-            } else if status != HealthStatus::Ok {
-                return HealthStatus::Unhealthy;
+            match condition.status.unwrap_or(HealthStatus::Unhealthy) {
+                HealthStatus::Ok => {}
+                HealthStatus::Degraded => overall = HealthStatus::Degraded,
+                HealthStatus::Unhealthy => return HealthStatus::Unhealthy,
             }
         }
     }
@@ -307,7 +302,6 @@ fn health_status_str(status: HealthStatus) -> &'static str {
         HealthStatus::Ok => "OK",
         HealthStatus::Degraded => "DEGRADED",
         HealthStatus::Unhealthy => "UNHEALTHY",
-        _ => "UNKNOWN",
     }
 }
 
@@ -316,7 +310,6 @@ fn health_level_str(level: HealthCheckRequest) -> &'static str {
         HealthCheckRequest::Ping => "PING",
         HealthCheckRequest::Fast => "FAST",
         HealthCheckRequest::Deep => "DEEP",
-        _ => "UNKNOWN",
     }
 }
 
