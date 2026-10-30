@@ -1,0 +1,16 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# keysafe library provides the necessary constant to use keysafe TA.
+# keysafe.h is the same as the header used by keysafe TA.
+fx_cc_library(
+    name = "keysafe",
+    hdrs = ["keysafe.h"],
+    visibility = ["//src/security/lib/kms-stateless:__pkg__"],
+    alwayslink = True,
+)
