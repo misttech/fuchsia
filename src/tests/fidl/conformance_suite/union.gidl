@@ -120,7 +120,7 @@ success("FlexibleUnionUnknownValueStored") {
 
 decode_success("FlexibleUnionUnknownValue") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
-    bindings_allowlist = [rust, rust_next],
+    bindings_allowlist = [rust, rust_codec, rust_next],
     value = TestFlexibleXUnionInStruct{
         xu: SampleXUnion{
             1234: null,
@@ -176,7 +176,7 @@ success("FlexibleResourceUnionUnknownValueStored") {
 
 decode_success("FlexibleResourceUnionUnknownValue") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
-    bindings_allowlist = [rust, rust_next],
+    bindings_allowlist = [rust, rust_codec, rust_next],
     value = TestFlexibleResourceXUnionInStruct{
         xu: SampleResourceXUnion{
             1234: null,
@@ -245,7 +245,7 @@ success("FlexibleResourceUnionUnknownValueWithHandlesStored") {
 
 decode_success("FlexibleResourceUnionUnknownValueWithHandles") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
-    bindings_allowlist = [rust, rust_next],
+    bindings_allowlist = [rust, rust_codec, rust_next],
     handle_defs = {
         #0 = event(),
         #1 = event(),
@@ -363,7 +363,7 @@ decode_failure("FlexibleUnionUnknownValueWithHandles") {
 
 decode_success("FlexibleUnionUnknownValueWithHandlesCloseHandles") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
-    bindings_allowlist = [rust, rust_next],
+    bindings_allowlist = [rust, rust_codec, rust_next],
     handle_defs = {
         #0 = event(),
         #1 = event(),
@@ -544,7 +544,7 @@ success("UnionEnvelopeInlining_UnknownSmallValue_Inlined_Stored") {
 
 decode_success("UnionEnvelopeInlining_UnknownSmallValue_Inlined") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
-    bindings_allowlist = [rust, rust_next],
+    bindings_allowlist = [rust, rust_codec, rust_next],
     value = EnvelopeInliningTestUnionStruct{
         u: EnvelopeInliningTestUnion{
             10: null,
@@ -584,7 +584,7 @@ success("UnionEnvelopeInlining_UnknownLargeValue_Outlined_Stored") {
 
 decode_success("UnionEnvelopeInlining_UnknownLargeValue_Outlined") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
-    bindings_allowlist = [rust, rust_next],
+    bindings_allowlist = [rust, rust_codec, rust_next],
     value = EnvelopeInliningTestUnionStruct{
         u: EnvelopeInliningTestUnion{
             10: null,
@@ -631,7 +631,7 @@ success("UnionEnvelopeInlining_UnknownHandleValue_Inlined_Stored") {
 
 decode_success("UnionEnvelopeInlining_UnknownHandleValue_Inlined") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
-    bindings_allowlist = [rust, rust_next],
+    bindings_allowlist = [rust, rust_codec, rust_next],
     handle_defs = {
         #0 = event(),
     },
@@ -701,7 +701,7 @@ encode_failure("RequiredFlexibleValueUnionZeroOrdinalNoPayloadOld") {
 
 encode_failure("RequiredFlexibleValueUnionZeroOrdinalNoPayload") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
-    bindings_allowlist = [rust],
+    bindings_allowlist = [rust, rust_codec],
     value = TestFlexibleXUnionInStruct{
         xu: SampleXUnion{
             0: null,
@@ -740,7 +740,7 @@ encode_failure("RequiredFlexibleResourceUnionZeroOrdinalNoPayloadOld") {
 
 encode_failure("RequiredFlexibleResourceUnionZeroOrdinalNoPayload") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
-    bindings_allowlist = [rust],
+    bindings_allowlist = [rust, rust_codec],
     value = TestFlexibleResourceXUnionInStruct{
         xu: SampleResourceXUnion{
             0: null,
@@ -990,7 +990,7 @@ decode_failure("OptionalFlexibleResourceUnionZeroOrdinalWithPayload") {
 }
 
 encode_failure("RequiredStrictValueUnionDefaultInitialized") {
-    bindings_allowlist = [go, llcpp, hlcpp],
+    bindings_allowlist = [go, llcpp, hlcpp, rust_codec],
     value = TestStrictXUnionInStruct{
         xu: SampleStrictXUnion{},
     },
@@ -998,7 +998,7 @@ encode_failure("RequiredStrictValueUnionDefaultInitialized") {
 }
 
 encode_failure("RequiredStrictResourceUnionDefaultInitialized") {
-    bindings_allowlist = [go, llcpp, hlcpp],
+    bindings_allowlist = [go, llcpp, hlcpp, rust_codec],
     value = TestStrictResourceXUnionInStruct{
         xu: SampleStrictResourceXUnion{},
     },
@@ -1006,7 +1006,7 @@ encode_failure("RequiredStrictResourceUnionDefaultInitialized") {
 }
 
 encode_failure("RequiredFlexibleValueUnionDefaultInitialized") {
-    bindings_allowlist = [go, llcpp, hlcpp],
+    bindings_allowlist = [go, llcpp, hlcpp, rust_codec],
     value = TestFlexibleXUnionInStruct{
         xu: SampleXUnion{},
     },
@@ -1014,7 +1014,7 @@ encode_failure("RequiredFlexibleValueUnionDefaultInitialized") {
 }
 
 encode_failure("RequiredFlexibleResourceUnionDefaultInitialized") {
-    bindings_allowlist = [go, llcpp, hlcpp],
+    bindings_allowlist = [go, llcpp, hlcpp, rust_codec],
     value = TestFlexibleResourceXUnionInStruct{
         xu: SampleResourceXUnion{},
     },
@@ -1122,7 +1122,7 @@ decode_success("EmptyFlexibleUnionDecodesUnknownSmallValueStored") {
 
 decode_success("EmptyFlexibleUnionDecodesUnknownSmallValue") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
-    bindings_allowlist = [rust, rust_next],
+    bindings_allowlist = [rust, rust_codec, rust_next],
     value = StructOfEmptyFlexibleUnion{
         empty: EmptyFlexibleUnion{
             1: null,
@@ -1163,7 +1163,7 @@ decode_success("EmptyFlexibleUnionDecodesUnknownLargeValueStored") {
 
 decode_success("EmptyFlexibleUnionDecodesUnknownLargeValue") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
-    bindings_allowlist = [rust, rust_next],
+    bindings_allowlist = [rust, rust_codec, rust_next],
     value = StructOfEmptyFlexibleUnion{
         empty: EmptyFlexibleUnion{
             1: null,

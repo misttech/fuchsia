@@ -653,7 +653,7 @@ success("ChannelMaxUnknownHandlesStored") {
 }
 
 encode_success("EncodeHandleTypeAndRightsComeFromFIDL") {
-    bindings_allowlist = [llcpp, hlcpp, cpp, go, rust, dart],
+    bindings_allowlist = [llcpp, hlcpp, cpp, go, rust, rust_codec, dart],
     handle_defs = {
         #0 = channel(rights: channel_default),
     },
@@ -673,7 +673,7 @@ encode_success("EncodeHandleTypeAndRightsComeFromFIDL") {
 }
 
 decode_success("DecodeHandleHasExactTypeAndRights") {
-    bindings_allowlist = [llcpp, hlcpp, cpp, go, rust, dart],
+    bindings_allowlist = [llcpp, hlcpp, cpp, go, rust, rust_codec, dart],
     handle_defs = {
         #0 = event(rights: event_default),
     },
@@ -693,6 +693,7 @@ decode_success("DecodeHandleHasExactTypeAndRights") {
 }
 
 decode_failure("DecodeHandleHasWrongType") {
+    // TODO(https://fxbug.dev/579572148): Validate handle subtype in rust_codec.
     bindings_allowlist = [llcpp, hlcpp, cpp, go, rust, dart],
     handle_defs = {
         #0 = channel(),
@@ -713,7 +714,7 @@ decode_failure("DecodeHandleHasWrongType") {
 
 decode_success("DecodeHandleHasExtraRights") {
     // Rust does not support GIDL tests involving reducing rights.
-    bindings_allowlist = [llcpp, hlcpp, cpp, go],
+    bindings_allowlist = [llcpp, hlcpp, cpp, go, rust_codec],
     handle_defs = {
         #0 = event(rights: event_default),
     },
@@ -733,7 +734,7 @@ decode_success("DecodeHandleHasExtraRights") {
 }
 
 decode_failure("DecodeHandleHasTooFewRights") {
-    bindings_allowlist = [llcpp, hlcpp, cpp, go, rust, dart],
+    bindings_allowlist = [llcpp, hlcpp, cpp, go, rust, rust_codec, dart],
     handle_defs = {
         #0 = event(rights: basic),
     },
@@ -754,7 +755,7 @@ decode_failure("DecodeHandleHasTooFewRights") {
 // Vector and arrays can't hold handle type information in some bindings.
 // Test this with structs, which may have different behavior than other types.
 encode_success("EncodeArrayOfVectorOfEventInStruct") {
-    bindings_allowlist = [llcpp, hlcpp, cpp, go, rust, dart],
+    bindings_allowlist = [llcpp, hlcpp, cpp, go, rust, rust_codec, dart],
     handle_defs = {
         #0 = channel(rights: channel_default),
     },
@@ -777,7 +778,7 @@ encode_success("EncodeArrayOfVectorOfEventInStruct") {
 // Vector and arrays can't hold handle type information in some bindings.
 // Test this with structs, which may have different behavior than other types.
 encode_success("EncodeVectorOfArrayOfEventInStruct") {
-    bindings_allowlist = [llcpp, hlcpp, cpp, go, rust, dart],
+    bindings_allowlist = [llcpp, hlcpp, cpp, go, rust, rust_codec, dart],
     handle_defs = {
         #0 = channel(rights: channel_default),
     },
@@ -800,7 +801,7 @@ encode_success("EncodeVectorOfArrayOfEventInStruct") {
 // Vector and arrays can't hold handle type information in some bindings.
 // Test this with tables, which may have different behavior than other types.
 encode_success("EncodeArrayOfVectorOfEventInTable") {
-    bindings_allowlist = [llcpp, hlcpp, cpp, go, rust, dart],
+    bindings_allowlist = [llcpp, hlcpp, cpp, go, rust, rust_codec, dart],
     handle_defs = {
         #0 = channel(rights: channel_default),
     },
@@ -832,7 +833,7 @@ encode_success("EncodeArrayOfVectorOfEventInTable") {
 // Vector and arrays can't hold handle type information in some bindings.
 // Test this with tables, which may have different behavior than other types.
 encode_success("EncodeVectorOfArrayOfEventInTable") {
-    bindings_allowlist = [llcpp, hlcpp, cpp, go, rust, dart],
+    bindings_allowlist = [llcpp, hlcpp, cpp, go, rust, rust_codec, dart],
     handle_defs = {
         #0 = channel(rights: channel_default),
     },
@@ -864,7 +865,7 @@ encode_success("EncodeVectorOfArrayOfEventInTable") {
 // Vector and arrays can't hold handle type information in some bindings.
 // Test this with unions, which may have different behavior than other types.
 encode_success("EncodeArrayOfVectorOfEventInUnion") {
-    bindings_allowlist = [llcpp, hlcpp, cpp, go, rust, dart],
+    bindings_allowlist = [llcpp, hlcpp, cpp, go, rust, rust_codec, dart],
     handle_defs = {
         #0 = channel(rights: channel_default),
     },
@@ -894,7 +895,7 @@ encode_success("EncodeArrayOfVectorOfEventInUnion") {
 // Vector and arrays can't hold handle type information in some bindings.
 // Test this with unions, which may have different behavior than other types.
 encode_success("EncodeVectorOfArrayOfEventInUnion") {
-    bindings_allowlist = [llcpp, hlcpp, cpp, go, rust, dart],
+    bindings_allowlist = [llcpp, hlcpp, cpp, go, rust, rust_codec, dart],
     handle_defs = {
         #0 = channel(rights: channel_default),
     },
@@ -928,7 +929,7 @@ encode_success("EncodeVectorOfArrayOfEventInUnion") {
 // rights by reducing the rights.
 decode_success("DecodeArrayOfVectorOfEventInStructExtraRights") {
     // Rust does not support GIDL tests involving reducing rights.
-    bindings_allowlist = [llcpp, hlcpp, cpp, go],
+    bindings_allowlist = [llcpp, hlcpp, cpp, go, rust_codec],
     handle_defs = {
         #0 = event(rights: event_default),
     },
@@ -951,7 +952,7 @@ decode_success("DecodeArrayOfVectorOfEventInStructExtraRights") {
 }
 
 decode_failure("DecodeArrayOfVectorOfEventInStructHasTooFewRights") {
-    bindings_allowlist = [llcpp, hlcpp, cpp, go, rust, dart],
+    bindings_allowlist = [llcpp, hlcpp, cpp, go, rust, rust_codec, dart],
     handle_defs = {
         #0 = event(rights: basic),
     },
@@ -978,6 +979,7 @@ decode_failure("DecodeArrayOfVectorOfEventInStructHasTooFewRights") {
 // Test whether handles in an array of a vector in a struct have the type
 // checked by failing when there is a type mismatch.
 decode_failure("DecodeArrayOfVectorOfEventInStructType") {
+    // TODO(https://fxbug.dev/579572148): Validate handle subtype in rust_codec.
     bindings_allowlist = [llcpp, hlcpp, cpp, go, rust, dart],
     handle_defs = {
         #0 = channel(rights: transfer),
@@ -1006,7 +1008,7 @@ decode_failure("DecodeArrayOfVectorOfEventInStructType") {
 // rights by reducing the rights.
 decode_success("DecodeVectorOfArrayOfEventInStructExtraRights") {
     // Rust does not support GIDL tests involving reducing rights.
-    bindings_allowlist = [llcpp, hlcpp, cpp, go],
+    bindings_allowlist = [llcpp, hlcpp, cpp, go, rust_codec],
     handle_defs = {
         #0 = event(rights: event_default),
     },
@@ -1029,7 +1031,7 @@ decode_success("DecodeVectorOfArrayOfEventInStructExtraRights") {
 }
 
 decode_failure("DecodeVectorOfArrayOfEventInStructHasTooFewRights") {
-    bindings_allowlist = [llcpp, hlcpp, cpp, go, rust, dart],
+    bindings_allowlist = [llcpp, hlcpp, cpp, go, rust, rust_codec, dart],
     handle_defs = {
         #0 = event(rights: basic),
     },
@@ -1056,6 +1058,7 @@ decode_failure("DecodeVectorOfArrayOfEventInStructHasTooFewRights") {
 // Test whether handles in a vector of an array in a struct have the type
 // checked by failing when there is a type mismatch.
 decode_failure("DecodeVectorOfArrayOfEventInStructType") {
+    // TODO(https://fxbug.dev/579572148): Validate handle subtype in rust_codec.
     bindings_allowlist = [llcpp, hlcpp, cpp, go, rust, dart],
     handle_defs = {
         #0 = channel(rights: transfer),
@@ -1084,7 +1087,7 @@ decode_failure("DecodeVectorOfArrayOfEventInStructType") {
 // rights by reducing the rights.
 decode_success("DecodeArrayOfVectorOfEventInTableExtraRights") {
     // Rust does not support GIDL tests involving reducing rights.
-    bindings_allowlist = [llcpp, hlcpp, cpp, go],
+    bindings_allowlist = [llcpp, hlcpp, cpp, go, rust_codec],
     handle_defs = {
         #0 = event(rights: event_default),
     },
@@ -1114,7 +1117,7 @@ decode_success("DecodeArrayOfVectorOfEventInTableExtraRights") {
 }
 
 decode_failure("DecodeArrayOfVectorOfEventInTableHasTooFewRights") {
-    bindings_allowlist = [llcpp, hlcpp, cpp, go, rust, dart],
+    bindings_allowlist = [llcpp, hlcpp, cpp, go, rust, rust_codec, dart],
     handle_defs = {
         #0 = event(rights: basic),
     },
@@ -1146,6 +1149,7 @@ decode_failure("DecodeArrayOfVectorOfEventInTableHasTooFewRights") {
 // Test whether handles in an array of a vector in a table have the type
 // checked by failing when there is a type mismatch.
 decode_failure("DecodeArrayOfVectorOfEventInTableType") {
+    // TODO(https://fxbug.dev/579572148): Validate handle subtype in rust_codec.
     bindings_allowlist = [llcpp, hlcpp, cpp, go, rust, dart],
     handle_defs = {
         #0 = channel(rights: transfer),
@@ -1179,7 +1183,7 @@ decode_failure("DecodeArrayOfVectorOfEventInTableType") {
 // rights by reducing the rights.
 decode_success("DecodeArrayOfVectorOfEventInUnionExtraRights") {
     // Rust does not support GIDL tests involving reducing rights.
-    bindings_allowlist = [llcpp, hlcpp, cpp, go],
+    bindings_allowlist = [llcpp, hlcpp, cpp, go, rust_codec],
     handle_defs = {
         #0 = event(rights: event_default),
     },
@@ -1207,7 +1211,7 @@ decode_success("DecodeArrayOfVectorOfEventInUnionExtraRights") {
 }
 
 decode_failure("DecodeArrayOfVectorOfEventInUnionHasTooFewRights") {
-    bindings_allowlist = [llcpp, hlcpp, cpp, go, rust, dart],
+    bindings_allowlist = [llcpp, hlcpp, cpp, go, rust, rust_codec, dart],
     handle_defs = {
         #0 = event(rights: basic),
     },
@@ -1237,6 +1241,7 @@ decode_failure("DecodeArrayOfVectorOfEventInUnionHasTooFewRights") {
 // Test whether handles in an array of a vector in a union have the type
 // checked by failing when there is a type mismatch.
 decode_failure("DecodeArrayOfVectorOfEventInUnionType") {
+    // TODO(https://fxbug.dev/579572148): Validate handle subtype in rust_codec.
     bindings_allowlist = [llcpp, hlcpp, cpp, go, rust, dart],
     handle_defs = {
         #0 = channel(rights: transfer),

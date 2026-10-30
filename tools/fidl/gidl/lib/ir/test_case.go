@@ -113,6 +113,7 @@ func AllLanguages() []Language {
 		LanguagePython,
 		LanguageReference,
 		LanguageRust,
+		LanguageRustCodec,
 		LanguageRustNext,
 	}
 }

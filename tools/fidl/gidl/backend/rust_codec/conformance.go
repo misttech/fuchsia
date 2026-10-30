@@ -280,7 +280,13 @@ func visit(value ir.Value, decl mixer.Declaration) string {
 			}
 			return fmt.Sprintf("Value::Object(vec![%s])", content)
 		case *mixer.UnionDecl:
+			if len(value.Fields) == 0 {
+				return "Value::Null"
+			}
 			field := value.Fields[0]
+			if field.Key.IsUnknown() {
+				return "Value::Null"
+			}
 			field_decl := decl.Field(field.Key.Name)
 			return fmt.Sprintf("Value::Union(\"%s\".to_owned(), \"%s\".to_owned(), Box::new(%s))", decl.Name(), field.Key.Name, visit(field.Value, field_decl))
 		}
