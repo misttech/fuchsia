@@ -10,8 +10,9 @@ use crate::types::{
     DeviceState, DeviceStateSource, InputCategory, InputDeviceType, InputInfoSources, InputState,
 };
 use fidl_fuchsia_settings::{
-    DeviceState as FidlDeviceState, DeviceType, InputProxy, InputSettings,
-    InputState as FidlInputState, ToggleStateFlags,
+    DeviceState as FidlDeviceState, DeviceStateSource as FidlDeviceStateSource, DeviceType,
+    Error as SettingsError, InputProxy, InputSettings, InputState as FidlInputState,
+    ToggleStateFlags,
 };
 use fuchsia_async::TestExecutor;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
@@ -741,4 +742,137 @@ async fn test_persisted_values_applied_at_start() {
         .await;
 
     get_and_check_state(&env.input_service, true, true).await;
+}
+
+// Test that invalid client ToggleStateFlags are rejected by Set without mutating state.
+#[fuchsia::test(allow_stalls = false)]
+async fn test_set_invalid_toggle_flags_rejected() {
+    let env = TestInputEnvironmentBuilder::new()
+        .set_input_device_config(default_mic_config())
+        .build()
+        .await;
+    let input_proxy = env.input_service.clone();
+
+    let invalid_toggle_flags = [
+        None,
+        Some(ToggleStateFlags::empty()),
+        Some(ToggleStateFlags::ACTIVE),
+        Some(ToggleStateFlags::ERROR),
+        Some(ToggleStateFlags::AVAILABLE | ToggleStateFlags::ACTIVE),
+        Some(ToggleStateFlags::AVAILABLE | ToggleStateFlags::MUTED),
+        Some(ToggleStateFlags::AVAILABLE | ToggleStateFlags::DISABLED),
+        Some(ToggleStateFlags::AVAILABLE | ToggleStateFlags::MUTED | ToggleStateFlags::DISABLED),
+    ];
+
+    for toggle_flags in invalid_toggle_flags {
+        let input_state = FidlInputState {
+            name: Some(DEFAULT_MIC_NAME.to_string()),
+            device_type: Some(DeviceType::Microphone),
+            state: Some(FidlDeviceState { toggle_flags, ..Default::default() }),
+            ..Default::default()
+        };
+        let res = input_proxy.set(&[input_state]).await.expect("set completed");
+        assert_eq!(
+            res,
+            Err(SettingsError::Failed),
+            "Expected Set to reject invalid toggle_flags: {toggle_flags:?}"
+        );
+    }
+
+    let settings = input_proxy.watch().await.expect("watch completed");
+    let mic = settings
+        .devices
+        .as_ref()
+        .unwrap()
+        .iter()
+        .find(|d| d.device_type == Some(DeviceType::Microphone))
+        .expect("Microphone not found");
+    assert_eq!(
+        mic.state,
+        Some(FidlDeviceState {
+            toggle_flags: Some(ToggleStateFlags::AVAILABLE),
+            ..Default::default()
+        })
+    );
+    let sw_source_state = mic
+        .source_states
+        .as_ref()
+        .unwrap()
+        .iter()
+        .find(|s| s.source == Some(FidlDeviceStateSource::Software))
+        .expect("Software source state not found");
+    assert_eq!(
+        sw_source_state.state,
+        Some(FidlDeviceState {
+            toggle_flags: Some(ToggleStateFlags::AVAILABLE),
+            ..Default::default()
+        })
+    );
+}
+
+// Test that all valid software ToggleStateFlags transitions succeed in Set.
+#[fuchsia::test(allow_stalls = false)]
+async fn test_set_valid_software_toggle_flags() {
+    let env = TestInputEnvironmentBuilder::new()
+        .set_input_device_config(default_mic_config())
+        .build()
+        .await;
+    let input_proxy = env.input_service.clone();
+
+    // Consume initial watch value so subsequent watch calls observe each update.
+    let _ = input_proxy.watch().await.expect("initial watch completed");
+
+    let transitions = [
+        (ToggleStateFlags::MUTED, ToggleStateFlags::MUTED),
+        (ToggleStateFlags::DISABLED, ToggleStateFlags::MUTED | ToggleStateFlags::DISABLED),
+        (
+            ToggleStateFlags::MUTED | ToggleStateFlags::DISABLED,
+            ToggleStateFlags::MUTED | ToggleStateFlags::DISABLED,
+        ),
+        (ToggleStateFlags::AVAILABLE, ToggleStateFlags::AVAILABLE),
+    ];
+
+    for (requested_sw_flags, expected_overall_flags) in transitions {
+        let input_state = FidlInputState {
+            name: Some(DEFAULT_MIC_NAME.to_string()),
+            device_type: Some(DeviceType::Microphone),
+            state: Some(FidlDeviceState {
+                toggle_flags: Some(requested_sw_flags),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        input_proxy
+            .set(&[input_state])
+            .await
+            .expect("set completed")
+            .expect("valid toggle flags should succeed");
+
+        let settings = input_proxy.watch().await.expect("watch completed");
+        let mic = settings
+            .devices
+            .as_ref()
+            .unwrap()
+            .iter()
+            .find(|d| d.device_type == Some(DeviceType::Microphone))
+            .expect("Microphone not found");
+        assert_eq!(
+            mic.state,
+            Some(FidlDeviceState {
+                toggle_flags: Some(expected_overall_flags),
+                ..Default::default()
+            })
+        );
+        let sw_source_state = mic
+            .source_states
+            .as_ref()
+            .unwrap()
+            .iter()
+            .find(|s| s.source == Some(FidlDeviceStateSource::Software))
+            .expect("Software source state not found");
+        assert_eq!(
+            sw_source_state.state,
+            Some(FidlDeviceState { toggle_flags: Some(requested_sw_flags), ..Default::default() })
+        );
+    }
 }

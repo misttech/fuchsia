@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::input_controller::{InputController, InputError, Request};
-use crate::types::{DeviceStateSource, InputDevice, InputDeviceType, InputInfo};
+use crate::types::{DeviceState, DeviceStateSource, InputDevice, InputDeviceType, InputInfo};
 use anyhow::{Error, anyhow};
 use async_utils::hanging_get::server;
 use fidl_fuchsia_settings::{
@@ -19,28 +19,22 @@ use settings_common::inspect::event::{
 };
 
 fn to_request(fidl_input_states: Vec<InputState>) -> Result<Vec<InputDevice>, Error> {
-    // Every device requires at least a device type and state flags.
-    let mut input_states_invalid_args = fidl_input_states
-        .iter()
-        .filter(|input_state| input_state.device_type.is_none() || input_state.state.is_none());
-
-    // If any devices were filtered out, the args were invalid, so exit.
-    if input_states_invalid_args.next().is_some() {
-        return Err(anyhow!("Failed to parse input request: missing args"));
-    }
-
-    let input_states = fidl_input_states
-        .iter()
+    fidl_input_states
+        .into_iter()
         .map(|input_state| {
-            let device_type: InputDeviceType = input_state.device_type.unwrap().into();
-            let device_state = input_state.state.clone().unwrap().into();
-            let device_name = input_state.name.clone().unwrap_or_else(|| device_type.to_string());
+            // Every device requires at least a device type and state flags.
+            let (Some(fidl_device_type), Some(fidl_state)) =
+                (input_state.device_type, input_state.state)
+            else {
+                return Err(anyhow!("Failed to parse input request: missing args"));
+            };
+            let device_type: InputDeviceType = fidl_device_type.into();
+            let device_state = DeviceState::try_from(fidl_state)?;
+            let device_name = input_state.name.unwrap_or_else(|| device_type.to_string());
             let source_states = [(DeviceStateSource::SOFTWARE, device_state)].into();
-            InputDevice { name: device_name, device_type, state: device_state, source_states }
+            Ok(InputDevice { name: device_name, device_type, state: device_state, source_states })
         })
-        .collect();
-
-    Ok(input_states)
+        .collect()
 }
 
 pub(super) type SubscriberObject = HangingGetObserver<InputInfo, InputWatchResponder>;

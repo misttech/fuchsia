@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::input_device_configuration::InputConfiguration;
-use anyhow::Error;
+use anyhow::{Error, anyhow};
 use bitflags::bitflags;
 use fidl_fuchsia_settings::{
     DeviceState as FidlDeviceState, DeviceStateSource as FidlDeviceStateSource,
@@ -434,14 +434,20 @@ impl DeviceState {
     }
 }
 
-impl From<FidlDeviceState> for DeviceState {
-    fn from(device_state: FidlDeviceState) -> Self {
-        if let Some(toggle_flags) = device_state.toggle_flags
-            && let Some(res) = Self::from_bits(toggle_flags.bits())
-        {
-            return res;
+impl TryFrom<FidlDeviceState> for DeviceState {
+    type Error = Error;
+
+    fn try_from(device_state: FidlDeviceState) -> Result<Self, Self::Error> {
+        let Some(toggle_flags) = device_state.toggle_flags else {
+            return Err(anyhow!("Missing toggle_flags in DeviceState"));
+        };
+        let Some(res) = Self::from_bits(toggle_flags.bits()) else {
+            return Err(anyhow!("Invalid toggle_flags bits: {toggle_flags:?}"));
+        };
+        if res.is_empty() || res.intersects(Self::ACTIVE | Self::ERROR) || res.has_error() {
+            return Err(anyhow!("Disallowed software toggle_flags: {res:?}"));
         }
-        Self::default_mutable_toggle_state()
+        Ok(res)
     }
 }
 
@@ -906,12 +912,50 @@ mod tests {
 
     #[fuchsia::test]
     fn test_fidl_device_state_to_device_state() {
-        let device_state: DeviceState = FidlDeviceState {
-            toggle_flags: FidlToggleFlags::from_bits(MUTED_BITS),
-            ..Default::default()
+        for expected_state in [
+            DeviceState::AVAILABLE,
+            DeviceState::MUTED,
+            DeviceState::DISABLED,
+            DeviceState::MUTED | DeviceState::DISABLED,
+        ] {
+            let device_state = DeviceState::try_from(FidlDeviceState {
+                toggle_flags: FidlToggleFlags::from_bits(expected_state.bits()),
+                ..Default::default()
+            })
+            .expect("valid toggle flags should convert");
+            assert_eq!(device_state, expected_state);
         }
-        .into();
-        assert_eq!(device_state, DeviceState::from_bits(MUTED_BITS).unwrap(),);
+    }
+
+    #[fuchsia::test]
+    fn test_fidl_device_state_to_device_state_invalid_rejected() {
+        // Missing toggle_flags (None) is rejected.
+        assert!(
+            DeviceState::try_from(FidlDeviceState { toggle_flags: None, ..Default::default() })
+                .is_err()
+        );
+
+        // Empty, unknown bits, system-reserved (ACTIVE, ERROR), and incompatible combinations
+        // are rejected.
+        for invalid_flags in [
+            FidlToggleFlags::empty(),
+            FidlToggleFlags::from_bits_retain(0b0010_0000),
+            FidlToggleFlags::ACTIVE,
+            FidlToggleFlags::ERROR,
+            FidlToggleFlags::AVAILABLE | FidlToggleFlags::ACTIVE,
+            FidlToggleFlags::AVAILABLE | FidlToggleFlags::MUTED,
+            FidlToggleFlags::AVAILABLE | FidlToggleFlags::DISABLED,
+            FidlToggleFlags::AVAILABLE | FidlToggleFlags::MUTED | FidlToggleFlags::DISABLED,
+        ] {
+            assert!(
+                DeviceState::try_from(FidlDeviceState {
+                    toggle_flags: Some(invalid_flags),
+                    ..Default::default()
+                })
+                .is_err(),
+                "Expected error for invalid toggle_flags: {invalid_flags:?}"
+            );
+        }
     }
 
     #[fuchsia::test]
