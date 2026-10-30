@@ -291,6 +291,11 @@ if head and base_rev and head != base_rev:
     )
     m_tag = re.match(r"^\[bazel_migration\]\[([A-Za-z0-9_.\-]+)\] //\S+(?<![.,;:])$", subject)
     m_none = re.match(r"^\[bazel_migration\] //\S+(?<![.,;:])$", subject)
+    m_infra = (
+        re.match(r"^(?:\[[A-Za-z0-9_.\-]+\])+ \S.*(?<![.,;:])$", subject)
+        if not dirs and not subject.startswith("[bazel_migration]")
+        else None
+    )
     if not changed and not git("status", "--porcelain", "--ignore-submodules=all"):
         add("commit_subject_empty_change", 1,
             "The change modifies no file versus its parent, so nothing is migrated and the "
@@ -298,7 +303,7 @@ if head and base_rev and head != base_rev:
             "Do not announce a migration that did not happen: keep a subject that describes the commit and "
             "report the blocker and the steps it needs first in the summary. Once the change migrates "
             f"targets, use '{pref_subj}'{alt_note}. {hint}", severity="info")
-    elif not (m_tag or m_none):
+    elif not (m_tag or m_none or m_infra):
         add("commit_subject_format", 1,
             f"Commit subject {subject!r} does not follow '[bazel_migration][<subsystem>] //<migrated dir>' "
             "(or '[bazel_migration] //<migrated dir>' when there is no established subsystem, "
@@ -1248,7 +1253,10 @@ if head and base_rev and head != base_rev:
             f"`Bazel-Migration-Target: {t}`"
             for t in (migrated_targets or [f"//{first}:<target>"])
         )
-        if not bmt_lines:
+        requires_bmt_footer = bool(
+            dirs or migrated_targets or required_bmt_targets or m_tag or m_none
+        )
+        if not bmt_lines and requires_bmt_footer:
             add(
                 "missing_bazel_migration_target_footer",
                 footer_ln,

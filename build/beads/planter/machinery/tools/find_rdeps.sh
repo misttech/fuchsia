@@ -541,10 +541,69 @@ def is_gn_only_target_ref(rel, caller_pkg, sub, owner, is_pkg_target):
 
 # Collect .gni templates and list variables that expand to dependency references on targets in
 # target_pkg so callers that import the .gni and invoke the template or variable are recognized as GN rdeps.
+GN_IMPORT_RE = re.compile(r'\bimport\(\s*"([^"]+\.gni)"\s*\)')
+GN_TARGET_PARAM_VARS = {
+    "args",
+    "assert_no_deps",
+    "cflags",
+    "cflags_c",
+    "cflags_cc",
+    "configs",
+    "data",
+    "data_deps",
+    "defines",
+    "deps",
+    "host_tests",
+    "include_dirs",
+    "inputs",
+    "ldflags",
+    "libs",
+    "outputs",
+    "packages",
+    "public",
+    "public_configs",
+    "public_deps",
+    "rustenv",
+    "rustflags",
+    "sources",
+    "target_tests",
+    "test_deps",
+    "visibility",
+}
+
+
+def parse_gni_template_blocks(no_comments):
+    tmpls = {}
+    tmpl_re = re.compile(r'\btemplate\(\s*"([^"$]+)"\s*\)\s*\{')
+    n = len(no_comments)
+    for m in tmpl_re.finditer(no_comments):
+        tname = m.group(1)
+        depth, in_str, i = 0, False, m.end() - 1
+        while i < n:
+            c = no_comments[i]
+            if in_str:
+                if c == "\\":
+                    i += 2
+                    continue
+                if c == '"':
+                    in_str = False
+            elif c == '"':
+                in_str = True
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        tmpls[tname] = (m.start(), i, no_comments[m.end() : i])
+    return tmpls
+
+
 def collect_gni_template_matches(files_list, label_re):
     out = {}
     for fp in sorted(set(files_list)):
-        g_rel = os.path.relpath(fp, workdir)
+        g_rel = os.path.relpath(fp, workdir).strip("/")
         if not g_rel.endswith(".gni") or os.path.basename(g_rel) == "visibility.gni":
             continue
         try:
@@ -557,14 +616,26 @@ def collect_gni_template_matches(files_list, label_re):
             re.sub(r"#[^\n]*", "", raw),
             flags=re.DOTALL,
         )
-        t_names = set(re.findall(r'\btemplate\(\s*"([^"]+)"\s*\)', strp))
-        v_names = set(re.findall(r"(?m)^\s*([A-Za-z_]\w*)\s*\+?=\s*\[", strp)) - {
-            "visibility",
-            "packages",
-        }
         m_list = list(label_re.finditer(strp))
-        if (t_names or v_names) and m_list:
-            out[f"//{g_rel}"] = (t_names, v_names, m_list)
+        if not m_list:
+            continue
+        tmpls = parse_gni_template_blocks(strp)
+        spans = [(s, e) for _, (s, e, _) in tmpls.items()]
+        top_strp = "".join(
+            ch if not any(s <= idx <= e for s, e in spans) else " "
+            for idx, ch in enumerate(strp)
+        )
+        v_names = (
+            set(re.findall(r"(?m)^\s*([A-Za-z_]\w*)\s*\+?=\s*\[", top_strp))
+            - GN_TARGET_PARAM_VARS
+        )
+        scoped_matches = []
+        for m_obj in m_list:
+            pos = m_obj.start()
+            enc = frozenset(t for t, (s, e, _) in tmpls.items() if s <= pos <= e)
+            scoped_matches.append((enc, m_obj))
+        if tmpls or v_names:
+            out[f"//{g_rel}"] = (set(tmpls.keys()), v_names, scoped_matches)
     if out:
         gni_pat_args = [arg for lbl in sorted(out) for arg in ("-e", lbl)]
         for repo in discover_git_repos():
@@ -624,13 +695,32 @@ for fpath in sorted(set(files)):
 
     gni_call_matches = []
     if rel.endswith((".gn", ".gni")) and gni_template_map:
-        for gni_lbl, (t_names, v_names, m_list) in gni_template_map.items():
-            gni_base = os.path.basename(gni_lbl)
-            if (f'"{gni_lbl}"' in stripped or f'"{gni_base}"' in stripped) and (
-                any(re.search(r"\b" + re.escape(tn) + r"\s*\(", stripped) for tn in t_names)
-                or any(re.search(r"\b" + re.escape(vn) + r"\b", stripped) for vn in v_names)
-            ):
-                gni_call_matches.extend(m_list)
+        rel_dir = os.path.dirname(rel).strip("/")
+        imported_gni_lbls = set()
+        for imp_p in GN_IMPORT_RE.findall(stripped):
+            if imp_p.startswith("//"):
+                imported_gni_lbls.add("//" + imp_p[2:].strip("/"))
+            else:
+                imported_gni_lbls.add(
+                    "//" + os.path.normpath(os.path.join(rel_dir, imp_p)).strip("/")
+                )
+        for gni_lbl, (t_names, v_names, scoped_matches) in gni_template_map.items():
+            if gni_lbl not in imported_gni_lbls:
+                continue
+            has_top_var_ref = any(
+                re.search(r"\b" + re.escape(vn) + r"\b", stripped) for vn in v_names
+            )
+            called_tmpls = {
+                tn
+                for tn in t_names
+                if re.search(r"\b" + re.escape(tn) + r"\s*\(", stripped)
+            }
+            for enc_tmpls, m_obj in scoped_matches:
+                if enc_tmpls:
+                    if enc_tmpls & called_tmpls:
+                        gni_call_matches.append(m_obj)
+                elif has_top_var_ref:
+                    gni_call_matches.append(m_obj)
 
     all_matches = (
         list(abs_label_re.finditer(no_comments))

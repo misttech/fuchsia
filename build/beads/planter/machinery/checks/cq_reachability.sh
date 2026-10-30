@@ -148,27 +148,57 @@ def gn_code(text):
 
 # Check whether a dual-built test binary is packaged by a GN test package/component kept
 # above the BAZEL2GN SENTINEL in BUILD.gn.
-def is_packaged_by_kept_gn_test_package(gn_text, pkg_dir, bin_name):
-    if not gn_text:
+def _pre_sentinel_packages_test_bin(raw_gn, pkg_dir, rel_from_anc, bin_name):
+    if not raw_gn:
         return False
-    pre = (
-        gn_text[: SENTINEL_RE.search(gn_text).start()]
-        if SENTINEL_RE.search(gn_text)
-        else gn_text
-    )
-    pre_clean = gn_code(pre)
+    m_sent = SENTINEL_RE.search(raw_gn)
+    pre_clean = gn_code(raw_gn[: m_sent.start()] if m_sent else raw_gn)
     if not re.search(
         r"\b(?:fuchsia_test_package|fuchsia_unittest_package)\s*\(", pre_clean
     ):
         return False
-    ref_re = re.compile(
-        r'"(?::|//'
-        + re.escape(pkg_dir)
-        + r":)"
-        + re.escape(bin_name)
-        + r'(?:\([^"]*\))?"'
-    )
-    return ref_re.search(pre_clean) is not None
+    prefixes = [f"//{pkg_dir}:"]
+    if not rel_from_anc:
+        prefixes.append(":")
+        if os.path.basename(pkg_dir) == bin_name:
+            prefixes.append(f"//{pkg_dir}")
+    else:
+        prefixes.append(f"{rel_from_anc}:")
+        prefixes.append(f"./{rel_from_anc}:")
+        if os.path.basename(pkg_dir) == bin_name:
+            prefixes.append(rel_from_anc)
+            prefixes.append(f"./{rel_from_anc}")
+            prefixes.append(f"//{pkg_dir}")
+    for pref in prefixes:
+        if pref.endswith(":"):
+            pat = r'"' + re.escape(pref) + re.escape(bin_name) + r'(?:\([^"]*\))?"'
+        else:
+            pat = r'"' + re.escape(pref) + r'(?:\([^"]*\))?"'
+        if re.search(pat, pre_clean):
+            return True
+    return False
+
+
+def is_packaged_by_kept_gn_test_package(gn_text, pkg_dir, bin_name):
+    if _pre_sentinel_packages_test_bin(gn_text, pkg_dir, "", bin_name):
+        return True
+    anc = os.path.dirname(pkg_dir.strip("/"))
+    while anc:
+        anc_gn = os.path.join(workdir, anc, "BUILD.gn")
+        if os.path.isfile(anc_gn):
+            try:
+                with open(anc_gn, "r", encoding="utf-8") as fh:
+                    anc_raw = fh.read()
+            except OSError:
+                anc_raw = ""
+            rel_sub = os.path.relpath(pkg_dir.strip("/"), anc)
+            if _pre_sentinel_packages_test_bin(anc_raw, pkg_dir.strip("/"), rel_sub, bin_name):
+                return True
+        next_anc = os.path.dirname(anc)
+        if next_anc == anc:
+            break
+        anc = next_anc
+    return False
 
 
 def closing(code, i):

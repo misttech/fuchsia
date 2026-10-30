@@ -980,29 +980,89 @@ for fpath in sorted(matched_files):
 
 GN_IMPORT_RE = re.compile(r'\bimport\(\s*"([^"]+\.gni)"\s*\)')
 _gni_importer_cache = {}
+_gni_grep_cache = {}
+GN_TARGET_PARAM_VARS = {
+    "args",
+    "assert_no_deps",
+    "cflags",
+    "cflags_c",
+    "cflags_cc",
+    "configs",
+    "data",
+    "data_deps",
+    "defines",
+    "deps",
+    "host_tests",
+    "include_dirs",
+    "inputs",
+    "ldflags",
+    "libs",
+    "outputs",
+    "packages",
+    "public",
+    "public_configs",
+    "public_deps",
+    "rustenv",
+    "rustflags",
+    "sources",
+    "target_tests",
+    "test_deps",
+    "visibility",
+}
 
 
-def gni_importer_pkgs(gni_rel, depth=0):
-    """Returns the packages whose BUILD.gn imports `gni_rel` (directly or via other .gni files).
+def parse_gni_template_blocks(no_comments):
+    """Returns {template_name: (start_offset, end_offset, body_str)} for template() blocks."""
+    tmpls = {}
+    tmpl_re = re.compile(r'\btemplate\(\s*"([^"$]+)"\s*\)\s*\{')
+    n = len(no_comments)
+    for m in tmpl_re.finditer(no_comments):
+        tname = m.group(1)
+        depth, in_str, i = 0, False, m.end() - 1
+        while i < n:
+            c = no_comments[i]
+            if in_str:
+                if c == "\\":
+                    i += 2
+                    continue
+                if c == '"':
+                    in_str = False
+            elif c == '"':
+                in_str = True
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        tmpls[tname] = (m.start(), i, no_comments[m.end() : i])
+    return tmpls
 
-    GN resolves labels inside a template, and checks their visibility, in the BUILD.gn that
-    invokes it, not in the directory of the .gni that defines it. So a dependency written in
-    `//a/b/foo.gni` and used from `//a/BUILD.gn` needs visibility for `//a`, not `//a/b`.
-    """
-    if gni_rel in _gni_importer_cache:
-        return _gni_importer_cache[gni_rel]
-    _gni_importer_cache[gni_rel] = set()
-    if depth > 3:
-        return set()
-    importers = set()
-    basename = os.path.basename(gni_rel)
+
+def _gni_basename_importers(basename):
+    if basename in _gni_grep_cache:
+        return _gni_grep_cache[basename]
+    hits = []
     for repo in discover_git_repos():
         if not os.path.exists(os.path.join(repo, ".git")):
             continue
         try:
             proc = subprocess.run(
-                ["git", "-C", repo, "grep", "--untracked", "-l", "--fixed-strings", "-e", basename,
-                 "--", "*BUILD.gn", "*.gni"],
+                [
+                    "git",
+                    "-C",
+                    repo,
+                    "grep",
+                    "--untracked",
+                    "-l",
+                    "--fixed-strings",
+                    "-e",
+                    basename,
+                    "--",
+                    "*BUILD.gn",
+                    "*.gni",
+                ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
                 text=True,
@@ -1010,26 +1070,247 @@ def gni_importer_pkgs(gni_rel, depth=0):
         except OSError:
             continue
         for line in proc.stdout.splitlines():
-            imp_abs = os.path.join(repo, line.strip())
-            imp_rel = os.path.relpath(imp_abs, workdir)
-            try:
-                with open(imp_abs, "r", encoding="utf-8", errors="ignore") as f:
-                    imp_text = re.sub(r"#[^\n]*", "", f.read())
-            except OSError:
+            if line.strip():
+                hits.append(os.path.join(repo, line.strip()))
+    _gni_grep_cache[basename] = hits
+    return hits
+
+
+def gni_importer_pkgs(gni_rel, match_pos=None, gni_no_comments=None, active_tmpls=None, depth=0):
+    """Returns the packages whose BUILD.gn imports `gni_rel` and invokes any enclosing template.
+
+    When a label in `gni_rel` lives inside `template("<name>") { ... }`, umbrella re-exporters such
+    as `//build/tools/bazel2gn/bazel_migration.gni` are imported by >1,600 BUILD.gn files, but GN
+    only evaluates the label in BUILD.gn files that actually invoke `<name>(...)` (or a wrapper
+    template around it).
+    """
+    if active_tmpls is None and match_pos is not None and gni_no_comments:
+        tmpls = parse_gni_template_blocks(gni_no_comments)
+        enclosing = {t for t, (s, e, _) in tmpls.items() if s <= match_pos <= e}
+        if enclosing:
+            changed = True
+            while changed:
+                changed = False
+                for t, (_, _, tbody) in tmpls.items():
+                    if t not in enclosing and any(
+                        re.search(r"\b" + re.escape(c) + r"\s*\(", tbody) for c in enclosing
+                    ):
+                        enclosing.add(t)
+                        changed = True
+            active_tmpls = frozenset(enclosing)
+    cache_key = (gni_rel, active_tmpls)
+    if cache_key in _gni_importer_cache:
+        return _gni_importer_cache[cache_key]
+    _gni_importer_cache[cache_key] = set()
+    if depth > 3:
+        return set()
+    importers = set()
+    basename = os.path.basename(gni_rel)
+    for imp_abs in _gni_basename_importers(basename):
+        imp_rel = os.path.relpath(imp_abs, workdir).strip("/")
+        if imp_rel == gni_rel or os.path.basename(imp_rel) == "visibility.gni":
+            continue
+        try:
+            with open(imp_abs, "r", encoding="utf-8", errors="ignore") as f:
+                imp_text = re.sub(r"#[^\n]*", "", f.read())
+        except OSError:
+            continue
+        imp_dir = os.path.dirname(imp_rel).strip("/")
+        for path in GN_IMPORT_RE.findall(imp_text):
+            if path.startswith("//"):
+                resolved = path[2:].strip("/")
+            else:
+                resolved = os.path.normpath(os.path.join(imp_dir, path)).strip("/")
+            if resolved != gni_rel:
                 continue
-            for path in GN_IMPORT_RE.findall(imp_text):
-                if path.startswith("//"):
-                    resolved = path[2:]
+            if imp_rel.endswith(".gni"):
+                if active_tmpls is None:
+                    importers |= gni_importer_pkgs(imp_rel, active_tmpls=None, depth=depth + 1)
                 else:
-                    resolved = os.path.normpath(os.path.join(os.path.dirname(imp_rel), path))
-                if resolved != gni_rel:
-                    continue
-                if imp_rel.endswith(".gni"):
-                    importers |= gni_importer_pkgs(imp_rel, depth + 1)
-                else:
-                    importers.add(os.path.dirname(imp_rel).strip("/"))
-    _gni_importer_cache[gni_rel] = importers
+                    cand_tmpls = parse_gni_template_blocks(imp_text)
+                    spans = [(s, e) for _, (s, e, _) in cand_tmpls.items()]
+                    top_call = any(
+                        not any(s <= mc.start() <= e for s, e in spans)
+                        for c in active_tmpls
+                        for mc in re.finditer(r"\b" + re.escape(c) + r"\s*\(", imp_text)
+                    )
+                    if top_call:
+                        importers |= gni_importer_pkgs(imp_rel, active_tmpls=None, depth=depth + 1)
+                    else:
+                        wrappers = {
+                            t
+                            for t, (_, _, tbody) in cand_tmpls.items()
+                            if any(
+                                re.search(r"\b" + re.escape(c) + r"\s*\(", tbody)
+                                for c in active_tmpls
+                            )
+                        }
+                        importers |= gni_importer_pkgs(
+                            imp_rel,
+                            active_tmpls=frozenset(active_tmpls | wrappers),
+                            depth=depth + 1,
+                        )
+            else:
+                if active_tmpls is None or any(
+                    re.search(r"\b" + re.escape(t) + r"\s*\(", imp_text) for t in active_tmpls
+                ):
+                    importers.add(imp_dir)
+    _gni_importer_cache[cache_key] = importers
     return importers
+
+
+_BZL_SYMBOLIC_MACRO_CACHE = {}
+
+
+def resolve_in_tree_bzl_path(raw_label, cur_pkg):
+    s = (raw_label or "").strip()
+    if s.startswith("@@//"):
+        s = s[2:]
+    elif s.startswith("@//"):
+        s = s[1:]
+    if s.startswith("@"):
+        return None
+    if s.startswith("//"):
+        lpkg, sep, lfile = s[2:].partition(":")
+        bzl_rel = f"{lpkg.strip('/')}/{lfile.lstrip('/')}".strip("/") if sep else lpkg.strip("/")
+    elif s.startswith(":"):
+        bzl_rel = f"{cur_pkg}/{s[1:].lstrip('/')}".strip("/") if cur_pkg else s[1:].lstrip("/")
+    else:
+        return None
+    if not bzl_rel.endswith(".bzl") or not os.path.isfile(os.path.join(workdir, bzl_rel)):
+        return None
+    return bzl_rel
+
+
+def get_bzl_symbolic_macro_pkgs(bzl_rel, visiting=None):
+    if bzl_rel in _BZL_SYMBOLIC_MACRO_CACHE:
+        return _BZL_SYMBOLIC_MACRO_CACHE[bzl_rel]
+    active = set() if visiting is None else set(visiting)
+    if bzl_rel in active:
+        return frozenset()
+    active.add(bzl_rel)
+    try:
+        with open(os.path.join(workdir, bzl_rel), "r", encoding="utf-8") as f:
+            bzl_tree = ast.parse(f.read(), filename=bzl_rel)
+    except Exception:
+        _BZL_SYMBOLIC_MACRO_CACHE[bzl_rel] = frozenset()
+        return frozenset()
+    cur_pkg = os.path.dirname(bzl_rel).strip("/")
+    pkgs = set()
+    for node in ast.walk(bzl_tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if node.func.id == "macro" and cur_pkg:
+                pkgs.add(cur_pkg)
+            elif (
+                node.func.id == "load"
+                and node.args
+                and isinstance(node.args[0], ast.Constant)
+                and isinstance(node.args[0].value, str)
+            ):
+                sub_bzl = resolve_in_tree_bzl_path(node.args[0].value, cur_pkg)
+                if sub_bzl:
+                    pkgs.update(get_bzl_symbolic_macro_pkgs(sub_bzl, active))
+    frozen = frozenset(pkgs)
+    if visiting is None:
+        _BZL_SYMBOLIC_MACRO_CACHE[bzl_rel] = frozen
+    return frozen
+
+
+def _collect_ast_strings(node, var_table, depth=0):
+    if node is None or depth > 5:
+        return []
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return [node.value]
+    if isinstance(node, ast.Name) and node.id in var_table:
+        return _collect_ast_strings(var_table[node.id], var_table, depth + 1)
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        res = []
+        for elt in node.elts:
+            res.extend(_collect_ast_strings(elt, var_table, depth + 1))
+        return res
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        return _collect_ast_strings(node.left, var_table, depth + 1) + _collect_ast_strings(
+            node.right, var_table, depth + 1
+        )
+    return []
+
+
+def compute_symbolic_macro_caller_pkgs(tree, var_table, pkg_path):
+    """Maps same-package targets (and generators of outs) passed into a loaded Bazel 8 symbolic
+    macro (`macro(...)`) to the symbolic macro definition package(s), which Bazel 8 requires in
+    `visibility` whenever the macro converts a string attribute (e.g. `version_script`) to a Label.
+    """
+    loaded_sym_macros = {}
+    for st in tree.body:
+        if not (isinstance(st, ast.Expr) and isinstance(st.value, ast.Call)):
+            continue
+        call = st.value
+        if not (isinstance(call.func, ast.Name) and call.func.id == "load" and call.args):
+            continue
+        if not (isinstance(call.args[0], ast.Constant) and isinstance(call.args[0].value, str)):
+            continue
+        bzl_rel = resolve_in_tree_bzl_path(call.args[0].value, pkg_path)
+        if not bzl_rel:
+            continue
+        macro_pkgs = get_bzl_symbolic_macro_pkgs(bzl_rel)
+        if not macro_pkgs:
+            continue
+        for arg in call.args[1:]:
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                loaded_sym_macros[arg.value] = macro_pkgs
+        for kw in call.keywords:
+            if kw.arg:
+                loaded_sym_macros[kw.arg] = macro_pkgs
+    if not loaded_sym_macros:
+        return {}
+    label_to_target = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        tname = None
+        for kw in node.keywords:
+            if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                tname = kw.value.value
+                break
+        if not tname:
+            continue
+        label_to_target[tname] = tname
+        for kw in node.keywords:
+            if kw.arg in ("outs", "out"):
+                for out_str in _collect_ast_strings(kw.value, var_table):
+                    clean_out = out_str.strip().lstrip(":")
+                    if clean_out:
+                        label_to_target[clean_out] = tname
+    sym_rdeps = {}
+    pkg_prefix = f"//{pkg_path}:" if pkg_path else "//:"
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        fn = node.func.id if isinstance(node.func, ast.Name) else ""
+        macro_pkgs = loaded_sym_macros.get(fn)
+        if not macro_pkgs:
+            continue
+        caller_tname = None
+        for kw in node.keywords:
+            if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                caller_tname = kw.value.value
+                break
+        for kw in node.keywords:
+            if kw.arg in ("name", "visibility"):
+                continue
+            for raw_s in _collect_ast_strings(kw.value, var_table):
+                s = raw_s.strip()
+                ref_name = None
+                if s.startswith(":"):
+                    ref_name = s[1:]
+                elif s.startswith(pkg_prefix):
+                    ref_name = s[len(pkg_prefix) :]
+                elif "/" not in s and ":" not in s and s in label_to_target:
+                    ref_name = s
+                owner = label_to_target.get(ref_name) if ref_name else None
+                if owner and owner != caller_tname:
+                    sym_rdeps.setdefault(owner, set()).update(macro_pkgs)
+    return sym_rdeps
 
 
 def is_idk_generated_ref(sub, owner, idk_targets):
@@ -1340,19 +1621,29 @@ def compute_package_rdeps(
     def collect_gni_template_matches(p_path, label_re):
         out = {}
         for fp, (_, strp) in list(file_cache.items()):
-            g_rel = os.path.relpath(fp, workdir)
+            g_rel = os.path.relpath(fp, workdir).strip("/")
             if not g_rel.endswith(".gni") or os.path.basename(g_rel) == "visibility.gni":
                 continue
-            t_names = set(re.findall(r'\btemplate\(\s*"([^"]+)"\s*\)', strp))
-            v_names = set(re.findall(r"(?m)^\s*([A-Za-z_]\w*)\s*\+?=\s*\[", strp)) - {
-                "visibility",
-                "packages",
-                "target_tests",
-                "host_tests",
-            }
             m_list = list(label_re.finditer(strp))
-            if (t_names or v_names) and m_list:
-                out[f"//{g_rel}"] = (t_names, v_names, m_list)
+            if not m_list:
+                continue
+            tmpls = parse_gni_template_blocks(strp)
+            spans = [(s, e) for _, (s, e, _) in tmpls.items()]
+            top_strp = "".join(
+                ch if not any(s <= idx <= e for s, e in spans) else " "
+                for idx, ch in enumerate(strp)
+            )
+            v_names = (
+                set(re.findall(r"(?m)^\s*([A-Za-z_]\w*)\s*\+?=\s*\[", top_strp))
+                - GN_TARGET_PARAM_VARS
+            )
+            scoped_matches = []
+            for m_obj in m_list:
+                pos = m_obj.start()
+                enc = frozenset(t for t, (s, e, _) in tmpls.items() if s <= pos <= e)
+                scoped_matches.append((enc, m_obj))
+            if tmpls or v_names:
+                out[f"//{g_rel}"] = (set(tmpls.keys()), v_names, scoped_matches)
         if out:
             gni_pat_args = [arg for lbl in sorted(out) for arg in ("-e", lbl)]
             for repo in discover_git_repos():
@@ -1461,13 +1752,32 @@ def compute_package_rdeps(
 
         gni_call_matches = []
         if rel.endswith((".gn", ".gni")) and gni_template_map:
-            for gni_lbl, (t_names, v_names, m_list) in gni_template_map.items():
-                gni_base = os.path.basename(gni_lbl)
-                if (f'"{gni_lbl}"' in stripped or f'"{gni_base}"' in stripped) and (
-                    any(re.search(r"\b" + re.escape(tn) + r"\s*\(", stripped) for tn in t_names)
-                    or any(re.search(r"\b" + re.escape(vn) + r"\b", stripped) for vn in v_names)
-                ):
-                    gni_call_matches.extend(m_list)
+            rel_dir = os.path.dirname(rel).strip("/")
+            imported_gni_lbls = set()
+            for imp_p in GN_IMPORT_RE.findall(stripped):
+                if imp_p.startswith("//"):
+                    imported_gni_lbls.add("//" + imp_p[2:].strip("/"))
+                else:
+                    imported_gni_lbls.add(
+                        "//" + os.path.normpath(os.path.join(rel_dir, imp_p)).strip("/")
+                    )
+            for gni_lbl, (t_names, v_names, scoped_matches) in gni_template_map.items():
+                if gni_lbl not in imported_gni_lbls:
+                    continue
+                has_top_var_ref = any(
+                    re.search(r"\b" + re.escape(vn) + r"\b", stripped) for vn in v_names
+                )
+                called_tmpls = {
+                    tn
+                    for tn in t_names
+                    if re.search(r"\b" + re.escape(tn) + r"\s*\(", stripped)
+                }
+                for enc_tmpls, m_obj in scoped_matches:
+                    if enc_tmpls:
+                        if enc_tmpls & called_tmpls:
+                            gni_call_matches.append(m_obj)
+                    elif has_top_var_ref:
+                        gni_call_matches.append(m_obj)
 
         all_matches = (
             list(abs_label_re.finditer(no_comments))
@@ -1553,7 +1863,7 @@ def compute_package_rdeps(
             # the .gni's own package in true_rdep_packages/per_target_rdeps so granting visibility
             # to the .gni package matching find_rdeps is not flagged as a false-positive rdep).
             gni_importers = (
-                gni_importer_pkgs(rel)
+                gni_importer_pkgs(rel, match_pos=m.start(), gni_no_comments=no_comments)
                 if rel.endswith(".gni") and not caller_pkg.startswith("build/")
                 else set()
             )
@@ -1858,6 +2168,7 @@ for rel_path in sorted(candidate_files):
                 if func == "alias" and actual and actual.startswith(":"):
                     alias_map[tname] = actual[1:]
 
+    sym_macro_caller_pkgs = compute_symbolic_macro_caller_pkgs(tree, var_table, pkg_path)
     true_rdeps, per_target_rdeps, per_target_direct_rdeps, vis_only_pkgs, gn_only_pkgs, has_macro_injected_rdeps = compute_package_rdeps(
         pkg_path,
         bazel_targets,
@@ -2596,6 +2907,8 @@ for rel_path in sorted(candidate_files):
                 elif m_pkg:
                     caller_pkg = m_pkg.group(1).strip("/")
                     if caller_pkg == "visibility":
+                        continue
+                    if caller_pkg in sym_macro_caller_pkgs.get(target_name, set()):
                         continue
                     # Allow package-scoped visibility to an ancestor test_suite package on test
                     # targets before outside_changes wires the test into that ancestor BUILD.bazel.

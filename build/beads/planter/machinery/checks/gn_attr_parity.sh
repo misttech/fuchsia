@@ -2969,7 +2969,7 @@ def match_bazel_target_for_gn(name, gn_top, before_targets, bazel_targets, top_v
     gn_srcs = set(gn_top.get("sources", []))
     if gn_srcs:
         for cand_n, cand_bt in sorted(bazel_targets.items()):
-            if cand_n in before_targets:
+            if cand_n in before_targets and before_targets[cand_n][0] != "group":
                 continue
             cand_srcs = set(
                 eval_starlark(cand_bt[-1].get("srcs"), top_vars or {})
@@ -3542,6 +3542,19 @@ for pkg in sorted(d for d in dirs if d):
             name, gn_top_for_match, before_targets, bazel_targets, top_vars
         )
         matched_bt_rule = matched_bt[0] if matched_bt else None
+        if (
+            cur is None
+            and matched_bt_name
+            and matched_bt_name in new_targets
+            and matched_bt_name in before_targets
+            and before_targets[matched_bt_name][0] == "group"
+            and re.search(
+                r'"(?::|//' + re.escape(pkg) + r":)" + re.escape(name) + r'(?:\([^"]*\))?"',
+                before_targets[matched_bt_name][2],
+            )
+        ):
+            cur = new_targets[matched_bt_name]
+            new_attrs = gn_only_attrs(cur[2], after)
         lost = []
         for attr, vals in sorted(old_attrs.items()):
             missing = vals - new_attrs.get(attr, set())

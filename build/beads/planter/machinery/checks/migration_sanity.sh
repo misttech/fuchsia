@@ -5513,11 +5513,57 @@ for pkg_dir in sorted(candidate_dirs):
                 )
             )
 
+    def _is_packaged_by_ancestor_gn_test_pkg(cur_pkg_dir, bin_name):
+        clean_dir = cur_pkg_dir.strip("/")
+        anc = os.path.dirname(clean_dir)
+        while anc:
+            anc_gn = os.path.join(workdir, anc, "BUILD.gn")
+            if os.path.isfile(anc_gn):
+                anc_info = parse_gn_file(anc_gn)
+                if anc_info:
+                    pre_t = anc_info.get("pre_targets", {})
+                    has_test_pkg = any(
+                        tmpl in ("fuchsia_test_package", "fuchsia_unittest_package")
+                        for tmpl, _, _ in pre_t.values()
+                    )
+                    if has_test_pkg:
+                        rel_sub = os.path.relpath(clean_dir, anc)
+                        cands = [
+                            f'"{rel_sub}:{bin_name}"',
+                            f'"./{rel_sub}:{bin_name}"',
+                            f'"//{clean_dir}:{bin_name}"',
+                        ]
+                        if os.path.basename(clean_dir) == bin_name:
+                            cands.extend([f'"{rel_sub}"', f'"//{clean_dir}"'])
+                        if any(
+                            c in tbody
+                            for tmpl, _, tbody in pre_t.values()
+                            if tmpl
+                            in (
+                                "fuchsia_component",
+                                "fuchsia_test_component",
+                                "fuchsia_test_package",
+                                "fuchsia_unittest_component",
+                                "fuchsia_unittest_package",
+                            )
+                            for c in cands
+                        ):
+                            return True
+            next_anc = os.path.dirname(anc)
+            if next_anc == anc:
+                break
+            anc = next_anc
+        return False
+
     # Check that non-host-only rustc_test targets are packaged or kept in a blocked GN test pkg.
     def check_rust_unit_test_layout(cur_pkg_dir, brel, r_tests, r_used):
         if {"fx_test", "fx_unittest_package"} & r_used:
             return
-        gn_kept_deps = gn_kept_pkg_test_deps_by_dir.get(cur_pkg_dir, set())
+        gn_kept_deps = set(gn_kept_pkg_test_deps_by_dir.get(cur_pkg_dir, set()))
+        for tname, _, is_host in r_tests:
+            if not is_host and tname not in gn_kept_deps:
+                if _is_packaged_by_ancestor_gn_test_pkg(cur_pkg_dir, tname):
+                    gn_kept_deps.add(tname)
         grel = os.path.join(cur_pkg_dir, "BUILD.gn")
         device_tests = [
             t for t in r_tests if not t[2] and t[0] not in gn_kept_deps
