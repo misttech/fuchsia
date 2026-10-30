@@ -2,21 +2,20 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components.gni")
+import("//build/bazel/bazel_test_suite.gni")
 
-# Keep the test package in GN with `parallel = 1` (which `fx_unittest_package`
-# does not support yet) so concurrent test processes do not starve reader
-# threads across 5ms pager timers under CQ test multiplication.
-fuchsia_unittest_package("blob_pager_and_verifier_tests") {
-  deps = [ ":blob_pager_and_verifier_test" ]
-  test_specs = {
-    parallel = 1
-  }
+bazel_test_suite("bazel_tests") {
+  target_tests = [
+    "//src/storage/lib/blob_pager_and_verifier:blob_pager_and_verifier_tests",
+  ]
 }
 
 group("tests") {
   testonly = true
-  deps = [ ":blob_pager_and_verifier_tests" ]
+  deps = [
+    ":bazel_tests",
+    ":blob_pager_and_verifier_tests",
+  ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
@@ -59,6 +58,7 @@ rustc_library("blob_pager_and_verifier") {
   deps = [
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
+    "//sdk/lib/scheduler/rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
@@ -90,6 +90,7 @@ rustc_test("blob_pager_and_verifier_test") {
   deps = [
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
+    "//sdk/lib/scheduler/rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
@@ -112,4 +113,9 @@ rustc_test("blob_pager_and_verifier_test") {
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:test-case",
   ]
+}
+fuchsia_unittest_package("blob_pager_and_verifier_tests") {
+  package_name = "blob_pager_and_verifier_tests-gn"
+  component_name = "blob_pager_and_verifier_tests"
+  deps = [ ":blob_pager_and_verifier_test" ]
 }

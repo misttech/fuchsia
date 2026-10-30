@@ -2455,14 +2455,17 @@ mod tests {
         // Start a reader on page 0 and deliver the valid first chunk (0..read_alignment).
         let paged_vmo_clone1 =
             paged_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("duplicate_handle failed");
+        let (started_tx1, started_rx1) = oneshot::channel();
         let (tx1, rx1) = oneshot::channel();
         let expected_page0 = env.blob_data[..page_size].to_vec();
         let thread1 = std::thread::spawn(move || {
             let mut buf = vec![0u8; page_size];
+            let _ = started_tx1.send(());
             paged_vmo_clone1.read(&mut buf, 0).expect("read should succeed");
             assert_eq!(buf, expected_page0);
             let _ = tx1.send(());
         });
+        started_rx1.await.expect("reader thread failed to start");
         fasync::Timer::new(std::time::Duration::from_millis(5)).await;
 
         let valid_chunk = &env.blob_data[..read_alignment];
@@ -3460,5 +3463,56 @@ mod tests {
             fasync::Timer::new(std::time::Duration::from_millis(5)).await;
         }
         assert!(pager_and_verifier.cache.get_child_vmo(child_key1).is_some());
+
+        // Sparse ChildData (`length == 0`) supplies zero-filled pages at page 1 of `vmo1`.
+        let (child_key_sparse, vmo_sparse) = session1_proxy
+            .create_vmo(8192, fblock::CreateVmoOptions::empty())
+            .await
+            .expect("create_vmo fidl failed")
+            .expect("create_vmo failed");
+        sender
+            .push(
+                DeliveryCommand::ChildData {
+                    parent_offset: 0,
+                    offset: 0,
+                    length: 0,
+                    child_key: child_key_sparse,
+                    child_target_offset: 0,
+                    in_chunk_offset: 0,
+                    child_length: 4096,
+                }
+                .into(),
+            )
+            .expect("push sparse ChildData failed");
+        let mut sparse_buf = vec![0xFFu8; 4096];
+        vmo_sparse.read(&mut sparse_buf, 0).expect("vmo_sparse page 0 read failed");
+        assert_eq!(sparse_buf, vec![0u8; 4096]);
+
+        // Corrupted parent payload in `ChildData` fails the child VMO pager request with
+        // `zx::Status::IO_DATA_INTEGRITY`.
+        let mut bad_payload = sender.reserve_payload(blob_size).expect("reserve_payload failed");
+        let mut corrupted = blob_data.clone();
+        corrupted[4096] ^= 0xFF;
+        bad_payload.data().copy_from_slice(&corrupted);
+        let bad_off = bad_payload.offset();
+        let mut reader =
+            spawn_reader_expect_error(&vmo_sparse, 4096, 4096, zx::Status::IO_DATA_INTEGRITY);
+        reader.wait_started().await;
+        fasync::Timer::new(std::time::Duration::from_millis(5)).await;
+        bad_payload
+            .commit(
+                DeliveryCommand::ChildData {
+                    parent_offset: 0,
+                    offset: bad_off,
+                    length: blob_size as u32,
+                    child_key: child_key_sparse,
+                    child_target_offset: 4096,
+                    in_chunk_offset: 4096,
+                    child_length: 4096,
+                }
+                .into(),
+            )
+            .expect("commit corrupted ChildData failed");
+        reader.wait_and_verify().await;
     }
 }

@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{BLOCK_SIZE, Extents, File};
+use crate::{BLOCK_SIZE, Extents, File, PagePrecommit};
 use anyhow::{Error, anyhow, bail};
-use fuchsia_sync::Mutex;
+use fuchsia_sync::{Mutex, MutexGuard};
 use std::cmp::{Ordering, Reverse, max, min};
 use std::collections::BinaryHeap;
 use std::ops::{ControlFlow, Range};
@@ -78,12 +78,36 @@ where
 
     /// Total number of buffers allocated across all iterations of `read_aligned_range`.
     total_chunks: Option<usize>,
+
+    /// `true` while [`PagePrecommit::run`] is executing on the submitting thread so any completion
+    /// that races with `zx::VmarOp::COMMIT` is buffered until pre-commit finishes.
+    precommit_in_progress: bool,
+
+    /// Deferred error that arrived while `precommit_in_progress` was `true`.
+    pending_error: Option<Error>,
 }
 
 impl<F> ReadContext<F>
 where
     F: FnMut(Result<OwnedBuffer, Error>) -> ControlFlow<()> + Send + 'static,
 {
+    /// Delivers buffered consecutive chunks (`next_expected_chunk, next_expected_chunk + 1, ...`)
+    /// in ascending order to `callback`.
+    fn deliver_ready_chunks(guard: &mut MutexGuard<'_, ReadContext<F>>) {
+        while let Some(top) = guard.buffered_chunks.peek()
+            && top.0.index == guard.next_expected_chunk
+        {
+            let current_buf = guard.buffered_chunks.pop().unwrap().0.buffer;
+            guard.next_expected_chunk += 1;
+            let cb = guard.callback.as_mut().unwrap();
+            if cb(Ok(current_buf)).is_break() {
+                guard.buffered_chunks.clear();
+                guard.callback = None;
+                return;
+            }
+        }
+    }
+
     /// Invoked when the asynchronous read for chunk sequence index `chunk_index` completes.
     ///
     /// Buffers out-of-order completions and delivers consecutive chunks (`0, 1, 2, ...`) in order
@@ -94,14 +118,18 @@ where
         res: Result<OwnedBuffer, Error>,
     ) {
         let mut guard = context.lock();
-        if guard.callback.is_none() {
+        if guard.callback.is_none() || guard.pending_error.is_some() {
             return;
         }
 
-        let mut current_buf = match res {
+        let current_buf = match res {
             Ok(buf) => buf,
             Err(e) => {
                 guard.buffered_chunks.clear();
+                if guard.precommit_in_progress {
+                    guard.pending_error = Some(e);
+                    return;
+                }
                 let mut cb = guard.callback.take().unwrap();
                 drop(guard);
                 let _ = cb(Err(e));
@@ -109,30 +137,22 @@ where
             }
         };
 
-        if chunk_index != guard.next_expected_chunk {
+        if chunk_index != guard.next_expected_chunk || guard.precommit_in_progress {
             guard
                 .buffered_chunks
                 .push(Reverse(BufferedChunk { index: chunk_index, buffer: current_buf }));
             return;
         }
 
-        loop {
-            guard.next_expected_chunk += 1;
-            let cb = guard.callback.as_mut().unwrap();
-            if cb(Ok(current_buf)).is_break() {
-                guard.buffered_chunks.clear();
-                guard.callback = None;
-                return;
-            }
-
-            if let Some(top) = guard.buffered_chunks.peek()
-                && top.0.index == guard.next_expected_chunk
-            {
-                current_buf = guard.buffered_chunks.pop().unwrap().0.buffer;
-            } else {
-                break;
-            }
+        guard.next_expected_chunk += 1;
+        let cb = guard.callback.as_mut().unwrap();
+        if cb(Ok(current_buf)).is_break() {
+            guard.buffered_chunks.clear();
+            guard.callback = None;
+            return;
         }
+
+        Self::deliver_ready_chunks(&mut guard);
     }
 }
 
@@ -172,6 +192,24 @@ pub fn read_aligned_range<F>(
     extents: &Extents,
     range: Range<u64>,
     service: &(impl BlockService + ?Sized),
+    callback: F,
+) where
+    F: FnMut(Result<OwnedBuffer, Error>) -> ControlFlow<()> + Send + 'static,
+{
+    read_aligned_range_with_precommit(extents, range, service, PagePrecommit::default(), callback);
+}
+
+/// Reads the specified block-aligned logical `range` (`start..end`) into one or more `OwnedBuffer`
+/// chunks with zero copies, streaming each chunk sequentially to `callback`, and runs `precommit`
+/// as soon as the first asynchronous block read is in flight.
+///
+/// If all chunks complete synchronously (e.g. sparse extents or synchronous in-memory services),
+/// `precommit` is dropped without executing `zx::VmarOp::COMMIT`.
+pub fn read_aligned_range_with_precommit<F>(
+    extents: &Extents,
+    range: Range<u64>,
+    service: &(impl BlockService + ?Sized),
+    precommit: PagePrecommit,
     mut callback: F,
 ) where
     F: FnMut(Result<OwnedBuffer, Error>) -> ControlFlow<()> + Send + 'static,
@@ -201,8 +239,11 @@ pub fn read_aligned_range<F>(
         next_expected_chunk: 0,
         buffered_chunks: BinaryHeap::new(),
         total_chunks: None,
+        precommit_in_progress: false,
+        pending_error: None,
     }));
 
+    let mut precommit = (!precommit.is_empty()).then_some(precommit);
     let mut next_chunk_index = 0usize;
 
     while offset < end {
@@ -264,6 +305,53 @@ pub fn read_aligned_range<F>(
         ) {
             ReadContext::on_block_read_completed(&context, chunk_index, Err(e));
             return;
+        }
+
+        // Without pre-committing, writing into newly reserved `delivery_vmo` pages on the read
+        // completion/decompression path incurs a synchronous kernel write fault per 4 KiB page to
+        // allocate physical pages and install writable PTEs. Running `PagePrecommit::run`
+        // (`zx::VmarOp::COMMIT`) on this thread right after the first async read chunk has been
+        // submitted hides that physical page allocation and page-table setup behind the in-flight
+        // storage I/O latency (without delaying I/O submission), so the completion thread can
+        // copy or decompress into `delivery_vmo` with zero page faults.
+        if precommit.is_some() {
+            let should_precommit = {
+                let mut guard = context.lock();
+                // Only pre-commit if `chunk_index` has not already completed synchronously (or
+                // failed) inside `split`. If `on_block_read_completed` already ran, there is no
+                // in-flight I/O to overlap `zx::VmarOp::COMMIT` with, and `callback` may have
+                // already supplied and moved the destination pages out of `delivery_vmo` via
+                // `zx_pager_supply_pages` (where a late `COMMIT` would fault new physical pages
+                // back into the already-supplied range).
+                //
+                // Setting `precommit_in_progress = true` before releasing `guard` also ensures that
+                // if `chunk_index` completes on a driver thread while `precommit.run()` is
+                // executing, `on_block_read_completed` buffers the chunk in `buffered_chunks`
+                // rather than running `callback` concurrently with `zx::VmarOp::COMMIT`.
+                if guard.callback.is_some()
+                    && guard.next_expected_chunk == chunk_index
+                    && guard.buffered_chunks.is_empty()
+                {
+                    guard.precommit_in_progress = true;
+                    true
+                } else {
+                    false
+                }
+            };
+            if should_precommit {
+                precommit.take().unwrap().run();
+                let mut guard = context.lock();
+                guard.precommit_in_progress = false;
+                if let Some(err) = guard.pending_error.take() {
+                    if let Some(mut cb) = guard.callback.take() {
+                        drop(guard);
+                        let _ = cb(Err(err));
+                    }
+                    return;
+                } else if guard.callback.is_some() {
+                    ReadContext::deliver_ready_chunks(&mut guard);
+                }
+            }
         }
 
         offset = actual_end;

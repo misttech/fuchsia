@@ -4,6 +4,7 @@
 
 load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
 load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -22,6 +23,7 @@ rustc_library(
     deps = [
         "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
         "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
+        "//sdk/lib/scheduler/rust",
         "//sdk/rust/zx",
         "//src/lib/fidl/rust/fidl",
         "//src/lib/fuchsia-async",
@@ -55,6 +57,7 @@ rustc_test(
     deps = [
         "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
         "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
+        "//sdk/lib/scheduler/rust",
         "//sdk/rust/zx",
         "//src/lib/fidl/rust/fidl",
         "//src/lib/fuchsia",
@@ -77,4 +80,9 @@ rustc_test(
         "//third_party/rust_crates/vendor:log",
         "//third_party/rust_crates/vendor:test-case",
     ],
+)
+
+fx_unittest_package(
+    name = "blob_pager_and_verifier_tests",
+    unit_tests = [":blob_pager_and_verifier_test"],
 )

@@ -16,7 +16,7 @@ pub use file::{
     read_blob_metadata,
 };
 pub use fxfs_crypto::Cipher;
-pub use page_request::{NullPageRequest, PageRequest};
+pub use page_request::{NullPageRequest, PagePrecommit, PageRequest};
 pub use protocol::{
     CLOSE_BLOB_COMMAND, DELIVERY_CHILD_DATA_COMMAND, DELIVERY_CHILD_INLINE_TAIL_COMMAND,
     DELIVERY_DATA_COMMAND, DELIVERY_REGISTER_BLOB_COMMAND, DELIVERY_VMO_SIZE, DeliveryCommand,

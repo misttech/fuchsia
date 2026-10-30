@@ -21,7 +21,7 @@ pub struct UnverifiedPages<'a> {
 impl<'a> UnverifiedPages<'a> {
     pub(crate) fn new(slice: PtrByteSlice<'a>, delivery_offset: u64) -> Result<Self, zx::Status> {
         let page_size = zx::system_get_page_size() as usize;
-        if slice.len() % page_size != 0 || delivery_offset % (page_size as u64) != 0 {
+        if (slice.len() & (page_size - 1)) != 0 || (delivery_offset & (page_size as u64 - 1)) != 0 {
             return Err(zx::Status::INVALID_ARGS);
         }
         Ok(Self { slice, delivery_offset })
@@ -160,6 +160,7 @@ impl DeliveryQueueProvider for TestVmoProvider {
 }
 
 const NUM_DELIVERY_THREADS: usize = 2;
+const DELIVERY_THREAD_ROLE: &str = "fuchsia.storage.blob.delivery";
 
 pub struct DeliveryQueueProcessor {
     delivery_vmo: zx::Vmo,
@@ -172,84 +173,101 @@ impl DeliveryQueueProcessor {
         provider: Arc<dyn DeliveryQueueProvider>,
         delivery_vmo: zx::Vmo,
     ) -> Result<Self, Error> {
-        let delivery_vmo_clone = delivery_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
         let receiver = Arc::new(receiver);
         let mut delivery_threads = Vec::with_capacity(NUM_DELIVERY_THREADS);
 
         for _ in 0..NUM_DELIVERY_THREADS {
             let receiver = receiver.clone();
             let provider = provider.clone();
-            let thread = std::thread::spawn(move || {
-                while let Ok((mut msg, maybe_cmd)) = receiver.claim_with(|msg| {
-                    match DeliveryCommand::try_from(**msg) {
-                        // Process `RegisterBlob` before releasing the claim lock so that any
-                        // subsequent `Data` commands for this blob claimed by other worker threads
-                        // observe the initialized Merkle verifier.
-                        Ok(cmd @ DeliveryCommand::RegisterBlob { .. }) => {
-                            if let Err(e) = Self::handle_delivery(cmd, msg, &*provider) {
-                                log::warn!("Failed to handle delivery command: {:?}", e);
-                            }
-                            None
-                        }
-                        Ok(cmd) => Some(cmd),
-                        Err(e) => {
-                            log::warn!("Invalid delivery command opcode: {:?}", e);
-                            None
-                        }
-                    }
-                }) {
-                    match maybe_cmd {
-                        Some(DeliveryCommand::ChildInlineTail {
-                            parent_byte_offset,
-                            child_key,
-                            child_target_offset,
-                            tail_length,
-                        }) => {
-                            // Pop the header-only command from the FIFO before reading from the
-                            // parent blob's VMO so `read_head` can advance even if the parent VMO
-                            // read faults on an evicted or not-yet-supplied parent page.
-                            if let Err(e) = msg.pop() {
-                                log::warn!("Failed to pop delivery message: {:?}", e);
-                                break;
-                            }
-                            if let Err(e) = provider.deliver_child_inline_tail(
-                                ChildInlineTail {
-                                    parent_byte_offset,
-                                    child_key,
-                                    child_target_offset,
-                                    tail_length,
-                                },
-                                &receiver,
-                            ) {
-                                log::warn!("Failed to handle ChildInlineTail command: {:?}", e);
-                            }
-                        }
-                        Some(cmd) => {
-                            if let Err(e) = Self::handle_delivery(cmd, &mut msg, &*provider) {
-                                log::warn!("Failed to handle delivery command: {:?}", e);
-                            }
-                            if let Err(e) = msg.pop() {
-                                log::warn!("Failed to pop delivery message: {:?}", e);
-                                break;
-                            }
-                        }
-                        None => {
-                            if let Err(e) = msg.pop() {
-                                log::warn!("Failed to pop delivery message: {:?}", e);
-                                break;
-                            }
-                        }
-                    }
-                }
-            });
+            let thread =
+                std::thread::Builder::new().name("blob-delivery".to_string()).spawn(move || {
+                    Self::worker_loop(receiver, provider);
+                })?;
             delivery_threads.push(thread);
         }
 
-        Ok(Self { delivery_vmo: delivery_vmo_clone, delivery_threads })
+        Ok(Self { delivery_vmo, delivery_threads })
     }
 
     pub fn delivery_vmo(&self) -> &zx::Vmo {
         &self.delivery_vmo
+    }
+
+    fn worker_loop(
+        receiver: Arc<vmo_fifo::Receiver<RawDeliveryCommand>>,
+        provider: Arc<dyn DeliveryQueueProvider>,
+    ) {
+        if let Err(error) = fuchsia_scheduler::set_role_for_this_thread(DELIVERY_THREAD_ROLE) {
+            log::warn!(error:?; "Failed to set delivery thread role");
+        }
+        while let Ok((mut msg, maybe_cmd)) = receiver.claim_with(|msg| {
+            match DeliveryCommand::try_from(**msg) {
+                // Process `RegisterBlob` before releasing the claim lock so that any subsequent
+                // `Data` commands for this blob claimed by other worker threads observe the
+                // initialized Merkle verifier.
+                Ok(cmd @ DeliveryCommand::RegisterBlob { .. }) => {
+                    if let Err(error) = Self::handle_delivery(cmd, msg, &*provider) {
+                        log::warn!(error:?; "Failed to handle delivery command");
+                    }
+                    None
+                }
+                Ok(cmd) => Some(cmd),
+                Err(error) => {
+                    log::warn!(error:?; "Invalid delivery command opcode");
+                    None
+                }
+            }
+        }) {
+            if let Some(DeliveryCommand::ChildInlineTail {
+                parent_byte_offset,
+                child_key,
+                child_target_offset,
+                tail_length,
+            }) = maybe_cmd
+            {
+                // Pop the header-only command from the FIFO before reading from the parent blob's
+                // VMO so `read_head` can advance even if the parent VMO read faults on an evicted
+                // or not-yet-supplied parent page.
+                if let Err(error) = msg.pop() {
+                    log::warn!(error:?; "Failed to pop delivery message");
+                    break;
+                }
+                if let Err(error) = provider.deliver_child_inline_tail(
+                    ChildInlineTail {
+                        parent_byte_offset,
+                        child_key,
+                        child_target_offset,
+                        tail_length,
+                    },
+                    &receiver,
+                ) {
+                    log::warn!(error:?; "Failed to handle ChildInlineTail command");
+                }
+                continue;
+            }
+
+            if let Some(cmd) = maybe_cmd
+                && let Err(error) = Self::handle_delivery(cmd, &mut msg, &*provider)
+            {
+                log::warn!(error:?; "Failed to handle delivery command");
+            }
+            if let Err(error) = msg.pop() {
+                log::warn!(error:?; "Failed to pop delivery message");
+                break;
+            }
+        }
+    }
+
+    fn is_payload_in_bounds(
+        raw_msg: &vmo_fifo::Message<'_, RawDeliveryCommand>,
+        offset: u32,
+        length: u32,
+    ) -> bool {
+        raw_msg
+            .payload_region_offset()
+            .checked_add(offset as usize)
+            .and_then(|start| start.checked_add(length as usize))
+            .is_some_and(|end| end <= DELIVERY_VMO_SIZE as usize)
     }
 
     fn handle_delivery(
@@ -259,7 +277,7 @@ impl DeliveryQueueProcessor {
     ) -> Result<(), Error> {
         match cmd {
             DeliveryCommand::Data { key, target_offset, length, offset } => {
-                if offset.checked_add(length).unwrap_or(u32::MAX) > DELIVERY_VMO_SIZE as u32 {
+                if !Self::is_payload_in_bounds(raw_msg, offset, length) {
                     bail!("Data payload out of bounds");
                 }
                 let vmo_offset = raw_msg.payload_region_offset() as u64 + offset as u64;
@@ -269,13 +287,14 @@ impl DeliveryQueueProcessor {
                 // zeros. This is required because `fuchsia-merkle`'s `verify_aligned` expects
                 // the buffer length to be a multiple of the system page size.
                 let page_size = zx::system_get_page_size() as u32;
-                if offset % page_size != 0 {
+                let page_mask = page_size - 1;
+                if (offset & page_mask) != 0 {
                     bail!("Delivery payload offset must be page aligned: {offset}");
                 }
-                if length % page_size != 0 {
+                if (length & page_mask) != 0 {
                     bail!("Delivery payload length must be page aligned: {length}");
                 }
-                if target_offset % (page_size as u64) != 0 {
+                if (target_offset & (page_mask as u64)) != 0 {
                     bail!("Delivery payload target_offset must be page aligned: {target_offset}");
                 }
                 let unverified_pages =
@@ -284,7 +303,7 @@ impl DeliveryQueueProcessor {
                 provider.deliver_pages(key, target_offset, unverified_pages)?;
             }
             DeliveryCommand::RegisterBlob { key, offset, length, read_alignment } => {
-                if offset.checked_add(length).unwrap_or(u32::MAX) > DELIVERY_VMO_SIZE as u32 {
+                if !Self::is_payload_in_bounds(raw_msg, offset, length) {
                     bail!("RegisterBlob payload out of bounds");
                 }
                 let leaf_data = raw_msg.payload_slice(offset, length);
@@ -300,11 +319,8 @@ impl DeliveryQueueProcessor {
                 child_length,
             } => {
                 let payload_region_offset = raw_msg.payload_region_offset() as u64;
-                let payload = (length > 0
-                    && offset
-                        .checked_add(length)
-                        .is_some_and(|end| end <= DELIVERY_VMO_SIZE as u32))
-                .then(|| raw_msg.payload_mut_slice(offset, length));
+                let payload = (length > 0 && Self::is_payload_in_bounds(raw_msg, offset, length))
+                    .then(|| raw_msg.payload_mut_slice(offset, length));
                 provider.deliver_child_pages(ChildData {
                     parent_offset,
                     offset,

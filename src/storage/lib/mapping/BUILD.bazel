@@ -28,7 +28,9 @@ rustc_library(
         "//src/storage:__subpackages__",
     ],
     deps = [
+        "//sdk/lib/scheduler/rust",
         "//sdk/rust/zx",
+        "//src/lib/fuchsia-runtime",
         "//src/lib/fuchsia-sync",
         "//src/storage/fxfs/crypto",
         "//src/storage/lib/blob_metadata",

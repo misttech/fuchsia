@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::reader::{BlockService, read_aligned_range};
+use crate::reader::{BlockService, read_aligned_range, read_aligned_range_with_precommit};
 use crate::{
     BLOCK_SIZE, ENCRYPTION_KEY_SIZE, Extents, MappingCommand, NullPageRequest, PageRequest,
     RawMappingCommand,
@@ -216,34 +216,46 @@ impl File {
             record_offset(offset);
         }
 
+        // Obtain the deferred VMAR pre-commit handle before moving `page_request` into the
+        // completion closure. `read_aligned_range_with_precommit` executes `precommit.run()` on
+        // this thread right after the first asynchronous block read is submitted to overlap
+        // `zx::VmarOp::COMMIT` with storage DMA.
+        let precommit = page_request.precommit();
         match &self.transform {
             Transform::None => {
                 let mut current_offset = read_range.start;
                 let uncompressed_size = self.uncompressed_size;
 
-                read_aligned_range(&self.extents, read_range, service, move |res| {
-                    let buffer = match res {
-                        Ok(buffer) => buffer,
-                        Err(error) => {
-                            if !is_cancelled(&error) {
-                                log::error!(error:?; "Failed to read blocks for mapped file");
+                read_aligned_range_with_precommit(
+                    &self.extents,
+                    read_range,
+                    service,
+                    precommit,
+                    move |res| {
+                        let buffer = match res {
+                            Ok(buffer) => buffer,
+                            Err(error) => {
+                                if !is_cancelled(&error) {
+                                    log::error!(error:?; "Failed to read blocks for mapped file");
+                                }
+                                return ControlFlow::Break(());
                             }
+                        };
+                        let valid_len = min(
+                            buffer.len() as u64,
+                            uncompressed_size.saturating_sub(current_offset),
+                        ) as usize;
+                        let dest = page_request.mut_ptr_slice().subslice_mut(0..buffer.len());
+                        let (mut head, mut tail) = dest.split_at_mut(valid_len);
+                        head.copy_from_ptr_slice(buffer.as_ptr_slice().subslice(0..valid_len));
+                        tail.fill(0);
+                        if page_request.commit(buffer.len()).is_err() {
                             return ControlFlow::Break(());
                         }
-                    };
-                    let valid_len =
-                        min(buffer.len() as u64, uncompressed_size.saturating_sub(current_offset))
-                            as usize;
-                    let dest = page_request.mut_ptr_slice().subslice_mut(0..buffer.len());
-                    let (mut head, mut tail) = dest.split_at_mut(valid_len);
-                    head.copy_from_ptr_slice(buffer.as_ptr_slice().subslice(0..valid_len));
-                    tail.fill(0);
-                    if page_request.commit(buffer.len()).is_err() {
-                        return ControlFlow::Break(());
-                    }
-                    current_offset += buffer.len() as u64;
-                    ControlFlow::Continue(())
-                });
+                        current_offset += buffer.len() as u64;
+                        ControlFlow::Continue(())
+                    },
+                );
             }
             Transform::Compressed(_) => {
                 let Ok((mut decompressor, aligned_range)) = StreamingDecompressor::new(
@@ -256,66 +268,79 @@ impl File {
                     return;
                 };
 
-                read_aligned_range(&self.extents, aligned_range, service, move |res| {
-                    let buffer = match res {
-                        Ok(buffer) => buffer,
-                        Err(error) => {
-                            if !is_cancelled(&error) {
-                                log::error!(
-                                    error:?;
-                                    "Failed to read blocks for compressed mapped file"
-                                );
+                read_aligned_range_with_precommit(
+                    &self.extents,
+                    aligned_range,
+                    service,
+                    precommit,
+                    move |res| {
+                        let buffer = match res {
+                            Ok(buffer) => buffer,
+                            Err(error) => {
+                                if !is_cancelled(&error) {
+                                    log::error!(
+                                        error:?;
+                                        "Failed to read blocks for compressed mapped file"
+                                    );
+                                }
+                                return ControlFlow::Break(());
                             }
+                        };
+                        if decompressor.push(buffer.as_ptr_slice()).is_err() {
                             return ControlFlow::Break(());
                         }
-                    };
-                    if decompressor.push(buffer.as_ptr_slice()).is_err() {
-                        return ControlFlow::Break(());
-                    }
-                    ControlFlow::Continue(())
-                });
+                        ControlFlow::Continue(())
+                    },
+                );
             }
             Transform::Encrypted(cipher) => {
                 let mut current_offset = read_range.start;
                 let uncompressed_size = self.uncompressed_size;
                 let cipher = cipher.clone();
 
-                read_aligned_range(&self.extents, read_range, service, move |res| {
-                    let buffer = match res {
-                        Ok(buffer) => buffer,
-                        Err(error) => {
-                            if !is_cancelled(&error) {
-                                log::error!(
-                                    error:?;
-                                    "Failed to read blocks for encrypted mapped file"
-                                );
+                read_aligned_range_with_precommit(
+                    &self.extents,
+                    read_range,
+                    service,
+                    precommit,
+                    move |res| {
+                        let buffer = match res {
+                            Ok(buffer) => buffer,
+                            Err(error) => {
+                                if !is_cancelled(&error) {
+                                    log::error!(
+                                        error:?;
+                                        "Failed to read blocks for encrypted mapped file"
+                                    );
+                                }
+                                return ControlFlow::Break(());
                             }
+                        };
+                        let mut dest = page_request.mut_ptr_slice().subslice_mut(0..buffer.len());
+                        // Both `buffer` and `dest` are aligned to 64 bytes.
+                        if let Err(error) = cipher.decrypt_to(
+                            0,
+                            0,
+                            0,
+                            current_offset,
+                            buffer.as_ptr_slice(),
+                            dest.reborrow(),
+                        ) {
+                            log::error!(error:?; "Failed to decrypt buffer");
                             return ControlFlow::Break(());
                         }
-                    };
-                    let mut dest = page_request.mut_ptr_slice().subslice_mut(0..buffer.len());
-                    // Both `buffer` and `dest` are aligned to 64 bytes.
-                    if let Err(error) = cipher.decrypt_to(
-                        0,
-                        0,
-                        0,
-                        current_offset,
-                        buffer.as_ptr_slice(),
-                        dest.reborrow(),
-                    ) {
-                        log::error!(error:?; "Failed to decrypt buffer");
-                        return ControlFlow::Break(());
-                    }
-                    let valid_len =
-                        min(buffer.len() as u64, uncompressed_size.saturating_sub(current_offset))
-                            as usize;
-                    dest.subslice_mut(valid_len..buffer.len()).fill(0);
-                    if page_request.commit(buffer.len()).is_err() {
-                        return ControlFlow::Break(());
-                    }
-                    current_offset += buffer.len() as u64;
-                    ControlFlow::Continue(())
-                });
+                        let valid_len = min(
+                            buffer.len() as u64,
+                            uncompressed_size.saturating_sub(current_offset),
+                        ) as usize;
+                        dest.subslice_mut(valid_len..buffer.len()).fill(0);
+                        if page_request.commit(buffer.len()).is_err() {
+                            return ControlFlow::Break(());
+                        }
+                        current_offset += buffer.len() as u64;
+                        ControlFlow::Continue(())
+                    },
+                );
             }
         }
     }
@@ -498,6 +523,7 @@ impl DeliveryHandler for NoopDeliveryHandler {
 
 const PAGER_SHUTDOWN_KEY: u64 = 0;
 const PAGER_WAKE_KEY: u64 = 1;
+const PAGER_THREAD_ROLE: &str = "fuchsia.storage.blob.delivery";
 
 /// An RAII guard for the background pager thread spawned by [`Files::spawn_pager_thread`].
 ///
@@ -667,6 +693,9 @@ impl<S: BlockService + ?Sized + 'static, D: DeliveryHandler> Files<S, D> {
     pub fn spawn_pager_thread(self: &Arc<Self>) -> PagerThread<S, D> {
         let files = self.clone();
         let thread = std::thread::spawn(move || {
+            if let Err(error) = fuchsia_scheduler::set_role_for_this_thread(PAGER_THREAD_ROLE) {
+                log::warn!(error:?; "Failed to set pager thread role");
+            }
             files.run_pager_loop();
         });
         PagerThread { files: self.clone(), thread: Some(thread) }
@@ -3069,5 +3098,83 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[fuchsia::test]
+    fn test_read_range_runs_precommit_only_when_io_is_in_flight() {
+        use crate::PagePrecommit;
+        use delivery_blob::compression::{ChunkedArchiveError, DataBuffer};
+
+        struct VmarBackedRequest {
+            range: Range<u64>,
+            vaddr: usize,
+            len: usize,
+            keep_alive: Arc<()>,
+        }
+
+        impl DataBuffer for VmarBackedRequest {
+            fn range(&self) -> Range<u64> {
+                self.range.clone()
+            }
+            fn mut_ptr_slice(&mut self) -> MutPtrByteSlice<'_> {
+                unsafe {
+                    MutPtrByteSlice::new(std::ptr::slice_from_raw_parts_mut(
+                        self.vaddr as *mut u8,
+                        self.len,
+                    ))
+                }
+            }
+            fn commit(&mut self, size: usize) -> Result<(), ChunkedArchiveError> {
+                self.vaddr += size;
+                self.len -= size;
+                Ok(())
+            }
+        }
+
+        impl PageRequest for VmarBackedRequest {
+            fn prepare(
+                &mut self,
+                read_range: Range<u64>,
+                _read_alignment: usize,
+            ) -> Result<(), ChunkedArchiveError> {
+                self.range = read_range;
+                Ok(())
+            }
+            fn precommit(&self) -> PagePrecommit {
+                PagePrecommit::new(self.vaddr, self.len, self.keep_alive.clone())
+            }
+        }
+
+        let page_size = zx::system_get_page_size() as usize;
+        let vmo = zx::Vmo::create((2 * page_size) as u64).expect("Vmo::create");
+        let vaddr = fuchsia_runtime::vmar_root_self()
+            .map(0, &vmo, 0, 2 * page_size, zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE)
+            .expect("vmar map");
+
+        let extents = Extents::try_new([Extent::new(0..(2 * page_size as u64), Some(0))], 0)
+            .expect("extents");
+        let file = Arc::new(File::new(extents, (2 * page_size) as u64, Transform::None));
+
+        // With `DelayedBlockService`, the read is in flight when `read_range` returns, so
+        // `PagePrecommit::run` must have already committed both pages in `vmo` before the read
+        // completes!
+        let delayed = DelayedBlockService::new(vec![0x5Au8; 2 * page_size]);
+        let req = VmarBackedRequest {
+            range: 0..(page_size as u64),
+            vaddr,
+            len: 2 * page_size,
+            keep_alive: Arc::new(()),
+        };
+        file.read_range(&*delayed, req);
+        assert_eq!(
+            vmo.info().expect("vmo info").committed_bytes,
+            (2 * page_size) as u64,
+            "PagePrecommit must commit VMO pages while async I/O is in flight"
+        );
+        delayed.wait_and_trigger_sync();
+
+        unsafe {
+            let _ = fuchsia_runtime::vmar_root_self().unmap(vaddr, 2 * page_size);
+        }
     }
 }
