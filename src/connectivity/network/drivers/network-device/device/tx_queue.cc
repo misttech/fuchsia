@@ -160,6 +160,10 @@ zx::result<std::unique_ptr<TxQueue>> TxQueue::Create(DeviceInterface* parent) {
   // lead to the async::PostTask call being inlined, meaning the task would run on the calling
   // thread, blocking it indefinitely. Use a unique owner to ensure inlining of calls from inside
   // the task. Calls to a dispatcher with the same owner might not be inlined.
+  // TODO(579528349): Figure out if this is still necessary and/or fix it so it's done in a way
+  // that fits the driver runtime API.
+  fdf_env_add_allowed_scheduler_role_for_driver(queue.get(), kTxSchedulerRole,
+                                                strlen(kTxSchedulerRole));
   auto dispatcher = fdf_env::DispatcherBuilder::CreateSynchronizedWithOwner(
       queue.get(), fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "netdevice:tx_watch",
       [queue = queue.get()](fdf_dispatcher_t*) { queue->dispatcher_shutdown_.Signal(); },

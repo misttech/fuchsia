@@ -74,6 +74,8 @@ SimDataPath::~SimDataPath() {
 
 void SimDataPath::Init(fidl::UnownedClientEnd<fuchsia_io::Directory> outgoing_dir_client,
                        fit::callback<void(zx_status_t)>&& on_complete) {
+  // TODO(579528349): Figure out if this is still necessary and/or fix it so it's done in a way
+  // that fits the driver runtime API.
   auto client_dispatcher = fdf_env::DispatcherBuilder::CreateSynchronizedWithOwner(
       this, fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "datapath-client",
       [this](fdf_dispatcher_t*) { client_dispatcher_shutdown_.Signal(); });
