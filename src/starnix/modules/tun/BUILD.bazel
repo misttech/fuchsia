@@ -1,0 +1,35 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "tun",
+    srcs = ["lib.rs"],
+    crate_name = "starnix_modules_tun",
+    crate_root = "lib.rs",
+    edition = "2024",
+    lint_config = "//src/starnix/build:kernel_library_config",
+    visibility = ["//src/starnix/modules:__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_rust",
+        "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
+        "//sdk/fidl/fuchsia.net.interfaces.admin:fuchsia.net.interfaces.admin_rust",
+        "//sdk/fidl/fuchsia.net.tun:fuchsia.net.tun_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/network/fidl_fuchsia_net_interfaces_ext",
+        "//src/starnix/kernel/core",
+        "//src/starnix/lib/starnix_crypto",
+        "//src/starnix/lib/starnix_logging",
+        "//src/starnix/lib/starnix_sync",
+        "//src/starnix/lib/starnix_syscalls",
+        "//src/starnix/lib/starnix_uapi",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:itertools",
+    ],
+)
