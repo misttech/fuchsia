@@ -1067,6 +1067,23 @@ struct VmCowPagesState {
     ///  * For reads performed while holding `lock()`, relaxed semantics are sufficient.
     ///  * All other reads must use acquire semantics.
     ever_pinned: AtomicBool,
+
+    /// Size in bytes of this cow pages range. This will always be a multiple of the page size.
+    size: KCell<u64, VmCowPagesLockClass>,
+
+    /// Offset in the *parent* where this object starts.
+    parent_offset: KCell<u64, VmCowPagesLockClass>,
+
+    /// Offset in *this object* above which accesses will no longer access the parent.
+    parent_limit: KCell<u64, VmCowPagesLockClass>,
+
+    /// Offset in our root parent where this object would start if projected onto it. This value
+    /// is used as an efficient summation of accumulated offsets to ensure that an offset projected
+    /// all the way to the root would not overflow a 64-bit integer. Although actual page
+    /// resolution would never reach the root in such a case, a childs full range projected onto
+    /// its parent is used to simplify some operations and so this invariant of not overflowing
+    /// accumulated offsets needs to be maintained.
+    root_parent_offset: KCell<u64, VmCowPagesLockClass>,
 }
 
 ::zr::static_assert_size_and_align!(
@@ -1920,6 +1937,64 @@ impl VmCowPages {
     fn can_decommit_zero_pages(&self) -> bool {
         !self.options().contains(VmCowPagesOptions::CANNOT_DECOMMIT_ZERO_PAGES)
     }
+
+    /// Returns the size in bytes of this cow pages range. This will always be a multiple of the
+    /// page size.
+    #[inline]
+    pub(crate) fn size_locked(&self, token: &LockToken<'_, VmCowPagesLockClass>) -> u64 {
+        // SAFETY: The VmCowPages lock is held.
+        unsafe { *self.state().size.get(token) }
+    }
+
+    #[inline]
+    fn set_size_locked(&self, token: &mut LockToken<'_, VmCowPagesLockClass>, size: u64) {
+        // SAFETY: The VmCowPages lock is held.
+        *unsafe { self.state().size.get_mut(token) } = size;
+    }
+
+    #[inline]
+    fn parent_offset_locked(&self, token: &LockToken<'_, VmCowPagesLockClass>) -> u64 {
+        // SAFETY: The VmCowPages lock is held.
+        unsafe { *self.state().parent_offset.get(token) }
+    }
+
+    #[inline]
+    fn set_parent_offset_locked(
+        &self,
+        token: &mut LockToken<'_, VmCowPagesLockClass>,
+        offset: u64,
+    ) {
+        // SAFETY: The VmCowPages lock is held.
+        *unsafe { self.state().parent_offset.get_mut(token) } = offset;
+    }
+
+    #[inline]
+    fn parent_limit_locked(&self, token: &LockToken<'_, VmCowPagesLockClass>) -> u64 {
+        // SAFETY: The VmCowPages lock is held.
+        unsafe { *self.state().parent_limit.get(token) }
+    }
+
+    #[inline]
+    fn set_parent_limit_locked(&self, token: &mut LockToken<'_, VmCowPagesLockClass>, limit: u64) {
+        // SAFETY: The VmCowPages lock is held.
+        *unsafe { self.state().parent_limit.get_mut(token) } = limit;
+    }
+
+    #[inline]
+    fn root_parent_offset_locked(&self, token: &LockToken<'_, VmCowPagesLockClass>) -> u64 {
+        // SAFETY: The VmCowPages lock is held.
+        unsafe { *self.state().root_parent_offset.get(token) }
+    }
+
+    #[inline]
+    fn set_root_parent_offset_locked(
+        &self,
+        token: &mut LockToken<'_, VmCowPagesLockClass>,
+        offset: u64,
+    ) {
+        // SAFETY: The VmCowPages lock is held.
+        *unsafe { self.state().root_parent_offset.get_mut(token) } = offset;
+    }
 }
 
 fn initialize_page_cache(level: init::LkInitLevel) {
@@ -1940,6 +2015,7 @@ extern "C" fn rust_vm_cow_pages_state_init(
     storage: &mut MaybeUninit<VmCowPagesState>,
     pmm_alloc_flags: u32,
     options: u32,
+    size: u64,
 ) {
     storage.write(VmCowPagesState {
         canary: Canary::default(),
@@ -1952,6 +2028,10 @@ extern "C" fn rust_vm_cow_pages_state_init(
         pager_stats_modified: KCell::new(false),
         life_cycle: KCell::new(LifeCycle::Init),
         ever_pinned: AtomicBool::new(false),
+        size: KCell::new(size),
+        parent_offset: KCell::new(0),
+        parent_limit: KCell::new(0),
+        root_parent_offset: KCell::new(0),
     });
 }
 
@@ -2217,6 +2297,97 @@ unsafe extern "C" fn rust_vm_cow_pages_is_hidden(this: &VmCowPages) -> bool {
 #[unsafe(no_mangle)]
 unsafe extern "C" fn rust_vm_cow_pages_can_decommit_zero_pages(this: &VmCowPages) -> bool {
     this.can_decommit_zero_pages()
+}
+
+/// Returns the size in bytes of this cow pages range. This will always be a multiple of the page
+/// size.
+///
+/// # Safety
+///
+/// * `this` must point to a valid `VmCowPages`.
+/// * The C++ caller must hold `lock()`.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_vm_cow_pages_size_locked(this: &VmCowPages) -> u64 {
+    // SAFETY: the C++ caller holds the lock (TA_REQ).
+    let token = unsafe { LockToken::new() };
+    this.size_locked(&token)
+}
+
+/// # Safety
+///
+/// * `this` must point to a valid `VmCowPages`.
+/// * The C++ caller must hold `lock()`.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_vm_cow_pages_set_size_locked(this: &VmCowPages, v: u64) {
+    // SAFETY: the C++ caller holds the lock (TA_REQ).
+    let mut token = unsafe { LockToken::new() };
+    this.set_size_locked(&mut token, v)
+}
+
+/// # Safety
+///
+/// * `this` must point to a valid `VmCowPages`.
+/// * The C++ caller must hold `lock()`.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_vm_cow_pages_parent_offset_locked(this: &VmCowPages) -> u64 {
+    // SAFETY: the C++ caller holds the lock (TA_REQ).
+    let token = unsafe { LockToken::new() };
+    this.parent_offset_locked(&token)
+}
+
+/// # Safety
+///
+/// * `this` must point to a valid `VmCowPages`.
+/// * The C++ caller must hold `lock()`.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_vm_cow_pages_set_parent_offset_locked(this: &VmCowPages, v: u64) {
+    // SAFETY: the C++ caller holds the lock (TA_REQ).
+    let mut token = unsafe { LockToken::new() };
+    this.set_parent_offset_locked(&mut token, v)
+}
+
+/// # Safety
+///
+/// * `this` must point to a valid `VmCowPages`.
+/// * The C++ caller must hold `lock()`.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_vm_cow_pages_parent_limit_locked(this: &VmCowPages) -> u64 {
+    // SAFETY: the C++ caller holds the lock (TA_REQ).
+    let token = unsafe { LockToken::new() };
+    this.parent_limit_locked(&token)
+}
+
+/// # Safety
+///
+/// * `this` must point to a valid `VmCowPages`.
+/// * The C++ caller must hold `lock()`.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_vm_cow_pages_set_parent_limit_locked(this: &VmCowPages, v: u64) {
+    // SAFETY: the C++ caller holds the lock (TA_REQ).
+    let mut token = unsafe { LockToken::new() };
+    this.set_parent_limit_locked(&mut token, v)
+}
+
+/// # Safety
+///
+/// * `this` must point to a valid `VmCowPages`.
+/// * The C++ caller must hold `lock()`.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_vm_cow_pages_root_parent_offset_locked(this: &VmCowPages) -> u64 {
+    // SAFETY: the C++ caller holds the lock (TA_REQ).
+    let token = unsafe { LockToken::new() };
+    this.root_parent_offset_locked(&token)
+}
+
+/// # Safety
+///
+/// * `this` must point to a valid `VmCowPages`.
+/// * The C++ caller must hold `lock()`.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_vm_cow_pages_set_root_parent_offset_locked(this: &VmCowPages, v: u64) {
+    // SAFETY: the C++ caller holds the lock (TA_REQ).
+    let mut token = unsafe { LockToken::new() };
+    this.set_root_parent_offset_locked(&mut token, v)
 }
 
 #[cfg(ktest)]

@@ -246,7 +246,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
 
   // Returns the size in bytes of this cow pages range. This will always be a multiple of the page
   // size.
-  uint64_t size_locked() const TA_REQ(lock()) { return size_; }
+  uint64_t size_locked() const TA_REQ(lock());
 
   // Returns whether this cow pages node is ultimately backed by a user pager to fulfill initial
   // content, and not zero pages.  Contiguous VMOs have page_source_ set, but are not pager backed
@@ -1443,7 +1443,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // double locking, otherwise if no parent or not locked a nullptr can be given.
   void ReleaseOwnedPagesLocked(uint64_t start, const LockedPtr& parent,
                                ScopedPageFreedList& freed_list) TA_REQ(lock()) {
-    ReleaseOwnedPagesRangeLocked(start, size_ - start, parent, freed_list);
+    ReleaseOwnedPagesRangeLocked(start, size_locked() - start, parent, freed_list);
   }
 
   // Similar to |ReleaseOwnedPagesLocked|, but only releases the specified range, and as such
@@ -1633,19 +1633,6 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   const uint64_t lock_order_;
 #endif
 
-  uint64_t size_ TA_GUARDED(lock());
-  // Offset in the *parent* where this object starts.
-  uint64_t parent_offset_ TA_GUARDED(lock()) = 0;
-  // Offset in *this object* above which accesses will no longer access the parent.
-  uint64_t parent_limit_ TA_GUARDED(lock()) = 0;
-  // Offset in our root parent where this object would start if projected onto it. This value is
-  // used as an efficient summation of accumulated offsets to ensure that an offset projected all
-  // the way to the root would not overflow a 64-bit integer. Although actual page resolution
-  // would never reach the root in such a case, a childs full range projected onto its parent is
-  // used to simplify some operations and so this invariant of not overflowing accumulated offsets
-  // needs to be maintained.
-  uint64_t root_parent_offset_ TA_GUARDED(lock()) = 0;
-
   // parent pointer (may be null)
   fbl::RefPtr<VmCowPages> parent_ TA_GUARDED(lock());
 
@@ -1703,6 +1690,14 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
     Dying,
     Dead,
   };
+
+  void set_size_locked(uint64_t v) TA_REQ(lock());
+  uint64_t parent_offset_locked() const TA_REQ(lock());
+  void set_parent_offset_locked(uint64_t v) TA_REQ(lock());
+  uint64_t parent_limit_locked() const TA_REQ(lock());
+  void set_parent_limit_locked(uint64_t v) TA_REQ(lock());
+  uint64_t root_parent_offset_locked() const TA_REQ(lock());
+  void set_root_parent_offset_locked(uint64_t v) TA_REQ(lock());
 
   uint32_t children_list_len_locked() const TA_REQ(lock());
   void set_children_list_len_locked(uint32_t v) TA_REQ(lock());
@@ -1903,7 +1898,8 @@ class VmCowPages::LookupCursor {
         if (!owner_info_.owner.locked_or(target_).parent_) {
           return false;
         }
-        if (owner_info_.owner_offset >= owner_info_.owner.locked_or(target_).parent_limit_) {
+        if (owner_info_.owner_offset >=
+            owner_info_.owner.locked_or(target_).parent_limit_locked()) {
           return false;
         }
         if (owner_info_.owner.locked_or(target_).node_has_parent_content_markers()) {
@@ -2291,11 +2287,20 @@ class PriorityChanger {
 };
 
 extern "C" {
-void rust_vm_cow_pages_state_init(void* storage, uint32_t pmm_alloc_flags, uint32_t options);
+void rust_vm_cow_pages_state_init(void* storage, uint32_t pmm_alloc_flags, uint32_t options,
+                                  uint64_t size);
 void rust_vm_cow_pages_destruct(void* storage);
 void rust_vm_cow_pages_assert_canary(const VmCowPages* cow);
 __PURE uint32_t rust_vm_cow_pages_pmm_alloc_flags(const VmCowPages* cow);
 __PURE uint32_t rust_vm_cow_pages_options(const VmCowPages* cow);
+__PURE uint64_t rust_vm_cow_pages_size_locked(const VmCowPages* cow);
+void rust_vm_cow_pages_set_size_locked(const VmCowPages* cow, uint64_t v);
+__PURE uint64_t rust_vm_cow_pages_parent_offset_locked(const VmCowPages* cow);
+void rust_vm_cow_pages_set_parent_offset_locked(const VmCowPages* cow, uint64_t v);
+__PURE uint64_t rust_vm_cow_pages_parent_limit_locked(const VmCowPages* cow);
+void rust_vm_cow_pages_set_parent_limit_locked(const VmCowPages* cow, uint64_t v);
+__PURE uint64_t rust_vm_cow_pages_root_parent_offset_locked(const VmCowPages* cow);
+void rust_vm_cow_pages_set_root_parent_offset_locked(const VmCowPages* cow, uint64_t v);
 __PURE uint32_t rust_vm_cow_pages_children_list_len_locked(const VmCowPages* cow);
 void rust_vm_cow_pages_set_children_list_len_locked(const VmCowPages* cow, uint32_t v);
 __PURE uint64_t rust_vm_cow_pages_pinned_page_count_locked(const VmCowPages* cow);
@@ -2334,6 +2339,26 @@ inline uint32_t VmCowPages::children_list_len_locked() const {
 }
 inline void VmCowPages::set_children_list_len_locked(uint32_t v) {
   rust_vm_cow_pages_set_children_list_len_locked(this, v);
+}
+inline uint64_t VmCowPages::size_locked() const { return rust_vm_cow_pages_size_locked(this); }
+inline void VmCowPages::set_size_locked(uint64_t v) { rust_vm_cow_pages_set_size_locked(this, v); }
+inline uint64_t VmCowPages::parent_offset_locked() const {
+  return rust_vm_cow_pages_parent_offset_locked(this);
+}
+inline void VmCowPages::set_parent_offset_locked(uint64_t v) {
+  rust_vm_cow_pages_set_parent_offset_locked(this, v);
+}
+inline uint64_t VmCowPages::parent_limit_locked() const {
+  return rust_vm_cow_pages_parent_limit_locked(this);
+}
+inline void VmCowPages::set_parent_limit_locked(uint64_t v) {
+  rust_vm_cow_pages_set_parent_limit_locked(this, v);
+}
+inline uint64_t VmCowPages::root_parent_offset_locked() const {
+  return rust_vm_cow_pages_root_parent_offset_locked(this);
+}
+inline void VmCowPages::set_root_parent_offset_locked(uint64_t v) {
+  rust_vm_cow_pages_set_root_parent_offset_locked(this, v);
 }
 inline uint64_t VmCowPages::pinned_page_count_locked() const {
   return rust_vm_cow_pages_pinned_page_count_locked(this);
