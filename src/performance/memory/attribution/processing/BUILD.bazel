@@ -1,0 +1,75 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load(
+    "//build/bazel/rules/testing:fx_unittest_package.bzl",
+    "fx_unittest_package",
+)
+
+package(default_applicable_licenses = ["//:license"])
+
+# @bazel2gn:skip
+test_suite(
+    name = "tests",
+    visibility = ["//src/performance/memory:__pkg__"],
+)
+
+rustc_library(
+    name = "processing",
+    srcs = [
+        "src/digest.rs",
+        "src/fkernel_serde.rs",
+        "src/fplugin_serde.rs",
+        "src/lib.rs",
+        "src/macros.rs",
+        "src/matcher.rs",
+        "src/name.rs",
+        "src/summary.rs",
+    ],
+    crate_name = "attribution_processing",
+    edition = "2024",
+    visibility = [
+        "//src/developer/ffx/plugins/profile/memory:__subpackages__",
+        "//src/performance/memory/attribution/monitor:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_rust_common",
+        "//sdk/fidl/fuchsia.memory.attribution.plugin:fuchsia.memory.attribution.plugin_rust_common",
+        "//sdk/rust/zx-types",
+        "//src/lib/fidl/rust/fidl",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:bstr",
+        "//third_party/rust_crates/vendor:rustc-hash",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:smallvec",
+        "//third_party/rust_crates/vendor:zerocopy",
+        "//third_party/rust_crates/vendor:zerotrie",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/lib/trace/rust:trace"],
+        "//conditions:default": [],
+    }),
+)
+
+# test-parity-allow-manual: Inner test binary wrapped by :attribution-processing-tests.
+rustc_test(
+    name = "processing_test",
+    crate = ":processing",
+    crate_name = "attribution_processing_lib_test",
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//third_party/rust_crates/vendor:pretty_assertions",
+        "//third_party/rust_crates/vendor:rand",
+        "//third_party/rust_crates/vendor:regex-lite",
+        "//third_party/rust_crates/vendor:serde_json",
+    ],
+)
+
+fx_unittest_package(
+    name = "attribution-processing-tests",
+    package_name = "attribution-processing-tests",
+    unit_tests = [":processing_test"],
+)

@@ -1,0 +1,17 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "index_table_builder",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    visibility = [
+        "//src/performance/memory/attribution/monitor:__pkg__",
+        "//src/performance/memory/pprof:__pkg__",
+    ],
+)
