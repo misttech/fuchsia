@@ -140,7 +140,7 @@ pub(crate) struct MdnsResultMessage {
 }
 
 #[derive(Debug)]
-struct UpdateTracker {
+pub struct UpdateTracker {
     sender: mpsc::UnboundedSender<MdnsResultMessage>,
     update_id: Option<ot::SrpServerServiceUpdateId>,
 }
@@ -163,7 +163,9 @@ impl UpdateTracker {
 impl Drop for UpdateTracker {
     fn drop(&mut self) {
         if let Some(update_id) = self.update_id.take() {
-            let _ = self.sender.unbounded_send(MdnsResultMessage { update_id, result: Ok(()) });
+            let _ = self
+                .sender
+                .unbounded_send(MdnsResultMessage { update_id, result: Err(ot::Error::Failed) });
         }
     }
 }
@@ -253,7 +255,10 @@ pub struct AdvertisingProxyService {
 #[derive(Debug)]
 pub enum AdvertisingProxyServiceState {
     #[allow(dead_code)]
-    Publishing(Task<()>),
+    Publishing {
+        task: Task<()>,
+        tracker: Arc<Mutex<Option<UpdateTracker>>>,
+    },
     Active(AdvertisingProxyService),
 }
 
@@ -261,14 +266,14 @@ impl AdvertisingProxyServiceState {
     fn is_up_to_date(&self, srp_service: &ot::SrpServerService) -> bool {
         match self {
             AdvertisingProxyServiceState::Active(svc) => svc.is_up_to_date(srp_service),
-            AdvertisingProxyServiceState::Publishing(_) => false,
+            AdvertisingProxyServiceState::Publishing { .. } => false,
         }
     }
 
     fn update(&self, info: AdvertisingProxyServiceInfo) -> Result<(), anyhow::Error> {
         match self {
             AdvertisingProxyServiceState::Active(svc) => svc.update(info),
-            AdvertisingProxyServiceState::Publishing(_) => {
+            AdvertisingProxyServiceState::Publishing { .. } => {
                 Err(anyhow::anyhow!("Service is still publishing"))
             }
         }
@@ -277,7 +282,7 @@ impl AdvertisingProxyServiceState {
     fn set_subtypes(&self, subtypes: Vec<String>) -> Result<(), anyhow::Error> {
         match self {
             AdvertisingProxyServiceState::Active(svc) => svc.set_subtypes(subtypes),
-            AdvertisingProxyServiceState::Publishing(_) => {
+            AdvertisingProxyServiceState::Publishing { .. } => {
                 Err(anyhow::anyhow!("Service is still publishing"))
             }
         }
@@ -480,6 +485,77 @@ impl AdvertisingProxyInner {
                 requests failed", update_id
             );
         }
+    }
+
+    fn finish_proxy_host_publish(
+        inner_arc: &Arc<Mutex<Self>>,
+        host_full_name: &CStr,
+        service_publisher: ServiceInstancePublisherProxy,
+        result: Result<(), ot::Error>,
+        client_to_update: Option<fidl::endpoints::ClientEnd<ServiceInstancePublisherMarker>>,
+        tx_opt: &mut Option<futures::channel::oneshot::Sender<()>>,
+        tracker: Option<UpdateTracker>,
+    ) {
+        // Send result via channel if we're tracking this update.
+        if let Some(tracker) = tracker {
+            tracker.resolve(result);
+        }
+
+        let mut inner = inner_arc.lock();
+        let is_same_host = inner.hosts.get(host_full_name).is_some_and(|host| {
+            std::ptr::eq(host.service_publisher.as_channel(), service_publisher.as_channel())
+        });
+        if !is_same_host {
+            return;
+        }
+
+        if result.is_ok() {
+            if let (Some(c), Some(host)) = (client_to_update, inner.hosts.get_mut(host_full_name)) {
+                host.service_publisher = c.into_proxy();
+            }
+            // Notify waiting service tasks that the host publisher is ready.
+            if let Some(tx) = tx_opt.take() {
+                let _ = tx.send(());
+            }
+            return;
+        }
+
+        // Remove the failed host and resolve any pending `Publishing` service
+        // `UpdateTracker`s with `result` so specific errors like `Duplicated` are preserved
+        // instead of falling back to `UpdateTracker::drop`'s `Err(ot::Error::Failed)`.
+        let Some(host) = inner.hosts.remove(host_full_name) else {
+            return;
+        };
+        drop(inner);
+
+        for service in host.services.values() {
+            let AdvertisingProxyServiceState::Publishing { tracker, .. } = service else {
+                continue;
+            };
+            if let Some(tracker) = tracker.lock().take() {
+                tracker.resolve(result);
+            }
+        }
+    }
+
+    async fn wait_for_host_publisher(
+        inner_arc: &Arc<Mutex<Self>>,
+        publisher_notifier: futures::future::Shared<futures::channel::oneshot::Receiver<()>>,
+        host_full_name: &CStr,
+        instance_name: &str,
+    ) -> Option<ServiceInstancePublisherProxy> {
+        if publisher_notifier.await.is_err() {
+            debug!(
+                tag = "srp_advertising_proxy";
+                "Host {:?} failed to publish, skipping service {:?} publication",
+                host_full_name,
+                instance_name
+            );
+            return None;
+        }
+
+        let inner = inner_arc.lock();
+        inner.hosts.get(host_full_name).map(|host| host.service_publisher.clone())
     }
 
     pub fn publish_srp_all(
@@ -686,6 +762,8 @@ impl AdvertisingProxyInner {
             }
 
             let (client, server) = create_endpoints::<ServiceInstancePublisherMarker>();
+            let service_publisher = client.into_proxy();
+            let service_publisher_for_future = service_publisher.clone();
 
             // This is copied just for use in error messages below.
             let local_name_copy = local_name.to_string();
@@ -808,23 +886,15 @@ impl AdvertisingProxyInner {
                         }
                     };
 
-                    if result.is_ok() {
-                        if let Some(c) = client_to_update {
-                            let mut inner = inner_arc.lock();
-                            if let Some(host) = inner.hosts.get_mut(&host_full_name) {
-                                host.service_publisher = c.into_proxy();
-                            }
-                        }
-                        // Notify waiting service tasks that the host publisher is ready.
-                        if let Some(tx) = tx_opt.take() {
-                            let _ = tx.send(());
-                        }
-                    }
-
-                    // Send result via channel if we're tracking this update
-                    if let Some(tracker) = tracker {
-                        tracker.resolve(result);
-                    }
+                    Self::finish_proxy_host_publish(
+                        &inner_arc,
+                        &host_full_name,
+                        service_publisher_for_future,
+                        result,
+                        client_to_update,
+                        &mut tx_opt,
+                        tracker,
+                    );
                     return;
                 }
             };
@@ -833,7 +903,7 @@ impl AdvertisingProxyInner {
                 srp_host.full_name_cstr().to_owned(),
                 AdvertisingProxyHost {
                     services: HashMap::new(),
-                    service_publisher: client.into_proxy(),
+                    service_publisher,
                     addresses,
                     publisher_notifier: rx_shared,
                 },
@@ -1077,6 +1147,8 @@ impl AdvertisingProxyInner {
                 }
                 tracker = Some(UpdateTracker::new(sender, Some(update_id.clone())));
             }
+            let tracker = Arc::new(Mutex::new(tracker));
+            let tracker_for_future = tracker.clone();
 
             let publisher_notifier = host.publisher_notifier.clone();
             let service_type = local_service_name.to_string();
@@ -1087,17 +1159,26 @@ impl AdvertisingProxyInner {
             let service_info_data = service_info;
 
             let publish_service_future = async move {
-                // Wait for the host publisher to fully resolve before attempting to publish services
-                let _ = publisher_notifier.clone().await;
-
-                let publisher = {
-                    let inner = inner_arc.lock();
-                    if let Some(host) = inner.hosts.get(&host_full_name) {
-                        host.service_publisher.clone()
-                    } else {
-                        // The host was deleted before we could publish.
-                        return;
+                // Wait for the host publisher to fully resolve before attempting to publish
+                // services. If the host publisher failed, skip publishing services.
+                let Some(publisher) = Self::wait_for_host_publisher(
+                    &inner_arc,
+                    publisher_notifier,
+                    &host_full_name,
+                    &instance_name,
+                )
+                .await
+                else {
+                    // `wait_for_host_publisher` returns `None` when host publication fails
+                    // (`publisher_notifier.await.is_err()`) or the host entry is already gone,
+                    // causing `publish_service_future` to return early without publishing.
+                    // If `finish_proxy_host_publish` did not already take and resolve this
+                    // tracker, resolve it with `Err(ot::Error::Failed)` immediately rather than
+                    // waiting for the service entry in `host.services` to be dropped.
+                    if let Some(tracker) = tracker_for_future.lock().take() {
+                        tracker.resolve(Err(ot::Error::Failed));
                     }
+                    return;
                 };
 
                 let mut retries_left = MAX_PUBLISH_RETRIES;
@@ -1260,7 +1341,7 @@ impl AdvertisingProxyInner {
                     }
 
                     // Send result via channel if we're tracking this update
-                    if let Some(tracker) = tracker {
+                    if let Some(tracker) = tracker_for_future.lock().take() {
                         tracker.resolve(result);
                     }
                     return;
@@ -1271,7 +1352,8 @@ impl AdvertisingProxyInner {
             // If the service is removed while the FIDL call is still in flight, this
             // task will be dropped and aborted, preventing a ghost service.
             let task = fasync::Task::spawn(publish_service_future);
-            services.insert(service_name, AdvertisingProxyServiceState::Publishing(task));
+            services
+                .insert(service_name, AdvertisingProxyServiceState::Publishing { task, tracker });
         }
 
         if update_id.is_none() {
@@ -1328,7 +1410,7 @@ mod tests {
 
         let message = receiver.next().await.expect("should receive message");
         assert_eq!(message.update_id, update_id);
-        assert_eq!(message.result, Ok(()));
+        assert_eq!(message.result, Err(ot::Error::Failed));
     }
 
     #[fuchsia::test]
@@ -1434,5 +1516,244 @@ mod tests {
             !inner.outstanding_updates.contains_key(&update_id),
             "Outstanding update should be removed after error"
         );
+    }
+
+    #[fuchsia::test]
+    async fn test_skip_service_when_host_publish_fails() {
+        let (mdns_proxy_host_publisher, _) =
+            fidl::endpoints::create_proxy::<ProxyHostPublisherMarker>();
+        let (mdns_result_sender, mut mdns_result_receiver) = mpsc::unbounded();
+
+        let inner_arc = Arc::new(Mutex::new(AdvertisingProxyInner {
+            srp_domain: "default.service.arpa.".to_string(),
+            hosts: Default::default(),
+            mdns_proxy_host_publisher,
+            outstanding_updates: HashMap::new(),
+            mdns_result_sender: mdns_result_sender.clone(),
+        }));
+
+        // SAFETY: `SrpServerServiceUpdateId` is a `#[repr(transparent)]` wrapper around `u32`.
+        let update_id: ot::SrpServerServiceUpdateId = unsafe { std::mem::transmute(101u32) };
+        let update_id_2: ot::SrpServerServiceUpdateId = unsafe { std::mem::transmute(102u32) };
+        let host_full_name =
+            CString::new("conflict-host.default.service.arpa.").expect("valid CString");
+        let service_full_name =
+            CString::new("my-service._test._tcp.default.service.arpa.").expect("valid CString");
+        let service_2_full_name =
+            CString::new("my-service-2._test._tcp.default.service.arpa.").expect("valid CString");
+
+        let (service_publisher, mut service_publisher_stream) =
+            fidl::endpoints::create_proxy_and_stream::<ServiceInstancePublisherMarker>();
+        let service_publisher_for_future = service_publisher.clone();
+        let (tx, rx) = futures::channel::oneshot::channel::<()>();
+        let rx_shared = rx.shared();
+        let mut tx_opt = Some(tx);
+
+        // Track 1 host + 1 service publication in `update_id`, plus a second service-only
+        // update (`update_id_2`) that arrived while the host was still probing.
+        let host_tracker = UpdateTracker::new(mdns_result_sender.clone(), Some(update_id.clone()));
+        let service_tracker = Arc::new(Mutex::new(Some(UpdateTracker::new(
+            mdns_result_sender.clone(),
+            Some(update_id.clone()),
+        ))));
+        let service_tracker_for_future = service_tracker.clone();
+
+        let service_2_tracker = Arc::new(Mutex::new(Some(UpdateTracker::new(
+            mdns_result_sender,
+            Some(update_id_2.clone()),
+        ))));
+        let service_2_tracker_for_future = service_2_tracker.clone();
+
+        let inner_for_service = inner_arc.clone();
+        let host_name_for_service = host_full_name.clone();
+        let notifier_for_service = rx_shared.clone();
+        let service_published = Arc::new(Mutex::new(false));
+        let service_published_clone = service_published.clone();
+
+        let service_task = fasync::Task::spawn(async move {
+            let Some(_publisher) = AdvertisingProxyInner::wait_for_host_publisher(
+                &inner_for_service,
+                notifier_for_service,
+                &host_name_for_service,
+                "my-service",
+            )
+            .await
+            else {
+                if let Some(tracker) = service_tracker_for_future.lock().take() {
+                    tracker.resolve(Err(ot::Error::Failed));
+                }
+                return;
+            };
+            *service_published_clone.lock() = true;
+        });
+
+        let inner_for_service_2 = inner_arc.clone();
+        let host_name_for_service_2 = host_full_name.clone();
+        let notifier_for_service_2 = rx_shared.clone();
+        let service_2_task = fasync::Task::spawn(async move {
+            let Some(_publisher) = AdvertisingProxyInner::wait_for_host_publisher(
+                &inner_for_service_2,
+                notifier_for_service_2,
+                &host_name_for_service_2,
+                "my-service-2",
+            )
+            .await
+            else {
+                if let Some(tracker) = service_2_tracker_for_future.lock().take() {
+                    tracker.resolve(Err(ot::Error::Failed));
+                }
+                return;
+            };
+        });
+
+        {
+            let mut inner = inner_arc.lock();
+            inner.outstanding_updates.insert(
+                update_id.clone(),
+                OutstandingUpdate {
+                    update_id: update_id.clone(),
+                    host_name: host_full_name.clone(),
+                    callback_count: 2,
+                },
+            );
+            inner.outstanding_updates.insert(
+                update_id_2.clone(),
+                OutstandingUpdate {
+                    update_id: update_id_2.clone(),
+                    host_name: host_full_name.clone(),
+                    callback_count: 1,
+                },
+            );
+            let mut services = HashMap::new();
+            services.insert(
+                service_full_name,
+                AdvertisingProxyServiceState::Publishing {
+                    task: service_task,
+                    tracker: service_tracker,
+                },
+            );
+            services.insert(
+                service_2_full_name,
+                AdvertisingProxyServiceState::Publishing {
+                    task: service_2_task,
+                    tracker: service_2_tracker,
+                },
+            );
+            inner.hosts.insert(
+                host_full_name.clone(),
+                AdvertisingProxyHost {
+                    services,
+                    service_publisher,
+                    addresses: Vec::new(),
+                    publisher_notifier: rx_shared,
+                },
+            );
+        }
+
+        // Simulate proxy host publication failing with `AlreadyPublishedOnSubnet` -> `Duplicated`,
+        // then dropping `tx_opt` when `publish_proxy_host_future` returns.
+        AdvertisingProxyInner::finish_proxy_host_publish(
+            &inner_arc,
+            &host_full_name,
+            service_publisher_for_future,
+            Err(ot::Error::Duplicated),
+            None,
+            &mut tx_opt,
+            Some(host_tracker),
+        );
+        drop(tx_opt);
+
+        // The failed host and its pending service state should be removed immediately.
+        assert!(
+            !inner_arc.lock().hosts.contains_key(&host_full_name),
+            "Failed host should be removed from inner.hosts"
+        );
+
+        // The service publisher stream should close without receiving any publish requests.
+        assert!(
+            service_publisher_stream.next().await.is_none(),
+            "ServiceInstancePublisher should not receive any requests when host publish fails"
+        );
+        assert!(
+            !*service_published.lock(),
+            "Service task must skip publishing when host publish fails"
+        );
+
+        // Process result messages and verify both SRP updates fail with `Duplicated`
+        // rather than reporting `Ok(())` from `UpdateTracker::drop`.
+        let mut results = HashMap::new();
+        while let Ok(msg) = mdns_result_receiver.try_recv() {
+            inner_arc.lock().on_mdns_publish_result(msg.update_id, msg.result, |id, res| {
+                assert!(
+                    results.insert(id, res).is_none(),
+                    "Each update_id should fire at most once"
+                );
+            });
+        }
+
+        assert_eq!(results.get(&update_id), Some(&Err(ot::Error::Duplicated)));
+        assert_eq!(results.get(&update_id_2), Some(&Err(ot::Error::Duplicated)));
+    }
+
+    #[fuchsia::test]
+    async fn test_failed_host_publish_does_not_remove_newer_host() {
+        let (mdns_proxy_host_publisher, _) =
+            fidl::endpoints::create_proxy::<ProxyHostPublisherMarker>();
+        let (mdns_result_sender, _mdns_result_receiver) = mpsc::unbounded();
+
+        let inner_arc = Arc::new(Mutex::new(AdvertisingProxyInner {
+            srp_domain: "default.service.arpa.".to_string(),
+            hosts: Default::default(),
+            mdns_proxy_host_publisher,
+            outstanding_updates: HashMap::new(),
+            mdns_result_sender,
+        }));
+
+        let host_full_name =
+            CString::new("republished-host.default.service.arpa.").expect("valid CString");
+
+        let (old_service_publisher, _old_stream) =
+            fidl::endpoints::create_proxy_and_stream::<ServiceInstancePublisherMarker>();
+        let (new_service_publisher, _new_stream) =
+            fidl::endpoints::create_proxy_and_stream::<ServiceInstancePublisherMarker>();
+        let new_service_publisher_check = new_service_publisher.clone();
+
+        let (mut old_tx_opt, _old_rx) = {
+            let (tx, rx) = futures::channel::oneshot::channel::<()>();
+            (Some(tx), rx.shared())
+        };
+        let (_new_tx, new_rx) = futures::channel::oneshot::channel::<()>();
+
+        // Insert the newer host instance into `inner.hosts` (simulating OpenThread
+        // re-publishing the host while the old host's probe was still in flight).
+        inner_arc.lock().hosts.insert(
+            host_full_name.clone(),
+            AdvertisingProxyHost {
+                services: HashMap::new(),
+                service_publisher: new_service_publisher,
+                addresses: Vec::new(),
+                publisher_notifier: new_rx.shared(),
+            },
+        );
+
+        // Now the old host's publish finishes with an error.
+        AdvertisingProxyInner::finish_proxy_host_publish(
+            &inner_arc,
+            &host_full_name,
+            old_service_publisher,
+            Err(ot::Error::Failed),
+            None,
+            &mut old_tx_opt,
+            None,
+        );
+
+        // The newer host in `inner.hosts` must remain intact.
+        let inner = inner_arc.lock();
+        let current_host =
+            inner.hosts.get(&host_full_name).expect("Newer host must not be removed");
+        assert!(std::ptr::eq(
+            current_host.service_publisher.as_channel(),
+            new_service_publisher_check.as_channel()
+        ));
     }
 }
