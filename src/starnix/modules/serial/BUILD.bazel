@@ -1,0 +1,26 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "serial",
+    srcs = ["lib.rs"],
+    crate_name = "starnix_modules_serial",
+    crate_root = "lib.rs",
+    edition = "2024",
+    lint_config = "//src/starnix/build:kernel_library_config",
+    visibility = ["//src/starnix/modules/nanohub:__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.hardware.serial:fuchsia.hardware.serial_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/starnix/kernel/core",
+        "//src/starnix/lib/starnix_uapi",
+        "//src/starnix/modules/devpts",
+        "//third_party/rust_crates/vendor:anyhow",
+    ],
+)
