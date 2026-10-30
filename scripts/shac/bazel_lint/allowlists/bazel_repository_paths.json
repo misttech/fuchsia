@@ -246,6 +246,13 @@
             ]
         },
         {
+            "path": "src/lib/captive-thread/BUILD.bazel",
+            "bug": "https://fxbug.dev/570203009",
+            "targets": [
+                "fake-step"
+            ]
+        },
+        {
             "path": "src/lib/metrics_buffer/BUILD.bazel",
             "bug": "https://fxbug.dev/570203009",
             "targets": [

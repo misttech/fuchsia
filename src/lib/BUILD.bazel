@@ -36,6 +36,7 @@ test_suite(
         "//src/lib/atomic-storage:atomic-storage-tests",
         "//src/lib/backoff:backoff_tests",
         "//src/lib/callback:callback_tests",
+        "//src/lib/captive-thread:tests",
         "//src/lib/cstringify:cstringify-test",
         "//src/lib/debug/test:backtrace-request-integration-test-pkg",
         "//src/lib/debug/test:backtrace-request-test-pkg",

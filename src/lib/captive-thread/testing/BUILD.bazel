@@ -1,0 +1,41 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/cc:fx_cc_library_headers.bzl", "fx_cc_library_headers")
+
+package(default_applicable_licenses = ["//:license"])
+
+alias(
+    name = "testing",
+    testonly = True,
+    actual = ":captive-thread-testing",
+    visibility = [
+        "//sdk/lib/c/setjmp:__pkg__",
+        "//src/lib/captive-thread:__pkg__",
+        "//src/zircon/tests/x86-umip:__pkg__",
+    ],
+)
+
+fx_cc_library_headers(
+    name = "headers",
+    testonly = True,
+    hdrs = ["include/lib/captive-thread/testing/matchers.h"],
+    deps = [
+        "//src/lib/captive-thread",
+        "@com_google_googletest//:gtest",
+    ],  # @bazel2gn:raw_overwrite:[ "//src/lib/captive-thread", "//third_party/googletest:gmock", "//third_party/googletest:gtest" ]
+)
+
+fx_cc_library(
+    name = "captive-thread-testing",
+    testonly = True,
+    srcs = ["registers-as-container.cc"],
+    visibility = ["//src/lib/captive-thread:__pkg__"],
+    deps = [
+        ":headers",
+        "//src/lib/captive-thread",
+        "@com_google_googletest//:gtest",
+    ],  # @bazel2gn:raw_overwrite:[ ":headers", "//src/lib/captive-thread", "//third_party/googletest:gmock", "//third_party/googletest:gtest" ]
+)

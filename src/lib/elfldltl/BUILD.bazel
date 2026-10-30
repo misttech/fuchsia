@@ -82,6 +82,7 @@ fx_cc_library_headers(
         "//conditions:default": [],
     }),
     visibility = [
+        "//src/lib/captive-thread:__pkg__",
         "//src/lib/elf-search:__pkg__",
         "//src/lib/zxdump:__pkg__",
     ],

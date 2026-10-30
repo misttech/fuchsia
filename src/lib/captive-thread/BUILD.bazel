@@ -1,0 +1,89 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/cc:fx_cc_library_headers.bzl", "fx_cc_library_headers")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+# @bazel2gn:skip
+test_suite(
+    name = "tests",
+    tests = [":captive-thread-tests"],
+    visibility = ["//src/lib:__pkg__"],
+)
+
+fx_cc_library_headers(
+    name = "headers",
+    hdrs = [
+        "include/lib/captive-thread/captive-thread.h",
+        "include/lib/captive-thread/registers.h",
+    ],
+    deps = [
+        "//sdk/lib/fit",
+        "//zircon/system/ulib/zx",
+    ],
+)
+
+fx_cc_library(
+    name = "captive-thread",
+    srcs = ["captive-thread.cc"],
+    implementation_deps = [
+        ":fake-step",
+        "//sdk/lib/stdcompat",
+    ],
+    visibility = [
+        "//src/lib/captive-thread/testing:__pkg__",
+        "//zircon/system/ulib/zx/test:__pkg__",
+        "//zircon/system/utest/core/threads:__pkg__",
+    ],
+    deps = [
+        ":headers",
+        "//sdk/lib/fit",
+        "//zircon/system/ulib/zx",
+    ],
+)
+
+fx_cc_library(
+    name = "fake-step",
+    srcs = ["fake-step.h"] + select({
+        "@platforms//cpu:riscv64": ["fake-step.cc"],
+        "//conditions:default": [],
+    }),
+    implementation_deps = select({
+        "@platforms//cpu:riscv64": [
+            "//zircon/system/ulib/zx",
+            "@fuchsia_sdk//pkg/hwreg",  # @bazel2gn:path_overwrite://zircon/system/ulib/hwreg
+        ],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":headers",
+        "//sdk/lib/stdcompat",
+    ],
+    alwayslink = True,
+)
+
+fx_cc_binary(
+    name = "captive-thread-unittests",
+    testonly = True,
+    srcs = ["captive-thread-tests.cc"],
+    tags = ["manual"],
+    deps = [
+        ":captive-thread",
+        "//src/lib/captive-thread/testing:captive-thread-testing",
+        "//src/lib/elfldltl:headers",  # @bazel2gn:path_overwrite://src/lib/elfldltl
+        "//src/lib/fxl/test:gtest_main",
+        "@com_google_googletest//:gtest",  # @bazel2gn:path_overwrite://third_party/googletest:gmock
+    ],
+)
+
+fx_unittest_package(
+    name = "captive-thread-tests",
+    package_name = "captive-thread-tests",
+    unit_tests = [":captive-thread-unittests"],
+    visibility = ["//visibility:private"],
+)
