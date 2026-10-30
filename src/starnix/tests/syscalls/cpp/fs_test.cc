@@ -2381,6 +2381,14 @@ TEST_P(FsCasefoldTest, UnicodeCanonicalEquivalenceWithMultiByteExpansion) {
 }
 
 TEST(FsTest, GetdentsLazyAndUnmappedBuffer) {
+  struct linux_dirent64 {
+    uint64_t d_ino;
+    int64_t d_off;
+    uint16_t d_reclen;
+    uint8_t d_type;
+    char d_name[];
+  };
+
   const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
 
   test_helper::ScopedTempDir temp_dir;
@@ -2392,6 +2400,8 @@ TEST(FsTest, GetdentsLazyAndUnmappedBuffer) {
 
   for (const std::string &dir_path :
        {temp_dir.path(), std::string("/proc"), std::string("/sys"), std::string("/")}) {
+    SCOPED_TRACE(dir_path);
+
     // 1. Fresh un-faulted anonymous mapping exercises lazy mapping materialization inside
     // getdents64.
     auto lazy_buf = test_helper::ScopedMMap::MMap(nullptr, page_size, PROT_READ | PROT_WRITE,
@@ -2400,11 +2410,17 @@ TEST(FsTest, GetdentsLazyAndUnmappedBuffer) {
 
     fbl::unique_fd dir_fd(open(dir_path.c_str(), O_RDONLY | O_DIRECTORY));
     ASSERT_THAT(dir_fd.get(), SyscallSucceeds());
-    EXPECT_THAT(syscall(SYS_getdents64, dir_fd.get(), lazy_buf->mapping(), page_size),
-                SyscallSucceedsWithValue(::testing::Gt(0)));
+    long nread = syscall(SYS_getdents64, dir_fd.get(), lazy_buf->mapping(), page_size);
+    ASSERT_THAT(nread,
+                SyscallSucceedsWithValue(::testing::Ge(static_cast<long>(sizeof(linux_dirent64)))));
+    ASSERT_LE(static_cast<size_t>(nread), page_size);
 
-    // 2. Buffer adjacent to a PROT_NONE guard page exercises partial usercopy faults after `.` and
-    // `..` entries have been emitted.
+    const size_t first_reclen = static_cast<const linux_dirent64 *>(lazy_buf->mapping())->d_reclen;
+    ASSERT_GE(first_reclen, sizeof(linux_dirent64));
+    ASSERT_LE(first_reclen, static_cast<size_t>(nread));
+
+    // 2. Buffer adjacent to a PROT_NONE guard page exercises partial usercopy faults after the
+    // first directory entry has been emitted.
     auto two_pages = test_helper::ScopedMMap::MMap(nullptr, 2 * page_size, PROT_READ | PROT_WRITE,
                                                    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     ASSERT_THAT(two_pages, SyscallResultIsOk());
@@ -2412,10 +2428,10 @@ TEST(FsTest, GetdentsLazyAndUnmappedBuffer) {
     ASSERT_THAT(mprotect(bytes + page_size, page_size, PROT_NONE), SyscallSucceeds());
 
     ASSERT_THAT(lseek(dir_fd.get(), 0, SEEK_SET), SyscallSucceeds());
-    // Leave room for `.` and `..` (24 bytes each = 48 bytes) before hitting the PROT_NONE page.
-    void *straddling_buf = bytes + page_size - 48;
+    // Place the buffer so that exactly the first entry fits before hitting the PROT_NONE page.
+    void *straddling_buf = bytes + page_size - first_reclen;
     EXPECT_THAT(syscall(SYS_getdents64, dir_fd.get(), straddling_buf, page_size),
-                SyscallSucceedsWithValue(::testing::Gt(0)));
+                SyscallSucceedsWithValue(static_cast<long>(first_reclen)));
   }
 }
 
