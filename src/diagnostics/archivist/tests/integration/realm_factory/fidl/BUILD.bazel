@@ -1,0 +1,31 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fidl_library(
+    name = "fuchsia.archivist.test",
+    testonly = True,
+    srcs = [
+        "puppet.test.fidl",
+        "realm_factory.test.fidl",
+        "stop_watcher.test.fidl",
+    ],
+    api_area = "Diagnostics",
+    category = "compat_test",
+    stable = True,
+    visibility = [
+        "//src/diagnostics/archivist/tests/integration/realm_factory:__subpackages__",
+        "//src/diagnostics/archivist/tests/integration/test_cases:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.component",
+        "//sdk/fidl/fuchsia.diagnostics",
+        "//sdk/fidl/fuchsia.diagnostics.types",
+        "//sdk/fidl/fuchsia.inspect",
+        "//sdk/fidl/fuchsia.testing.harness",
+    ],
+)

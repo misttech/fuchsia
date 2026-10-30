@@ -330,6 +330,7 @@ COMPAT_TEST_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.ui.pointer.augment:fuchsia.ui.pointer.augment_idk",
     "//sdk/fidl/fuchsia.ui.test.conformance:fuchsia.ui.test.conformance_idk",
     "//sdk/fidl/fuchsia.ui.test.context:fuchsia.ui.test.context_idk",
+    "//src/diagnostics/archivist/tests/integration/realm_factory/fidl:fuchsia.archivist.test_idk",
     "//src/sys/pkg/tests/pkgdir/test_realm_proxy/fidl:fuchsia.pkg.test_idk",
 ]
 # LINT.ThenChange(fidl_category_lists.gni:compat_test_libraries)
