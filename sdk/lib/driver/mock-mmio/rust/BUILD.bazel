@@ -1,0 +1,36 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "mock-mmio",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    visibility = [
+        "//src/graphics/drivers/msd-arm-mali-csf:__pkg__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        "//sdk/lib/driver/mmio/rust:mmio",
+        "//third_party/rust_crates/vendor:mockall",
+    ],
+)
+
+rustc_test(
+    name = "mock-mmio_test",
+    crate = ":mock-mmio",
+)
+
+# Run with `fx test mock-mmio-rust-unittests`
+fx_unittest_package(
+    name = "unittests",
+    package_name = "mock-mmio-rust-unittests",
+    unit_tests = [":mock-mmio_test"],
+    visibility = ["//sdk/lib:__pkg__"],
+)

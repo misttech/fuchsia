@@ -1,0 +1,62 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "mmio",
+    srcs = [
+        "src/arch.rs",
+        "src/lib.rs",
+        "src/memory.rs",
+        "src/mmio.rs",
+        "src/region.rs",
+        "src/register.rs",
+        "src/vmo.rs",
+    ],
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:paste",
+    ],
+    visibility = [
+        "//sdk/lib/driver/mmio/testing/rust:__pkg__",
+        "//sdk/lib/driver/mock-mmio/rust:__pkg__",
+        "//sdk/lib/driver/platform-device/rust:__pkg__",
+        "//src/connectivity:__subpackages__",
+        "//src/devices:__subpackages__",
+        "//src/graphics:__subpackages__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        "//sdk/rust/zx",
+        "//sdk/rust/zx-status",
+        "//src/lib/fuchsia-runtime",
+        "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
+
+rustc_test(
+    name = "mmio_test",
+    crate = ":mmio",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    deps = [
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:bitfield",
+        "//third_party/rust_crates/vendor:rand",
+    ],
+)
+
+# Run with `fx test mmio-rust-unittests`
+fx_unittest_package(
+    name = "unittests",
+    package_name = "mmio-rust-unittests",
+    unit_tests = [":mmio_test"],
+    visibility = ["//sdk/lib:__pkg__"],
+)

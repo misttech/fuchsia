@@ -10,6 +10,8 @@ test_suite(
     tests = [
         "//sdk/lib/async/rust/scope_dispatcher:libasync_scope_dispatcher_tests",
         "//sdk/lib/driver/debug/rust:driver_debug_tests",
+        "//sdk/lib/driver/mmio/rust:unittests",
+        "//sdk/lib/driver/mock-mmio/rust:unittests",
         "//sdk/lib/power/state_recorder/rust:power_state_recorder_rust_unittests",
     ],
 )
