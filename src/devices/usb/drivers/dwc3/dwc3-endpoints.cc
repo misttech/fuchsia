@@ -202,16 +202,30 @@ void Dwc3::EpServer::CancelAll(zx_status_t reason) {
     return;
   }
 
-  // Any request that hasn't been enqueued yet is immediately returned.
-  for (; !queued_reqs.empty(); queued_reqs.pop()) {
-    RequestComplete(reason, 0, std::move(queued_reqs.front()), /*send_now=*/false);
+  // For idle endpoints, or non-teardown cancellations (ZX_ERR_CANCELED / ZX_ERR_IO_REFUSED)
+  // when no endpoint-disable/reset teardown (ZX_ERR_IO_NOT_PRESENT) is already in flight,
+  // return queued_reqs immediately so callers can pipeline new QueueRequests before
+  // DEPEVT_CMD_CMPLT arrives. For endpoint-disable/reset teardown (ZX_ERR_IO_NOT_PRESENT)
+  // on active endpoints, defer queued_reqs to HandleEpTransferEndedEvent so active_reqs
+  // and queued_reqs complete in FIFO order in one batch.
+  const bool teardown_in_flight =
+      pending_cancel_reason.has_value() && *pending_cancel_reason == ZX_ERR_IO_NOT_PRESENT;
+  if (uep_->ep.transfer_state == Endpoint::TransferState::kIdle ||
+      (reason != ZX_ERR_IO_NOT_PRESENT && !teardown_in_flight)) {
+    for (; !queued_reqs.empty(); queued_reqs.pop()) {
+      RequestComplete(reason, 0, std::move(queued_reqs.front()), /*send_now=*/false);
+    }
+    SendCompletions();
   }
-  SendCompletions();
 
   switch (uep_->ep.transfer_state) {
     case Endpoint::TransferState::kIdle:
+      return;
     case Endpoint::TransferState::kCanceling:
     case Endpoint::TransferState::kPendingCancel:
+      if (reason == ZX_ERR_IO_NOT_PRESENT) {
+        pending_cancel_reason = reason;
+      }
       return;
     case Endpoint::TransferState::kActiveOngoing:
     case Endpoint::TransferState::kActiveSingle:
@@ -733,6 +747,13 @@ void Dwc3::HandleEpTransferEndedEvent(uint8_t ep_num) {
       pending_trbs += request_state.total_trbs - request_state.completed_trbs;
       uep->server->RequestComplete(reason, 0, std::move(request_state.request), /*send_now=*/false);
       uep->server->active_reqs.pop();
+    }
+    if (reason == ZX_ERR_IO_NOT_PRESENT) {
+      while (!uep->server->queued_reqs.empty()) {
+        uep->server->RequestComplete(reason, 0, std::move(uep->server->queued_reqs.front()),
+                                     /*send_now=*/false);
+        uep->server->queued_reqs.pop();
+      }
     }
     uep->server->SendCompletions();
     size_t active_count = uep->fifo.GetActiveCount();
