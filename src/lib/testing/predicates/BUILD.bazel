@@ -20,6 +20,7 @@ cc_library(
     visibility = [
         "//src/connectivity/location/gnss:__pkg__",
         "//src/devices:__subpackages__",
+        "//src/graphics/display/lib/driver-utils:__pkg__",
         "//src/media:__subpackages__",
         "//vendor/google:__subpackages__",
     ],

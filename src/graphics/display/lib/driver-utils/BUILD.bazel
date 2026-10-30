@@ -1,0 +1,58 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/cc:fx_cc_test.bzl", "fx_cc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+# @bazel2gn:skip
+test_suite(
+    name = "tests",
+    visibility = ["//src/graphics/display:__pkg__"],
+)
+
+fx_cc_library(
+    name = "driver-utils",
+    srcs = ["scoped-value-change.cc"],
+    hdrs = [
+        "poll-until.h",
+        "post-task.h",
+        "scoped-value-change.h",
+    ],
+    visibility = [
+        "//src/graphics/display/drivers/amlogic-display:__pkg__",
+        "//src/graphics/display/drivers/coordinator:__pkg__",
+        "//src/graphics/display/drivers/intel-display:__pkg__",
+    ],
+    deps = [
+        "//zircon/system/ulib/fbl",
+        "//zircon/system/ulib/zx",
+    ],
+    alwayslink = True,
+)
+
+fx_cc_test(
+    name = "driver-utils-test",
+    srcs = [
+        "poll-until-test.cc",
+        "post-task-test.cc",
+        "scoped-value-change-test.cc",
+    ],
+    deps = [
+        ":driver-utils",
+        "//sdk/lib/async-loop:async-loop-default",
+        "//src/lib/fxl/test:gtest_main",
+        "//src/lib/testing/predicates",
+        "@com_google_googletest//:gtest",  # @bazel2gn:path_overwrite://third_party/googletest:gtest
+    ],
+)
+
+fx_unittest_package(
+    name = "driver-utils-test-package",
+    package_name = "display-driver-utils-test",
+    max_log_severity = "ERROR",
+    unit_tests = [":driver-utils-test"],
+)

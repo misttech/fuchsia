@@ -1,0 +1,25 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library_headers.bzl", "fx_cc_library_headers")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library_headers(
+    name = "device-protocol-display",
+    hdrs = [
+        "include/lib/device-protocol/display-panel.h",
+    ],
+    visibility = [
+        "//sdk/lib/driver/devicetree/visitors/drivers/display/display-panel:__pkg__",
+        "//src/devices/board/drivers:__subpackages__",
+        "//src/graphics/display/drivers/amlogic-display:__pkg__",
+        "//src/ui/backlight/drivers/ti-lp8556:__pkg__",
+        "//src/ui/input/drivers/focaltech:__pkg__",
+        "//src/ui/input/drivers/goodix-gt6853:__pkg__",
+    ],
+    deps = [
+        "//src/zircon/lib/zircon:headers",
+    ],
+)

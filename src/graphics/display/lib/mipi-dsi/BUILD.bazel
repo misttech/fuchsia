@@ -1,0 +1,16 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library_headers.bzl", "fx_cc_library_headers")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library_headers(
+    name = "mipi-dsi",
+    hdrs = ["include/lib/mipi-dsi/mipi-dsi.h"],
+    visibility = [
+        "//src/graphics/display/drivers/amlogic-display:__pkg__",
+        "//src/graphics/display/lib/designware-dsi:__pkg__",
+    ],
+)
