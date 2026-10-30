@@ -244,13 +244,21 @@ class ZeroFunctionTest(zero_function.ZeroFunctionBaseTest):
         )
 
     def test_transfer_unlink_cancellation(self) -> None:
-        """Verifies transfer unlink/cancellation on bulk OUT and bulk IN."""
-        # Bulk unlink is verified in test_bulk_unlink_transfers (Tests 11 & 12).
-        # Tests 24 & 25 correspond to isochronous and interrupt endpoints, which
-        # are not exposed by the USB zero function.
-        asserts.skip(
-            "Tests 24 & 25 (ISO/INT unlink) skipped; zero function only "
-            "provides bulk endpoints. Bulk unlink is tested via Tests 11 & 12."
+        """Verifies queued bulk OUT transfer unlink/cancellation (Test 24)."""
+        dev_node = self.require_dev_node()
+        _LOGGER.info(
+            "Executing Queued Bulk OUT Unlink (Test 24) on %s...",
+            dev_node,
+        )
+
+        results = self.execute_testusb(
+            dev_node=dev_node,
+            test_ids=[24],
+            mode="sourcesink",
+            iterations=5,
+        )
+        self.assert_testusb_success(
+            results, "Queued Bulk OUT Unlink (Test 24) failed"
         )
 
     def test_high_throughput_streaming(self) -> None:
