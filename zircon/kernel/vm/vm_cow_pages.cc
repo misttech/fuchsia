@@ -422,7 +422,7 @@ class VmCowPages::TreeWalkCursor
  public:
   explicit TreeWalkCursor(LockedPtr root)
       : root_(root.get()), cur_(root.get()), cur_locked_(ktl::move(root)) {
-    DEBUG_ASSERT(cur_locked_.locked().life_cycle_ == LifeCycle::Alive);
+    DEBUG_ASSERT(cur_locked_.locked().life_cycle_locked() == LifeCycle::Alive);
     cur_locked_.locked().root_cursor_list_.push_back(this);
     cur_locked_.locked().cur_cursor_list_.push_back(this);
   }
@@ -489,7 +489,7 @@ class VmCowPages::TreeWalkCursor
   // no children, this implies that the cursor is still at the root, and so the entire cursor should
   // be removed.
   void Erase(VmCowPages* root) TA_REQ(root->lock()) {
-    DEBUG_ASSERT(root->children_list_len_ == 0);
+    DEBUG_ASSERT(root->children_list_len_locked() == 0);
     Guard<CriticalMutex> guard{&lock_};
     EraseLocked(root, root);
   }
@@ -559,7 +559,7 @@ class VmCowPages::TreeWalkCursor
     DEBUG_ASSERT(cur_locked_);
     do {
       // If no child then find a sibling instead.
-      if (cur_locked_.locked().children_list_len_ == 0) {
+      if (cur_locked_.locked().children_list_len_locked() == 0) {
         return NextSibling();
       }
 
@@ -582,8 +582,8 @@ class VmCowPages::TreeWalkCursor
             // updated on a dead transition. The fact that a dead transition has not occurred, and
             // that child lock must be acquired to perform said transition, is why it is safe for us
             // to drop child_ref and store a raw LockedPtr of child.
-            DEBUG_ASSERT(parent.locked().life_cycle_ == LifeCycle::Alive &&
-                         child.locked().life_cycle_ == LifeCycle::Alive);
+            DEBUG_ASSERT(parent.locked().life_cycle_locked() == LifeCycle::Alive &&
+                         child.locked().life_cycle_locked() == LifeCycle::Alive);
 
             MoveCurLocked(&parent.locked(), &child.locked(),
                           cumulative_parent_offset_ + child.locked().parent_offset_,
@@ -729,7 +729,7 @@ class VmCowPages::TreeWalkCursor
     // We have the lock to cur_ and so we safely drop the RefPtr, knowing that the object cannot be
     // destroyed without our backlink being updated, which would require someone else to acquire the
     // lock first. All this is only true if the object is presently in the Alive state.
-    DEBUG_ASSERT(cur_locked.locked().life_cycle_ == LifeCycle::Alive);
+    DEBUG_ASSERT(cur_locked.locked().life_cycle_locked() == LifeCycle::Alive);
     cur_locked_ = ktl::move(cur_locked);
     return true;
   }
@@ -1014,11 +1014,6 @@ VmCowPages::VmCowPages(VmCowPagesOptions options, uint32_t pmm_alloc_flags, uint
 #endif
 }
 
-void VmCowPages::TransitionToAliveLocked() {
-  ASSERT(life_cycle_ == LifeCycle::Init);
-  life_cycle_ = LifeCycle::Alive;
-}
-
 fbl::RefPtr<VmCowPages> VmCowPages::MaybeDeadTransition() {
   // We perform a dead transition if |should_dead_transition_locked| is true, but in order to do the
   // transition we require holding multiple locks. Due to races with either other attempts at dead
@@ -1049,7 +1044,7 @@ fbl::RefPtr<VmCowPages> VmCowPages::MaybeDeadTransition() {
       }
       LockedPtr parent(parent_.get());
       // If we are the only child, then no need to check for siblings.
-      if (parent.locked().children_list_len_ == 1) {
+      if (parent.locked().children_list_len_locked() == 1) {
         return DeadTransitionLocked(ktl::move(parent), LockedPtr());
       }
       // First check if there is a sibling to our right.
@@ -1075,7 +1070,7 @@ fbl::RefPtr<VmCowPages> VmCowPages::MaybeDeadTransition() {
       }
       // There is no right sibling, so check if we need to get the left sibling. The left sibling is
       // needed only if the parent is hidden and we are one of exactly two children.
-      if (!parent->is_hidden() || parent.locked().children_list_len_ != 2) {
+      if (!parent->is_hidden() || parent.locked().children_list_len_locked() != 2) {
         return DeadTransitionLocked(parent, LockedPtr());
       }
       // Create a RefPtr to hold the sibling alive and stash the current raw value of parent_ (so we
@@ -1107,7 +1102,7 @@ fbl::RefPtr<VmCowPages> VmCowPages::MaybeDeadTransition() {
     LockedPtr parent(parent_.get());
     // Even if parent didn't change it could have gained new children and we might be needing to
     // acquire a right sibling instead. For simplicity just retry.
-    if (parent.locked().children_list_len_ != 2) {
+    if (parent.locked().children_list_len_locked() != 2) {
       continue;
     }
 
@@ -1118,10 +1113,10 @@ fbl::RefPtr<VmCowPages> VmCowPages::MaybeDeadTransition() {
 fbl::RefPtr<VmCowPages> VmCowPages::DeadTransitionLocked(const LockedPtr& parent,
                                                          const LockedPtr& sibling) {
   AssertCanary();
-  DEBUG_ASSERT(life_cycle_ == LifeCycle::Alive);
+  DEBUG_ASSERT(life_cycle_locked() == LifeCycle::Alive);
   // Change our life cycle to the dying state so that if we need to drop the lock no other attempts
   // are made at performing a DeadTransition.
-  life_cycle_ = LifeCycle::Dying;
+  set_life_cycle_locked(LifeCycle::Dying);
 
   // Close any PageSource. It does not matter if we do this before or after removing the pages, as
   // we hold the lock continuously, but it makes more sense (and is slightly more efficient for the
@@ -1135,7 +1130,7 @@ fbl::RefPtr<VmCowPages> VmCowPages::DeadTransitionLocked(const LockedPtr& parent
 
   // At the point of destruction we should no longer have any mappings or children still
   // referencing us, and by extension our priority count must therefore be back to zero.
-  DEBUG_ASSERT(high_priority_count_ == 0);
+  DEBUG_ASSERT(high_priority_count_locked() == 0);
   CONTINUOUS_ATTRIBUTION_VALIDATION_ASSERT(DebugValidateContinuousAttribution());
   fbl::RefPtr<VmCowPages> deferred;
 
@@ -1172,8 +1167,8 @@ fbl::RefPtr<VmCowPages> VmCowPages::DeadTransitionLocked(const LockedPtr& parent
   DEBUG_ASSERT(cur_cursor_list_.is_empty());
 
   // Due to the potential lock dropping earlier double check our life_cycle_ is what we expect.
-  DEBUG_ASSERT(life_cycle_ == LifeCycle::Dying);
-  life_cycle_ = LifeCycle::Dead;
+  DEBUG_ASSERT(life_cycle_locked() == LifeCycle::Dying);
+  set_life_cycle_locked(LifeCycle::Dead);
   return deferred;
 }
 
@@ -1195,7 +1190,7 @@ VmCowPages::~VmCowPages() {
   // A cow pages can only be destructed if it is either still in the Init state, suggesting
   // something when wrong with completing construction, or if it is fully in the Dead state, nothing
   // in between.
-  DEBUG_ASSERT(life_cycle_ == LifeCycle::Init || life_cycle_ == LifeCycle::Dead);
+  DEBUG_ASSERT(life_cycle_locked() == LifeCycle::Init || life_cycle_locked() == LifeCycle::Dead);
   // The discardable tracker is unlinked explicitly in the destructor to ensure that no RefPtrs can
   // be constructed to the VmCowPages from here. See comment in
   // DiscardableVmoTracker::DebugDiscardablePageCounts that depends upon this being here instead of
@@ -1367,7 +1362,7 @@ bool VmCowPages::DedupZeroPage(vm_page_t* page, uint64_t offset) {
   Guard<CriticalMutex> guard{lock()};
 
   // Forbid zero page deduping if this is high priority.
-  if (high_priority_count_ != 0) {
+  if (high_priority_count_locked() != 0) {
     return false;
   }
 
@@ -1429,7 +1424,7 @@ bool VmCowPages::DedupZeroPage(vm_page_t* page, uint64_t offset) {
     vm_page_t* released_page = old_page.ReleasePage();
     RemovePageLocked(released_page, deferred);
 
-    reclamation_event_count_++;
+    set_reclamation_event_count_locked(ReclamationEventCountLocked() + 1);
     CONTINUOUS_ATTRIBUTION_VALIDATION_ASSERT(DebugValidateContinuousAttribution());
     return true;
   }
@@ -1481,8 +1476,8 @@ void VmCowPages::DropChildLocked(VmCowPages* child) {
 
   [[maybe_unused]] VmCowPages* erased = children_list_.erase(*child);
   DEBUG_ASSERT(erased == child);
-  DEBUG_ASSERT(children_list_len_ > 0);
-  --children_list_len_;
+  DEBUG_ASSERT(children_list_len_locked() > 0);
+  set_children_list_len_locked(children_list_len_locked() - 1);
 }
 
 void VmCowPages::AddChildLocked(VmCowPages* child, uint64_t offset, uint64_t parent_limit) {
@@ -1504,7 +1499,7 @@ void VmCowPages::AddChildLocked(VmCowPages* child, uint64_t offset, uint64_t par
 
   // If the child has a non-zero high priority count, then it is counting as an incoming edge to our
   // count.
-  if (child->high_priority_count_ > 0) {
+  if (child->high_priority_count_locked() > 0) {
     PriorityChanger pc(1, this);
     AssertHeld(pc.lock_ref());
     // Why can we be sure there are no loaned pages in `this`? The only callers of
@@ -1520,7 +1515,7 @@ void VmCowPages::AddChildLocked(VmCowPages* child, uint64_t offset, uint64_t par
 
   child->parent_ = fbl::RefPtr(this);
   children_list_.push_front(child);
-  children_list_len_++;
+  set_children_list_len_locked(children_list_len_locked() + 1);
 }
 
 VmCowPages::ParentAndRange VmCowPages::FindParentAndRangeForCloneLocked(
@@ -1606,8 +1601,8 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CloneNewHiddenParentLocked(
   DEBUG_ASSERT(!is_hidden());
   // If `parent` is to be the new child's parent then it must become hidden first.
   // That requires creating a new hidden node and rotating `parent` to be its child.
-  DEBUG_ASSERT(life_cycle_ == LifeCycle::Alive);
-  DEBUG_ASSERT(children_list_len_ == 0);
+  DEBUG_ASSERT(life_cycle_locked() == LifeCycle::Alive);
+  DEBUG_ASSERT(children_list_len_locked() == 0);
 
   // Invalidate everything, both the pages the clone will and will not be able to see. As hidden
   // nodes are immutable, even for pages that the clone cannot see we want the parent_clone to
@@ -1768,9 +1763,9 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CloneNewHiddenParentLocked(
   // flag. Propagation to the sibling clone is delayed until the once-pinned pages are actually
   // migrated into it (or merged during parent collapse). As all pages have been moved to the
   // hidden parent, we also clear the flag on the current node.
-  if (ever_pinned_.load(ktl::memory_order_relaxed)) {
-    hidden_parent.locked().ever_pinned_.store(true, ktl::memory_order_release);
-    ever_pinned_.store(false, ktl::memory_order_release);
+  if (ever_pinned_locked()) {
+    hidden_parent.locked().set_ever_pinned_locked(true);
+    set_ever_pinned_locked(false);
   }
 
   // Checking this node's hierarchy will also check the parent's hierarchy.
@@ -2047,7 +2042,7 @@ void VmCowPages::RemoveChildLocked(VmCowPages* removed, const LockedPtr& sibling
 
   // Note that due to a previous failed merge a hidden vmo could have a single child, which will
   // also result in just calling DropChildLocked. Only attempt to merge if exactly 2 children.
-  if (!is_hidden() || children_list_len_ != 2) {
+  if (!is_hidden() || children_list_len_locked() != 2) {
     DropChildLocked(removed);
     // Things should be consistent after dropping the child.
     CONTINUOUS_ATTRIBUTION_VALIDATION_ASSERT(DebugValidateContinuousAttribution());
@@ -2072,8 +2067,9 @@ void VmCowPages::RemoveChildLocked(VmCowPages* removed, const LockedPtr& sibling
 
   // We can have a priority count of at most 1, and only if the remaining child is the one
   // contributing to it.
-  DEBUG_ASSERT(high_priority_count_ == 0 ||
-               (high_priority_count_ == 1 && sibling.locked().high_priority_count_ > 0));
+  DEBUG_ASSERT(
+      high_priority_count_locked() == 0 ||
+      (high_priority_count_locked() == 1 && sibling.locked().high_priority_count_locked() > 0));
   // Similarly if we have a priority count, and we have a parent, then our parent must have a
   // non-zero count.
   LockedPtr locked_parent;
@@ -2081,7 +2077,8 @@ void VmCowPages::RemoveChildLocked(VmCowPages* removed, const LockedPtr& sibling
     locked_parent = LockedPtr(parent_.get());
   }
   if (locked_parent) {
-    DEBUG_ASSERT(high_priority_count_ == 0 || locked_parent.locked().high_priority_count_ != 0);
+    DEBUG_ASSERT(high_priority_count_locked() == 0 ||
+                 locked_parent.locked().high_priority_count_locked() != 0);
   }
   // If our child has a non-zero count, then it is propagating a +1 count to us, and we in turn are
   // propagating a +1 count to our parent. In the final arrangement after ReplaceChildLocked then
@@ -2091,7 +2088,7 @@ void VmCowPages::RemoveChildLocked(VmCowPages* removed, const LockedPtr& sibling
   // that our count is zero, so subtract of any count that we might have.
 
   if (is_high_memory_priority_locked()) {
-    PriorityChanger pc(-high_priority_count_, this);
+    PriorityChanger pc(-high_priority_count_locked(), this);
     AssertHeld(pc.lock_ref());
     pc.ChangeSingleHighPriorityCountLocked();
   }
@@ -2123,7 +2120,7 @@ bool VmCowPages::MergeContentWithChildLocked() {
   // consequence that have no been considered, ensure we are not in this case.
   DEBUG_ASSERT(page_source_type() == PageSourceType::Anonymous);
 
-  DEBUG_ASSERT(children_list_len_ == 1);
+  DEBUG_ASSERT(children_list_len_locked() == 1);
 
   VmCowPages& child = children_list_.front();
   AssertHeld(child.lock_ref());
@@ -2242,8 +2239,8 @@ bool VmCowPages::MergeContentWithChildLocked() {
 
   // During parent collapse/merge, any remaining once-pinned pages from the parent are
   // migrated to the child, so the child must inherit the ever_pinned_ flag.
-  if (ever_pinned_.load(ktl::memory_order_relaxed)) {
-    child.ever_pinned_.store(true, ktl::memory_order_release);
+  if (ever_pinned_locked()) {
+    child.set_ever_pinned_locked(true);
   }
 
   // We don't check the hierarchy because it is inconsistent at this point.
@@ -2278,7 +2275,7 @@ void VmCowPages::DumpLocked(uint depth, bool verbose) const {
   printf("cow_pages %p %ssize %#" PRIx64 " offset %#" PRIx64 " limit %#" PRIx64
          " content pages %zu compressed pages %zu ref %d parent %p num children %u\n",
          this, node_type, size_, parent_offset_, parent_limit_, page_count, compressed_count,
-         ref_count_debug(), parent_.get(), children_list_len_);
+         ref_count_debug(), parent_.get(), children_list_len_locked());
 
   if (page_source_) {
     for (uint i = 0; i < depth + 1; ++i) {
@@ -2461,7 +2458,7 @@ zx::result<VmCowPages::AddPageTransaction> VmCowPages::BeginAddPageLocked(
 zx_status_t VmCowPages::CheckOverwriteConditionsLocked(uint64_t offset, const VmPageOrMarker& slot,
                                                        CanOverwriteSlot overwrite) {
   // Pages can be added as part of Init, but not once we transition to dead.
-  DEBUG_ASSERT(life_cycle_ != LifeCycle::Dead);
+  DEBUG_ASSERT(life_cycle_locked() != LifeCycle::Dead);
 
   if (offset >= size_) {
     return ZX_ERR_OUT_OF_RANGE;
@@ -2731,8 +2728,8 @@ zx_status_t VmCowPages::CloneCowPageLocked(uint64_t offset, VmPageDoublyLinkedLi
     // Page is being migrated from a once-pinned hidden parent into a sibling child.
     // Sibling child must now carry the ever_pinned_ flag so that delayed reuse is correctly
     // triggered if it later frees the page.
-    if (page_owner->ever_pinned_.load(ktl::memory_order_relaxed)) {
-      ever_pinned_.store(true, ktl::memory_order_release);
+    if (page_owner->ever_pinned_locked()) {
+      set_ever_pinned_locked(true);
     }
   }
 
@@ -3920,7 +3917,7 @@ zx::result<VmCowPages::LookupCursor> VmCowPages::GetLookupCursorLocked(VmCowRang
   DEBUG_ASSERT(!is_hidden());
   DEBUG_ASSERT(!range.is_empty());
   DEBUG_ASSERT(range.is_page_aligned());
-  DEBUG_ASSERT(life_cycle_ == LifeCycle::Alive);
+  DEBUG_ASSERT(life_cycle_locked() == LifeCycle::Alive);
 
   if (unlikely(range.offset >= size_ || !range.IsBoundedBy(size_))) {
     return zx::error{ZX_ERR_OUT_OF_RANGE};
@@ -4025,7 +4022,7 @@ zx_status_t VmCowPages::PinRangeLocked(VmCowRange range) {
   DEBUG_ASSERT(range.is_page_aligned());
   DEBUG_ASSERT(range.IsBoundedBy(size_));
 
-  ever_pinned_.store(true, ktl::memory_order_release);
+  set_ever_pinned_locked(true);
 
   // Tracks our expected page offset when iterating to ensure all pages are present.
   uint64_t next_offset = range.offset;
@@ -4066,7 +4063,7 @@ zx_status_t VmCowPages::PinRangeLocked(VmCowRange range) {
 
   const uint64_t actual = (next_offset - range.offset) / kPageSize;
   // Count whatever pages we pinned, in the failure scenario this will get decremented on the unpin.
-  pinned_page_count_ += actual;
+  set_pinned_page_count_locked(pinned_page_count_locked() + actual);
 
   if (status == ZX_OK) {
     // If the missing pages were at the end of the range (or the range was empty) then our iteration
@@ -4765,7 +4762,7 @@ void VmCowPages::MoveToNotPinnedLocked(vm_page_t* page, uint64_t offset) {
     // eviction; only Clean pages can be evicted. Pages in AwaitingClean and Dirty are protected
     // from eviction in the Dirty queue.
     if (is_page_clean(page)) {
-      if (high_priority_count_ != 0) {
+      if (high_priority_count_locked() != 0) {
         // If this VMO is high priority then do not place in the pager backed queue as that is
         // reclaimable, place in the high priority queue instead.
         pq->MoveToHighPriority(page);
@@ -4780,7 +4777,7 @@ void VmCowPages::MoveToNotPinnedLocked(vm_page_t* page, uint64_t offset) {
     // Place pages from contiguous VMOs in the wired queue, as they are notionally pinned until the
     // owner explicitly releases them.
     if (can_decommit_zero_pages()) {
-      if (high_priority_count_ != 0 && !pq->ReclaimIsOnlyPagerBacked()) {
+      if (high_priority_count_locked() != 0 && !pq->ReclaimIsOnlyPagerBacked()) {
         // If anonymous pages are reclaimable, and this VMO is high priority, then places our pages
         // in the high priority queue instead of the anonymous one to avoid reclamation.
         pq->MoveToHighPriority(page);
@@ -4814,7 +4811,7 @@ void VmCowPages::SetNotPinnedLocked(vm_page_t* page, uint64_t offset) {
     // eviction; only Clean pages can be evicted. Pages in AwaitingClean and Dirty are protected
     // from eviction in the Dirty queue.
     if (is_page_clean(page)) {
-      if (high_priority_count_ != 0) {
+      if (high_priority_count_locked() != 0) {
         // If this VMO is high priority then do not place in the pager backed queue as that is
         // reclaimable, place in the high priority queue instead.
         pq->SetHighPriority(page, this, offset);
@@ -4831,7 +4828,7 @@ void VmCowPages::SetNotPinnedLocked(vm_page_t* page, uint64_t offset) {
     // Place pages from contiguous VMOs in the wired queue, as they are notionally pinned until the
     // owner explicitly releases them.
     if (can_decommit_zero_pages()) {
-      if (high_priority_count_ != 0 && !pq->ReclaimIsOnlyPagerBacked()) {
+      if (high_priority_count_locked() != 0 && !pq->ReclaimIsOnlyPagerBacked()) {
         // If anonymous pages are reclaimable, and this VMO is high priority, then places our pages
         // in the high priority queue instead of the anonymous one to avoid reclamation.
         pq->SetHighPriority(page, this, offset);
@@ -5161,10 +5158,10 @@ void PriorityChanger::PrepareMayNotAlreadyBeHighPriority() {
 // static
 int64_t PriorityChanger::ChangeSingleHighPriorityCountLockedHelper(
     VmCowPages& current, int64_t delta, ktl::optional<VmCowPages::DeferredOps>& root_deferred) {
-  const bool was_zero = current.high_priority_count_ == 0;
-  current.high_priority_count_ += delta;
-  DEBUG_ASSERT(current.high_priority_count_ >= 0);
-  const bool is_zero = current.high_priority_count_ == 0;
+  const bool was_zero = current.high_priority_count_locked() == 0;
+  current.set_high_priority_count_locked(current.high_priority_count_locked() + delta);
+  DEBUG_ASSERT(current.high_priority_count_locked() >= 0);
+  const bool is_zero = current.high_priority_count_locked() == 0;
   // Any change to or from zero means we need to add or remove a count from our parent (if we have
   // one) and potentially move pages in the page queues.
   if (is_zero && !was_zero) {
@@ -5330,7 +5327,10 @@ void VmCowPages::UnpinLocked(VmCowRange range, DeferredOps* deferred) {
   }
 #endif
 
-  bool overflow = sub_overflow(pinned_page_count_, unpin_count, &pinned_page_count_);
+  uint64_t old_pinned_count = pinned_page_count_locked();
+  uint64_t new_pinned_count;
+  bool overflow = sub_overflow(old_pinned_count, unpin_count, &new_pinned_count);
+  set_pinned_page_count_locked(new_pinned_count);
   ASSERT(!overflow);
 
   return;
@@ -5362,7 +5362,7 @@ bool VmCowPages::AnyPagesPinnedLocked(uint64_t offset, size_t len) {
   const uint64_t start_page_offset = offset;
   const uint64_t end_page_offset = offset + len;
 
-  if (pinned_page_count_ == 0) {
+  if (pinned_page_count_locked() == 0) {
     return false;
   }
 
@@ -5555,7 +5555,7 @@ zx_status_t VmCowPages::Resize(uint64_t s) {
 
       // If the tail of a parent disappears, the children shouldn't be able to see that region
       // again, even if the parent is later reenlarged. So update the children's parent limits.
-      if (children_list_len_ != 0) {
+      if (children_list_len_locked() != 0) {
         // The only scenario where we can have children is if this is a pager backed hierarchy, in
         // which case the DeferredOps constructed at the top of this function holds the pager
         // hierarchy lock, which is held over all resize operations. Due to this lock being held we
@@ -6997,7 +6997,7 @@ void VmCowPages::RangeChangeUpdateLocked(VmCowRange range, RangeChangeOp op,
   AssertCanary();
   // If we have children (or this is a pager backed hierarchy) then potentially need to perform
   // deferred operations.
-  if (children_list_len_ != 0 || root_has_page_source()) {
+  if (children_list_len_locked() != 0 || root_has_page_source()) {
     if (deferred) {
       deferred->AddRange(this, range, op);
     } else {
@@ -7019,7 +7019,7 @@ void VmCowPages::RangeChangeUpdateMappingsLocked(VmObjectPaged& paged, VmCowRang
   DEBUG_ASSERT(range.is_page_aligned());
   AssertHeld(paged.lock_ref());
 
-  if (pinned_page_count_ == 0) {
+  if (pinned_page_count_locked() == 0) {
     paged.RangeChangeUpdateLocked(range, op);
   } else {
     // The operation is permitted for any page unless it is mapped within the kernel address space
@@ -7155,7 +7155,7 @@ void VmCowPages::RangeChangeUpdateCowChildren(LockedPtr self, VmCowRange range, 
     return;
   }
 
-  if (self.locked().children_list_len_ == 0) {
+  if (self.locked().children_list_len_locked() == 0) {
     return;
   }
   TreeWalkCursor cursor(ktl::move(self));
@@ -7228,10 +7228,10 @@ VmCowReclaimResult VmCowPages::ReclaimRangeForEviction(uint64_t offset, size_t l
     DEBUG_ASSERT(is_page_dirty_tracked(page));
 
     // High priority VMOs cannot have loaned pages.
-    DEBUG_ASSERT(!page->is_loaned() || high_priority_count_ == 0);
+    DEBUG_ASSERT(!page->is_loaned() || high_priority_count_locked() == 0);
 
     // Not allowed to reclaim range if high priority.
-    if (high_priority_count_ != 0) {
+    if (high_priority_count_locked() != 0) {
       Pmm::Node().GetPageQueues()->MarkAccessed(page);
       vm_reclaim_evict_fail_page_vmo_high_priority.Add(1);
       return false;
@@ -7336,7 +7336,7 @@ VmCowReclaimResult VmCowPages::ReclaimRangeForEviction(uint64_t offset, size_t l
       static_cast<uint32_t>(num_evicted_pages + num_evicted_loaned));
   vm_reclaim_evict_range.Add(1);
   vm_reclaim_evict_range_pages.Add(static_cast<uint32_t>(num_evicted_pages + num_evicted_loaned));
-  reclamation_event_count_++;
+  set_reclamation_event_count_locked(ReclamationEventCountLocked() + 1);
   CONTINUOUS_ATTRIBUTION_VALIDATION_ASSERT(DebugValidateContinuousAttribution());
   return fit::ok(VmCowReclaimSuccess{
       .type = VmCowReclaimSuccess::Type::Evict,
@@ -7366,7 +7366,7 @@ zx_status_t VmCowPages::EvictLoanedPage(vm_page_t* page, uint64_t offset) {
   DEBUG_ASSERT(!is_page_dirty(page));
 
   // High priority VMOs cannot have loaned pages.
-  DEBUG_ASSERT(high_priority_count_ == 0);
+  DEBUG_ASSERT(high_priority_count_locked() == 0);
 
   DEBUG_ASSERT(is_page_dirty_tracked(page));
 
@@ -7430,7 +7430,7 @@ VmCowReclaimResult VmCowPages::ReclaimPageForCompression(vm_page_t* page, uint64
       }
 
       // Not allowed to reclaim if high priority.
-      if (high_priority_count_ != 0) {
+      if (high_priority_count_locked() != 0) {
         Pmm::Node().GetPageQueues()->MarkAccessed(page);
         vm_reclaim_compress_fail_vmo_high_priority.Add(1);
         return fit::error(VmCowReclaimFailure::Other);
@@ -7495,7 +7495,7 @@ VmCowReclaimResult VmCowPages::ReclaimPageForCompression(vm_page_t* page, uint64
         // When compression succeeded, the |compressor| internally copied the page's metadata from
         // the temp reference to the new reference so we don't need to manually copy it here.
         old_ref = VmPageOrMarkerRef(slot).SwapReferenceForReference(*ref);
-        reclamation_event_count_++;
+        set_reclamation_event_count_locked(ReclamationEventCountLocked() + 1);
         reclaimed = true;
         vm_reclaim_compress_success.Add(1);
       } else if (VmCompressor::FailTag* fail =
@@ -7541,7 +7541,7 @@ VmCowReclaimResult VmCowPages::ReclaimPageForCompression(vm_page_t* page, uint64
           *slot = VmPageOrMarker::Marker(share_count);
           vm_vmo_compress_marker.Add(1);
         }
-        reclamation_event_count_++;
+        set_reclamation_event_count_locked(ReclamationEventCountLocked() + 1);
         reclaimed = true;
         vm_reclaim_compress_zero.Add(1);
       }
@@ -8059,7 +8059,7 @@ zx::result<uint64_t> VmCowPages::DiscardPagesLocked(DeferredOps& deferred) {
   zx::result<uint64_t> result = UnmapAndFreePagesLocked(0, size_, deferred);
 
   if (result.is_ok()) {
-    reclamation_event_count_++;
+    set_reclamation_event_count_locked(ReclamationEventCountLocked() + 1);
 
     // Set state to discarded.
     discardable_tracker_->SetDiscardedLocked(lock_ref());
@@ -8131,7 +8131,7 @@ VmCowPages::DeferredOps::DeferredOps(VmCowPages* self) : self_(self) {
     fbl::RefPtr<PageSource> source;
     {
       Guard<CriticalMutex> guard{AssertOrderedLock, self_->lock(), self_->lock_order()};
-      if (self_->life_cycle_ != LifeCycle::Alive) {
+      if (self_->life_cycle_locked() != LifeCycle::Alive) {
         // Although the C++ object is guaranteed to be valid by the caller, it's possible that VMO
         // has transitioned into a dead state. This race can occur typically due to reclamation
         // having to first acquire a RefPtr, then check acquire the lock, then check if the page is

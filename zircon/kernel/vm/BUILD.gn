@@ -1482,6 +1482,7 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "VmCowPages",
     "VmCowPages_CanOverwriteSlot",
     "VmCowPages_DeferredOps",
+    "VmCowPages_LifeCycle",
     "VmCowPages_LookupCursor",
     "VmCowPagesLookupCursorResult",
     "VmCowPagesOptions",

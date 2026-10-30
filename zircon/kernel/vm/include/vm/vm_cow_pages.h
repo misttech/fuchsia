@@ -274,7 +274,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
 
   bool is_parent_hidden_locked() const TA_REQ(lock()) { return parent_ && parent_->is_hidden(); }
 
-  bool has_no_children_locked() const TA_REQ(lock()) { return children_list_len_ == 0; }
+  bool has_no_children_locked() const TA_REQ(lock());
 
   bool is_discardable() const { return !!discardable_tracker_; }
 
@@ -335,7 +335,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
     // We also don't want to borrow a page that might get pinned again since we want to mitigate the
     // possibility of an invalid DMA-after-free.
     const bool excluded_from_borrowing_for_latency_reasons =
-        high_priority_count_ != 0 || ever_pinned_.load(ktl::memory_order_relaxed);
+        high_priority_count_locked() != 0 || ever_pinned_locked();
     return !excluded_from_borrowing_for_latency_reasons;
   }
 
@@ -386,16 +386,13 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
       return;
     }
     DEBUG_ASSERT(page_source_type() == PageSourceType::UserPager);
-    pager_stats_modified_ = true;
+    set_pager_stats_modified_locked(true);
   }
 
-  bool is_high_memory_priority_locked() const TA_REQ(lock()) {
-    DEBUG_ASSERT(high_priority_count_ >= 0);
-    return high_priority_count_ != 0;
-  }
+  bool is_high_memory_priority_locked() const TA_REQ(lock());
 
   // See description on |pinned_page_count_| for meaning.
-  uint64_t pinned_page_count_locked() const TA_REQ(lock()) { return pinned_page_count_; }
+  uint64_t pinned_page_count_locked() const TA_REQ(lock());
 
   // Sets the VmObjectPaged backlink for this copy-on-write node.
   // Currently it is assumed that all nodes always have backlinks with the 1:1 hierarchy mapping,
@@ -408,7 +405,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
     return page_list_.HeapAllocationBytes();
   }
 
-  uint64_t ReclamationEventCountLocked() const TA_REQ(lock()) { return reclamation_event_count_; }
+  uint64_t ReclamationEventCountLocked() const TA_REQ(lock());
 
   void DetachSource();
 
@@ -532,20 +529,20 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
     AssertCanary();
     DEBUG_ASSERT(stats);
     // The modified state should only be set for VMOs directly backed by a pager.
-    DEBUG_ASSERT(!pager_stats_modified_ || page_source_type() == PageSourceType::UserPager);
+    DEBUG_ASSERT(!pager_stats_modified_locked() || page_source_type() == PageSourceType::UserPager);
 
     if (page_source_type() != PageSourceType::UserPager) {
       return ZX_ERR_NOT_SUPPORTED;
     }
 
-    stats->modified = pager_stats_modified_ ? ZX_PAGER_VMO_STATS_MODIFIED : 0;
+    stats->modified = pager_stats_modified_locked() ? ZX_PAGER_VMO_STATS_MODIFIED : 0;
     if (reset) {
       ResetPagerVmoStatsLocked();
     }
     return ZX_OK;
   }
 
-  void ResetPagerVmoStatsLocked() TA_REQ(lock()) { pager_stats_modified_ = false; }
+  void ResetPagerVmoStatsLocked() TA_REQ(lock());
 
   // See VmObject::WritebackBegin
   zx_status_t WritebackBeginLocked(VmCowRange range, bool is_zero_range) TA_REQ(lock());
@@ -912,8 +909,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   PmmOptDelayReuse should_delay_reuse_on_free() const {
     // If this object has ever held a pinned page, we want to delay reuse of its pages to reduced
     // impact of a "bad DMA" bug should one occur.
-    return ever_pinned_.load(ktl::memory_order_acquire) ? PmmOptDelayReuse::Yes
-                                                        : PmmOptDelayReuse::Default;
+    return ever_pinned() ? PmmOptDelayReuse::Yes : PmmOptDelayReuse::Default;
   }
 
   static void DebugDumpReclaimCounters();
@@ -1022,7 +1018,8 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
 
   // Helper for determining whether the current node should perform a dead transition or not.
   bool should_dead_transition_locked() const TA_REQ(lock()) {
-    return !paged_ref_ && children_list_len_ == 0 && life_cycle_ == LifeCycle::Alive;
+    return !paged_ref_ && children_list_len_locked() == 0 &&
+           life_cycle_locked() == LifeCycle::Alive;
   }
 
   // Transitions from Alive->Dead, freeing pages and cleaning up state. Responsibility of the caller
@@ -1034,10 +1031,8 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
       TA_REQ(lock());
 
   // A hidden VmCowPages has no associated VMO.
-  bool is_hidden() const { return !!(options() & VmCowPagesOptions::kHidden); }
-  bool can_decommit_zero_pages() const {
-    return !(options() & VmCowPagesOptions::kCannotDecommitZeroPages);
-  }
+  bool is_hidden() const;
+  bool can_decommit_zero_pages() const;
 
   PageSourceType page_source_type() const {
     if (!page_source_) {
@@ -1062,7 +1057,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
 
     // Children may not exist on the current node, as the bidirectional clone path cannot presently
     // fix them up.
-    if (children_list_len_ != 0) {
+    if (children_list_len_locked() != 0) {
       return false;
     }
 
@@ -1590,9 +1585,6 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   void AssertCanary() const;
   OpaqueStorage<kVmCowPagesStateSize, kVmCowPagesStateAlign> opaque_storage_;
 
-  // length of children_list_
-  uint32_t children_list_len_ TA_GUARDED(lock()) = 0;
-
   mutable LOCK_DEP_INSTRUMENT(VmCowPages, CriticalMutex, lockdep::LockFlagsNestable) lock_;
 
   // When acquiring multiple locks they must be acquired in order from lowest to highest. To support
@@ -1676,15 +1668,8 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   fbl::TaggedDoublyLinkedList<TreeWalkCursor*, RootListTag> root_cursor_list_ TA_GUARDED(lock());
   fbl::TaggedDoublyLinkedList<TreeWalkCursor*, CurListTag> cur_cursor_list_ TA_GUARDED(lock());
 
-  // Counts the total number of pages pinned by ::CommitRange. If one page is pinned n times, it
-  // contributes n to this count.
-  uint64_t pinned_page_count_ TA_GUARDED(lock()) = 0;
-
   // The page source, if any.
   const fbl::RefPtr<PageSource> page_source_;
-
-  // Count reclamation events so that we can report them to the user.
-  uint64_t reclamation_event_count_ TA_GUARDED(lock()) = 0;
 
   // a tree of pages
   VmPageList page_list_ TA_GUARDED(lock());
@@ -1708,42 +1693,6 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // Non-null if this is a discardable VMO.
   const ktl::unique_ptr<DiscardableVmoTracker> discardable_tracker_;
 
-  // Count of how many references to this VMO are requesting this be high priority, where references
-  // include VmMappings and children. If this is >0 then it is considered high priority and any kind
-  // of reclamation will be disabled. Further, if this is >0 and this has a parent, then this will
-  // contribute a +1 count towards its parent.
-  //
-  // Due to the life cycle of a VmCowPages it is expected that at the point this is destroyed it has
-  // a count of 0. This is because that to be destroyed we must have no mappings and no children,
-  // i.e. no references, and so nothing can be contributing to a positive count.
-  //
-  // It is an error for this value to ever become negative.
-  int64_t high_priority_count_ TA_GUARDED(lock()) = 0;
-
-  // This is a one-way bool (false -> true) indicating whether this object has ever held pinned
-  // pages.
-  //
-  // With this bool we achieve these things:
-  //  * Avoid using loaned pages for a VMO that will just get pinned and replace the loaned pages
-  //    with non-loaned pages again, possibly repeatedly.
-  //  * Avoid increasing pin latency in the (more) common case of pinning a VMO the 2nd or
-  //    subsequent times (vs the 1st time).
-  //  * Once we have any form of active sweeping (of data from non-loaned to loaned physical pages)
-  //    this bool is part of mitigating any potential DMA-while-not-pinned (which is not permitted
-  //    but is also difficult to detect or prevent without an IOMMU).
-  //
-  // This value is an atomic because it can be read without holding the lock.
-  //
-  // The rules for accessing this value are as follows:
-  //  * Writes must have release semantics and be performed while holding |lock()|.
-  //  * For reads performed while holding |lock()|, relaxed semantics are sufficient.
-  //  * All other reads must use acquire semantics.
-  ktl::atomic<bool> ever_pinned_ = false;
-
-  // Tracks whether this VMO was modified (written / resized) if backed by a pager. This gets reset
-  // to false if QueryPagerVmoStatsLocked() is called with |reset| set to true.
-  bool pager_stats_modified_ TA_GUARDED(lock()) = false;
-
   // Tracks the life cycle of the VmCowPages. The primary purpose of the life cycle is to create an
   // invariant that by the time a VmCowPages destructor runs it does not contain any pages. This is
   // achieved by requiring an explicit Dead transition that provides a point to perform cleanup.
@@ -1754,7 +1703,20 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
     Dying,
     Dead,
   };
-  LifeCycle life_cycle_ TA_GUARDED(lock()) = LifeCycle::Init;
+
+  uint32_t children_list_len_locked() const TA_REQ(lock());
+  void set_children_list_len_locked(uint32_t v) TA_REQ(lock());
+  void set_pinned_page_count_locked(uint64_t v) TA_REQ(lock());
+  void set_reclamation_event_count_locked(uint64_t v) TA_REQ(lock());
+  int64_t high_priority_count_locked() const TA_REQ(lock());
+  void set_high_priority_count_locked(int64_t v) TA_REQ(lock());
+  bool pager_stats_modified_locked() const TA_REQ(lock());
+  void set_pager_stats_modified_locked(bool v) TA_REQ(lock());
+  LifeCycle life_cycle_locked() const TA_REQ(lock());
+  void set_life_cycle_locked(LifeCycle v) TA_REQ(lock());
+  bool ever_pinned() const;
+  bool ever_pinned_locked() const TA_REQ(lock());
+  void set_ever_pinned_locked(bool v) TA_REQ(lock());
 
   // PageCache instance for COW page allocations.
   static page_cache::PageCache page_cache_;
@@ -2334,6 +2296,29 @@ void rust_vm_cow_pages_destruct(void* storage);
 void rust_vm_cow_pages_assert_canary(const VmCowPages* cow);
 __PURE uint32_t rust_vm_cow_pages_pmm_alloc_flags(const VmCowPages* cow);
 __PURE uint32_t rust_vm_cow_pages_options(const VmCowPages* cow);
+__PURE uint32_t rust_vm_cow_pages_children_list_len_locked(const VmCowPages* cow);
+void rust_vm_cow_pages_set_children_list_len_locked(const VmCowPages* cow, uint32_t v);
+__PURE uint64_t rust_vm_cow_pages_pinned_page_count_locked(const VmCowPages* cow);
+void rust_vm_cow_pages_set_pinned_page_count_locked(const VmCowPages* cow, uint64_t v);
+__PURE uint64_t rust_vm_cow_pages_reclamation_event_count_locked(const VmCowPages* cow);
+void rust_vm_cow_pages_set_reclamation_event_count_locked(const VmCowPages* cow, uint64_t v);
+__PURE int64_t rust_vm_cow_pages_high_priority_count_locked(const VmCowPages* cow);
+void rust_vm_cow_pages_set_high_priority_count_locked(const VmCowPages* cow, int64_t v);
+__PURE bool rust_vm_cow_pages_pager_stats_modified_locked(const VmCowPages* cow);
+void rust_vm_cow_pages_set_pager_stats_modified_locked(const VmCowPages* cow, bool v);
+// LifeCycle is a private member of VmCowPages, so it crosses the FFI boundary as its underlying
+// uint8_t; the private forwarders below cast to and from the enum.
+__PURE uint8_t rust_vm_cow_pages_life_cycle_locked(const VmCowPages* cow);
+void rust_vm_cow_pages_set_life_cycle_locked(const VmCowPages* cow, uint8_t v);
+bool rust_vm_cow_pages_ever_pinned(const VmCowPages* cow);
+__PURE bool rust_vm_cow_pages_ever_pinned_locked(const VmCowPages* cow);
+void rust_vm_cow_pages_set_ever_pinned_locked(const VmCowPages* cow, bool v);
+__PURE bool rust_vm_cow_pages_is_high_memory_priority_locked(const VmCowPages* cow);
+__PURE bool rust_vm_cow_pages_has_no_children_locked(const VmCowPages* cow);
+void rust_vm_cow_pages_transition_to_alive_locked(const VmCowPages* cow);
+void rust_vm_cow_pages_reset_pager_vmo_stats_locked(const VmCowPages* cow);
+__PURE bool rust_vm_cow_pages_is_hidden(const VmCowPages* cow);
+__PURE bool rust_vm_cow_pages_can_decommit_zero_pages(const VmCowPages* cow);
 }
 
 inline void VmCowPages::AssertCanary() const { rust_vm_cow_pages_assert_canary(this); }
@@ -2343,4 +2328,65 @@ inline uint32_t VmCowPages::pmm_alloc_flags() const {
 inline VmCowPagesOptions VmCowPages::options() const {
   return static_cast<VmCowPagesOptions>(rust_vm_cow_pages_options(this));
 }
+
+inline uint32_t VmCowPages::children_list_len_locked() const {
+  return rust_vm_cow_pages_children_list_len_locked(this);
+}
+inline void VmCowPages::set_children_list_len_locked(uint32_t v) {
+  rust_vm_cow_pages_set_children_list_len_locked(this, v);
+}
+inline uint64_t VmCowPages::pinned_page_count_locked() const {
+  return rust_vm_cow_pages_pinned_page_count_locked(this);
+}
+inline void VmCowPages::set_pinned_page_count_locked(uint64_t v) {
+  rust_vm_cow_pages_set_pinned_page_count_locked(this, v);
+}
+inline uint64_t VmCowPages::ReclamationEventCountLocked() const {
+  return rust_vm_cow_pages_reclamation_event_count_locked(this);
+}
+inline void VmCowPages::set_reclamation_event_count_locked(uint64_t v) {
+  rust_vm_cow_pages_set_reclamation_event_count_locked(this, v);
+}
+inline int64_t VmCowPages::high_priority_count_locked() const {
+  return rust_vm_cow_pages_high_priority_count_locked(this);
+}
+inline void VmCowPages::set_high_priority_count_locked(int64_t v) {
+  rust_vm_cow_pages_set_high_priority_count_locked(this, v);
+}
+inline bool VmCowPages::pager_stats_modified_locked() const {
+  return rust_vm_cow_pages_pager_stats_modified_locked(this);
+}
+inline void VmCowPages::set_pager_stats_modified_locked(bool v) {
+  rust_vm_cow_pages_set_pager_stats_modified_locked(this, v);
+}
+inline VmCowPages::LifeCycle VmCowPages::life_cycle_locked() const {
+  return static_cast<LifeCycle>(rust_vm_cow_pages_life_cycle_locked(this));
+}
+inline void VmCowPages::set_life_cycle_locked(LifeCycle v) {
+  rust_vm_cow_pages_set_life_cycle_locked(this, static_cast<uint8_t>(v));
+}
+inline bool VmCowPages::ever_pinned() const { return rust_vm_cow_pages_ever_pinned(this); }
+inline bool VmCowPages::ever_pinned_locked() const {
+  return rust_vm_cow_pages_ever_pinned_locked(this);
+}
+inline void VmCowPages::set_ever_pinned_locked(bool v) {
+  rust_vm_cow_pages_set_ever_pinned_locked(this, v);
+}
+inline void VmCowPages::TransitionToAliveLocked() {
+  rust_vm_cow_pages_transition_to_alive_locked(this);
+}
+inline bool VmCowPages::has_no_children_locked() const {
+  return rust_vm_cow_pages_has_no_children_locked(this);
+}
+inline bool VmCowPages::is_high_memory_priority_locked() const {
+  return rust_vm_cow_pages_is_high_memory_priority_locked(this);
+}
+inline void VmCowPages::ResetPagerVmoStatsLocked() {
+  rust_vm_cow_pages_reset_pager_vmo_stats_locked(this);
+}
+inline bool VmCowPages::is_hidden() const { return rust_vm_cow_pages_is_hidden(this); }
+inline bool VmCowPages::can_decommit_zero_pages() const {
+  return rust_vm_cow_pages_can_decommit_zero_pages(this);
+}
+
 #endif  // ZIRCON_KERNEL_VM_INCLUDE_VM_VM_COW_PAGES_H_

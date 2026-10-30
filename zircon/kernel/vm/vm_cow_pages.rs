@@ -22,9 +22,10 @@ use core::marker::{PhantomData, PhantomPinned};
 use core::mem::MaybeUninit;
 use core::pin::Pin;
 use core::ptr::{self, NonNull};
+use core::sync::atomic::{AtomicBool, Ordering};
 use fbl::{Canary, HasRefCount, HasRefCountUpgradeable, Recyclable, RefCounted, RefPtr};
 use kalloc::AllocError;
-use ksync::{KMutex, KMutexGuard, LockClass, LockToken, RawCriticalMutex};
+use ksync::{KCell, KMutex, KMutexGuard, LockClass, LockToken, RawCriticalMutex};
 use pin_init::{PinInit, pin_data, pin_init_from_closure};
 use vm_constants_rs as constants;
 use vm_cow_pages_bindings as bindings;
@@ -985,12 +986,87 @@ impl From<DirtyState> for bindings::VmCowPages_DirtyState {
     }
 }
 
+/// Tracks the life cycle of the VmCowPages. The primary purpose of the life cycle is to create an
+/// invariant that by the time a VmCowPages destructor runs it does not contain any pages. This is
+/// achieved by requiring an explicit Dead transition that provides a point to perform cleanup.
+/// An Init state is introduced to allow for multi step creation that may fail.
+#[repr(u8)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum LifeCycle {
+    Init = 0,
+    Alive = 1,
+    Dying = 2,
+    Dead = 3,
+}
+
+::zr::static_assert!(LifeCycle::Init as u8 == bindings::VmCowPages_LifeCycle_Init);
+::zr::static_assert!(LifeCycle::Alive as u8 == bindings::VmCowPages_LifeCycle_Alive);
+::zr::static_assert!(LifeCycle::Dying as u8 == bindings::VmCowPages_LifeCycle_Dying);
+::zr::static_assert!(LifeCycle::Dead as u8 == bindings::VmCowPages_LifeCycle_Dead);
+::zr::static_assert_size_and_align!(
+    LifeCycle,
+    core::mem::size_of::<bindings::VmCowPages_LifeCycle>(),
+    core::mem::align_of::<bindings::VmCowPages_LifeCycle>(),
+);
+
 #[repr(C)]
-pub struct VmCowPagesState {
+struct VmCowPagesState {
     /// magic value
     canary: Canary<{ fbl::magic(b"VMCP") }>,
     pmm_alloc_flags: u32,
     options: VmCowPagesOptions,
+
+    /// length of children_list_
+    children_list_len: KCell<u32, VmCowPagesLockClass>,
+
+    /// Counts the total number of pages pinned by `commit_range`. If one page is pinned n times, it
+    /// contributes n to this count.
+    pinned_page_count: KCell<u64, VmCowPagesLockClass>,
+
+    /// Count reclamation events so that we can report them to the user.
+    reclamation_event_count: KCell<u64, VmCowPagesLockClass>,
+
+    /// Count of how many references to this VMO are requesting this be high priority, where
+    /// references include VmMappings and children. If this is >0 then it is considered high
+    /// priority and any kind of reclamation will be disabled. Further, if this is >0 and this has
+    /// a parent, then this will contribute a +1 count towards its parent.
+    ///
+    /// Due to the life cycle of a VmCowPages it is expected that at the point this is destroyed it
+    /// has a count of 0. This is because that to be destroyed we must have no mappings and no
+    /// children, i.e. no references, and so nothing can be contributing to a positive count.
+    ///
+    /// It is an error for this value to ever become negative.
+    high_priority_count: KCell<i64, VmCowPagesLockClass>,
+
+    /// Tracks whether this VMO was modified (written / resized) if backed by a pager. This gets
+    /// reset to false if `query_pager_vmo_stats_locked` is called with `reset` set to true.
+    pager_stats_modified: KCell<bool, VmCowPagesLockClass>,
+
+    /// Tracks the life cycle of the VmCowPages. The primary purpose of the life cycle is to create
+    /// an invariant that by the time a VmCowPages destructor runs it does not contain any pages.
+    /// This is achieved by requiring an explicit Dead transition that provides a point to perform
+    /// cleanup. An Init state is introduced to allow for multi step creation that may fail.
+    life_cycle: KCell<LifeCycle, VmCowPagesLockClass>,
+
+    /// This is a one-way bool (false -> true) indicating whether this object has ever held pinned
+    /// pages.
+    ///
+    /// With this bool we achieve these things:
+    ///  * Avoid using loaned pages for a VMO that will just get pinned and replace the loaned pages
+    ///    with non-loaned pages again, possibly repeatedly.
+    ///  * Avoid increasing pin latency in the (more) common case of pinning a VMO the 2nd or
+    ///    subsequent times (vs the 1st time).
+    ///  * Once we have any form of active sweeping (of data from non-loaned to loaned physical
+    ///    pages) this bool is part of mitigating any potential DMA-while-not-pinned (which is not
+    ///    permitted but is also difficult to detect or prevent without an IOMMU).
+    ///
+    /// This value is an atomic because it can be read without holding the lock.
+    ///
+    /// The rules for accessing this value are as follows:
+    ///  * Writes must have release semantics and be performed while holding `lock()`.
+    ///  * For reads performed while holding `lock()`, relaxed semantics are sufficient.
+    ///  * All other reads must use acquire semantics.
+    ever_pinned: AtomicBool,
 }
 
 ::zr::static_assert_size_and_align!(
@@ -1669,6 +1745,181 @@ impl VmCowPages {
             bindings::cpp_vm_cow_pages_debug_dump_reclaim_counters();
         }
     }
+
+    #[inline]
+    fn children_list_len_locked(&self, token: &LockToken<'_, VmCowPagesLockClass>) -> u32 {
+        // SAFETY: The VmCowPages lock is held.
+        unsafe { *self.state().children_list_len.get(token) }
+    }
+
+    #[inline]
+    fn set_children_list_len_locked(
+        &self,
+        token: &mut LockToken<'_, VmCowPagesLockClass>,
+        len: u32,
+    ) {
+        // SAFETY: The VmCowPages lock is held.
+        *unsafe { self.state().children_list_len.get_mut(token) } = len;
+    }
+
+    #[inline]
+    pub(crate) fn has_no_children_locked(
+        &self,
+        token: &LockToken<'_, VmCowPagesLockClass>,
+    ) -> bool {
+        self.children_list_len_locked(token) == 0
+    }
+
+    /// See description on `pinned_page_count` for meaning.
+    #[inline]
+    pub(crate) fn pinned_page_count_locked(
+        &self,
+        token: &LockToken<'_, VmCowPagesLockClass>,
+    ) -> u64 {
+        // SAFETY: The VmCowPages lock is held.
+        unsafe { *self.state().pinned_page_count.get(token) }
+    }
+
+    #[inline]
+    fn set_pinned_page_count_locked(
+        &self,
+        token: &mut LockToken<'_, VmCowPagesLockClass>,
+        count: u64,
+    ) {
+        // SAFETY: The VmCowPages lock is held.
+        *unsafe { self.state().pinned_page_count.get_mut(token) } = count;
+    }
+
+    #[inline]
+    pub(crate) fn reclamation_event_count_locked(
+        &self,
+        token: &LockToken<'_, VmCowPagesLockClass>,
+    ) -> u64 {
+        // SAFETY: The VmCowPages lock is held.
+        unsafe { *self.state().reclamation_event_count.get(token) }
+    }
+
+    #[inline]
+    fn set_reclamation_event_count_locked(
+        &self,
+        token: &mut LockToken<'_, VmCowPagesLockClass>,
+        count: u64,
+    ) {
+        // SAFETY: The VmCowPages lock is held.
+        *unsafe { self.state().reclamation_event_count.get_mut(token) } = count;
+    }
+
+    #[inline]
+    fn high_priority_count_locked(&self, token: &LockToken<'_, VmCowPagesLockClass>) -> i64 {
+        // SAFETY: The VmCowPages lock is held.
+        unsafe { *self.state().high_priority_count.get(token) }
+    }
+
+    #[inline]
+    fn set_high_priority_count_locked(
+        &self,
+        token: &mut LockToken<'_, VmCowPagesLockClass>,
+        count: i64,
+    ) {
+        // SAFETY: The VmCowPages lock is held.
+        *unsafe { self.state().high_priority_count.get_mut(token) } = count;
+    }
+
+    #[inline]
+    pub(crate) fn is_high_memory_priority_locked(
+        &self,
+        token: &LockToken<'_, VmCowPagesLockClass>,
+    ) -> bool {
+        let count = self.high_priority_count_locked(token);
+        debug_assert!(count >= 0);
+        count != 0
+    }
+
+    #[inline]
+    fn pager_stats_modified_locked(&self, token: &LockToken<'_, VmCowPagesLockClass>) -> bool {
+        // SAFETY: The VmCowPages lock is held.
+        unsafe { *self.state().pager_stats_modified.get(token) }
+    }
+
+    #[inline]
+    fn set_pager_stats_modified_locked(
+        &self,
+        token: &mut LockToken<'_, VmCowPagesLockClass>,
+        modified: bool,
+    ) {
+        // SAFETY: The VmCowPages lock is held.
+        *unsafe { self.state().pager_stats_modified.get_mut(token) } = modified;
+    }
+
+    #[inline]
+    pub(crate) fn reset_pager_vmo_stats_locked(
+        &self,
+        token: &mut LockToken<'_, VmCowPagesLockClass>,
+    ) {
+        self.set_pager_stats_modified_locked(token, false);
+    }
+
+    #[inline]
+    fn life_cycle_locked(&self, token: &LockToken<'_, VmCowPagesLockClass>) -> LifeCycle {
+        // SAFETY: The VmCowPages lock is held.
+        unsafe { *self.state().life_cycle.get(token) }
+    }
+
+    #[inline]
+    fn set_life_cycle_locked(
+        &self,
+        token: &mut LockToken<'_, VmCowPagesLockClass>,
+        life_cycle: LifeCycle,
+    ) {
+        // SAFETY: The VmCowPages lock is held.
+        *unsafe { self.state().life_cycle.get_mut(token) } = life_cycle;
+    }
+
+    /// VmCowPages are initially created in the Init state and need to be transitioned to Alive
+    /// prior to being used. This is exposed for VmObjectPaged to call after ensuring that creation
+    /// is successful, i.e. after it can guarantee that it will transition this cow pages to Dead
+    /// prior to it being destroyed.
+    pub(crate) fn transition_to_alive_locked(
+        &self,
+        token: &mut LockToken<'_, VmCowPagesLockClass>,
+    ) {
+        assert!(self.life_cycle_locked(token) == LifeCycle::Init);
+        self.set_life_cycle_locked(token, LifeCycle::Alive);
+    }
+
+    /// Returns whether this object has ever held pinned pages. See `ever_pinned` for the access
+    /// rules; this is the acquire load for callers that do not hold the lock.
+    #[inline]
+    fn ever_pinned(&self) -> bool {
+        self.state().ever_pinned.load(Ordering::Acquire)
+    }
+
+    /// Relaxed read of `ever_pinned`, sufficient while the lock is held.
+    #[inline]
+    fn ever_pinned_locked(&self, _token: &LockToken<'_, VmCowPagesLockClass>) -> bool {
+        self.state().ever_pinned.load(Ordering::Relaxed)
+    }
+
+    /// Release store of `ever_pinned`; must be performed while holding the lock.
+    #[inline]
+    fn set_ever_pinned_locked(
+        &self,
+        _token: &mut LockToken<'_, VmCowPagesLockClass>,
+        ever_pinned: bool,
+    ) {
+        self.state().ever_pinned.store(ever_pinned, Ordering::Release);
+    }
+
+    /// A hidden VmCowPages has no associated VMO.
+    #[inline]
+    fn is_hidden(&self) -> bool {
+        self.options().contains(VmCowPagesOptions::HIDDEN)
+    }
+
+    #[inline]
+    fn can_decommit_zero_pages(&self) -> bool {
+        !self.options().contains(VmCowPagesOptions::CANNOT_DECOMMIT_ZERO_PAGES)
+    }
 }
 
 fn initialize_page_cache(level: init::LkInitLevel) {
@@ -1685,7 +1936,7 @@ init::lk_init_hook!(vm_cow_pages_cache_init, initialize_page_cache, init::LK_INI
 /// * The pointer passed for `storage` must be non-null, suitably aligned, point to
 ///   `kVmCowPagesStateSize` bytes of storage, and must not be aliased for the duration of the call.
 #[unsafe(no_mangle)]
-pub extern "C" fn rust_vm_cow_pages_state_init(
+extern "C" fn rust_vm_cow_pages_state_init(
     storage: &mut MaybeUninit<VmCowPagesState>,
     pmm_alloc_flags: u32,
     options: u32,
@@ -1694,6 +1945,13 @@ pub extern "C" fn rust_vm_cow_pages_state_init(
         canary: Canary::default(),
         pmm_alloc_flags,
         options: VmCowPagesOptions::from_bits_retain(options),
+        children_list_len: KCell::new(0),
+        pinned_page_count: KCell::new(0),
+        reclamation_event_count: KCell::new(0),
+        high_priority_count: KCell::new(0),
+        pager_stats_modified: KCell::new(false),
+        life_cycle: KCell::new(LifeCycle::Init),
+        ever_pinned: AtomicBool::new(false),
     });
 }
 
@@ -1705,7 +1963,7 @@ pub extern "C" fn rust_vm_cow_pages_state_init(
 /// * After this call returns, the caller must not use `storage` again as an initialized
 ///   `VmCowPagesState`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_vm_cow_pages_destruct(storage: &mut MaybeUninit<VmCowPagesState>) {
+unsafe extern "C" fn rust_vm_cow_pages_destruct(storage: &mut MaybeUninit<VmCowPagesState>) {
     // SAFETY: The caller guarantees `storage` is initialised and is not used afterwards.
     unsafe {
         storage.assume_init_drop();
@@ -1716,7 +1974,7 @@ pub unsafe extern "C" fn rust_vm_cow_pages_destruct(storage: &mut MaybeUninit<Vm
 ///
 /// * `cow` must point to a valid `VmCowPages`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_vm_cow_pages_assert_canary(cow: &VmCowPages) {
+unsafe extern "C" fn rust_vm_cow_pages_assert_canary(cow: &VmCowPages) {
     cow.assert_canary();
 }
 
@@ -1724,7 +1982,7 @@ pub unsafe extern "C" fn rust_vm_cow_pages_assert_canary(cow: &VmCowPages) {
 ///
 /// * `cow` must point to a valid `VmCowPages`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_vm_cow_pages_options(cow: &VmCowPages) -> u32 {
+unsafe extern "C" fn rust_vm_cow_pages_options(cow: &VmCowPages) -> u32 {
     cow.options().bits()
 }
 
@@ -1732,8 +1990,233 @@ pub unsafe extern "C" fn rust_vm_cow_pages_options(cow: &VmCowPages) -> u32 {
 ///
 /// * `cow` must point to a valid `VmCowPages`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_vm_cow_pages_pmm_alloc_flags(cow: &VmCowPages) -> u32 {
+unsafe extern "C" fn rust_vm_cow_pages_pmm_alloc_flags(cow: &VmCowPages) -> u32 {
     cow.pmm_alloc_flags()
+}
+
+/// # Safety
+///
+/// * `this` must point to a valid `VmCowPages`.
+/// * The C++ caller must hold `lock()`.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_vm_cow_pages_children_list_len_locked(this: &VmCowPages) -> u32 {
+    // SAFETY: the C++ caller holds the lock (TA_REQ).
+    let token = unsafe { LockToken::new() };
+    this.children_list_len_locked(&token)
+}
+
+/// # Safety
+///
+/// * `this` must point to a valid `VmCowPages`.
+/// * The C++ caller must hold `lock()`.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_vm_cow_pages_set_children_list_len_locked(this: &VmCowPages, v: u32) {
+    // SAFETY: the C++ caller holds the lock (TA_REQ).
+    let mut token = unsafe { LockToken::new() };
+    this.set_children_list_len_locked(&mut token, v)
+}
+
+/// # Safety
+///
+/// * `this` must point to a valid `VmCowPages`.
+/// * The C++ caller must hold `lock()`.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_vm_cow_pages_pinned_page_count_locked(this: &VmCowPages) -> u64 {
+    // SAFETY: the C++ caller holds the lock (TA_REQ).
+    let token = unsafe { LockToken::new() };
+    this.pinned_page_count_locked(&token)
+}
+
+/// # Safety
+///
+/// * `this` must point to a valid `VmCowPages`.
+/// * The C++ caller must hold `lock()`.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_vm_cow_pages_set_pinned_page_count_locked(this: &VmCowPages, v: u64) {
+    // SAFETY: the C++ caller holds the lock (TA_REQ).
+    let mut token = unsafe { LockToken::new() };
+    this.set_pinned_page_count_locked(&mut token, v)
+}
+
+/// # Safety
+///
+/// * `this` must point to a valid `VmCowPages`.
+/// * The C++ caller must hold `lock()`.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_vm_cow_pages_reclamation_event_count_locked(this: &VmCowPages) -> u64 {
+    // SAFETY: the C++ caller holds the lock (TA_REQ).
+    let token = unsafe { LockToken::new() };
+    this.reclamation_event_count_locked(&token)
+}
+
+/// # Safety
+///
+/// * `this` must point to a valid `VmCowPages`.
+/// * The C++ caller must hold `lock()`.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_vm_cow_pages_set_reclamation_event_count_locked(
+    this: &VmCowPages,
+    v: u64,
+) {
+    // SAFETY: the C++ caller holds the lock (TA_REQ).
+    let mut token = unsafe { LockToken::new() };
+    this.set_reclamation_event_count_locked(&mut token, v)
+}
+
+/// # Safety
+///
+/// * `this` must point to a valid `VmCowPages`.
+/// * The C++ caller must hold `lock()`.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_vm_cow_pages_high_priority_count_locked(this: &VmCowPages) -> i64 {
+    // SAFETY: the C++ caller holds the lock (TA_REQ).
+    let token = unsafe { LockToken::new() };
+    this.high_priority_count_locked(&token)
+}
+
+/// # Safety
+///
+/// * `this` must point to a valid `VmCowPages`.
+/// * The C++ caller must hold `lock()`.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_vm_cow_pages_set_high_priority_count_locked(this: &VmCowPages, v: i64) {
+    // SAFETY: the C++ caller holds the lock (TA_REQ).
+    let mut token = unsafe { LockToken::new() };
+    this.set_high_priority_count_locked(&mut token, v)
+}
+
+/// # Safety
+///
+/// * `this` must point to a valid `VmCowPages`.
+/// * The C++ caller must hold `lock()`.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_vm_cow_pages_pager_stats_modified_locked(this: &VmCowPages) -> bool {
+    // SAFETY: the C++ caller holds the lock (TA_REQ).
+    let token = unsafe { LockToken::new() };
+    this.pager_stats_modified_locked(&token)
+}
+
+/// # Safety
+///
+/// * `this` must point to a valid `VmCowPages`.
+/// * The C++ caller must hold `lock()`.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_vm_cow_pages_set_pager_stats_modified_locked(this: &VmCowPages, v: bool) {
+    // SAFETY: the C++ caller holds the lock (TA_REQ).
+    let mut token = unsafe { LockToken::new() };
+    this.set_pager_stats_modified_locked(&mut token, v)
+}
+
+/// # Safety
+///
+/// * `this` must point to a valid `VmCowPages`.
+/// * The C++ caller must hold `lock()`.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_vm_cow_pages_life_cycle_locked(this: &VmCowPages) -> LifeCycle {
+    // SAFETY: the C++ caller holds the lock (TA_REQ).
+    let token = unsafe { LockToken::new() };
+    this.life_cycle_locked(&token)
+}
+
+/// # Safety
+///
+/// * `this` must point to a valid `VmCowPages`.
+/// * The C++ caller must hold `lock()`.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_vm_cow_pages_set_life_cycle_locked(this: &VmCowPages, v: LifeCycle) {
+    // SAFETY: the C++ caller holds the lock (TA_REQ).
+    let mut token = unsafe { LockToken::new() };
+    this.set_life_cycle_locked(&mut token, v)
+}
+
+/// # Safety
+///
+/// * `this` must point to a valid `VmCowPages`.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_vm_cow_pages_ever_pinned(this: &VmCowPages) -> bool {
+    this.ever_pinned()
+}
+
+/// # Safety
+///
+/// * `this` must point to a valid `VmCowPages`.
+/// * The C++ caller must hold `lock()`.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_vm_cow_pages_ever_pinned_locked(this: &VmCowPages) -> bool {
+    // SAFETY: the C++ caller holds the lock (TA_REQ).
+    let token = unsafe { LockToken::new() };
+    this.ever_pinned_locked(&token)
+}
+
+/// # Safety
+///
+/// * `this` must point to a valid `VmCowPages`.
+/// * The C++ caller must hold `lock()`.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_vm_cow_pages_set_ever_pinned_locked(this: &VmCowPages, v: bool) {
+    // SAFETY: the C++ caller holds the lock (TA_REQ).
+    let mut token = unsafe { LockToken::new() };
+    this.set_ever_pinned_locked(&mut token, v)
+}
+
+/// # Safety
+///
+/// * `this` must point to a valid `VmCowPages`.
+/// * The C++ caller must hold `lock()`.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_vm_cow_pages_is_high_memory_priority_locked(this: &VmCowPages) -> bool {
+    // SAFETY: the C++ caller holds the lock (TA_REQ).
+    let token = unsafe { LockToken::new() };
+    this.is_high_memory_priority_locked(&token)
+}
+
+/// # Safety
+///
+/// * `this` must point to a valid `VmCowPages`.
+/// * The C++ caller must hold `lock()`.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_vm_cow_pages_has_no_children_locked(this: &VmCowPages) -> bool {
+    // SAFETY: the C++ caller holds the lock (TA_REQ).
+    let token = unsafe { LockToken::new() };
+    this.has_no_children_locked(&token)
+}
+
+/// # Safety
+///
+/// * `this` must point to a valid `VmCowPages`.
+/// * The C++ caller must hold `lock()`.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_vm_cow_pages_transition_to_alive_locked(this: &VmCowPages) {
+    // SAFETY: the C++ caller holds the lock (TA_REQ).
+    let mut token = unsafe { LockToken::new() };
+    this.transition_to_alive_locked(&mut token)
+}
+
+/// # Safety
+///
+/// * `this` must point to a valid `VmCowPages`.
+/// * The C++ caller must hold `lock()`.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_vm_cow_pages_reset_pager_vmo_stats_locked(this: &VmCowPages) {
+    // SAFETY: the C++ caller holds the lock (TA_REQ).
+    let mut token = unsafe { LockToken::new() };
+    this.reset_pager_vmo_stats_locked(&mut token)
+}
+
+/// # Safety
+///
+/// * `this` must point to a valid `VmCowPages`.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_vm_cow_pages_is_hidden(this: &VmCowPages) -> bool {
+    this.is_hidden()
+}
+
+/// # Safety
+///
+/// * `this` must point to a valid `VmCowPages`.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_vm_cow_pages_can_decommit_zero_pages(this: &VmCowPages) -> bool {
+    this.can_decommit_zero_pages()
 }
 
 #[cfg(ktest)]
