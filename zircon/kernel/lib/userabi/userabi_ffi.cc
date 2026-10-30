@@ -8,8 +8,6 @@
 #include <lib/userabi/userboot.h>
 #include <lib/userabi/vdso.h>
 
-#include <platform/crashlog.h>
-
 #if ENABLE_ENTROPY_COLLECTOR_TEST
 #include <lib/crypto/entropy/quality_test.h>
 #endif
@@ -33,14 +31,6 @@ static_assert(VDso::kNumVdsoVariants == 4);
 extern "C" {
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-
-FFI_ALWAYS_INLINE size_t cpp_platform_crashlog_recover(FILE* tgt) {
-  return PlatformCrashlog::Get().Recover(tgt);
-}
-
-FFI_ALWAYS_INLINE void cpp_platform_crashlog_enable_uptime_updates(bool enabled) {
-  PlatformCrashlog::Get().EnableCrashlogUptimeUpdates(enabled);
-}
 
 FFI_ALWAYS_INLINE void cpp_boot_options_show(bool defaults, FILE* out) {
   BootOptions::Get()->Show(defaults, out);

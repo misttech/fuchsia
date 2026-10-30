@@ -167,6 +167,10 @@ pub mod vm;
 #[path = "platform/pc/mod.rs"]
 pub mod platform_pc;
 
+#[cfg(target_arch = "aarch64")]
+#[path = "platform/generic-arm/platform.rs"]
+pub mod generic_arm;
+
 #[cfg(target_arch = "riscv64")]
 #[path = "platform/generic-riscv64/src/mod.rs"]
 pub mod generic_riscv64;

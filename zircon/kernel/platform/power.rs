@@ -10,12 +10,11 @@ use crate::console::{CMD_AVAIL_ALWAYS, CMD_FLAG_PANIC, CmdArgs, static_command};
 use crate::jtrace::jtrace_invalidate;
 use crate::pdev_watchdog::{hw_watchdog_pet, hw_watchdog_set_enabled};
 use crate::persistent_debuglog_rs::persistent_dlog_invalidate;
+use crate::platform_rs::crashlog::PlatformCrashlog;
 use crate::platform_rs::timer::InstantBoot;
 use boot_options::BootOptions;
 #[cfg(console_enabled)]
 use core::ffi::{CStr, c_int};
-use core::ffi::{c_char, c_void};
-use core::ptr::{NonNull, slice_from_raw_parts_mut};
 use core::slice;
 #[cfg(console_enabled)]
 use debug::dprintf;
@@ -111,20 +110,6 @@ unsafe extern "C" {
         halt_on_panic: bool,
     ) -> !;
     fn cpp_platform_panic_start();
-    fn cpp_platform_crashlog_get() -> NonNull<c_void>;
-    fn cpp_platform_crashlog_enable_crashlog_uptime_updates(
-        crashlog: NonNull<c_void>,
-        enabled: bool,
-    );
-    fn cpp_platform_crashlog_get_render_target(
-        crashlog: NonNull<c_void>,
-        out_len: &mut usize,
-    ) -> *mut c_char;
-    fn cpp_platform_crashlog_finalize(
-        crashlog: NonNull<c_void>,
-        reason: ZirconCrashReason,
-        amt: usize,
-    );
     fn cpp_platform_serial_is_suspended() -> bool;
     fn cpp_platform_serial_suspended_at() -> InstantBoot;
 }
@@ -144,44 +129,6 @@ pub fn platform_serial_is_suspended() -> bool {
 pub fn platform_serial_suspended_at() -> InstantBoot {
     // SAFETY: `platform_serial_suspended_at` is safe to call from any context, including panic.
     unsafe { cpp_platform_serial_suspended_at() }
-}
-
-struct PlatformCrashlog;
-
-struct PlatformCrashlogInterface(NonNull<c_void>);
-
-impl PlatformCrashlog {
-    #[inline]
-    fn get() -> PlatformCrashlogInterface {
-        // SAFETY: `PlatformCrashlog::Get()` always returns a reference to a static-lifetime
-        // `PlatformCrashlog::Interface` implementation.
-        PlatformCrashlogInterface(unsafe { cpp_platform_crashlog_get() })
-    }
-}
-
-impl PlatformCrashlogInterface {
-    #[inline]
-    fn enable_crashlog_uptime_updates(&self, enabled: bool) {
-        // SAFETY: `self.0` is a valid `PlatformCrashlog::Interface*` returned by
-        // `PlatformCrashlog::Get()`.
-        unsafe { cpp_platform_crashlog_enable_crashlog_uptime_updates(self.0, enabled) }
-    }
-
-    #[inline]
-    fn get_render_target(&self) -> *mut [c_char] {
-        let mut len = 0;
-        // SAFETY: `self.0` is a valid `PlatformCrashlog::Interface*` returned by
-        // `PlatformCrashlog::Get()`, and `&mut len` is a valid writable `usize`.
-        let ptr = unsafe { cpp_platform_crashlog_get_render_target(self.0, &mut len) };
-        slice_from_raw_parts_mut(ptr, len)
-    }
-
-    #[inline]
-    fn finalize(&self, reason: ZirconCrashReason, amt: usize) {
-        // SAFETY: `self.0` is a valid `PlatformCrashlog::Interface*` returned by
-        // `PlatformCrashlog::Get()`.
-        unsafe { cpp_platform_crashlog_finalize(self.0, reason, amt) }
-    }
 }
 
 #[inline]
@@ -235,13 +182,16 @@ pub fn platform_halt(suggested_action: PlatformHaltAction, reason: ZirconCrashRe
         let target = crashlog.get_render_target();
         if target.len() > 0 {
             // SAFETY: `target` was returned by `crashlog.get_render_target()` with
-            // `target.len() > 0`, so it is non-null and valid for writes of `target.len()` bytes
-            // during `platform_halt`. Only the halting CPU renders into it; as in C++, nothing
-            // serializes concurrent halts on several CPUs.
+            // `target.len() > 0`, so by `crashlog::Interface`'s safety contract it is non-null,
+            // valid for writes of `target.len()` bytes, and unaliased during `platform_halt`.
             let target = unsafe { slice::from_raw_parts_mut(target.cast::<u8>(), target.len()) };
             rendered_crashlog_len = crate::crashlog::crashlog_to_string(target, reason as u32);
         }
-        crashlog.finalize(reason, rendered_crashlog_len);
+        // SAFETY: Called during single-threaded platform halt after
+        // `enable_crashlog_uptime_updates(false)` and after rendering to `target` has completed.
+        unsafe {
+            crashlog.finalize(reason, rendered_crashlog_len);
+        }
     }
 
     // This is a graceful reboot, invalidate the persistent dlog (if we have one)

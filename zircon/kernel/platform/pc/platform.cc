@@ -11,7 +11,6 @@
 #include <lib/boot-options/boot-options.h>
 #include <lib/cksum.h>
 #include <lib/debuglog.h>
-#include <lib/lazy_init/lazy_init.h>
 #include <lib/memalloc/range.h>
 #include <lib/page/size.h>
 #include <lib/system-topology.h>
@@ -43,8 +42,6 @@
 #include <phys/handoff/handoff.h>
 #include <platform/crashlog.h>
 #include <platform/efi.h>
-#include <platform/efi_crashlog.h>
-#include <platform/mapped_crashlog.h>
 #include <platform/pc.h>
 #include <platform/pc/memory.h>
 #include <platform/pc/smbios.h>
@@ -54,37 +51,38 @@
 
 #define LOCAL_TRACE 0
 
+extern "C" {
+void rust_efi_crashlog_set_last_crashlog_location(const char* ptr, size_t len);
+void rust_mapped_crashlog_bind(void* base, size_t size);
+void rust_efi_crashlog_bind();
+}  // extern "C"
+
 namespace {
-
-lazy_init::LazyInit<MappedCrashlog, lazy_init::CheckType::None, lazy_init::Destructor::Disabled>
-    gMappedCrashlog;
-
-EfiCrashlog gEfiCrashlog;
 
 void platform_save_bootloader_data() {
   // Record any previous crashlog.
   if (ktl::string_view crashlog = gPhysHandoff->crashlog.get(); !crashlog.empty()) {
-    gEfiCrashlog.SetLastCrashlogLocation(crashlog);
+    rust_efi_crashlog_set_last_crashlog_location(crashlog.data(), crashlog.size());
   }
 
   // If we have an NVRAM location and we have not already configured a platform
   // crashlog implementation, use the NVRAM location to back a
   // MappedCrashlog implementation and configure the generic platform
   // layer to use it.
-  if (!gPhysHandoff->nvram.empty() && !PlatformCrashlog::HasNonTrivialImpl()) {
-    gMappedCrashlog.Initialize(gPhysHandoff->nvram.get());
-    PlatformCrashlog::Bind(gMappedCrashlog.Get());
+  if (!gPhysHandoff->nvram.empty() && !rust_platform_crashlog_has_non_trivial_impl()) {
+    rust_mapped_crashlog_bind(gPhysHandoff->nvram.get().data(),
+                              gPhysHandoff->nvram.get().size_bytes());
   }
 }
 
 void platform_init_crashlog() {
   // Nothing to do if we have already selected a crashlog implementation.
-  if (PlatformCrashlog::HasNonTrivialImpl()) {
+  if (rust_platform_crashlog_has_non_trivial_impl()) {
     return;
   }
 
   // Initialize and select the EfiCrashlog implementation.
-  PlatformCrashlog::Bind(gEfiCrashlog);
+  rust_efi_crashlog_bind();
 }
 
 }  // namespace
