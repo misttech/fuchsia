@@ -1,0 +1,50 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+# The unit tests (`:factoryctl_bin_test` and `:factoryctl_tests`) stay in
+# BUILD.gn because they use RealmBuilder via GN-only
+# `//src/lib/fuchsia-component-test` (which packages
+# `//src/lib/fuchsia-component-test/realm_builder_server:realm_builder_server_component`).
+rustc_binary(
+    name = "bin",
+    srcs = ["src/main.rs"],
+    crate_name = "factoryctl",
+    edition = "2024",
+    rustc_flags = ["-Aunused_imports"],
+    tags = ["manual"],
+    deps = [
+        "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust",
+        "//sdk/fidl/fuchsia.factory:fuchsia.factory_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-fs",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:clap",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:nom",
+    ],
+)
+
+fx_packaged_binary(
+    name = "factoryctl_packaged_bin",
+    binary = ":bin",
+    binary_name = "factoryctl",
+)
+
+fx_package(
+    name = "factoryctl",
+    package_name = "factoryctl",
+    resources = [":factoryctl_packaged_bin"],
+)
