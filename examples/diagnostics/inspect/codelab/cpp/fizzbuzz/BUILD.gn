@@ -29,6 +29,7 @@ import("//build/tools/bazel2gn/bazel_migration.gni")
 
 executable("bin") {
   sources = [ "main.cc" ]
+  output_name = "inspect_cpp_codelab_fizzbuzz"
   deps = [
     "//examples/diagnostics/inspect/codelab/fidl:fuchsia.examples.inspect_hlcpp",
     "//sdk/lib/async-loop:async-loop-cpp",
@@ -37,7 +38,6 @@ executable("bin") {
     "//sdk/lib/sys/cpp",
     "//sdk/lib/syslog/cpp",
   ]
-  output_name = "inspect_cpp_codelab_fizzbuzz"
 }
 fuchsia_component_manifest("fizzbuzz-manifest") {
   component_name = "fizzbuzz"

@@ -365,13 +365,13 @@ linux_resource("linux_res") {
 }`,
 		},
 		{
-			name: "fx_cc_test with custom output_name and linux_resource",
-			bazel: `# @bazel2gn:raw_attribute:output_name = "custom_syscall_test"
-fx_cc_test(
+			name: "fx_cc_test with custom gn_output_name and linux_resource",
+			bazel: `fx_cc_test(
 	name = "syscall_test_bin",
 	testonly = True,
 	srcs = ["syscall_test.cc"],
 	disable_build_flags = ["//build/config/linux:implicit-host-libs"],
+	gn_output_name = "custom_syscall_test",
 	deps = ["//third_party/googletest:gtest_main"],
 )
 
@@ -389,10 +389,10 @@ linux_resource(
 		configs -= [
 			"//build/config/linux:implicit-host-libs",
 		]
+		output_name = "custom_syscall_test"
 		deps = [
 			"//third_party/googletest:gtest_main",
 		]
-		output_name = "custom_syscall_test"
 	}
 }
 linux_resource("syscall_test_res") {

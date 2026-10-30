@@ -46,13 +46,13 @@ if (is_fuchsia) {
       "gnss_service.h",
       "main.cc",
     ]
+    output_name = "gnss_service_bin"
     deps = [
       "//sdk/fidl/fuchsia.location.gnss:fuchsia.location.gnss_cpp",
       "//sdk/lib/async-loop:async-loop-default",
       "//sdk/lib/component/outgoing/cpp",
       "//sdk/lib/syslog/cpp",
     ]
-    output_name = "gnss_service_bin"
   }
 }
 if (is_fuchsia) {

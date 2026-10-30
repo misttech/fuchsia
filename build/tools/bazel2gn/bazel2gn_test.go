@@ -1790,6 +1790,45 @@ executable("bar") {
 }`,
 		},
 		{
+			name: "fx_cc_binary and fx_cc_test with gn_output_name",
+			bazel: `fx_cc_binary(
+	name = "bin",
+	srcs = ["main.cc"],
+	gn_output_name = "foo_bin",
+)
+
+fx_cc_binary(
+	name = "libfoo.so",
+	srcs = ["foo.cc"],
+	linkshared = True,
+	gn_output_name = "foo_module",
+)
+
+fx_cc_test(
+	name = "foo_test_bin",
+	srcs = ["foo_test.cc"],
+	gn_output_name = "foo_test",
+)`,
+			wantGN: `executable("bin") {
+	sources = [
+		"main.cc",
+	]
+	output_name = "foo_bin"
+}
+loadable_module("libfoo.so") {
+	sources = [
+		"foo.cc",
+	]
+	output_name = "foo_module"
+}
+test("foo_test_bin") {
+	sources = [
+		"foo_test.cc",
+	]
+	output_name = "foo_test"
+}`,
+		},
+		{
 			name: "fx_cc_test conversion with implicit and explicit testonly",
 			bazel: `fx_cc_test(
 	name = "foo_test",
@@ -3281,6 +3320,23 @@ cc_binary(
 	name = "foo_test",
 	testonly = "true",
 	srcs = ["foo_test.cc"],
+)`,
+		},
+		{
+			name: "fx_cc_binary with both gn_output_name and raw_attribute output_name",
+			bazel: `# @bazel2gn:raw_attribute:output_name = "bar"
+fx_cc_binary(
+	name = "foo",
+	srcs = ["main.cc"],
+	gn_output_name = "baz",
+)`,
+		},
+		{
+			name: "fx_cc_test with non-literal gn_output_name",
+			bazel: `fx_cc_test(
+	name = "foo_test",
+	srcs = ["foo_test.cc"],
+	gn_output_name = "foo" + "_test",
 )`,
 		},
 	} {

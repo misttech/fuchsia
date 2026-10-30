@@ -376,6 +376,7 @@ func callExprToGN(expr *syntax.CallExpr, stmtComments *syntax.Comments) ([]strin
 	var wrappingConditions []string
 	var hasWithUnitTests bool
 	var isLinkShared bool
+	var hasOutputNameAttr bool
 	for _, arg := range expr.Args {
 		binaryExpr, ok := arg.(*syntax.BinaryExpr)
 		if !ok || binaryExpr.Op != syntax.EQ {
@@ -410,6 +411,20 @@ func callExprToGN(expr *syntax.CallExpr, stmtComments *syntax.Comments) ([]strin
 			if rhsIdent, ok := unwrapParenExpr(binaryExpr.Y).(*syntax.Ident); !ok || rhsIdent.Name != "True" {
 				return nil, errors.New("fx_cc_test targets are always testonly; testonly must be True if specified")
 			}
+		}
+		// `gn_output_name` on `fx_cc_binary` and `fx_cc_test` is renamed to GN
+		// `output_name` through `attrMapsByRules`. Only validate it here:
+		// require a string literal so that `fx_packaged_binary` and
+		// `linux_resource` lookups (see `indexGNBinaries`) see the same name as
+		// GN, and reject a conflicting raw `output_name` annotation.
+		if (bazelRule == "fx_cc_binary" || bazelRule == "fx_cc_test") && ident.Name == "gn_output_name" {
+			if _, err := stringLiteralValue(binaryExpr.Y); err != nil {
+				return nil, fmt.Errorf("gn_output_name of %s must be a string literal: %v", bazelRule, err)
+			}
+			if hasRawOutputNameAttr(rawAttrs) {
+				return nil, fmt.Errorf("%s sets both gn_output_name and a `# @bazel2gn:raw_attribute:output_name` annotation; remove the annotation", bazelRule)
+			}
+			hasOutputNameAttr = true
 		}
 		if attrsToOmit[ident.Name] {
 			continue
@@ -479,7 +494,7 @@ func callExprToGN(expr *syntax.CallExpr, stmtComments *syntax.Comments) ([]strin
 	if isLinkShared {
 		// GN `loadable_module()` automatically appends `.so`, so strip a trailing
 		// `.so` from `name` into `output_name` to avoid `<name>.so.so`.
-		if baseName, hasSOSuffix := strings.CutSuffix(strings.Trim(name, `"`), ".so"); hasSOSuffix && !hasRawOutputNameAttr(rawAttrs) {
+		if baseName, hasSOSuffix := strings.CutSuffix(strings.Trim(name, `"`), ".so"); hasSOSuffix && !hasRawOutputNameAttr(rawAttrs) && !hasOutputNameAttr {
 			ret = append(ret, indent([]string{fmt.Sprintf("output_name = %s", gnQuote(baseName))}, 1)...)
 		}
 	}

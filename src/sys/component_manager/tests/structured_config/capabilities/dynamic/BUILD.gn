@@ -99,6 +99,7 @@ import("//build/tools/bazel2gn/bazel_migration.gni")
 executable("child_bin") {
   testonly = true
   sources = [ "child.cc" ]
+  output_name = "sc_capabilities_dynamic_child"
   deps = [
     ":test.config_cpp",
     "//sdk/lib/async:async-cpp",
@@ -106,7 +107,6 @@ executable("child_bin") {
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/component/outgoing/cpp",
   ]
-  output_name = "sc_capabilities_dynamic_child"
 }
 fidl("test.config") {
   testonly = true

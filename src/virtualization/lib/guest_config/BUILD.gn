@@ -56,12 +56,12 @@ source_set("guest_config") {
 executable("unittests") {
   testonly = true
   sources = [ "guest_config_unittest.cc" ]
+  output_name = "guest_config_unittest"
   deps = [
     ":guest_config",
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gmock",
   ]
-  output_name = "guest_config_unittest"
 }
 fuchsia_unittest_package("guest-config-tests") {
   package_name = "guest-config-tests-gn"

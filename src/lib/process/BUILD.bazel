@@ -36,11 +36,11 @@ fx_cc_library(
     alwayslink = True,
 )
 
-# @bazel2gn:raw_attribute:output_name = "process_unittests"
 fx_cc_binary(
     name = "unittests",
     testonly = True,
     srcs = ["process_builder_unittest.cc"],
+    gn_output_name = "process_unittests",
     tags = ["manual"],
     deps = [
         ":process",

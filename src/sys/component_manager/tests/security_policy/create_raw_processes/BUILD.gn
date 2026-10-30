@@ -51,6 +51,6 @@ import("//build/tools/bazel2gn/bazel_migration.gni")
 
 executable("bin") {
   sources = [ "main.cc" ]
-  deps = [ "//src/lib/test-suite:test_suite_lib" ]
   output_name = "security-policy-create-raw-processes-test"
+  deps = [ "//src/lib/test-suite:test_suite_lib" ]
 }

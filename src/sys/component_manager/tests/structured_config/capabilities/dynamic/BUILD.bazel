@@ -7,11 +7,11 @@ load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
 
 package(default_applicable_licenses = ["//:license"])
 
-# @bazel2gn:raw_attribute:output_name = "sc_capabilities_dynamic_child"
 fx_cc_binary(
     name = "child_bin",
     testonly = True,
     srcs = ["child.cc"],
+    gn_output_name = "sc_capabilities_dynamic_child",
     deps = [
         ":test.config_cpp",
         "//sdk/lib/async:async-cpp",

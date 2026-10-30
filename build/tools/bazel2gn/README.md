@@ -226,7 +226,9 @@ standard binary rules (`fx_cc_binary()`, `fx_cc_test()`, `cc_binary()`,
 *   On C++ binary rules (`fx_cc_binary()`, `cc_binary()`,
     `cc_binary_host_tool()`, and `idk_cc_binary_host_tool()`), `linkopts` maps
     to GN `ldflags`, and `linkshared = True` on `fx_cc_binary()` / `cc_binary()`
-    maps to GN `loadable_module()`.
+    maps to GN `loadable_module()`. `gn_output_name` on `fx_cc_binary()`
+    / `fx_cc_test()` is only used by GN: it maps to the GN `output_name` (the
+    Bazel binary is always named after the target).
 *   When a `linux_resource()` references a binary target in the same
     `BUILD.bazel` file that has no non-`linux_resource()` GN consumers,
     `bazel2gn` automatically wraps the binary in
@@ -608,6 +610,9 @@ target. It is useful when a GN target needs an extra attribute or statement that
 has no counterpart in the Bazel target. This annotation must be placed right
 above the target definition it is annotating to take effect. Multiple
 `@bazel2gn:raw_attribute:` annotations may be stacked right above a target.
+Prefer a Bazel attribute when the rule has one: for example, set
+`gn_output_name` on `fx_cc_binary()` and `fx_cc_test()` instead of using this
+annotation.
 
 **Example:**
 

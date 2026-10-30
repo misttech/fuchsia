@@ -24,6 +24,7 @@ def _fx_cc_binary_impl(
         name,
         linkshared,
         public_configs,  # buildifier: disable=unused-variable - For GN conversion only.
+        gn_output_name,  # buildifier: disable=unused-variable - For GN conversion only.
         disable_syslog_backend,  # buildifier: disable=unused-variable - For GN conversion only.
         build_flags,
         disable_build_flags,
@@ -88,6 +89,18 @@ fx_cc_binary = macro(
         "public_configs": attr.string_list(
             doc = "Unused in Bazel, for GN conversion only.",
             default = [],
+        ),
+        "gn_output_name": attr.string(
+            doc = """Unused in Bazel, for GN conversion only.
+
+            Sets `output_name` on the GN target that bazel2gn generates, e.g.
+            to avoid duplicate output files in GN's flat `$root_out_dir`. The
+            Bazel binary is always named after the target; use
+            `fx_packaged_binary(binary_name = ...)` to choose its name in a
+            Fuchsia package.
+            """,
+            default = "",
+            configurable = False,
         ),
         "disable_syslog_backend": attr.bool(
             doc = """Unused in Bazel, for GN conversion only.

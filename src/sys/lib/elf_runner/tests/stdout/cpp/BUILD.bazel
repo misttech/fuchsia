@@ -16,10 +16,10 @@ load(
 package(default_applicable_licenses = ["//:license"])
 
 # fx_cc_binary names the binary after the target; GN sets output_name.
-# @bazel2gn:raw_attribute:output_name = "prints_when_launched_cpp"
 fx_cc_binary(
     name = "bin",
     srcs = ["src/main.cc"],
+    gn_output_name = "prints_when_launched_cpp",
     tags = ["manual"],
 )
 

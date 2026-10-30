@@ -315,7 +315,11 @@ var buildFlagsAttrMap = map[string]string{
 
 // fxCcBinaryAttrMap maps from attribute names in `fx_cc_binary()` to GN parameter names.
 // This map only includes attributes that have different names in Bazel and GN.
-var fxCcBinaryAttrMap = mustMergeMaps(ccBinAttrMap, buildFlagsAttrMap)
+var fxCcBinaryAttrMap = mustMergeMaps(mustMergeMaps(ccBinAttrMap, buildFlagsAttrMap), map[string]string{
+	// `gn_output_name` only exists on `fx_cc_binary()` / `fx_cc_test()` to
+	// set the GN `output_name`; Bazel ignores it.
+	"gn_output_name": "output_name",
+})
 
 // fxCcLibAttrMap maps from attribute names in `fx_cc_library()` to GN parameter names.
 // This map only includes attributes that have different names in Bazel and GN.

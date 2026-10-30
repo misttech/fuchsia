@@ -701,6 +701,12 @@ func indexGNBinaries(f *syntax.File) (map[string]gnBinaryInfo, error) {
 		}
 
 		rawOut, hasRawOut := rawOutputNameFromStmt(stmt, call)
+		// `gn_output_name` on `fx_cc_binary` and `fx_cc_test` sets the GN `output_name`.
+		if fn.Name == "fx_cc_binary" || fn.Name == "fx_cc_test" {
+			if out, ok := unskippedCallStringAttr(call, "gn_output_name"); ok && out != "" {
+				rawOut, hasRawOut = out, true
+			}
+		}
 
 		switch fn.Name {
 		case "cc_binary", "fx_cc_binary":

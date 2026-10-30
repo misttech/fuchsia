@@ -83,10 +83,10 @@ fx_cc_library(
     alwayslink = True,
 )
 
-# @bazel2gn:raw_attribute:output_name = "memfs"
 fx_cc_binary(
     name = "memfs_bin",
     srcs = ["component.cc"],
+    gn_output_name = "memfs",
     tags = ["manual"],
     deps = [
         ":lib",

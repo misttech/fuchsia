@@ -15,12 +15,12 @@ load(
 
 package(default_applicable_licenses = ["//:license"])
 
-# `fx_cc_binary` has no `output_name` attribute (the binary name in the package
-# is set on `fx_packaged_binary`), whereas GN `executable` sets `output_name`.
-# @bazel2gn:raw_attribute:output_name = "inspect_cpp_codelab_fizzbuzz"
+# fx_cc_binary names the Bazel binary after the target (the binary name in the
+# package is set on `fx_packaged_binary`); gn_output_name keeps the GN binary name.
 fx_cc_binary(
     name = "bin",
     srcs = ["main.cc"],
+    gn_output_name = "inspect_cpp_codelab_fizzbuzz",
     tags = ["manual"],
     deps = [
         "//examples/diagnostics/inspect/codelab/fidl:fuchsia.examples.inspect_hlcpp",

@@ -54,12 +54,12 @@ executable("unittest_bin") {
     "timeline_function_unittest.cc",
     "timeline_rate_unittest.cc",
   ]
+  output_name = "audio_lib_timeline_unittests"
   deps = [
     ":timeline",
     "//sdk/lib/syslog/cpp",
     "//src/lib/fxl/test:gtest_main",
   ]
-  output_name = "audio_lib_timeline_unittests"
 }
 fuchsia_unittest_package("audio_lib_timeline_unittests") {
   package_name = "audio_lib_timeline_unittests-gn"

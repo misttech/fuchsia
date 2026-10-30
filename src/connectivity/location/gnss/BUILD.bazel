@@ -15,7 +15,6 @@ exports_files(
     visibility = ["//bundles/assembly:__subpackages__"],
 )
 
-# @bazel2gn:raw_attribute:output_name = "gnss_service_bin"
 fx_cc_binary(
     name = "bin",
     srcs = [
@@ -23,6 +22,7 @@ fx_cc_binary(
         "gnss_service.h",
         "main.cc",
     ],
+    gn_output_name = "gnss_service_bin",
     target_compatible_with = ["@platforms//os:fuchsia"],
     deps = [
         "//sdk/fidl/fuchsia.location.gnss:fuchsia.location.gnss_cpp",

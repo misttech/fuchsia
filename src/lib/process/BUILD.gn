@@ -53,13 +53,13 @@ source_set("process") {
 executable("unittests") {
   testonly = true
   sources = [ "process_builder_unittest.cc" ]
+  output_name = "process_unittests"
   deps = [
     ":process",
     "//sdk/lib/component/incoming/cpp",
     "//src/lib/fxl/test:gtest_main",
     "//zircon/system/ulib/fbl",
   ]
-  output_name = "process_unittests"
 }
 fuchsia_component_manifest("process_unittests_manifest") {
   testonly = true

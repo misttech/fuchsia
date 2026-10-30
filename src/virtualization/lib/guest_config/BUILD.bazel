@@ -31,13 +31,13 @@ fx_cc_library(
     alwayslink = True,
 )
 
-# fx_cc_binary names the binary after the target, while GN sets
-# output_name, so restore the GN binary name.
-# @bazel2gn:raw_attribute:output_name = "guest_config_unittest"
+# fx_cc_binary names the Bazel binary after the target; gn_output_name keeps the
+# GN binary name.
 fx_cc_binary(
     name = "unittests",
     testonly = True,
     srcs = ["guest_config_unittest.cc"],
+    gn_output_name = "guest_config_unittest",
     tags = ["manual"],
     deps = [
         ":guest_config",

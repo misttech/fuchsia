@@ -24,7 +24,6 @@ fx_cc_library(
     alwayslink = True,
 )
 
-# @bazel2gn:raw_attribute:output_name = "audio_lib_timeline_unittests"
 fx_cc_binary(
     name = "unittest_bin",
     testonly = True,
@@ -32,6 +31,7 @@ fx_cc_binary(
         "timeline_function_unittest.cc",
         "timeline_rate_unittest.cc",
     ],
+    gn_output_name = "audio_lib_timeline_unittests",
     tags = ["manual"],
     deps = [
         ":timeline",

@@ -41,13 +41,13 @@ if (is_fuchsia) {
   executable("entropy") {
     testonly = true
     sources = [ "entropy.cc" ]
+    output_name = "entropy-test"
     deps = [
       "//sdk/lib/fdio",
       "//zircon/system/ulib/fbl",
       "//zircon/system/ulib/zx",
       "//zircon/system/ulib/zxtest",
     ]
-    output_name = "entropy-test"
     metadata = {
       distribution_entries = [
         {

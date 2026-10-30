@@ -530,10 +530,10 @@ fx_component(
 	srcs = ["foo_test.cc"],
 )
 
-# @bazel2gn:raw_attribute:output_name = "custom_bar_test"
 fx_cc_test(
 	name = "bar_test_bin",
 	srcs = ["bar_test.cc"],
+	gn_output_name = "custom_bar_test",
 )
 
 fx_packaged_binary(

@@ -91,6 +91,7 @@ source_set("cpp") {
 }
 executable("memfs_bin") {
   sources = [ "component.cc" ]
+  output_name = "memfs"
   deps = [
     ":lib",
     "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
@@ -104,7 +105,6 @@ executable("memfs_bin") {
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zx",
   ]
-  output_name = "memfs"
 }
 fuchsia_component_manifest("memfs_component_manifest") {
   component_name = "memfs"
