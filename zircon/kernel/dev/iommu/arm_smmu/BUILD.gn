@@ -18,6 +18,7 @@ kernel_rust_mod("arm_smmu_rs") {
     "common/translation_table.rs",
     "common/vmsav8_64.rs",
     "mod.rs",
+    "unit_tests.rs",
     "v2/context_bank.rs",
     "v2/mod.rs",
     "v2/registers.rs",

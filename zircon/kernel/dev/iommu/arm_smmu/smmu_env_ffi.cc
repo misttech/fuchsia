@@ -266,5 +266,50 @@ void cpp_arm_smmu_mmio_write64(uintptr_t base, uint32_t offset, uint64_t val) {
   hwreg::RegisterMmio(reinterpret_cast<volatile void*>(base)).Write<uint64_t>(val, offset);
 }
 
+// Returns the number of physical pages currently allocated from the host `PmmMock`.
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE
+size_t cpp_arm_smmu_pmm_allocated_page_count(void) {
+  return PmmMock::Get().GetAllocatedPageCount();
+}
+
+// Sets the maximum number of allocated physical pages allowed by the host `PmmMock`.
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE
+void cpp_arm_smmu_pmm_set_allocation_limit(uint64_t limit) {
+  PmmMock::Get().SetAllocationLimit(limit);
+}
+
+// Clears any physical page allocation limit on the host `PmmMock`.
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE
+void cpp_arm_smmu_pmm_clear_allocation_limit(void) { PmmMock::Get().ClearAllocationLimit(); }
+
+// Reads a 64-bit word from the host `PmmMock` PoC DRAM view at physical address `pa`.
+bool cpp_arm_smmu_pmm_read_poc_dram64(uint64_t pa, uint64_t* out_val) {
+  if (out_val == nullptr) {
+    return false;
+  }
+  const auto res = PmmMock::Get().ReadPocDram64(pa);
+  if (!res.has_value()) {
+    return false;
+  }
+  *out_val = *res;
+  return true;
+}
+
+// Reads a 64-bit word from the host `PmmMock` CPU L1/L2 cache view at physical address `pa`.
+bool cpp_arm_smmu_pmm_read_cpu_cache64(uint64_t pa, uint64_t* out_val) {
+  if (out_val == nullptr) {
+    return false;
+  }
+  const auto res = PmmMock::Get().ReadCpuCache64(pa);
+  if (!res.has_value()) {
+    return false;
+  }
+  *out_val = *res;
+  return true;
+}
+
 }  // extern "C"
 #endif  // defined(ARM_SMMU_HOST_TEST)

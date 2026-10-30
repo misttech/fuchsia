@@ -49,6 +49,11 @@ uint32_t cpp_arm_smmu_mmio_read32(uintptr_t base, uint32_t offset);
 void cpp_arm_smmu_mmio_write32(uintptr_t base, uint32_t offset, uint32_t val);
 uint64_t cpp_arm_smmu_mmio_read64(uintptr_t base, uint32_t offset);
 void cpp_arm_smmu_mmio_write64(uintptr_t base, uint32_t offset, uint64_t val);
+size_t cpp_arm_smmu_pmm_allocated_page_count(void);
+void cpp_arm_smmu_pmm_set_allocation_limit(uint64_t limit);
+void cpp_arm_smmu_pmm_clear_allocation_limit(void);
+bool cpp_arm_smmu_pmm_read_poc_dram64(uint64_t pa, uint64_t* out_val);
+bool cpp_arm_smmu_pmm_read_cpu_cache64(uint64_t pa, uint64_t* out_val);
 #endif  // defined(ARM_SMMU_HOST_TEST)
 
 }  // extern "C"

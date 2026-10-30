@@ -22,6 +22,7 @@ rustc_staticlib("arm_smmu_host_rs") {
     "../common/translation_table.rs",
     "../common/vmsav8_64.rs",
     "../mod.rs",
+    "../unit_tests.rs",
     "../v2/context_bank.rs",
     "../v2/mod.rs",
     "../v2/registers.rs",
@@ -53,6 +54,7 @@ cc_test_executable("arm_smmu_tests_binary") {
     "cross_test_ffi.cc",
     "device_aspace_test.cc",
     "page_cache_test.cc",
+    "rust_unit_tests.cc",
     "smmu_mode_string_tests.cc",
     "smmu_model_tests.cc",
   ]

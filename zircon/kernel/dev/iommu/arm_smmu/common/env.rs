@@ -176,6 +176,26 @@ unsafe extern "C" {
     /// or raw memory fallback. `base + offset` must either belong to a registered router region or
     /// point to a valid 64-bit aligned writable host memory location.
     fn cpp_arm_smmu_mmio_write64(base: usize, offset: u32, val: u64);
+    /// Returns the number of physical pages currently allocated from the singleton host `PmmMock`.
+    #[cfg(not(is_kernel))]
+    fn cpp_arm_smmu_pmm_allocated_page_count() -> usize;
+    /// Sets the maximum number of physical pages that the singleton host `PmmMock` may allocate.
+    #[cfg(not(is_kernel))]
+    fn cpp_arm_smmu_pmm_set_allocation_limit(limit: u64);
+    /// Clears any physical page allocation limit on the singleton host `PmmMock`.
+    #[cfg(not(is_kernel))]
+    fn cpp_arm_smmu_pmm_clear_allocation_limit();
+    /// Reads a 64-bit word at physical address `pa` from the singleton host `PmmMock` PoC DRAM
+    /// view into `*out_val`, returning `true` if `pa` belongs to an allocated mock page. `out_val`
+    /// is borrowed for the duration of the call and must be a valid, non-null writable pointer.
+    #[cfg(not(is_kernel))]
+    fn cpp_arm_smmu_pmm_read_poc_dram64(pa: u64, out_val: *mut u64) -> bool;
+    /// Reads a 64-bit word at physical address `pa` from the singleton host `PmmMock` CPU L1/L2
+    /// cache view into `*out_val`, returning `true` if `pa` belongs to an allocated mock page.
+    /// `out_val` is borrowed for the duration of the call and must be a valid, non-null writable
+    /// pointer.
+    #[cfg(not(is_kernel))]
+    fn cpp_arm_smmu_pmm_read_cpu_cache64(pa: u64, out_val: *mut u64) -> bool;
 }
 
 /// Opaque representation of a host `vm_page_t` whose leading field at offset 0 is its intrusive
@@ -689,6 +709,54 @@ impl SmmuEnv {
         unsafe {
             cpp_arm_smmu_mmio_write64(base, offset, val);
         }
+    }
+
+    /// Returns the number of physical pages currently allocated from the host `PmmMock`.
+    #[cfg(not(is_kernel))]
+    #[inline]
+    pub fn host_pmm_allocated_page_count() -> usize {
+        // SAFETY: Queries the singleton `PmmMock` allocated page counter.
+        unsafe { cpp_arm_smmu_pmm_allocated_page_count() }
+    }
+
+    /// Sets the maximum number of allocated physical pages allowed by the host `PmmMock`.
+    #[cfg(not(is_kernel))]
+    #[inline]
+    pub fn host_pmm_set_allocation_limit(limit: u64) {
+        // SAFETY: Configures the singleton `PmmMock` allocation limit.
+        unsafe {
+            cpp_arm_smmu_pmm_set_allocation_limit(limit);
+        }
+    }
+
+    /// Clears any physical page allocation limit on the host `PmmMock`.
+    #[cfg(not(is_kernel))]
+    #[inline]
+    pub fn host_pmm_clear_allocation_limit() {
+        // SAFETY: Clears the singleton `PmmMock` allocation limit.
+        unsafe {
+            cpp_arm_smmu_pmm_clear_allocation_limit();
+        }
+    }
+
+    /// Reads a 64-bit word from the host `PmmMock` PoC DRAM view at physical address `pa`.
+    #[cfg(not(is_kernel))]
+    #[inline]
+    pub fn host_pmm_read_poc_dram64(pa: u64) -> Option<u64> {
+        let mut val = 0u64;
+        // SAFETY: `val` is a valid stack out-pointer.
+        let ok = unsafe { cpp_arm_smmu_pmm_read_poc_dram64(pa, &raw mut val) };
+        if ok { Some(val) } else { None }
+    }
+
+    /// Reads a 64-bit word from the host `PmmMock` CPU L1/L2 cache view at physical address `pa`.
+    #[cfg(not(is_kernel))]
+    #[inline]
+    pub fn host_pmm_read_cpu_cache64(pa: u64) -> Option<u64> {
+        let mut val = 0u64;
+        // SAFETY: `val` is a valid stack out-pointer.
+        let ok = unsafe { cpp_arm_smmu_pmm_read_cpu_cache64(pa, &raw mut val) };
+        if ok { Some(val) } else { None }
     }
 
     /// Sleeps the calling thread for `delay_ns` nanoseconds (relative).

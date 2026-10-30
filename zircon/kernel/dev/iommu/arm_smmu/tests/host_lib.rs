@@ -300,3 +300,135 @@ pub extern "C" fn rust_arm_smmu_common_smoke_test() -> bool {
         && SmmuPmtState::Active != SmmuPmtState::Quarantined
         && Smmu::console_cmd(&help_args, 0) == 0
 }
+
+/// Runs the native Rust `SmmuModeDefaults` unit test (`Rust -> Rust`).
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_unit_test_smmu_mode_defaults() -> bool {
+    crate::arm_smmu::unit_tests::test_smmu_mode_defaults()
+}
+
+/// Runs the native Rust `SmmuModeAdvanced` unit test (`Rust -> Rust`).
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_unit_test_smmu_mode_advanced() -> bool {
+    crate::arm_smmu::unit_tests::test_smmu_mode_advanced()
+}
+
+/// Runs the native Rust `SmmuModeCaseInsensitive` unit test (`Rust -> Rust`).
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_unit_test_smmu_mode_case_insensitive() -> bool {
+    crate::arm_smmu::unit_tests::test_smmu_mode_case_insensitive()
+}
+
+/// Runs the native Rust `SmmuModeWhitespace` unit test (`Rust -> Rust`).
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_unit_test_smmu_mode_whitespace() -> bool {
+    crate::arm_smmu::unit_tests::test_smmu_mode_whitespace()
+}
+
+/// Runs the native Rust `SmmuModeValidation` unit test (`Rust -> Rust`).
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_unit_test_smmu_mode_validation() -> bool {
+    crate::arm_smmu::unit_tests::test_smmu_mode_validation()
+}
+
+/// Runs the native Rust `Vmsav8_64Descriptors` unit test (`Rust -> Rust`).
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_unit_test_vmsav8_64_descriptors() -> bool {
+    crate::arm_smmu::unit_tests::test_vmsav8_64_descriptors()
+}
+
+/// Runs the native Rust `SmrValueAndIter` unit test (`Rust -> Rust`).
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_unit_test_smr_value_and_iter() -> bool {
+    crate::arm_smmu::unit_tests::test_smr_value_and_iter()
+}
+
+/// Runs the native Rust `Bitmask128` unit test (`Rust -> Rust`).
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_unit_test_bitmask128() -> bool {
+    crate::arm_smmu::unit_tests::test_bitmask128()
+}
+
+/// Runs the native Rust `PageCacheAddAndGet` unit test (`Rust -> Rust`).
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_unit_test_page_cache_add_and_get() -> bool {
+    crate::arm_smmu::unit_tests::test_page_cache_add_and_get()
+}
+
+/// Runs the native Rust `PageCacheTrim` unit test (`Rust -> Rust`).
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_unit_test_page_cache_trim() -> bool {
+    crate::arm_smmu::unit_tests::test_page_cache_trim()
+}
+
+/// Runs the native Rust `PageCacheOom` unit test (`Rust -> Rust`).
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_unit_test_page_cache_oom() -> bool {
+    crate::arm_smmu::unit_tests::test_page_cache_oom()
+}
+
+/// Runs the native Rust `TranslationTableHelperWalkAndReclaim` unit test (`Rust -> Rust`).
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_unit_test_translation_table_helper_walk_and_reclaim() -> bool {
+    crate::arm_smmu::unit_tests::test_translation_table_helper_walk_and_reclaim()
+}
+
+/// Runs the native Rust `DeviceAspaceMapAndUnmap` unit test (`Rust -> Rust`).
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_unit_test_device_aspace_map_and_unmap() -> bool {
+    crate::arm_smmu::unit_tests::test_device_aspace_map_and_unmap()
+}
+
+/// Runs the native Rust `DeviceAspaceMapAtSpecificLocation` unit test (`Rust -> Rust`).
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_unit_test_device_aspace_map_at_specific_location() -> bool {
+    crate::arm_smmu::unit_tests::test_device_aspace_map_at_specific_location()
+}
+
+/// Runs the native Rust `DeviceAspaceMapStraddlingTableLevels` unit test (`Rust -> Rust`).
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_unit_test_device_aspace_map_straddling_table_levels() -> bool {
+    crate::arm_smmu::unit_tests::test_device_aspace_map_straddling_table_levels()
+}
+
+/// Runs the native Rust `DeviceAspaceMapFailureInjection` unit test (`Rust -> Rust`).
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_unit_test_device_aspace_map_failure_injection() -> bool {
+    crate::arm_smmu::unit_tests::test_device_aspace_map_failure_injection()
+}
+
+/// Runs the native Rust `DeviceAspaceSharedTableLevels` unit test (`Rust -> Rust`).
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_unit_test_device_aspace_shared_table_levels() -> bool {
+    crate::arm_smmu::unit_tests::test_device_aspace_shared_table_levels()
+}
+
+/// Runs the native Rust `DeviceAspaceMapAtLocationEdgeCases` unit test (`Rust -> Rust`).
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_unit_test_device_aspace_map_at_location_edge_cases() -> bool {
+    crate::arm_smmu::unit_tests::test_device_aspace_map_at_location_edge_cases()
+}
+
+/// Runs the native Rust `StreamMatchRegGroup` unit test (`Rust -> Rust`).
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_unit_test_stream_match_reg_group() -> bool {
+    crate::arm_smmu::unit_tests::test_stream_match_reg_group()
+}
+
+/// Runs the native Rust `ContextBank` unit test (`Rust -> Rust`).
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_unit_test_context_bank() -> bool {
+    crate::arm_smmu::unit_tests::test_context_bank()
+}
+
+/// Runs the native Rust `RegistersAndBitfields` unit test (`Rust -> Rust`).
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_unit_test_registers_and_bitfields() -> bool {
+    crate::arm_smmu::unit_tests::test_registers_and_bitfields()
+}
+
+/// Runs the native Rust `EscapedName` unit test (`Rust -> Rust`).
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_unit_test_escaped_name() -> bool {
+    crate::arm_smmu::unit_tests::test_escaped_name()
+}

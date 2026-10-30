@@ -69,14 +69,14 @@ struct Level {
 /// explicit parameters so Rust's borrow checker can split borrows of `tt_helper` and `page_cache`
 /// without interior mutability.
 #[derive(Debug, Default)]
-pub(super) struct TranslationTableHelper {
+pub(crate) struct TranslationTableHelper {
     op: Op,
     levels: [Level; LEVELS],
 }
 
 impl TranslationTableHelper {
     /// Creates an uninitialized [`TranslationTableHelper`].
-    pub(super) const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self { op: Op::Invalid, levels: [Level { table_vaddr: 0, ndx: 0, dirty: false }; LEVELS] }
     }
 
@@ -87,7 +87,7 @@ impl TranslationTableHelper {
     /// `root_tt_page` and all intermediate table pages reachable from it must be valid, live 4 KiB
     /// translation table pages checked out from `page_cache` and exclusively managed by the owning
     /// `DeviceAspace`.
-    pub(super) unsafe fn initialize_for_map(
+    pub(crate) unsafe fn initialize_for_map(
         &mut self,
         address: u64,
         root_tt_page: SmmuPage,
@@ -104,7 +104,7 @@ impl TranslationTableHelper {
     /// `root_tt_page` and all intermediate table pages reachable from it must be valid, live 4 KiB
     /// translation table pages checked out from `page_cache` and exclusively managed by the owning
     /// `DeviceAspace`.
-    pub(super) unsafe fn initialize_for_unmap(
+    pub(crate) unsafe fn initialize_for_unmap(
         &mut self,
         address: u64,
         root_tt_page: SmmuPage,
@@ -122,7 +122,7 @@ impl TranslationTableHelper {
     /// [`Self::initialize_for_unmap`], and all table pages referenced by `self` and reachable from
     /// the root table must remain valid, live 4 KiB translation table pages checked out from
     /// `page_cache`.
-    pub(super) unsafe fn advance(
+    pub(crate) unsafe fn advance(
         &mut self,
         aspace_start: u64,
         aspace_len: u64,
@@ -183,7 +183,7 @@ impl TranslationTableHelper {
     ///
     /// # Safety
     /// The current level-3 `table_vaddr` must point to a valid, live 4 KiB translation table page.
-    pub(super) unsafe fn assign_page_entry(&mut self, page_entry: u64) {
+    pub(crate) unsafe fn assign_page_entry(&mut self, page_entry: u64) {
         let l = &mut self.levels[LEVELS - 1];
         assert_ne!(l.table_vaddr, 0);
         debug_assert!((l.ndx as u64) <= ADDR_BITS_MASK);
@@ -203,7 +203,7 @@ impl TranslationTableHelper {
     /// `self` must have been initialized by [`Self::initialize_for_map`] or
     /// [`Self::initialize_for_unmap`], and all table pages referenced by `self` must be valid, live
     /// 4 KiB translation table pages checked out from `page_cache`.
-    pub(super) unsafe fn finish_operation(
+    pub(crate) unsafe fn finish_operation(
         &mut self,
         aspace_start: u64,
         aspace_len: u64,
@@ -230,7 +230,7 @@ impl TranslationTableHelper {
     /// # Safety
     /// If non-zero, the current level-3 `table_vaddr` must point to a valid, live 4 KiB
     /// translation table page.
-    pub(super) unsafe fn current_page_entry_valid(&self) -> bool {
+    pub(crate) unsafe fn current_page_entry_valid(&self) -> bool {
         let last_level = &self.levels[LEVELS - 1];
         if last_level.table_vaddr == 0 {
             return false;

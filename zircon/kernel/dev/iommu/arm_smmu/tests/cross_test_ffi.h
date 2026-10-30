@@ -230,6 +230,30 @@ bool cpp_smmu_get_mode(const char* mode_str, bool has_base_addr, uint64_t base_a
 
 // Native Rust (`Rust -> Rust`) component unit test entry points.
 bool rust_arm_smmu_common_smoke_test();
+bool rust_unit_test_smmu_mode_defaults();
+bool rust_unit_test_smmu_mode_advanced();
+bool rust_unit_test_smmu_mode_case_insensitive();
+bool rust_unit_test_smmu_mode_whitespace();
+bool rust_unit_test_smmu_mode_validation();
+bool rust_unit_test_vmsav8_64_descriptors();
+bool rust_unit_test_smr_value_and_iter();
+bool rust_unit_test_bitmask128();
+bool rust_unit_test_page_cache_add_and_get();
+bool rust_unit_test_page_cache_trim();
+bool rust_unit_test_page_cache_oom();
+bool rust_unit_test_translation_table_helper_walk_and_reclaim();
+bool rust_unit_test_device_aspace_map_and_unmap();
+bool rust_unit_test_device_aspace_map_at_specific_location();
+bool rust_unit_test_device_aspace_map_straddling_table_levels();
+bool rust_unit_test_device_aspace_map_failure_injection();
+bool rust_unit_test_device_aspace_shared_table_levels();
+bool rust_unit_test_device_aspace_map_at_location_edge_cases();
+bool rust_unit_test_stream_match_reg_group();
+bool rust_unit_test_context_bank();
+bool rust_unit_test_registers_and_bitfields();
+bool rust_unit_test_escaped_name();
+
+// Rust model-based test entry points (`Rust -> Rust`, `Rust -> C++`, and `LockstepPair`).
 
 }  // extern "C"
 
