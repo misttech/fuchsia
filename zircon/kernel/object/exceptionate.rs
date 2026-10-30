@@ -10,6 +10,7 @@ use super::handle::{HandleOwner, KernelHandle};
 use super::message_packet::MessagePacket;
 use core::convert::Infallible;
 use core::pin::Pin;
+use core::sync::atomic::{AtomicBool, Ordering};
 use fbl::RefPtr;
 use ksync::{KMutex, RawMutex, guarded};
 use object_constants_rs as object_constants;
@@ -26,6 +27,7 @@ use zx_types::{ZX_KOID_INVALID, zx_exception_info_t, zx_rights_t};
 #[repr(C)]
 pub struct Exceptionate {
     type_: u32,
+    has_channel: AtomicBool,
     #[mutex]
     lock: KMutex<RawMutex>,
     #[guarded_by(lock)]
@@ -50,6 +52,7 @@ impl Exceptionate {
     pub fn new(type_: u32) -> impl PinInit<Self, Infallible> {
         pin_init!(Self {
             type_,
+            has_channel: AtomicBool::new(false),
             lock <- KMutex::init(),
             channel_handle: KernelHandle::empty().into(),
             thread_rights: 0.into(),
@@ -62,6 +65,14 @@ impl Exceptionate {
     #[inline]
     pub fn type_(&self) -> u32 {
         self.type_
+    }
+
+    /// Returns `true` if a channel handle is currently stored in this `Exceptionate`.
+    ///
+    /// This is a lock-free fast-path check; the peer endpoint may have closed since the channel
+    /// was bound. Call [`Self::has_valid_channel`] to also verify that the peer endpoint is open.
+    pub fn has_channel(&self) -> bool {
+        self.has_channel.load(Ordering::Acquire)
     }
 
     /// Sets the backing `ChannelDispatcher` endpoint.
@@ -104,6 +115,7 @@ impl Exceptionate {
         *fields.channel_handle = channel_handle;
         *fields.thread_rights = thread_rights;
         *fields.process_rights = process_rights;
+        self.has_channel.store(true, Ordering::Release);
 
         Ok(())
     }
@@ -117,10 +129,14 @@ impl Exceptionate {
         let fields = guard.as_mut().fields_mut();
         fields.channel_handle.reset();
         *fields.is_shutdown = true;
+        self.has_channel.store(false, Ordering::Release);
     }
 
     /// Returns `true` if the channel exists and has a valid userspace peer.
     pub fn has_valid_channel(&self) -> bool {
+        if !self.has_channel() {
+            return false;
+        }
         ksync::lock!(let guard = self.lock_lock());
         Self::has_valid_channel_locked(guard.fields().channel_handle)
     }
@@ -139,6 +155,10 @@ impl Exceptionate {
     ///  * `Err(Status::NEXT)` if there is no valid underlying channel.
     ///  * `Err(Status::NO_MEMORY)` if we failed to allocate memory.
     pub fn send_exception(&self, exception: &RefPtr<ExceptionDispatcher>) -> Result<(), Status> {
+        if !self.has_channel() {
+            return Err(Status::NEXT);
+        }
+
         ksync::lock!(let mut guard = self.lock_lock());
 
         if !guard.fields().channel_handle.is_valid() {
@@ -189,6 +209,7 @@ impl Exceptionate {
         // into the ZX_ERR_NEXT case since it means the same thing.
         if result == Err(Status::PEER_CLOSED) {
             guard.as_mut().fields_mut().channel_handle.reset();
+            self.has_channel.store(false, Ordering::Release);
             return Err(Status::NEXT);
         }
 
@@ -231,7 +252,47 @@ mod tests {
         zx_exception_report_t,
     };
 
-    fn create_test_thread() -> KernelHandle<ThreadDispatcher> {
+    /// Verifies channel binding, peer-close replacement, and `shutdown()`.
+    #[test]
+    fn channel_lifecycle() {
+        let (ch0, mut ch1, _rights) = unwrap_ok!(ChannelDispatcher::create(), "channel 0 created");
+        let (ch2, _ch3, _rights) = unwrap_ok!(ChannelDispatcher::create(), "channel 1 created");
+        let (ch4, ch5, _rights) = unwrap_ok!(ChannelDispatcher::create(), "channel 2 created");
+        let (ch6, _ch7, _rights) = unwrap_ok!(ChannelDispatcher::create(), "channel 3 created");
+
+        stack_pin_init!(let exceptionate = Exceptionate::new(ZX_EXCEPTION_CHANNEL_TYPE_THREAD));
+        expect_eq!(exceptionate.type_(), ZX_EXCEPTION_CHANNEL_TYPE_THREAD);
+        expect_false!(exceptionate.has_channel());
+        expect_false!(exceptionate.has_valid_channel());
+        expect_true!(
+            exceptionate.set_channel(KernelHandle::empty(), 0, 0) == Err(Status::INVALID_ARGS)
+        );
+
+        assert_ok!(exceptionate.set_channel(ch0, 0, 0), "initial set_channel succeeds");
+        expect_true!(exceptionate.has_channel());
+        expect_true!(exceptionate.has_valid_channel());
+        expect_true!(exceptionate.set_channel(ch2, 0, 0) == Err(Status::ALREADY_BOUND));
+
+        // Closing the peer endpoint makes the channel invalid and allows replacing it.
+        ch1.reset();
+        expect_true!(exceptionate.has_channel());
+        expect_false!(exceptionate.has_valid_channel());
+        expect_ok!(exceptionate.set_channel(ch4, 0, 0));
+        expect_true!(exceptionate.has_channel());
+        expect_true!(exceptionate.has_valid_channel());
+        expect_false!(ch5.dispatcher().peer_has_closed());
+
+        // `shutdown()` closes the peer endpoint and rejects subsequent channels.
+        exceptionate.shutdown();
+        expect_true!(ch5.dispatcher().peer_has_closed());
+        expect_false!(exceptionate.has_channel());
+        expect_false!(exceptionate.has_valid_channel());
+        expect_true!(exceptionate.set_channel(ch6, 0, 0) == Err(Status::BAD_STATE));
+    }
+
+    /// Verifies `send_exception` across unbound, peer-closed, and active channels.
+    #[test]
+    fn send_exception_lifecycle() {
         let (job, _job_rights) =
             JobDispatcher::create(0, get_root_job_dispatcher().clone()).expect("job created");
         let (process, _process_rights, _vmar, _vmar_rights) =
@@ -240,64 +301,7 @@ mod tests {
         let (thread, _thread_rights) =
             ThreadDispatcher::create(process.dispatcher().clone(), 0, b"exc-ut-t")
                 .expect("thread created");
-        thread
-    }
 
-    /// Verifies overwriting an exceptionate channel with an active peer returns `ALREADY_BOUND`.
-    #[test]
-    fn overwrite_valid_channel_fails() {
-        let (ch0, _ch1, _rights) = unwrap_ok!(ChannelDispatcher::create(), "channel 0 created");
-        let (ch2, _ch3, _rights) = unwrap_ok!(ChannelDispatcher::create(), "channel 1 created");
-
-        stack_pin_init!(let exceptionate = Exceptionate::new(ZX_EXCEPTION_CHANNEL_TYPE_THREAD));
-        expect_eq!(exceptionate.type_(), ZX_EXCEPTION_CHANNEL_TYPE_THREAD);
-        expect_false!(exceptionate.has_valid_channel());
-
-        assert_ok!(exceptionate.set_channel(ch0, 0, 0), "initial set_channel succeeds");
-        expect_true!(exceptionate.has_valid_channel());
-
-        expect_true!(exceptionate.set_channel(ch2, 0, 0) == Err(Status::ALREADY_BOUND));
-    }
-
-    /// Verifies that closing the peer endpoint allows overwriting the exceptionate channel.
-    #[test]
-    fn overwrite_invalid_channel_succeeds() {
-        let (ch0, mut ch1, _rights) = unwrap_ok!(ChannelDispatcher::create(), "channel 0 created");
-        let (ch2, _ch3, _rights) = unwrap_ok!(ChannelDispatcher::create(), "channel 1 created");
-
-        stack_pin_init!(let exceptionate = Exceptionate::new(ZX_EXCEPTION_CHANNEL_TYPE_THREAD));
-        assert_ok!(exceptionate.set_channel(ch0, 0, 0), "initial set_channel succeeds");
-
-        ch1.reset();
-        expect_false!(exceptionate.has_valid_channel());
-        expect_ok!(exceptionate.set_channel(ch2, 0, 0));
-        expect_true!(exceptionate.has_valid_channel());
-    }
-
-    /// Verifies that `shutdown()` closes the peer endpoint and rejects subsequent channels.
-    #[test]
-    fn shutdown_closes_peer_and_rejects_new_channels() {
-        let (ch0, ch1, _rights) = unwrap_ok!(ChannelDispatcher::create(), "channel 0 created");
-        let (ch2, _ch3, _rights) = unwrap_ok!(ChannelDispatcher::create(), "channel 1 created");
-
-        stack_pin_init!(let exceptionate = Exceptionate::new(ZX_EXCEPTION_CHANNEL_TYPE_THREAD));
-        expect_true!(
-            exceptionate.set_channel(KernelHandle::empty(), 0, 0) == Err(Status::INVALID_ARGS)
-        );
-
-        assert_ok!(exceptionate.set_channel(ch0, 0, 0), "initial set_channel succeeds");
-        expect_false!(ch1.dispatcher().peer_has_closed());
-
-        exceptionate.shutdown();
-        expect_true!(ch1.dispatcher().peer_has_closed());
-        expect_false!(exceptionate.has_valid_channel());
-        expect_true!(exceptionate.set_channel(ch2, 0, 0) == Err(Status::BAD_STATE));
-    }
-
-    /// Verifies `send_exception` returns `Err(Status::NEXT)` when no channel is bound.
-    #[test]
-    fn send_exception_without_channel_returns_next() {
-        let thread = create_test_thread();
         let mut report = zx_exception_report_t::new_zeroed();
         report.header.size = core::mem::size_of::<zx_exception_report_t>() as u32;
         report.header.type_ = ZX_EXCP_GENERAL;
@@ -316,76 +320,33 @@ mod tests {
         let _cleanup = zr::defer(|| exception.clear());
 
         stack_pin_init!(let exceptionate = Exceptionate::new(ZX_EXCEPTION_CHANNEL_TYPE_THREAD));
+
+        // 1. Unbound channel returns `Err(Status::NEXT)`.
         expect_true!(exceptionate.send_exception(&exception) == Err(Status::NEXT));
         expect_false!(exception.is_response_event_signaled());
-    }
 
-    /// Verifies `send_exception` on a peer-closed channel resets the channel and returns `NEXT`.
-    #[test]
-    fn send_exception_peer_closed_clears_channel_and_discards_handle_close() {
-        let thread = create_test_thread();
-        let mut report = zx_exception_report_t::new_zeroed();
-        report.header.size = core::mem::size_of::<zx_exception_report_t>() as u32;
-        report.header.type_ = ZX_EXCP_GENERAL;
-        let dummy_arch_context: u64 = 0;
-
-        // SAFETY: `report` and `dummy_arch_context` outlive `_cleanup`.
-        let exception = unsafe {
-            ExceptionDispatcher::create(
-                thread.dispatcher().clone(),
-                ZX_EXCP_GENERAL,
-                &raw const report,
-                (&raw const dummy_arch_context).cast::<ArchExceptionContext>(),
-            )
-        }
-        .expect("exception created");
-        let _cleanup = zr::defer(|| exception.clear());
-
-        let (ch0, mut ch1, _rights) = unwrap_ok!(ChannelDispatcher::create(), "channel created");
-        stack_pin_init!(let exceptionate = Exceptionate::new(ZX_EXCEPTION_CHANNEL_TYPE_THREAD));
+        // 2. Peer-closed channel clears the channel, discards handle close, and returns `NEXT`.
+        let (ch0, mut ch1, _rights) = unwrap_ok!(ChannelDispatcher::create(), "channel 0 created");
         assert_ok!(
             exceptionate.set_channel(ch0, ZX_RIGHT_READ, ZX_RIGHT_WRITE),
             "set_channel succeeds"
         );
-
-        // Close the peer and pre-set a non-default disposition so we can observe
-        // `discard_handle_close()` resetting both the response event and disposition.
         ch1.reset();
         exception.set_disposition(ZX_EXCEPTION_STATE_HANDLED);
 
         expect_true!(exceptionate.send_exception(&exception) == Err(Status::NEXT));
+        expect_false!(exceptionate.has_channel());
         expect_false!(exception.is_response_event_signaled());
         expect_eq!(exception.get_disposition(), ZX_EXCEPTION_STATE_TRY_NEXT);
-
-        ksync::lock!(let guard = exceptionate.lock_lock());
-        expect_false!(guard.fields().channel_handle.is_valid());
-    }
-
-    /// Verifies `send_exception` delivers a `zx_exception_info_t` message and exception handle.
-    #[test]
-    fn send_exception_delivers_message_and_handle() {
-        let thread = create_test_thread();
-        let mut report = zx_exception_report_t::new_zeroed();
-        report.header.size = core::mem::size_of::<zx_exception_report_t>() as u32;
-        report.header.type_ = ZX_EXCP_GENERAL;
-        let dummy_arch_context: u64 = 0;
-
-        // SAFETY: `report` and `dummy_arch_context` outlive `_cleanup`.
-        let exception = unsafe {
-            ExceptionDispatcher::create(
-                thread.dispatcher().clone(),
-                ZX_EXCP_GENERAL,
-                &raw const report,
-                (&raw const dummy_arch_context).cast::<ArchExceptionContext>(),
-            )
+        {
+            ksync::lock!(let guard = exceptionate.lock_lock());
+            expect_false!(guard.fields().channel_handle.is_valid());
         }
-        .expect("exception created");
-        let _cleanup = zr::defer(|| exception.clear());
 
-        let (ch0, ch1, _rights) = unwrap_ok!(ChannelDispatcher::create(), "channel created");
-        stack_pin_init!(let exceptionate = Exceptionate::new(ZX_EXCEPTION_CHANNEL_TYPE_THREAD));
+        // 3. Active channel delivers the `zx_exception_info_t` message and exception handle.
+        let (ch2, ch3, _rights) = unwrap_ok!(ChannelDispatcher::create(), "channel 1 created");
         assert_ok!(
-            exceptionate.set_channel(ch0, ZX_RIGHT_READ, ZX_RIGHT_WRITE),
+            exceptionate.set_channel(ch2, ZX_RIGHT_READ, ZX_RIGHT_WRITE),
             "set_channel succeeds"
         );
 
@@ -400,7 +361,7 @@ mod tests {
         let mut msg_size = core::mem::size_of::<zx_exception_info_t>() as u32;
         let mut msg_handles = 1u32;
         let msg = unwrap_ok!(
-            ch1.dispatcher().read(ZX_KOID_INVALID, &mut msg_size, &mut msg_handles, false),
+            ch3.dispatcher().read(ZX_KOID_INVALID, &mut msg_size, &mut msg_handles, false),
             "read exception message"
         );
         expect_eq!(msg.data_size(), core::mem::size_of::<zx_exception_info_t>());
