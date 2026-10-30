@@ -11,15 +11,10 @@ Review changes to Netstack3 and related networking code as an expert on the
 Fuchsia networking stack. Ensure that the code is high-quality, performant,
 and idiomatic.
 
-This skill is the single source of truth for Netstack3 AI code review. It is
-used by:
-
--   Local `/review`, via `src/connectivity/network/AGENTIC_REVIEW` and
-    `src/lib/network/AGENTIC_REVIEW`.
--   The Gerrit CL review agent, via the `fuchsia-netstack3-review` entry in
-    `.agents/code-review/agent_configs.textproto`.
-
-When changing which paths this skill applies to, update both configurations.
+This skill is the single source of truth for Netstack3 AI code review. Both
+local `/review` and the Gerrit CL review agent load it via the
+`fuchsia-netstack3-review` entry in
+`.agents/code-review/agent_configs.textproto`.
 
 ## Scope of review
 
