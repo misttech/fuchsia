@@ -56,6 +56,9 @@ auto GetHandleBasicInfo(const std::map<zx_object_info_topic_t, ByteView>& info) 
 
 [[maybe_unused]] constexpr size_t ThreadStateSize(zx_thread_state_topic_t topic,
                                                   elfldltl::ElfMachine machine) {
+  if (machine == elfldltl::ElfMachine::kAarch64 && topic == ZX_THREAD_STATE_ARM64_SVE) {
+    return sizeof(zx_arm64_thread_state_sve_regs_t);
+  }
   switch (machine) {
 #define MACHINE_REGS(elf_machine, zx_cpu)                         \
   case elfldltl::ElfMachine::elf_machine:                         \
@@ -169,6 +172,10 @@ fit::result<Error, ByteView> Thread::read_state(zx_thread_state_topic_t topic) {
       return fit::error(Error{"zx_thread_read_state", ZX_ERR_NOT_SUPPORTED});
     }
 #ifdef __Fuchsia__
+    if (topic == ZX_THREAD_STATE_ARM64_SVE &&
+        process_->dump_machine() != elfldltl::ElfMachine::kAarch64) {
+      return fit::error(Error{.op_ = "zx_thread_read_state", .status_ = ZX_ERR_NOT_SUPPORTED});
+    }
     zx::unowned_thread thread{live().get()};
     const size_t state_size = ThreadStateSize(topic, process_->dump_machine());
     auto buffer = GetBuffer(state_size);

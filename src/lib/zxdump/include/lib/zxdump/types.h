@@ -352,6 +352,12 @@ struct ThreadStateTraits<zx_arm64_thread_state_debug_regs_t> {
 };
 
 template <>
+struct ThreadStateTraits<zx_arm64_thread_state_sve_regs_t> {
+  static constexpr zx_thread_state_topic_t kTopic = ZX_THREAD_STATE_ARM64_SVE;
+  static constexpr elfldltl::ElfMachine kMachine = elfldltl::ElfMachine::kAarch64;
+};
+
+template <>
 struct ThreadStateTraits<zx_riscv64_thread_state_general_regs_t> {
   static constexpr zx_thread_state_topic_t kTopic = ZX_THREAD_STATE_GENERAL_REGS;
   static constexpr elfldltl::ElfMachine kMachine = elfldltl::ElfMachine::kRiscv;

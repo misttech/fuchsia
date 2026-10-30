@@ -10,6 +10,10 @@
 #include <lib/zxdump/task.h>
 #include <lib/zxdump/zstd-writer.h>
 #include <unistd.h>
+#ifdef __aarch64__
+#include <zircon/features.h>
+#include <zircon/syscalls.h>
+#endif
 #include <zircon/status.h>
 
 #include <array>
@@ -649,14 +653,30 @@ void TestProcessForThreadState::CheckDump(zxdump::TaskHolder& holder) {
     // So skip that one.
     if (koid != thread_koids().front()) {
       switch (read_process.dump_machine()) {
-        case elfldltl::ElfMachine::kAarch64:
+        case elfldltl::ElfMachine::kAarch64: {
           check_crash_register(thread.read_state<zx_arm64_thread_state_general_regs_t>());
+#ifdef __aarch64__
+          uint32_t cpu_features = 0;
+          ASSERT_EQ(ZX_OK, zx_system_get_features(ZX_FEATURE_KIND_CPU, &cpu_features));
+          auto sve_result = thread.read_state<zx_arm64_thread_state_sve_regs_t>();
+          if ((cpu_features & ZX_ARM64_FEATURE_ISA_SVE) != 0) {
+            ASSERT_TRUE(sve_result.is_ok()) << sve_result.error_value();
+          } else {
+            ASSERT_TRUE(sve_result.is_error());
+            EXPECT_EQ(sve_result.error_value().status_, ZX_ERR_NOT_SUPPORTED);
+          }
+#endif
           break;
+        }
         case elfldltl::ElfMachine::kRiscv:
           check_crash_register(thread.read_state<zx_riscv64_thread_state_general_regs_t>());
+          EXPECT_EQ(thread.read_state<zx_arm64_thread_state_sve_regs_t>().error_value().status_,
+                    ZX_ERR_INVALID_ARGS);
           break;
         case elfldltl::ElfMachine::kX86_64:
           check_crash_register(thread.read_state<zx_x86_64_thread_state_general_regs_t>());
+          EXPECT_EQ(thread.read_state<zx_arm64_thread_state_sve_regs_t>().error_value().status_,
+                    ZX_ERR_INVALID_ARGS);
           break;
         default:
           FAIL() << "unsupported machine " << static_cast<uint32_t>(read_process.dump_machine());

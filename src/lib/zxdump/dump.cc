@@ -1004,7 +1004,8 @@ class ProcessDump::Collector : public CollectorBase<ProcessRemarkClass> {
       ThreadState<ZX_THREAD_STATE_FP_REGS>,         //
       ThreadState<ZX_THREAD_STATE_VECTOR_REGS>,     //
       ThreadState<ZX_THREAD_STATE_DEBUG_REGS>,      //
-      ThreadState<ZX_THREAD_STATE_SINGLE_STEP>>;
+      ThreadState<ZX_THREAD_STATE_SINGLE_STEP>,     //
+      ThreadState<ZX_THREAD_STATE_ARM64_SVE>>;
 
   using ProcessNotes = WithKernelNotes<
       // This lists all the notes for process-wide state.
