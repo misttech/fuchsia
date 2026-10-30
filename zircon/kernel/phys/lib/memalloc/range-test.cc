@@ -167,6 +167,44 @@ TEST(MemallocRangeTests, NormalizeRanges) {
     memalloc::testing::CompareRanges(std::span{kExpected}, {normalized});
   }
 
+  // Zero-sized ranges are skipped and do not break up merging.
+  {
+    constexpr Range kWithEmpty[] = {
+        {
+            .addr = 0x1000,
+            .size = 2 * kChunkSize,
+            .type = Type::kFreeRam,
+        },
+        {
+            .addr = 0x3000,
+            .size = 0,
+            .type = Type::kPoolTestPayload,
+        },
+        {
+            .addr = 0x3000,
+            .size = 3 * kChunkSize,
+            .type = Type::kFreeRam,
+        },
+    };
+    std::vector<Range> normalized;
+    memalloc::NormalizeRanges(
+        std::span{kWithEmpty},
+        [&normalized](const Range& range) {
+          normalized.push_back(range);
+          return true;
+        },
+        [](Type type) { return std::make_optional(type); });
+
+    constexpr Range kExpected[] = {
+        {
+            .addr = 0x1000,
+            .size = 5 * kChunkSize,
+            .type = Type::kFreeRam,
+        },
+    };
+    memalloc::testing::CompareRanges(std::span{kExpected}, {normalized});
+  }
+
   // Verify constexpr evaluation.
   {
     constexpr auto count_ram_ranges = [] {

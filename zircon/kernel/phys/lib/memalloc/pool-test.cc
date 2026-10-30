@@ -3198,7 +3198,8 @@ TEST(MemallocPoolTests, NormalizeRangesDuringMutation) {
 
   // Right-neighbor coalescing: allocating immediately before the paused node
   // retypes the preceding free page in place and unlinks the paused node via
-  // Coalesce()'s `next` branch.
+  // Coalesce()'s `next` branch. As the newly allocated page lies past the end
+  // of the previously emitted range, it is emitted along with the paused node.
   {
     PoolContext ctx;
     Range ranges[] = {
@@ -3246,8 +3247,8 @@ TEST(MemallocPoolTests, NormalizeRangesDuringMutation) {
             .type = Type::kKernelPageTables,
         },
         {
-            .addr = 0x5000,
-            .size = kChunkSize,
+            .addr = 0x4000,
+            .size = 2 * kChunkSize,
             .type = Type::kKernelPageTables,
         },
     };
@@ -3296,6 +3297,62 @@ TEST(MemallocPoolTests, NormalizeRangesDuringMutation) {
         {
             .addr = 0x4800,
             .size = 0x3800,
+            .type = Type::kFreeRam,
+        },
+    };
+    memalloc::testing::CompareRanges(std::span{kExpectedNormalized}, {normalized});
+  }
+
+  // Mid-node split, as above, but filtering for kFreeRam alone so that the
+  // split pieces of the paused node are emitted as disjoint ranges.
+  {
+    PoolContext ctx;
+    Range ranges[] = {
+        // [0x1000, 0x2000) is taken for kPoolBookkeeping.
+        {
+            .addr = 0x1000,
+            .size = kChunkSize + kChunkSize / 2,
+            .type = Type::kFreeRam,
+        },
+        {
+            .addr = 0x2800,
+            .size = 0x2000,
+            .type = Type::kPhysKernel,
+        },
+        {
+            .addr = 0x4800,
+            .size = 0x3800,
+            .type = Type::kFreeRam,
+        },
+    };
+    ASSERT_NO_FATAL_FAILURE(TestPoolInit(ctx.pool, {ranges}));
+
+    std::vector<Range> normalized;
+    memalloc::NormalizeRanges(
+        ctx.pool,
+        [&](const Range& range) {
+          normalized.push_back(range);
+          if (range.addr == 0x2000) {
+            EXPECT_TRUE(ctx.pool.Allocate(Type::kKernelPageTables, kChunkSize, kChunkSize).is_ok());
+          }
+          return true;
+        },
+        [](Type type) { return type == Type::kFreeRam ? std::make_optional(type) : std::nullopt; });
+
+    constexpr Range kExpectedNormalized[] = {
+        {
+            .addr = 0x2000,
+            .size = kChunkSize / 2,
+            .type = Type::kFreeRam,
+        },
+        {
+            .addr = 0x4800,
+            .size = 0x800,
+            .type = Type::kFreeRam,
+        },
+        {
+            .addr = 0x6000,
+            .size = 2 * kChunkSize,
             .type = Type::kFreeRam,
         },
     };
