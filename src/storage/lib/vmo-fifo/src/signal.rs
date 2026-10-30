@@ -13,22 +13,19 @@ pub const SIG_SHUTDOWN: zx::Signals = zx::Signals::USER_4;
 
 // A synchronization helper that coordinates event waiting and signaling on a VMO using a pair of
 // Zircon user signals and toggling between them.
-pub(crate) struct EventSignal {
+pub struct EventSignal {
     set_next: zx::Signals,
     clear_next: zx::Signals,
 }
 
 impl EventSignal {
-    pub(crate) const fn new(sig_0: zx::Signals, sig_1: zx::Signals) -> Self {
+    pub const fn new(sig_0: zx::Signals, sig_1: zx::Signals) -> Self {
         Self { set_next: sig_0, clear_next: sig_1 }
     }
 
     // Blocks until the currently expected signal bit (or `shutdown_sig`) is asserted.
-    pub(crate) fn wait(
-        &mut self,
-        vmo: &zx::Vmo,
-        shutdown_sig: zx::Signals,
-    ) -> Result<(), zx::Status> {
+    #[cfg(test)]
+    fn wait(&mut self, vmo: &zx::Vmo, shutdown_sig: zx::Signals) -> Result<(), zx::Status> {
         let mask = self.set_next | shutdown_sig;
 
         let observed = vmo.wait_one(mask, zx::MonotonicInstant::INFINITE).to_result()?;
@@ -40,7 +37,7 @@ impl EventSignal {
         Ok(())
     }
 
-    pub(crate) async fn wait_async(
+    pub async fn wait_async(
         &mut self,
         vmo: &zx::Vmo,
         shutdown_sig: zx::Signals,
@@ -56,7 +53,7 @@ impl EventSignal {
         Ok(())
     }
 
-    pub(crate) fn signal(&mut self, vmo: &zx::Vmo) -> Result<(), zx::Status> {
+    pub fn signal(&mut self, vmo: &zx::Vmo) -> Result<(), zx::Status> {
         // Asserts the active signal bit and clears the alternate bit.
         vmo.signal(self.clear_next, self.set_next)?;
         std::mem::swap(&mut self.set_next, &mut self.clear_next);
@@ -64,12 +61,12 @@ impl EventSignal {
     }
 
     // Returns the signal mask combining the next expected signal bit and `shutdown_sig`.
-    pub(crate) fn current_mask(&self, shutdown_sig: zx::Signals) -> zx::Signals {
+    pub fn current_mask(&self, shutdown_sig: zx::Signals) -> zx::Signals {
         self.set_next | shutdown_sig
     }
 
     // Toggles the active and alternate signal bits after the current signal has been observed.
-    pub(crate) fn advance(&mut self) {
+    pub fn advance(&mut self) {
         std::mem::swap(&mut self.set_next, &mut self.clear_next);
     }
 }

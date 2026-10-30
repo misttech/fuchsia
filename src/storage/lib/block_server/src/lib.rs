@@ -4555,16 +4555,6 @@ mod tests {
             payload_bytes.extend_from_slice(&w.to_le_bytes());
         }
 
-        let cmd = mapping::RawMappingCommand {
-            opcode: mapping::MAPPINGS_COMMAND,
-            offset: 0,
-            key,
-            stored_size: 4096,
-            device_offset: 0,
-            metadata_count: 0,
-            extent_count: data_extent_words.len() as u32,
-        };
-
         let mut sender = vmo_fifo::SyncSender::<mapping::RawMappingCommand>::new(
             mapping_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
             1024,
@@ -4573,6 +4563,15 @@ mod tests {
         .unwrap();
         let mut payload_buf = sender.reserve_payload(payload_bytes.len()).unwrap();
         payload_buf.data().copy_from_slice(&payload_bytes);
+        let cmd = mapping::RawMappingCommand {
+            opcode: mapping::MAPPINGS_COMMAND,
+            offset: payload_buf.offset(),
+            key,
+            stored_size: 4096,
+            device_offset: 0,
+            metadata_count: 0,
+            extent_count: data_extent_words.len() as u32,
+        };
         payload_buf.commit(cmd).unwrap();
 
         let res = mapper_proxy
@@ -4637,15 +4636,6 @@ mod tests {
         for w in &partition_extents {
             payload_bytes.extend_from_slice(&w.to_le_bytes());
         }
-        let cmd = mapping::RawMappingCommand {
-            opcode: mapping::MAPPINGS_COMMAND,
-            offset: 0,
-            key: partition_key,
-            stored_size: 8192,
-            device_offset: 0,
-            metadata_count: 0,
-            extent_count: partition_extents.len() as u32,
-        };
         let mut sender = vmo_fifo::SyncSender::<mapping::RawMappingCommand>::new(
             root_mapping_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
             1024,
@@ -4654,6 +4644,15 @@ mod tests {
         .unwrap();
         let mut payload_buf = sender.reserve_payload(payload_bytes.len()).unwrap();
         payload_buf.data().copy_from_slice(&payload_bytes);
+        let cmd = mapping::RawMappingCommand {
+            opcode: mapping::MAPPINGS_COMMAND,
+            offset: payload_buf.offset(),
+            key: partition_key,
+            stored_size: 8192,
+            device_offset: 0,
+            metadata_count: 0,
+            extent_count: partition_extents.len() as u32,
+        };
         payload_buf.commit(cmd).unwrap();
 
         let res = mapper_proxy
@@ -4695,15 +4694,6 @@ mod tests {
         for w in &child_extents {
             child_payload_bytes.extend_from_slice(&w.to_le_bytes());
         }
-        let child_cmd = mapping::RawMappingCommand {
-            opcode: mapping::MAPPINGS_COMMAND,
-            offset: 0,
-            key: child_key,
-            stored_size: 4096,
-            device_offset: 0,
-            metadata_count: 0,
-            extent_count: child_extents.len() as u32,
-        };
         let mut child_sender = vmo_fifo::SyncSender::<mapping::RawMappingCommand>::new(
             child_mapping_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
             1024,
@@ -4713,6 +4703,15 @@ mod tests {
         let mut child_payload_buf =
             child_sender.reserve_payload(child_payload_bytes.len()).unwrap();
         child_payload_buf.data().copy_from_slice(&child_payload_bytes);
+        let child_cmd = mapping::RawMappingCommand {
+            opcode: mapping::MAPPINGS_COMMAND,
+            offset: child_payload_buf.offset(),
+            key: child_key,
+            stored_size: 4096,
+            device_offset: 0,
+            metadata_count: 0,
+            extent_count: child_extents.len() as u32,
+        };
         child_payload_buf.commit(child_cmd).unwrap();
 
         let mut child_res = Err(zx::Status::NOT_FOUND);
@@ -4779,15 +4778,6 @@ mod tests {
         for w in &partition_extents {
             payload_bytes.extend_from_slice(&w.to_le_bytes());
         }
-        let cmd = mapping::RawMappingCommand {
-            opcode: mapping::MAPPINGS_COMMAND,
-            offset: 0,
-            key: partition_key,
-            stored_size: 8192,
-            device_offset: 0,
-            metadata_count: 0,
-            extent_count: partition_extents.len() as u32,
-        };
         let mut sender = vmo_fifo::SyncSender::<mapping::RawMappingCommand>::new(
             root_mapping_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
             1024,
@@ -4796,6 +4786,15 @@ mod tests {
         .unwrap();
         let mut payload_buf = sender.reserve_payload(payload_bytes.len()).unwrap();
         payload_buf.data().copy_from_slice(&payload_bytes);
+        let cmd = mapping::RawMappingCommand {
+            opcode: mapping::MAPPINGS_COMMAND,
+            offset: payload_buf.offset(),
+            key: partition_key,
+            stored_size: 8192,
+            device_offset: 0,
+            metadata_count: 0,
+            extent_count: partition_extents.len() as u32,
+        };
         payload_buf.commit(cmd).unwrap();
 
         let res = mapper_proxy

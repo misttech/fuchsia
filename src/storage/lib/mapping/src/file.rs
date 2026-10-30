@@ -2140,16 +2140,6 @@ mod tests {
             payload_bytes.extend_from_slice(&w.to_le_bytes());
         }
 
-        let cmd = crate::RawMappingCommand {
-            opcode: crate::MAPPINGS_COMMAND,
-            offset: 0,
-            key: 42,
-            stored_size: BLOCK_SIZE,
-            device_offset: 0,
-            metadata_count: 1,
-            extent_count: 1,
-        };
-
         let vmo = Vmo::create(65536).unwrap();
         let mut sender = SyncSender::<crate::RawMappingCommand>::new(
             vmo.duplicate_handle(Rights::SAME_RIGHTS).unwrap(),
@@ -2159,6 +2149,15 @@ mod tests {
         .unwrap();
         let mut payload_buf = sender.reserve_payload(payload_bytes.len()).unwrap();
         payload_buf.data().copy_from_slice(&payload_bytes);
+        let cmd = crate::RawMappingCommand {
+            opcode: crate::MAPPINGS_COMMAND,
+            offset: payload_buf.offset(),
+            key: 42,
+            stored_size: BLOCK_SIZE,
+            device_offset: 0,
+            metadata_count: 1,
+            extent_count: 1,
+        };
         payload_buf.commit(cmd).unwrap();
         let mut receiver = vmo_fifo::Receiver::<crate::RawMappingCommand>::new(vmo, 16).unwrap();
 
@@ -2247,16 +2246,6 @@ mod tests {
             payload_bytes.extend_from_slice(&w.to_le_bytes());
         }
 
-        let cmd = crate::RawMappingCommand {
-            opcode: crate::MAPPINGS_COMMAND,
-            offset: 0,
-            key: 42,
-            stored_size: BLOCK_SIZE,
-            device_offset: 0,
-            metadata_count: 1,
-            extent_count: 1,
-        };
-
         let vmo = Vmo::create(65536).unwrap();
         let mut sender = SyncSender::<crate::RawMappingCommand>::new(
             vmo.duplicate_handle(Rights::SAME_RIGHTS).unwrap(),
@@ -2266,6 +2255,15 @@ mod tests {
         .unwrap();
         let mut payload_buf = sender.reserve_payload(payload_bytes.len()).unwrap();
         payload_buf.data().copy_from_slice(&payload_bytes);
+        let cmd = crate::RawMappingCommand {
+            opcode: crate::MAPPINGS_COMMAND,
+            offset: payload_buf.offset(),
+            key: 42,
+            stored_size: BLOCK_SIZE,
+            device_offset: 0,
+            metadata_count: 1,
+            extent_count: 1,
+        };
         payload_buf.commit(cmd).unwrap();
         let mut receiver = vmo_fifo::Receiver::<crate::RawMappingCommand>::new(vmo, 16).unwrap();
 
