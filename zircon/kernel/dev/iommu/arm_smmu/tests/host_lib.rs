@@ -19,8 +19,9 @@ use crate::arm_smmu::common::{
     PinnedVmoSource, TlbInvalidator, get_smmu_mode, validate_smmu_mode_string,
 };
 use crate::arm_smmu::v2::{
-    AddrMode, Bitmask128, BtiMode, CbarType, ContextBank, S2crType, SmmuMmio, SmmuParams, SmrValue,
-    StreamMatchRegGroup, gr0, gr1, s1cbr, smr_intersects,
+    AddrMode, Bitmask128, BtiMode, CbarType, ConsoleArg, ContextBank, IrqDef, S2crType, Smmu,
+    SmmuBti, SmmuMmio, SmmuParams, SmmuPmt, SmmuPmtState, SmrValue, StreamMatchRegGroup,
+    ZbiDcfgArmSmmuDriver, ZbiDcfgArmSmmuIrq, ZxIommuDescArmSmmu, gr0, gr1, s1cbr, smr_intersects,
 };
 
 struct SmokePinnedVmo {
@@ -274,5 +275,19 @@ pub extern "C" fn rust_arm_smmu_common_smoke_test() -> bool {
     }
 
     aspace.free_translation_tables(&mut inval);
-    inval.count == 3 && inval.last_base == 0 && inval.last_size == 0
+    if inval.count != 3 || inval.last_base != 0 || inval.last_size != 0 {
+        return false;
+    }
+
+    // Exercise IrqDef, ZbiDcfgArmSmmuDriver, ZxIommuDescArmSmmu, SmmuPmtState, and Smmu::console_cmd.
+    let _ = core::marker::PhantomData::<(SmmuBti, SmmuPmt)>;
+    let irq = IrqDef::from_zbi(ZbiDcfgArmSmmuIrq { num: 32, flags: 1 });
+    let cfg = ZbiDcfgArmSmmuDriver::default();
+    let desc = ZxIommuDescArmSmmu::default();
+    let help_args = [ConsoleArg { str_val: "smmu", u: 0 }, ConsoleArg { str_val: "help", u: 0 }];
+    irq.valid()
+        && cfg.mmio_phys == 0
+        && desc.register_base == 0
+        && SmmuPmtState::Active != SmmuPmtState::Quarantined
+        && Smmu::console_cmd(&help_args, 0) == 0
 }

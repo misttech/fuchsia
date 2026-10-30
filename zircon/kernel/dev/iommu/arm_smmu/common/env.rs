@@ -21,6 +21,31 @@ use zx_status::Status;
 #[cfg(not(is_kernel))]
 use zx_status::sys::zx_status_t;
 
+use super::constants::{ArmSmmuMode, BtiPageLeakReason, InterruptPolarity, InterruptTriggerMode};
+use super::smmu_mode::get_smmu_mode_bytes;
+
+/// Raw spinlock type alias: uses `ksync::RawSpinlock` in the kernel and `ksync::RawMutex` in host
+/// tests (since `RawSpinlock` is only available when `cfg(is_kernel)` is enabled).
+#[cfg(is_kernel)]
+pub type SmmuRawSpinLock = ksync::RawSpinlock;
+
+/// Raw spinlock type alias for host tests (`ksync::RawMutex`).
+#[cfg(not(is_kernel))]
+pub type SmmuRawSpinLock = ksync::RawMutex;
+
+/// Lock policy for acquiring an [`SmmuRawSpinLock`] from an interrupt handler where interrupts are
+/// already disabled (`NoIrqSavePolicy` in kernel, default mutex policy on host).
+#[cfg(is_kernel)]
+pub type SmmuNoIrqSavePolicy = ksync::NoIrqSavePolicy;
+
+/// Lock policy for acquiring an [`SmmuRawSpinLock`] in host tests.
+#[cfg(not(is_kernel))]
+pub type SmmuNoIrqSavePolicy = <ksync::RawMutex as ksync::RawLock>::DefaultPolicy;
+
+/// Banner which must start every `DRIVER OOPS` report (the equivalent of the C++ `DRIVER_OOPS`
+/// macro's `"\nDRIVER OOPS\n"` prefix, which `tefmocheck` looks for in logs).
+pub const DRIVER_OOPS_BANNER: &str = "\nDRIVER OOPS\n";
+
 // Host test environment bindings (`cpp_arm_smmu_*`).
 #[cfg(not(is_kernel))]
 unsafe extern "C" {
@@ -83,6 +108,57 @@ unsafe extern "C" {
         size: usize,
         out_paddr: *mut u64,
     ) -> zx_status_t;
+
+    /// Resets `pinned_vmo` in place, unpinning its pages and dropping its `VmObject` reference.
+    /// `pinned_vmo` must point to a valid `PinnedVmObject` owned by the caller.
+    #[cfg(not(is_kernel))]
+    fn cpp_arm_smmu_pinned_vmo_reset(pinned_vmo: *mut c_void);
+
+    /// Move-constructs a `PinnedVmObject` at `dst` from `src`, transferring ownership of the
+    /// pinned range to `dst` and leaving `*src` empty. `dst` must point to 24-byte, 8-byte aligned
+    /// uninitialized storage and `src` must point to a valid initialized `PinnedVmObject`.
+    #[cfg(not(is_kernel))]
+    fn cpp_arm_smmu_pinned_vmo_move_construct(dst: *mut c_void, src: *mut c_void);
+
+    /// Copies `BootOptions::Get()->arm_smmu_mode` into `out_buf[..out_cap]` and returns the number
+    /// of bytes written. `out_buf` is borrowed for the duration of the call and must be valid for
+    /// writes of `out_cap` bytes.
+    #[cfg(not(is_kernel))]
+    fn cpp_arm_smmu_get_boot_option_mode(out_buf: *mut u8, out_cap: usize) -> usize;
+
+    /// Adds `[base, base + size)` of resource `kind` to the root resource filter deny list.
+    #[cfg(not(is_kernel))]
+    fn cpp_arm_smmu_root_resource_filter_add_deny_region(base: u64, size: usize, kind: u32);
+
+    /// Configures interrupt `vector` with `trigger_mode` and `polarity`.
+    #[cfg(not(is_kernel))]
+    fn cpp_arm_smmu_configure_interrupt(
+        vector: u32,
+        trigger_mode: u32,
+        polarity: u32,
+    ) -> zx_status_t;
+
+    /// Masks interrupt `vector`.
+    #[cfg(not(is_kernel))]
+    fn cpp_arm_smmu_mask_interrupt(vector: u32) -> zx_status_t;
+
+    /// Unmasks interrupt `vector`.
+    #[cfg(not(is_kernel))]
+    fn cpp_arm_smmu_unmask_interrupt(vector: u32) -> zx_status_t;
+
+    /// Registers `handler(cookie)` for interrupt `vector`. `cookie` is not dereferenced by the
+    /// interrupt manager directly but is passed back to `handler` on each interrupt; the caller
+    /// must ensure `cookie` remains valid until [`cpp_arm_smmu_unregister_int_handler`] completes.
+    #[cfg(not(is_kernel))]
+    fn cpp_arm_smmu_register_int_handler(
+        vector: u32,
+        cookie: *mut c_void,
+        handler: Option<extern "C" fn(*mut c_void)>,
+    ) -> zx_status_t;
+
+    /// Unregisters the interrupt handler for `vector`.
+    #[cfg(not(is_kernel))]
+    fn cpp_arm_smmu_unregister_int_handler(vector: u32) -> zx_status_t;
 
     /// Reads a 32-bit MMIO register at `base + offset` via the host `FakeSmmuMmioRouter` or raw
     /// memory fallback. `base + offset` must either belong to a registered router region or point
@@ -635,6 +711,370 @@ impl SmmuEnv {
     pub fn sleep_usec(usec: u64) {
         let delay_ns = i64::try_from(usec).unwrap_or(i64::MAX).saturating_mul(1_000);
         let _ = Self::sleep_relative(delay_ns);
+    }
+
+    /// Queries `BootOptions::Get()->arm_smmu_mode` and parses the mode for `base_addr`, falling
+    /// back to [`ArmSmmuMode::Disabled`] if the boot option string is invalid.
+    pub fn boot_option_smmu_mode(base_addr: Option<u64>) -> ArmSmmuMode {
+        #[cfg(is_kernel)]
+        {
+            get_smmu_mode_bytes(&boot_options::BootOptions::get().arm_smmu_mode, base_addr)
+                .unwrap_or(ArmSmmuMode::Disabled)
+        }
+        #[cfg(not(is_kernel))]
+        {
+            let mut buf = [0u8; 256];
+            // SAFETY: `buf` is a valid stack buffer of length `buf.len()`.
+            let len = unsafe { cpp_arm_smmu_get_boot_option_mode(buf.as_mut_ptr(), buf.len()) };
+            get_smmu_mode_bytes(&buf[..len], base_addr).unwrap_or(ArmSmmuMode::Disabled)
+        }
+    }
+
+    /// Adds `[base, base + size)` of resource `kind` to the root resource filter deny list.
+    #[inline]
+    pub fn root_resource_filter_add_deny_region(base: u64, size: usize, kind: u32) {
+        #[cfg(is_kernel)]
+        {
+            crate::root_resource_filter::root_resource_filter_add_deny_region(
+                base as usize,
+                size,
+                kind,
+            );
+        }
+        #[cfg(not(is_kernel))]
+        {
+            // SAFETY: Registers a physical address range with the mock root resource filter.
+            unsafe {
+                cpp_arm_smmu_root_resource_filter_add_deny_region(base, size, kind);
+            }
+        }
+    }
+
+    /// Configures interrupt `vector` with `trigger_mode` and `polarity`.
+    #[inline]
+    pub fn configure_interrupt(
+        vector: u32,
+        trigger_mode: InterruptTriggerMode,
+        polarity: InterruptPolarity,
+    ) -> Result<(), Status> {
+        #[cfg(is_kernel)]
+        {
+            // SAFETY: `vector` is validated by the interrupt controller and global interrupt ops
+            // are initialized before SMMU driver init.
+            unsafe {
+                crate::pdev_interrupt::configure_interrupt(
+                    crate::dev_interrupt::InterruptVector(vector),
+                    trigger_mode,
+                    polarity,
+                )
+            }
+        }
+        #[cfg(not(is_kernel))]
+        {
+            // SAFETY: Calls into host mock `configure_interrupt`.
+            let status = unsafe {
+                cpp_arm_smmu_configure_interrupt(vector, trigger_mode as u32, polarity as u32)
+            };
+            Status::ok(status)
+        }
+    }
+
+    /// Masks interrupt `vector`.
+    #[inline]
+    pub fn mask_interrupt(vector: u32) -> Result<(), Status> {
+        #[cfg(is_kernel)]
+        {
+            // SAFETY: The interrupt controller driver registers the global interrupt ops during
+            // early platform init, before any SMMU instance is created. `vector` needs no
+            // validation here: the controller driver checks it and returns an error for a vector
+            // it does not handle.
+            unsafe {
+                crate::pdev_interrupt::mask_interrupt(crate::dev_interrupt::InterruptVector(vector))
+            }
+        }
+        #[cfg(not(is_kernel))]
+        {
+            // SAFETY: Calls into host mock `mask_interrupt`.
+            let status = unsafe { cpp_arm_smmu_mask_interrupt(vector) };
+            Status::ok(status)
+        }
+    }
+
+    /// Unmasks interrupt `vector`.
+    #[inline]
+    pub fn unmask_interrupt(vector: u32) -> Result<(), Status> {
+        #[cfg(is_kernel)]
+        {
+            // SAFETY: The interrupt controller driver registers the global interrupt ops during
+            // early platform init, before any SMMU instance is created. `vector` needs no
+            // validation here: the controller driver checks it and returns an error for a vector
+            // it does not handle.
+            unsafe {
+                crate::pdev_interrupt::unmask_interrupt(crate::dev_interrupt::InterruptVector(
+                    vector,
+                ))
+            }
+        }
+        #[cfg(not(is_kernel))]
+        {
+            // SAFETY: Calls into host mock `unmask_interrupt`.
+            let status = unsafe { cpp_arm_smmu_unmask_interrupt(vector) };
+            Status::ok(status)
+        }
+    }
+
+    /// Registers `handler(cookie)` for interrupt `vector`.
+    ///
+    /// # Safety
+    /// `cookie` must remain valid for as long as the interrupt handler remains registered (until
+    /// [`SmmuEnv::unregister_int_handler`] completes).
+    #[inline]
+    pub unsafe fn register_int_handler(
+        vector: u32,
+        cookie: *mut c_void,
+        handler: extern "C" fn(*mut c_void),
+    ) -> Result<(), Status> {
+        #[cfg(is_kernel)]
+        {
+            // SAFETY: Caller guarantees `cookie` remains valid while registered.
+            unsafe {
+                crate::pdev_interrupt::register_int_handler(
+                    crate::dev_interrupt::InterruptVector(vector),
+                    crate::dev_interrupt::InterruptHandler { cookie, r#fn: Some(handler) },
+                )
+            }
+        }
+        #[cfg(not(is_kernel))]
+        {
+            // SAFETY: Caller guarantees `cookie` remains valid while registered.
+            let status =
+                unsafe { cpp_arm_smmu_register_int_handler(vector, cookie, Some(handler)) };
+            Status::ok(status)
+        }
+    }
+
+    /// Unregisters the interrupt handler for `vector`.
+    #[inline]
+    pub fn unregister_int_handler(vector: u32) -> Result<(), Status> {
+        #[cfg(is_kernel)]
+        {
+            // SAFETY: The interrupt controller driver registers the global interrupt ops during
+            // early platform init, before any SMMU instance is created. `vector` needs no
+            // validation here: the controller driver checks it and returns an error for a vector
+            // it does not handle.
+            unsafe {
+                crate::pdev_interrupt::register_int_handler(
+                    crate::dev_interrupt::InterruptVector(vector),
+                    crate::dev_interrupt::InterruptHandler::DEFAULT,
+                )
+            }
+        }
+        #[cfg(not(is_kernel))]
+        {
+            // SAFETY: Unregisters the handler for `vector` in host mock.
+            let status = unsafe { cpp_arm_smmu_unregister_int_handler(vector) };
+            Status::ok(status)
+        }
+    }
+
+    /// Emits a fully rendered `DRIVER OOPS` `report` with a single console write in kernel builds,
+    /// and suppresses it in host test builds so CI `tefmocheck` does not flag expected negative
+    /// tests.
+    ///
+    /// `report` must start with [`DRIVER_OOPS_BANNER`]. Callers render the entire report into a
+    /// buffer first instead of using `dprintf!` directly: `dprintf!` issues a separate console
+    /// write for every literal fragment and argument of its format string, which would allow a
+    /// multi-line report to be interleaved with output from other CPUs.
+    #[inline]
+    pub fn print_driver_oops_report(report: &str) {
+        debug_assert!(report.starts_with(DRIVER_OOPS_BANNER));
+        #[cfg(is_kernel)]
+        {
+            use core::fmt::Write as _;
+            let _ = debug::dprintf::KernelConsoleWriter.write_str(report);
+        }
+        #[cfg(not(is_kernel))]
+        {
+            let _ = report;
+        }
+    }
+
+    /// Logs a BTI quarantine warning for `bti_id` and `bti_name`.
+    #[inline]
+    pub fn print_quarantine_warning(
+        bti_id: u64,
+        bti_name: &[u8],
+        reason: BtiPageLeakReason,
+        total_leaked_pages: u64,
+        total_leaked_vmos: usize,
+    ) {
+        // Temporary porting note: wired to `crate::iommu::print_quarantine_warning` once the common
+        // `dev/iommu` module is ported in a follow-up commit (before the Rust SMMUv2 driver is
+        // wired into the kernel).
+        let _ = (bti_id, bti_name, reason, total_leaked_pages, total_leaked_vmos);
+    }
+}
+
+/// Owned `PinnedVmObject` wrapper used by [`super::super::v2::SmmuBti`] and
+/// [`super::super::v2::SmmuPmt`].
+///
+/// In kernel builds (`cfg(is_kernel)`), this wraps [`crate::vm::pinned_vm_object::PinnedVmObject`]
+/// directly without any C++ FFI round-trip. In standalone host test builds (`cfg(not(is_kernel))`),
+/// it wraps the 24-byte host mock `PinnedVmObject` storage.
+#[repr(C)]
+pub struct SmmuPinnedVmo {
+    #[cfg(is_kernel)]
+    inner: crate::vm::pinned_vm_object::PinnedVmObject,
+    #[cfg(not(is_kernel))]
+    storage: [usize; 3],
+}
+
+zr::static_assert!(core::mem::size_of::<SmmuPinnedVmo>() == 24);
+zr::static_assert!(core::mem::align_of::<SmmuPinnedVmo>() == 8);
+
+impl SmmuPinnedVmo {
+    /// Creates an empty (unpinned) `SmmuPinnedVmo`.
+    #[inline]
+    pub const fn empty() -> Self {
+        #[cfg(is_kernel)]
+        {
+            Self { inner: crate::vm::pinned_vm_object::PinnedVmObject::new() }
+        }
+        #[cfg(not(is_kernel))]
+        {
+            Self { storage: [0; 3] }
+        }
+    }
+
+    /// Wraps a kernel [`crate::vm::pinned_vm_object::PinnedVmObject`] directly.
+    #[cfg(is_kernel)]
+    #[inline]
+    pub const fn from_kernel_pinned_vmo(
+        pinned_vmo: crate::vm::pinned_vm_object::PinnedVmObject,
+    ) -> Self {
+        Self { inner: pinned_vmo }
+    }
+
+    /// Move-constructs an `SmmuPinnedVmo` from a raw pointer to a C++ `PinnedVmObject`, leaving
+    /// the source `PinnedVmObject` empty.
+    ///
+    /// # Safety
+    /// `src` must point to a valid, initialized C++ `PinnedVmObject`.
+    #[cfg(not(is_kernel))]
+    #[inline]
+    pub unsafe fn from_raw_move(src: *mut c_void) -> Self {
+        let mut out = Self::empty();
+        if !src.is_null() {
+            // SAFETY: `out.storage` has the exact size and alignment of `PinnedVmObject`, and
+            // caller guarantees `src` points to a valid `PinnedVmObject`.
+            unsafe {
+                cpp_arm_smmu_pinned_vmo_move_construct((&raw mut out.storage).cast(), src);
+            }
+        }
+        out
+    }
+
+    /// Returns `true` if this `SmmuPinnedVmo` holds a non-null `VmObject`.
+    #[inline]
+    pub fn has_vmo(&self) -> bool {
+        #[cfg(is_kernel)]
+        {
+            self.inner.vmo().is_some()
+        }
+        #[cfg(not(is_kernel))]
+        {
+            self.storage[0] != 0
+        }
+    }
+
+    /// Resets this `SmmuPinnedVmo`, unpinning its pages and dropping its `VmObject` reference.
+    #[inline]
+    pub fn reset(&mut self) {
+        #[cfg(is_kernel)]
+        {
+            self.inner = crate::vm::pinned_vm_object::PinnedVmObject::new();
+        }
+        #[cfg(not(is_kernel))]
+        {
+            if self.has_vmo() {
+                // SAFETY: `self.storage` holds a valid `PinnedVmObject`.
+                unsafe {
+                    cpp_arm_smmu_pinned_vmo_reset((&raw mut self.storage).cast());
+                }
+            }
+        }
+    }
+
+    /// Takes ownership of the underlying `PinnedVmObject`, leaving `self` empty.
+    #[inline]
+    pub fn take(&mut self) -> Self {
+        core::mem::take(self)
+    }
+}
+
+impl Default for SmmuPinnedVmo {
+    #[inline]
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
+#[cfg(not(is_kernel))]
+impl Drop for SmmuPinnedVmo {
+    #[inline]
+    fn drop(&mut self) {
+        self.reset();
+    }
+}
+
+impl PinnedVmoSource for SmmuPinnedVmo {
+    #[inline]
+    fn offset(&self) -> u64 {
+        #[cfg(is_kernel)]
+        {
+            self.inner.offset()
+        }
+        #[cfg(not(is_kernel))]
+        {
+            // SAFETY: `self.storage` is a valid C++ `PinnedVmObject`.
+            unsafe { cpp_arm_smmu_pinned_vmo_offset((&raw const self.storage).cast()) }
+        }
+    }
+
+    #[inline]
+    fn size(&self) -> u64 {
+        #[cfg(is_kernel)]
+        {
+            self.inner.size()
+        }
+        #[cfg(not(is_kernel))]
+        {
+            // SAFETY: `self.storage` is a valid C++ `PinnedVmObject`.
+            unsafe { cpp_arm_smmu_pinned_vmo_size((&raw const self.storage).cast()) }
+        }
+    }
+
+    #[inline]
+    fn lookup_contiguous(&self, offset: u64, size: u64) -> Result<u64, Status> {
+        #[cfg(is_kernel)]
+        {
+            PinnedVmoSource::lookup_contiguous(&self.inner, offset, size)
+        }
+        #[cfg(not(is_kernel))]
+        {
+            let mut pa = 0u64;
+            // SAFETY: `self.storage` is a valid C++ `PinnedVmObject` and `pa` is a valid out-pointer.
+            let status = unsafe {
+                cpp_arm_smmu_pinned_vmo_lookup_contiguous(
+                    (&raw const self.storage).cast(),
+                    offset,
+                    size as usize,
+                    &raw mut pa,
+                )
+            };
+            Status::ok(status)?;
+            Ok(pa)
+        }
     }
 }
 

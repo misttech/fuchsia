@@ -34,6 +34,17 @@ uint64_t cpp_arm_smmu_pinned_vmo_size(const PinnedVmObject* pinned_vmo);
 zx_status_t cpp_arm_smmu_pinned_vmo_lookup_contiguous(const PinnedVmObject* pinned_vmo,
                                                       uint64_t offset, size_t size,
                                                       paddr_t* out_paddr);
+void cpp_arm_smmu_pinned_vmo_reset(void* pinned_vmo);
+void cpp_arm_smmu_pinned_vmo_move_construct(void* dst, void* src);
+size_t cpp_arm_smmu_get_boot_option_mode(uint8_t* out_buf, size_t out_cap);
+void cpp_arm_smmu_root_resource_filter_add_deny_region(uint64_t base, size_t size, uint32_t kind);
+zx_status_t cpp_arm_smmu_configure_interrupt(uint32_t vector, uint32_t trigger_mode,
+                                             uint32_t polarity);
+zx_status_t cpp_arm_smmu_mask_interrupt(uint32_t vector);
+zx_status_t cpp_arm_smmu_unmask_interrupt(uint32_t vector);
+zx_status_t cpp_arm_smmu_register_int_handler(uint32_t vector, void* cookie,
+                                              void (*handler)(void*));
+zx_status_t cpp_arm_smmu_unregister_int_handler(uint32_t vector);
 uint32_t cpp_arm_smmu_mmio_read32(uintptr_t base, uint32_t offset);
 void cpp_arm_smmu_mmio_write32(uintptr_t base, uint32_t offset, uint32_t val);
 uint64_t cpp_arm_smmu_mmio_read64(uintptr_t base, uint32_t offset);

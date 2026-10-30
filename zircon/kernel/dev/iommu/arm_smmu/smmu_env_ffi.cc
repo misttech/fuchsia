@@ -20,10 +20,16 @@
 
 #if defined(ARM_SMMU_HOST_TEST)
 #include <lib/arch/cache.h>
+#include <lib/boot-options/boot-options.h>
+#include <lib/root_resource_filter.h>
+#include <string.h>
 #include <zircon/errors.h>
+#include <zircon/syscalls/resource.h>
 
+#include <dev/interrupt.h>
 #include <hwreg/mmio.h>
 #include <kernel/spinlock.h>
+#include <ktl/utility.h>
 #include <vm/page.h>
 #include <vm/physmap.h>
 #include <vm/pinned_vm_object.h>
@@ -155,6 +161,81 @@ zx_status_t cpp_arm_smmu_pinned_vmo_lookup_contiguous(const PinnedVmObject* pinn
     return ZX_ERR_INVALID_ARGS;
   }
   return pinned_vmo->vmo()->LookupContiguous(offset, size, out_paddr);
+}
+
+// Resets a C++ `PinnedVmObject` in place, unpinning its pages and releasing its VMO reference.
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE
+void cpp_arm_smmu_pinned_vmo_reset(void* pinned_vmo) {
+  if (pinned_vmo != nullptr) {
+    static_cast<PinnedVmObject*>(pinned_vmo)->reset();
+  }
+}
+
+// Move-constructs a C++ `PinnedVmObject` at `dst` from `src`, leaving `*src` empty.
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE
+void cpp_arm_smmu_pinned_vmo_move_construct(void* dst, void* src) {
+  ZX_DEBUG_ASSERT(dst != nullptr);
+  ZX_DEBUG_ASSERT(src != nullptr);
+  new (dst) PinnedVmObject(ktl::move(*static_cast<PinnedVmObject*>(src)));
+}
+
+// Copies `BootOptions::Get()->arm_smmu_mode` into `out_buf` (up to `out_cap` bytes) and returns
+// the number of bytes written.
+size_t cpp_arm_smmu_get_boot_option_mode(uint8_t* out_buf, size_t out_cap) {
+  if (out_buf == nullptr || out_cap == 0) {
+    return 0;
+  }
+  const auto& mode_str = BootOptions::Get()->arm_smmu_mode;
+  const size_t len = strnlen(mode_str.data(), mode_str.size());
+  const size_t copy_len = len < out_cap ? len : out_cap;
+  memcpy(out_buf, mode_str.data(), copy_len);
+  return copy_len;
+}
+
+// Adds `[base, base + size)` to the mock root resource filter deny list.
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE
+void cpp_arm_smmu_root_resource_filter_add_deny_region(uint64_t base, size_t size, uint32_t kind) {
+  root_resource_filter_add_deny_region(base, size, static_cast<zx_rsrc_kind_t>(kind));
+}
+
+// Configures interrupt `vector` with `trigger_mode` and `polarity`.
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE
+zx_status_t cpp_arm_smmu_configure_interrupt(uint32_t vector, uint32_t trigger_mode,
+                                             uint32_t polarity) {
+  return configure_interrupt(vector, static_cast<interrupt_trigger_mode>(trigger_mode),
+                             static_cast<interrupt_polarity>(polarity));
+}
+
+// Masks interrupt `vector`.
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE
+zx_status_t cpp_arm_smmu_mask_interrupt(uint32_t vector) { return mask_interrupt(vector); }
+
+// Unmasks interrupt `vector`.
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE
+zx_status_t cpp_arm_smmu_unmask_interrupt(uint32_t vector) { return unmask_interrupt(vector); }
+
+// Registers `handler(cookie)` for interrupt `vector`.
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE
+zx_status_t cpp_arm_smmu_register_int_handler(uint32_t vector, void* cookie,
+                                              void (*handler)(void*)) {
+  if (handler == nullptr) {
+    return register_int_handler(vector, nullptr);
+  }
+  return register_int_handler(vector, interrupt_handler_t(cookie, handler));
+}
+
+// Unregisters the interrupt handler for `vector`.
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE
+zx_status_t cpp_arm_smmu_unregister_int_handler(uint32_t vector) {
+  return register_int_handler(vector, nullptr);
 }
 
 // Reads a 32-bit register at `base + offset` via the host `FakeSmmuMmioRouter` / `RegisterMmio`.

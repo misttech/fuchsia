@@ -104,3 +104,62 @@ pub enum ArmSmmuMode {
     /// SMMU hardware is enabled and user-created BTIs enforce Stage-1 page-table translation.
     Enforced = 2,
 }
+
+#[cfg(is_kernel)]
+pub use zx_types::{ZX_MAX_NAME_LEN, ZX_RSRC_KIND_MMIO};
+
+// Standalone host test builds (`arm_smmu_host_rs` in `tests/BUILD.gn`) do not link `zx_types`, so
+// we provide matching definitions and re-export them under the canonical names.
+/// Maximum object name length in bytes (`ZX_MAX_NAME_LEN`).
+#[cfg(not(is_kernel))]
+pub const MAX_OBJECT_NAME_LEN: usize = 32;
+/// MMIO resource kind discriminant (`ZX_RSRC_KIND_MMIO`).
+#[cfg(not(is_kernel))]
+pub const MMIO_RESOURCE_KIND: u32 = 0;
+#[cfg(not(is_kernel))]
+pub use self::{MAX_OBJECT_NAME_LEN as ZX_MAX_NAME_LEN, MMIO_RESOURCE_KIND as ZX_RSRC_KIND_MMIO};
+
+#[cfg(is_kernel)]
+pub use crate::dev_interrupt::{InterruptPolarity, InterruptTriggerMode};
+
+// In standalone host test builds (`cfg(not(is_kernel))`), `crate::dev_interrupt` is not mounted
+// in `tests/host_lib.rs`, so we define matching trigger-mode and polarity enums for the host
+// `InterruptsMock` seam.
+/// The trigger mode of an interrupt.
+#[cfg(not(is_kernel))]
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InterruptTriggerMode {
+    /// Edge-triggered interrupt (`IRQ_TRIGGER_MODE_EDGE`).
+    Edge = 0,
+    /// Level-triggered interrupt (`IRQ_TRIGGER_MODE_LEVEL`).
+    Level = 1,
+}
+
+/// The polarity of an interrupt.
+#[cfg(not(is_kernel))]
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InterruptPolarity {
+    /// Active-high / rising-edge polarity (`IRQ_POLARITY_ACTIVE_HIGH`).
+    High = 0,
+    /// Active-low / falling-edge polarity (`IRQ_POLARITY_ACTIVE_LOW`).
+    Low = 1,
+}
+
+/// Reason why a BTI quarantined or leaked pinned memory pages.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BtiPageLeakReason {
+    /// The final handle to a BTI was closed while it still had quarantined PMTs.
+    /// User-mode no longer has any way to release the quarantine on these PMTs,
+    /// and they are now permanently leaked.
+    BtiOrphanedWithQuarantinedPmts = 0,
+    /// The final handle to a PMT was closed without it having been formally
+    /// unpinned, and after its BTI had become orphaned. Once again, user-mode
+    /// no longer has any way to release the quarantine on these PMTs, and they
+    /// are now permanently leaked.
+    PmtQuarantinedWhenBtiOrphaned = 1,
+    /// The final handle to a PMT was closed without it having been unpinned.
+    PmtQuarantined = 2,
+}

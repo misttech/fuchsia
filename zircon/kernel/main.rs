@@ -33,6 +33,9 @@ pub mod hw_rng;
 #[path = "dev/interrupt/interrupt.rs"]
 pub mod dev_interrupt;
 
+#[path = "dev/iommu/mod.rs"]
+pub mod iommu;
+
 #[path = "dev/pdev/hw_watchdog/watchdog.rs"]
 pub mod pdev_watchdog;
 

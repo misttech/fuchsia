@@ -12,11 +12,22 @@
 
 pub mod context_bank;
 pub mod registers;
+pub mod smmu;
+pub mod smmu_bti;
+pub mod smmu_pmt;
 pub mod stream_match_reg;
 pub mod utils;
 
 pub use context_bank::ContextBank;
 pub use registers::*;
+pub use smmu::{
+    ConsoleArg, IrqDef, Smmu, ZBI_ARM_SMMU_IRQ_FLAGS_ACTIVE_HIGH,
+    ZBI_ARM_SMMU_IRQ_FLAGS_ACTIVE_LOW, ZBI_ARM_SMMU_IRQ_FLAGS_FALLING_EDGE,
+    ZBI_ARM_SMMU_IRQ_FLAGS_RISING_EDGE, ZBI_ARM_SMMU_MAX_HANDOFF_SMRS, ZBI_ARM_SMMU_MAX_IRQS,
+    ZbiDcfgArmSmmuDriver, ZbiDcfgArmSmmuIrq, ZxIommuDescArmSmmu,
+};
+pub use smmu_bti::SmmuBti;
+pub use smmu_pmt::{SmmuPmt, SmmuPmtState};
 pub use stream_match_reg::StreamMatchRegGroup;
 pub use utils::{
     AddrMode, Bitmask128, BtiMode, SmmuController, SmmuParams, SmrValue, SmrValueIter,

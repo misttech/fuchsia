@@ -11,22 +11,34 @@ pub mod constants;
 pub mod device_aspace;
 pub mod env;
 pub mod page_cache;
+// Shared with the kernel `iommu` module, which the standalone host test crate does not mount.
+#[cfg(not(is_kernel))]
+#[path = "../../escaped_name.rs"]
+mod escaped_name;
 pub mod smmu_mode;
 pub mod translation_table;
 pub mod vmsav8_64;
 
+#[cfg(is_kernel)]
+pub use crate::iommu::EscapedName;
 pub use constants::{
-    ALL_PERM_FLAGS, ArmSmmuMode, DEFAULT_TCR_T0SZ, DEFAULT_TTBR0_ADDR_SPACE_SZ, INVALID_PADDR,
-    IOMMU_FLAG_PERM_EXECUTE, IOMMU_FLAG_PERM_READ, IOMMU_FLAG_PERM_WRITE, PAGE_MASK, PAGE_SHIFT,
-    PAGE_SIZE, PAGE_SIZE_USIZE, QueryAddressResult, RequireContiguousMapping, is_page_rounded,
-    round_up_page_size,
+    ALL_PERM_FLAGS, ArmSmmuMode, BtiPageLeakReason, DEFAULT_TCR_T0SZ, DEFAULT_TTBR0_ADDR_SPACE_SZ,
+    INVALID_PADDR, IOMMU_FLAG_PERM_EXECUTE, IOMMU_FLAG_PERM_READ, IOMMU_FLAG_PERM_WRITE,
+    InterruptPolarity, InterruptTriggerMode, PAGE_MASK, PAGE_SHIFT, PAGE_SIZE, PAGE_SIZE_USIZE,
+    QueryAddressResult, RequireContiguousMapping, ZX_MAX_NAME_LEN, ZX_RSRC_KIND_MMIO,
+    is_page_rounded, round_up_page_size,
 };
 #[cfg(not(is_kernel))]
 pub use device_aspace::TlbInvalOp;
 pub use device_aspace::{Allocation, DEFAULT_MAX_PAGE_CACHE_ENTRIES, DeviceAspace, TlbInvalidator};
 #[cfg(not(is_kernel))]
 pub use env::CppPinnedVmObjectRef;
-pub use env::{PinnedVmoSource, SmmuEnv, SmmuPage};
+pub use env::{
+    DRIVER_OOPS_BANNER, PinnedVmoSource, SmmuEnv, SmmuNoIrqSavePolicy, SmmuPage, SmmuPinnedVmo,
+    SmmuRawSpinLock,
+};
+#[cfg(not(is_kernel))]
+pub use escaped_name::EscapedName;
 pub use page_cache::PageCache;
 pub use smmu_mode::{
     get_smmu_mode, get_smmu_mode_bytes, validate_smmu_mode_bytes, validate_smmu_mode_string,
