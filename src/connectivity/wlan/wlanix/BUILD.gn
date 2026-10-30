@@ -207,6 +207,5 @@ fuchsia_structured_config_rust_lib("wlanix-config") {
 }
 fuchsia_component("component") {
   cm_label = ":wlanix-manifest"
-  component_name = "wlanix"
   deps = [ ":wlanix_bin" ]
 }

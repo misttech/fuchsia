@@ -169,7 +169,6 @@ fuchsia_structured_config_rust_lib(
 fx_component(
     name = "component",
     compiled_manifest = ":wlanix-manifest",
-    component_name = "wlanix",
     deps = [":wlanix_packaged_bin"],
 )
 

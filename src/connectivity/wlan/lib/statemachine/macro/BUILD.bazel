@@ -14,6 +14,10 @@ rustc_proc_macro(
         "src/statemachine.rs",
     ],
     edition = "2024",
+    # GN `rustc_macro` switches to `host_toolchain` internally instead of
+    # wrapping the target in `if (is_host)`.
+    # TODO(https://fxbug.dev/543568916): Ignore `HOST_OS_CONSTRAINTS` on
+    # `rustc_proc_macro` in `bazel2gn`.
     # @bazel2gn:skip
     target_compatible_with = HOST_OS_CONSTRAINTS,
     visibility = ["//src/connectivity/wlan/lib/statemachine:__pkg__"],

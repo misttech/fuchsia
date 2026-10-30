@@ -26,6 +26,10 @@ rustc_library(
         "src/wlancfg_helper.rs",
     ],
     edition = "2024",
+    # `rustc_library` defaults to `clippy_warn_production` even when
+    # `testonly = True`, whereas GN `rustc_artifact.gni` skips production
+    # lints on testonly targets.
+    # TODO(https://fxbug.dev/543568916): Align testonly lint defaults.
     # @bazel2gn:skip
     lint_config = "//build/config/rust/lints:clippy_warn_default",
     visibility = ["//src/connectivity/wlan/testing/hw-sim/test:__subpackages__"],
