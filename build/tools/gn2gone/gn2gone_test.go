@@ -57,9 +57,11 @@ default_args = {
   dir_pw = "//"
 }
 `,
-		// READY, DELETE_BUILD_GN: only a test group above, and the test is
-		// wired through //tools:host_tests.
-		"lib/ready/BUILD.gn": `group("tests") {
+		// READY, DELETE_BUILD_GN: only an assert and a test group above, and
+		// the test is wired through //tools:host_tests.
+		"lib/ready/BUILD.gn": `assert(is_host, "These targets are only compiled on host.")
+
+group("tests") {
   testonly = true
   deps = [ ":ready_test($host_toolchain)" ]
 }
@@ -518,7 +520,7 @@ func TestQuery(t *testing.T) {
 	for _, r := range refs {
 		got = append(got, r.String())
 	}
-	want := []string{`lib/ready/BUILD.gn:3 group("tests") deps ":ready_test($host_toolchain)" -> :ready_test`}
+	want := []string{`lib/ready/BUILD.gn:5 group("tests") deps ":ready_test($host_toolchain)" -> :ready_test`}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("Query() diff (-want +got):\n%s", diff)
 	}

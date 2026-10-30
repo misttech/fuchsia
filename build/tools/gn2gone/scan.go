@@ -40,8 +40,8 @@ const (
 type Mode string
 
 const (
-	// ModeDeleteBuildGN: nothing but imports and test groups would remain
-	// above the sentinel, so BUILD.gn is deleted.
+	// ModeDeleteBuildGN: nothing but imports, asserts, and test groups would
+	// remain above the sentinel, so BUILD.gn is deleted.
 	ModeDeleteBuildGN Mode = "DELETE_BUILD_GN"
 	// ModeStripBelowSentinel: hand-written targets remain above the
 	// sentinel, so only the sentinel and what's below it are removed.

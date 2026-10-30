@@ -93,8 +93,9 @@ type FileIndex struct {
 	Targets      []*Target
 	Literals     []*Literal
 	// AboveOther counts top-level statements above the sentinel that are not
-	// `import()` calls or target definitions, e.g. variable assignments or
-	// `if` blocks. Such statements mean BUILD.gn can't simply be deleted.
+	// `import()` or `assert()` calls or target definitions, e.g. variable
+	// assignments or `if` blocks. Such statements mean BUILD.gn can't simply
+	// be deleted.
 	AboveOther int
 }
 
@@ -147,7 +148,7 @@ func IndexFile(relPath string, sentinelLine int, tree *Node) *FileIndex {
 			}
 			switch {
 			case c.Type == "BLOCK_COMMENT":
-			case c.Type == "FUNCTION" && c.Value == "import":
+			case c.Type == "FUNCTION" && (c.Value == "import" || c.Value == "assert"):
 			case c.Type == "FUNCTION" && !nonTargetFuncs[c.Value] && hasBlock(c):
 			default:
 				fi.AboveOther++

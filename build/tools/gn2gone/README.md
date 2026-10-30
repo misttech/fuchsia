@@ -54,9 +54,9 @@ fx bazel run --config=host //build/tools/gn2gone -- --fuchsia_dir "$FUCHSIA_DIR"
 
 A `READY` directory is unsynced in one of two ways:
 
-*   `DELETE_BUILD_GN`: nothing but `import()`s and test groups would remain
-    above the sentinel, so `BUILD.gn` is deleted. Entries pointing at its test
-    groups in parent test groups are removed.
+*   `DELETE_BUILD_GN`: nothing but `import()`s, `assert()`s, and test groups
+    would remain above the sentinel, so `BUILD.gn` is deleted. Entries pointing
+    at its test groups in parent test groups are removed.
 *   `STRIP_BELOW_SENTINEL`: hand-written targets remain above the sentinel, so
     only the sentinel line and everything below it are removed, along with
     test group entries (in this or any other directory) for its synced tests.
