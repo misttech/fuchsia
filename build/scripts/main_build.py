@@ -34,7 +34,7 @@ import sys
 import time
 import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from typing import Any, TextIO
+from typing import Any, Self, TextIO
 
 # Expects FUCHSIA_DIR to be present in sys.path (via PYTHONPATH).
 # LINT.IfChange(main_build_python_imports)
@@ -603,7 +603,7 @@ class BuildLock:
         self._has_shlock = check_shell_command("shlock")
         self.print_message = print_message
 
-    def __enter__(self) -> "BuildLock":
+    def __enter__(self) -> Self:
         if self._has_shlock:
             while (
                 subprocess.call(

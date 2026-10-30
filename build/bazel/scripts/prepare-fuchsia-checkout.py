@@ -16,7 +16,7 @@ import tempfile
 import urllib.request
 import xml.etree.ElementTree as ET
 from types import TracebackType
-from typing import Callable, Literal
+from typing import Callable, Literal, Self
 
 _SCRIPT_DIR = os.path.dirname(__file__)
 
@@ -173,7 +173,7 @@ class InstallDirectory(object):
     def final_path(self) -> str:
         return self._dst_dir
 
-    def __enter__(self) -> InstallDirectory:
+    def __enter__(self) -> Self:
         if os.path.exists(self._tmp_dir):
             shutil.rmtree(self._tmp_dir)
         os.makedirs(self._tmp_dir)

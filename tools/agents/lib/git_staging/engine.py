@@ -17,7 +17,7 @@ import os
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 
 
 class GitError(RuntimeError):
@@ -176,7 +176,7 @@ class StashGuard:
         self.stash_sha: str | None = None
         self._unstaged_deleted_files: tuple[str, ...] = ()
 
-    def __enter__(self) -> StashGuard:
+    def __enter__(self) -> Self:
         head_res = run_cmd(
             ["git", "rev-parse", "--verify", "-q", "HEAD"], cwd=self.repo_dir
         )

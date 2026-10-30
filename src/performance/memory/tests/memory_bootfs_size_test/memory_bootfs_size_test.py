@@ -12,7 +12,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any, Dict, Iterator, List
+from typing import Any, Dict, Iterator, List, Self
 
 ZBI_TYPE_CONTAINER = b"BOOT"
 ZBI_CONTAINER_MAGIC = b"\xe6\xf7\x8c\x86"
@@ -60,7 +60,7 @@ class ZbiReader(object):
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.work_dir = Path(self.tmp_dir.name)
 
-    def __enter__(self) -> "ZbiReader":
+    def __enter__(self) -> Self:
         data = Path(self.zbi_image).read_bytes()
         idx = 0
         while True:

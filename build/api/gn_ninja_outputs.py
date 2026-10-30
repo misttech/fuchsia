@@ -100,7 +100,7 @@ class NinjaOutputsBase(object):
         """Save database to a given file."""
         raise NotImplementedError
 
-    def __enter__(self) -> "NinjaOutputsBase":
+    def __enter__(self) -> T.Self:
         return self
 
     def __exit__(

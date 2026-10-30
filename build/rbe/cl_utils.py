@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import (
     IO,
     Any,
+    Self,
     TextIO,
 )
 
@@ -775,7 +776,7 @@ class BlockingFileLock(object):
         # Do not remove the lock file:
         # https://stackoverflow.com/questions/17708885/flock-removing-locked-file-without-race-condition
 
-    def __enter__(self) -> "BlockingFileLock":
+    def __enter__(self) -> Self:
         self._acquire()
         return self
 

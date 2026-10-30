@@ -53,7 +53,7 @@ import tempfile
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Generator, Iterable, TextIO
+from typing import Any, Generator, Iterable, Self, TextIO
 
 from build.scripts import build_timeout, signal_utils
 from google.protobuf import json_format, text_format
@@ -120,7 +120,7 @@ class Timer:
         self.duration: float = 0.0
         self._start: float = 0.0
 
-    def __enter__(self) -> "Timer":
+    def __enter__(self) -> Self:
         self._start = time.time()
         return self
 

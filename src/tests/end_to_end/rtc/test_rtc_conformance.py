@@ -7,7 +7,7 @@ import contextlib
 import datetime
 import logging
 import random
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
 import fuchsia_base_test
 from mobly import asserts, test_runner
@@ -31,7 +31,7 @@ class TimeIt(contextlib.ContextDecorator):
         """Initialized with a descriptive context message."""
         self._msg = msg
 
-    def __enter__(self) -> "TimeIt":
+    def __enter__(self) -> Self:
         """Context enter hook."""
         self._started = datetime.datetime.now()
         return self
