@@ -30,6 +30,7 @@ rustc_staticlib("arm_smmu_host_rs") {
     "../v2/smmu_pmt.rs",
     "../v2/stream_match_reg.rs",
     "../v2/utils.rs",
+    "cross_test_ffi.rs",
     "host_lib.rs",
   ]
   deps = [
@@ -49,6 +50,7 @@ rustc_staticlib("arm_smmu_host_rs") {
 cc_test_executable("arm_smmu_tests_binary") {
   # Tests
   sources = [
+    "cross_test_ffi.cc",
     "device_aspace_test.cc",
     "page_cache_test.cc",
     "smmu_mode_string_tests.cc",

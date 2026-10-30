@@ -4,13 +4,20 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-//! Host test crate root for the ARM SMMU Rust driver port.
+//! Host test crate root for the ARM SMMU driver port.
+//!
+//! This crate is used during Checkpoints 1–3 of the migration (`SMMUv2_rust_port_plan.md` §3) to
+//! compile the `no_std` driver modules as a host library and expose the FFI entrypoints consumed by
+//! the `C++ -> Rust` and `Rust -> C++` cross-test suites.
 
 #![no_std]
-#![allow(dead_code)]
 
+// `host_lib` compiles the full `arm_smmu` driver crate into a standalone host `staticlib` for
+// cross-testing; kernel-only entrypoints and unused internal helpers are expected in `arm_smmu`.
+#[allow(dead_code)]
 #[path = "../mod.rs"]
 pub mod arm_smmu;
+pub mod cross_test_ffi;
 
 use zx_status::Status;
 
@@ -128,10 +135,13 @@ pub extern "C" fn rust_arm_smmu_common_smoke_test() -> bool {
         return false;
     }
 
-    // Exercise StreamMatchRegGroup and ContextBank over a stack-backed MMIO buffer.
-    let mut fake_regs = [0u64; 512 * 6];
+    // Exercise StreamMatchRegGroup and ContextBank over a heap-backed MMIO buffer.
+    let Ok(mut fake_regs) = fbl::Array::<u64>::try_new(512 * 6) else {
+        return false;
+    };
+    fake_regs.fill(0);
     let base_vaddr = fake_regs.as_mut_ptr().expose_provenance();
-    // SAFETY: `fake_regs` is a valid, 8-byte-aligned stack buffer of `6 * 4096` bytes with exposed
+    // SAFETY: `fake_regs` is a valid, 8-byte-aligned heap buffer of `6 * 4096` bytes with exposed
     // provenance that outlives `gr0_base`, `gr1_base`, `cb0_base`, and `smmu`.
     let (gr0_base, gr1_base, cb0_base) = unsafe {
         (
@@ -279,14 +289,13 @@ pub extern "C" fn rust_arm_smmu_common_smoke_test() -> bool {
         return false;
     }
 
-    // Exercise IrqDef, ZbiDcfgArmSmmuDriver, ZxIommuDescArmSmmu, SmmuPmtState, and Smmu::console_cmd.
-    let _ = core::marker::PhantomData::<(SmmuBti, SmmuPmt)>;
+    // Exercise IrqDef, ZbiDcfgArmSmmuDriver, ZxIommuDescArmSmmu, SmmuPmtState, and
+    // Smmu::console_cmd.
+    let _ = core::marker::PhantomData::<(SmmuBti, SmmuPmt, ZbiDcfgArmSmmuDriver)>;
     let irq = IrqDef::from_zbi(ZbiDcfgArmSmmuIrq { num: 32, flags: 1 });
-    let cfg = ZbiDcfgArmSmmuDriver::default();
     let desc = ZxIommuDescArmSmmu::default();
     let help_args = [ConsoleArg { str_val: "smmu", u: 0 }, ConsoleArg { str_val: "help", u: 0 }];
     irq.valid()
-        && cfg.mmio_phys == 0
         && desc.register_base == 0
         && SmmuPmtState::Active != SmmuPmtState::Quarantined
         && Smmu::console_cmd(&help_args, 0) == 0

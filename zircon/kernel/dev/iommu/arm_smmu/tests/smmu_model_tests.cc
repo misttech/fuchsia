@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 #include <lib/boot-options/boot-options.h>
+#include <lib/fit/defer.h>
 #include <stdio.h>
 #include <zircon/errors.h>
 #include <zircon/syscalls/iommu.h>
@@ -15,6 +16,7 @@
 #include <memory>
 #include <optional>
 #include <random>
+#include <utility>
 #include <vector>
 
 #include <dev/arm_smmu/context_bank.h>
@@ -31,95 +33,311 @@
 #include <vm/pmm.h>
 #include <zxtest/zxtest.h>
 
+#include "cross_test_ffi.h"
 #include "sim_smmu_hardware_model.h"
 
 namespace arm_smmu {
 
-// Friend helper to cleanly tear down an Smmu instance between host tests and
-// remove it from the static Smmu::instances_ list while verifying destructor
-// invariants.
-class SmmuTestAccess {
- public:
-  static void DestroySmmu(fbl::RefPtr<iommu::Iommu>&& iommu) {
-    if (!iommu) {
-      return;
-    }
-    fbl::RefPtr<Smmu> target;
-    {
-      Guard<Mutex> guard{Smmu::InstanceLock::Get()};
-      for (Smmu& s : Smmu::instances_) {
-        if (static_cast<iommu::Iommu*>(&s) == iommu.get()) {
-          target = Smmu::instances_.erase(s);
-          break;
-        }
-      }
-    }
-    iommu.reset();
-    if (!target) {
-      return;
-    }
-
-    // Shut down any remaining adopted or quarantined BTIs before unregistering
-    // interrupts so all ContextBank, SMRG, and DeviceAspace resources are
-    // cleanly released.
-    while (true) {
-      fbl::RefPtr<SmmuBti> bti;
-      {
-        Guard<Mutex> guard{&target->lock_};
-        if (!target->bti_list_.is_empty()) {
-          bti = fbl::RefPtr<SmmuBti>{&target->bti_list_.front()};
-        }
-      }
-      if (!bti) {
+// Cleanly tears down an Smmu instance between host tests and removes it from
+// the static Smmu::instances_ list while verifying destructor invariants.
+void SmmuTestAccess::DestroySmmu(fbl::RefPtr<iommu::Iommu>&& iommu) {
+  if (!iommu) {
+    return;
+  }
+  fbl::RefPtr<Smmu> target;
+  {
+    Guard<Mutex> guard{Smmu::InstanceLock::Get()};
+    for (Smmu& s : Smmu::instances_) {
+      if (static_cast<iommu::Iommu*>(&s) == iommu.get()) {
+        target = Smmu::instances_.erase(s);
         break;
       }
-      bool handled_adopted_without_cb = false;
-      {
-        Guard<Mutex> pmt_guard{&bti->pmt_lock_};
-        Guard<SpinLock, IrqSave> bti_guard{&bti->lock_};
-        bti->quarantined_pmt_count_ = 0;
-        bti->quarantined_page_count_ = 0;
-        if (bti->mode_ == BtiMode::kAdopted) {
-          if (bti->context_bank_) {
-            bti->mode_ = BtiMode::kFault;
-            bti->context_bank_->mode_ = BtiMode::kFault;
-          } else {
-            // Adopted BTI in bypass mode (no ContextBank): disable its SMRGs directly.
-            for (StreamMatchRegGroup& smrg : bti->smrg_list_) {
-              smrg.Disable(*bti);
-            }
-            bti->smrg_list_.clear();
-            bti->mode_ = BtiMode::kShutdown;
-            handled_adopted_without_cb = true;
-          }
-        }
-      }
-      if (handled_adopted_without_cb) {
-        {
-          Guard<Mutex> guard{&target->lock_};
-          target->bti_list_.erase(*bti);
-        }
-        const_cast<fbl::RefPtr<Smmu>&>(bti->smmu_).reset();
-      } else {
-        bti->OnEndOfLife();
-      }
     }
+  }
+  iommu.reset();
+  if (!target) {
+    return;
+  }
 
+  // Shut down any remaining adopted or quarantined BTIs before unregistering
+  // interrupts so all ContextBank, SMRG, and DeviceAspace resources are
+  // cleanly released.
+  while (true) {
+    fbl::RefPtr<SmmuBti> bti;
     {
       Guard<Mutex> guard{&target->lock_};
-      target->UnregisterInterrupts();
+      if (!target->bti_list_.is_empty()) {
+        bti = fbl::RefPtr<SmmuBti>{&target->bti_list_.front()};
+      }
     }
-    target.reset();
+    if (!bti) {
+      break;
+    }
+    bool handled_adopted_without_cb = false;
+    fbl::DoublyLinkedList<ktl::unique_ptr<StreamMatchRegGroup>> local_smrg_list;
+    {
+      Guard<Mutex> pmt_guard{&bti->pmt_lock_};
+      Guard<SpinLock, IrqSave> bti_guard{&bti->lock_};
+      bti->quarantined_pmt_count_ = 0;
+      bti->quarantined_page_count_ = 0;
+      if (bti->mode_ == BtiMode::kAdopted) {
+        if (bti->context_bank_) {
+          bti->mode_ = BtiMode::kFault;
+          bti->context_bank_->mode_ = BtiMode::kFault;
+        } else {
+          // Adopted BTI in bypass mode (no ContextBank): disable its SMRGs directly.
+          for (StreamMatchRegGroup& smrg : bti->smrg_list_) {
+            smrg.Disable(*bti);
+          }
+          local_smrg_list = ktl::move(bti->smrg_list_);
+          bti->mode_ = BtiMode::kShutdown;
+          handled_adopted_without_cb = true;
+        }
+      }
+    }
+    local_smrg_list.clear();
+    if (handled_adopted_without_cb) {
+      {
+        Guard<Mutex> guard{&target->lock_};
+        target->bti_list_.erase(*bti);
+      }
+      const_cast<fbl::RefPtr<Smmu>&>(bti->smmu_).reset();
+    } else {
+      bti->OnEndOfLife();
+    }
   }
-};
+
+  {
+    Guard<Mutex> guard{&target->lock_};
+    target->UnregisterInterrupts();
+  }
+  target.reset();
+}
+
+bool SmmuTestAccess::IsRegisteredSmmu(const iommu::Iommu* iommu) {
+  if (iommu == nullptr) {
+    return false;
+  }
+  Guard<Mutex> guard{Smmu::InstanceLock::Get()};
+  for (const Smmu& s : Smmu::instances_) {
+    if (static_cast<const iommu::Iommu*>(&s) == iommu) {
+      return true;
+    }
+  }
+  return false;
+}
+
+zx_status_t SmmuTestAccess::CreateCppSmmu(const zbi_dcfg_arm_smmu_driver_t* config,
+                                          iommu::Iommu** out_smmu) {
+  if (out_smmu == nullptr) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+  *out_smmu = nullptr;
+  if (config == nullptr) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+  auto res = Smmu::Create(*config);
+  if (res.is_error()) {
+    return res.status_value();
+  }
+  *out_smmu = fbl::ExportToRawPtr(&*res);
+  return ZX_OK;
+}
+
+zx_status_t SmmuTestAccess::FetchCppSmmu(const uint8_t* desc, size_t desc_len,
+                                         iommu::Iommu** out_smmu) {
+  if (out_smmu == nullptr) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+  *out_smmu = nullptr;
+  ktl::unique_ptr<const uint8_t[]> desc_copy;
+  if (desc != nullptr) {
+    fbl::AllocChecker ac;
+    ktl::unique_ptr<uint8_t[]> buf{new (&ac) uint8_t[desc_len]};
+    if (!ac.check()) {
+      return ZX_ERR_NO_MEMORY;
+    }
+    if (desc_len != 0) {
+      memcpy(buf.get(), desc, desc_len);
+    }
+    desc_copy.reset(buf.release());
+  }
+  auto res = Smmu::Fetch(ktl::move(desc_copy), desc_len);
+  if (res.is_error()) {
+    return res.status_value();
+  }
+  // In Disabled mode (global or per-instance override), C++ `Smmu::Fetch` returns a fresh
+  // `StubIommu` rather than an `arm_smmu::Smmu` from `Smmu::instances_`. Match `rust_smmu_fetch`
+  // and `cpp_smmu_fetch`'s contract by dropping the temporary `StubIommu` and leaving
+  // `*out_smmu == nullptr`.
+  if (!IsRegisteredSmmu(res.value().get())) {
+    return ZX_OK;
+  }
+  *out_smmu = fbl::ExportToRawPtr(&*res);
+  return ZX_OK;
+}
+
+void SmmuTestAccess::DestroyCppSmmu(iommu::Iommu* smmu) {
+  if (smmu == nullptr) {
+    return;
+  }
+  DestroySmmu(fbl::ImportFromRawPtr(smmu));
+}
+
+void SmmuTestAccess::ReleaseCppSmmu(iommu::Iommu* smmu) {
+  if (smmu == nullptr) {
+    return;
+  }
+  (void)fbl::ImportFromRawPtr(smmu);
+}
+
+zx_status_t SmmuTestAccess::CreateCppBti(iommu::Iommu* smmu, uint64_t bti_id,
+                                         iommu::Bti** out_bti) {
+  if (out_bti == nullptr) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+  *out_bti = nullptr;
+  if (smmu == nullptr) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+  auto res = smmu->CreateBti(bti_id);
+  if (res.is_error()) {
+    return res.status_value();
+  }
+  *out_bti = fbl::ExportToRawPtr(&*res);
+  return ZX_OK;
+}
+
+void SmmuTestAccess::OnZeroHandlesCppBti(iommu::Bti* bti) {
+  if (bti != nullptr) {
+    bti->OnDispatcherZeroHandles();
+  }
+}
+
+void SmmuTestAccess::ReleaseCppBti(iommu::Bti* bti) {
+  if (bti != nullptr) {
+    (void)fbl::ImportFromRawPtr(bti);
+  }
+}
+
+void SmmuTestAccess::ReleaseQuarantineCppBti(iommu::Bti* bti) {
+  if (bti != nullptr) {
+    bti->ReleaseQuarantine();
+  }
+}
+
+bool SmmuTestAccess::InFaultStateCppBti(const iommu::Bti* bti) {
+  return bti != nullptr && bti->in_fault_state();
+}
+
+size_t SmmuTestAccess::QuarantineCountCppBti(const iommu::Bti* bti) {
+  return bti != nullptr ? bti->quarantine_count() : 0;
+}
+
+uint64_t SmmuTestAccess::PmoCountCppBti(const iommu::Bti* bti) {
+  return bti != nullptr ? bti->pmo_count() : 0;
+}
+
+uint64_t SmmuTestAccess::MinimumContiguityCppBti(const iommu::Bti* bti) {
+  return bti != nullptr ? bti->minimum_contiguity() : 0;
+}
+
+uint64_t SmmuTestAccess::AspaceSizeCppBti(const iommu::Bti* bti) {
+  return bti != nullptr ? bti->aspace_size() : 0;
+}
+
+uint64_t SmmuTestAccess::BtiIdCppBti(const iommu::Bti* bti) {
+  return bti != nullptr ? bti->bti_id() : 0;
+}
+
+void SmmuTestAccess::GetNameCppBti(const iommu::Bti* bti, char* out_name) {
+  if (bti == nullptr || out_name == nullptr) {
+    return;
+  }
+  auto& name_arr = *reinterpret_cast<char (*)[ZX_MAX_NAME_LEN]>(out_name);
+  static_cast<void>(bti->get_name(name_arr));
+}
+
+void SmmuTestAccess::SetNameCppBti(iommu::Bti* bti, const char* name, size_t name_len) {
+  if (bti != nullptr && (name != nullptr || name_len == 0)) {
+    static_cast<void>(bti->set_name(name, name_len));
+  }
+}
+
+zx_status_t SmmuTestAccess::MapCppBti(iommu::Bti* bti, PinnedVmObject* pinned_vmo, uint32_t perms,
+                                      bool require_contiguous, iommu::Pmt** out_pmt) {
+  if (out_pmt == nullptr) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+  *out_pmt = nullptr;
+  if (bti == nullptr || pinned_vmo == nullptr) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+  const auto req = require_contiguous ? iommu::RequireContiguousMapping::Yes
+                                      : iommu::RequireContiguousMapping::No;
+  auto res = bti->Map(ktl::move(*pinned_vmo), perms, req);
+  if (res.is_error()) {
+    return res.status_value();
+  }
+  *out_pmt = fbl::ExportToRawPtr(&*res);
+  return ZX_OK;
+}
+
+zx_status_t SmmuTestAccess::QueryAddressCppPmt(iommu::Pmt* pmt, uint64_t offset, size_t size,
+                                               uint64_t* out_device_vaddr, size_t* out_size) {
+  if (pmt == nullptr || out_device_vaddr == nullptr || out_size == nullptr) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+  auto res = pmt->QueryAddress(offset, size);
+  if (res.is_error()) {
+    *out_device_vaddr = 0;
+    *out_size = 0;
+    return res.status_value();
+  }
+  *out_device_vaddr = res->device_vaddr;
+  *out_size = res->size;
+  return ZX_OK;
+}
+
+void SmmuTestAccess::ReleasePinnedMemoryCppPmt(iommu::Pmt* pmt) {
+  if (pmt != nullptr) {
+    pmt->ReleasePinnedMemory();
+  }
+}
+
+void SmmuTestAccess::OnZeroHandlesCppPmt(iommu::Pmt* pmt) {
+  if (pmt != nullptr) {
+    pmt->OnDispatcherZeroHandles();
+  }
+}
+
+void SmmuTestAccess::ReleaseCppPmt(iommu::Pmt* pmt) {
+  if (pmt != nullptr) {
+    (void)fbl::ImportFromRawPtr(pmt);
+  }
+}
+
+bool SmmuTestAccess::ValidateCppModeString(const char* mode_str) {
+  return mode_str != nullptr && ValidateSmmuModeString(mode_str);
+}
+
+bool SmmuTestAccess::GetCppModeString(const char* mode_str, bool has_base_addr, uint64_t base_addr,
+                                      uint32_t* out_mode) {
+  if (mode_str == nullptr || out_mode == nullptr) {
+    return false;
+  }
+  const ktl::optional<uint64_t> addr =
+      has_base_addr ? ktl::optional<uint64_t>{base_addr} : ktl::nullopt;
+  auto res = GetSmmuMode(mode_str, addr);
+  if (!res.has_value()) {
+    return false;
+  }
+  *out_mode = static_cast<uint32_t>(*res);
+  return true;
+}
 
 namespace testing {
 namespace {
-
-enum class BackendKind {
-  kCpp,
-  // kRust will be added in Step 1.4 when cross_test_ffi.{rs,cc} is wired.
-};
 
 class ModelTestVmObject final : public VmObject {
  public:
@@ -165,35 +383,139 @@ class ModelTestVmObject final : public VmObject {
   bool contiguous_ = false;
 };
 
-// Outer-boundary backend adapter. In Phase 0 this drives the C++ Smmu/SmmuBti/SmmuPmt
-// implementation directly; in Phase 1 (Step 1.4) BackendKind::kRust will drive the
-// Rust implementation through cross_test_ffi.{rs,cc}.
+// Outer-boundary backend adapter driving either the C++ Smmu/SmmuBti/SmmuPmt
+// implementation (`BackendKind::kCpp`) or the Rust Smmu/SmmuBti/SmmuPmt
+// implementation through cross_test_ffi.{rs,cc} (`BackendKind::kRust`).
 class SmmuBackendRunner {
  public:
   struct SmmuHandle {
     fbl::RefPtr<iommu::Iommu> cpp_iommu;
+    const RustSmmu* rust_smmu = nullptr;
+    bool owns_registration = false;
+
+    SmmuHandle() = default;
+    SmmuHandle(const SmmuHandle&) = delete;
+    SmmuHandle& operator=(const SmmuHandle&) = delete;
+    SmmuHandle(SmmuHandle&& other) noexcept
+        : cpp_iommu(std::move(other.cpp_iommu)),
+          rust_smmu(std::exchange(other.rust_smmu, nullptr)),
+          owns_registration(std::exchange(other.owns_registration, false)) {}
+    SmmuHandle& operator=(SmmuHandle&& other) noexcept {
+      if (this != &other) {
+        Reset();
+        cpp_iommu = std::move(other.cpp_iommu);
+        rust_smmu = std::exchange(other.rust_smmu, nullptr);
+        owns_registration = std::exchange(other.owns_registration, false);
+      }
+      return *this;
+    }
+    ~SmmuHandle() { Reset(); }
+
+    void Reset() {
+      const bool should_destroy = std::exchange(owns_registration, false);
+      if (should_destroy) {
+        if (rust_smmu != nullptr) {
+          rust_smmu_destroy(std::exchange(rust_smmu, nullptr));
+        }
+        if (cpp_iommu) {
+          SmmuTestAccess::DestroySmmu(std::move(cpp_iommu));
+        }
+        return;
+      }
+      cpp_iommu.reset();
+      if (rust_smmu != nullptr) {
+        rust_smmu_release(std::exchange(rust_smmu, nullptr));
+      }
+    }
   };
 
   struct BtiHandle {
     fbl::RefPtr<iommu::Bti> cpp_bti;
+    const RustSmmuBti* rust_bti = nullptr;
     bool dispatcher_closed = false;
+
+    BtiHandle() = default;
+    BtiHandle(const BtiHandle&) = delete;
+    BtiHandle& operator=(const BtiHandle&) = delete;
+    BtiHandle(BtiHandle&& other) noexcept
+        : cpp_bti(std::move(other.cpp_bti)),
+          rust_bti(std::exchange(other.rust_bti, nullptr)),
+          dispatcher_closed(std::exchange(other.dispatcher_closed, true)) {}
+    BtiHandle& operator=(BtiHandle&& other) noexcept {
+      if (this != &other) {
+        Reset();
+        cpp_bti = std::move(other.cpp_bti);
+        rust_bti = std::exchange(other.rust_bti, nullptr);
+        dispatcher_closed = std::exchange(other.dispatcher_closed, true);
+      }
+      return *this;
+    }
+    ~BtiHandle() { Reset(); }
+
+    void Reset() {
+      if (cpp_bti) {
+        if (!dispatcher_closed) {
+          dispatcher_closed = true;
+          if (cpp_bti->in_fault_state()) {
+            cpp_bti->ReleaseQuarantine();
+          }
+          cpp_bti->OnDispatcherZeroHandles();
+        }
+        cpp_bti.reset();
+      }
+      if (rust_bti != nullptr) {
+        const RustSmmuBti* raw = std::exchange(rust_bti, nullptr);
+        if (!dispatcher_closed) {
+          dispatcher_closed = true;
+          if (rust_smmu_bti_in_fault_state(raw)) {
+            rust_smmu_bti_release_quarantine(raw);
+          }
+          rust_smmu_bti_on_zero_handles(raw);
+        }
+        rust_smmu_bti_release(raw);
+      }
+    }
   };
 
   struct PmtHandle {
     fbl::RefPtr<iommu::Pmt> cpp_pmt;
+    const RustSmmuPmt* rust_pmt = nullptr;
+
+    PmtHandle() = default;
+    PmtHandle(const PmtHandle&) = delete;
+    PmtHandle& operator=(const PmtHandle&) = delete;
+    PmtHandle(PmtHandle&& other) noexcept
+        : cpp_pmt(std::move(other.cpp_pmt)), rust_pmt(std::exchange(other.rust_pmt, nullptr)) {}
+    PmtHandle& operator=(PmtHandle&& other) noexcept {
+      if (this != &other) {
+        Reset();
+        cpp_pmt = std::move(other.cpp_pmt);
+        rust_pmt = std::exchange(other.rust_pmt, nullptr);
+      }
+      return *this;
+    }
+    ~PmtHandle() { Reset(); }
+
+    void Reset() {
+      if (cpp_pmt) {
+        cpp_pmt->ReleasePinnedMemory();
+        cpp_pmt->OnDispatcherZeroHandles();
+        cpp_pmt.reset();
+      }
+      if (rust_pmt != nullptr) {
+        const RustSmmuPmt* raw = std::exchange(rust_pmt, nullptr);
+        rust_smmu_pmt_release_pinned_memory(raw);
+        rust_smmu_pmt_on_zero_handles(raw);
+        rust_smmu_pmt_release(raw);
+      }
+    }
   };
 
   explicit SmmuBackendRunner(BackendKind kind) : kind_(kind) {}
 
   BackendKind kind() const { return kind_; }
 
-  const char* Tag() const {
-    switch (kind_) {
-      case BackendKind::kCpp:
-        return "C++->C++";
-    }
-    return "Unknown";
-  }
+  const char* Tag() const { return BackendTag(kind_); }
 
   void LogTestStart(const char* test_name) const {
     printf("[Backend: %s] %s\n", Tag(), test_name);
@@ -201,41 +523,102 @@ class SmmuBackendRunner {
   }
 
   zx::result<SmmuHandle> CreateSmmu(const zbi_dcfg_arm_smmu_driver_t& config) {
+    if (kind_ == BackendKind::kRust) {
+      const RustSmmu* raw = nullptr;
+      const zx_status_t status = rust_smmu_create(&config, &raw);
+      if (status != ZX_OK) {
+        return zx::error(status);
+      }
+      SmmuHandle handle;
+      handle.rust_smmu = raw;
+      handle.owns_registration = true;
+      return zx::ok(std::move(handle));
+    }
     auto res = Smmu::Create(config);
     if (res.is_error()) {
       return res.take_error();
     }
-    return zx::ok(SmmuHandle{.cpp_iommu = std::move(*res)});
+    SmmuHandle handle;
+    handle.cpp_iommu = std::move(*res);
+    handle.owns_registration = true;
+    return zx::ok(std::move(handle));
   }
 
   zx::result<SmmuHandle> FetchSmmu(uint64_t mmio_phys) {
+    if (kind_ == BackendKind::kRust) {
+      zx_iommu_desc_arm_smmu_t desc{.register_base = mmio_phys};
+      const RustSmmu* raw = nullptr;
+      const zx_status_t status =
+          rust_smmu_fetch(reinterpret_cast<const uint8_t*>(&desc), sizeof(desc), &raw);
+      if (status != ZX_OK) {
+        return zx::error(status);
+      }
+      SmmuHandle handle;
+      handle.rust_smmu = raw;
+      return zx::ok(std::move(handle));
+    }
     fbl::AllocChecker ac;
     ktl::unique_ptr<uint8_t[]> buf{new (&ac) uint8_t[sizeof(zx_iommu_desc_arm_smmu_t)]};
     ZX_ASSERT(ac.check());
     auto* desc = reinterpret_cast<zx_iommu_desc_arm_smmu_t*>(buf.get());
     desc->register_base = mmio_phys;
-    auto res =
-        Smmu::Fetch(ktl::unique_ptr<const uint8_t[]>{buf.release()}, sizeof(*desc));
+    auto res = Smmu::Fetch(ktl::unique_ptr<const uint8_t[]>{buf.release()}, sizeof(*desc));
     if (res.is_error()) {
       return res.take_error();
     }
-    return zx::ok(SmmuHandle{.cpp_iommu = std::move(*res)});
+    SmmuHandle handle;
+    if (SmmuTestAccess::IsRegisteredSmmu(res.value().get())) {
+      handle.cpp_iommu = std::move(*res);
+    }
+    return zx::ok(std::move(handle));
   }
 
   void DestroySmmu(SmmuHandle& smmu) {
+    smmu.owns_registration = false;
+    if (kind_ == BackendKind::kRust) {
+      if (smmu.rust_smmu != nullptr) {
+        rust_smmu_destroy(std::exchange(smmu.rust_smmu, nullptr));
+      }
+      return;
+    }
     SmmuTestAccess::DestroySmmu(std::move(smmu.cpp_iommu));
   }
 
   zx::result<BtiHandle> CreateBti(SmmuHandle& smmu, uint64_t bti_id) {
+    if (kind_ == BackendKind::kRust) {
+      const RustSmmuBti* raw = nullptr;
+      const zx_status_t status = rust_smmu_create_bti(smmu.rust_smmu, bti_id, &raw);
+      if (status != ZX_OK) {
+        return zx::error(status);
+      }
+      BtiHandle handle;
+      handle.rust_bti = raw;
+      handle.dispatcher_closed = false;
+      return zx::ok(std::move(handle));
+    }
     auto res = smmu.cpp_iommu->CreateBti(bti_id);
     if (res.is_error()) {
       return res.take_error();
     }
-    return zx::ok(BtiHandle{.cpp_bti = std::move(*res), .dispatcher_closed = false});
+    BtiHandle handle;
+    handle.cpp_bti = std::move(*res);
+    handle.dispatcher_closed = false;
+    return zx::ok(std::move(handle));
   }
 
   // Simulates closing the last user-mode handle to BusTransactionInitiatorDispatcher.
   void DropBti(BtiHandle& bti) {
+    if (kind_ == BackendKind::kRust) {
+      if (bti.rust_bti != nullptr) {
+        const RustSmmuBti* raw = std::exchange(bti.rust_bti, nullptr);
+        if (!bti.dispatcher_closed) {
+          bti.dispatcher_closed = true;
+          rust_smmu_bti_on_zero_handles(raw);
+        }
+        rust_smmu_bti_release(raw);
+      }
+      return;
+    }
     if (bti.cpp_bti && !bti.dispatcher_closed) {
       bti.dispatcher_closed = true;
       bti.cpp_bti->OnDispatcherZeroHandles();
@@ -243,35 +626,85 @@ class SmmuBackendRunner {
     bti.cpp_bti.reset();
   }
 
-  void ReleaseQuarantine(BtiHandle& bti) { bti.cpp_bti->ReleaseQuarantine(); }
+  void ReleaseQuarantine(BtiHandle& bti) {
+    if (kind_ == BackendKind::kRust) {
+      rust_smmu_bti_release_quarantine(bti.rust_bti);
+      return;
+    }
+    bti.cpp_bti->ReleaseQuarantine();
+  }
 
-  bool BtiInFaultState(const BtiHandle& bti) const { return bti.cpp_bti->in_fault_state(); }
+  bool BtiInFaultState(const BtiHandle& bti) const {
+    if (kind_ == BackendKind::kRust) {
+      return rust_smmu_bti_in_fault_state(bti.rust_bti);
+    }
+    return bti.cpp_bti->in_fault_state();
+  }
 
   size_t BtiQuarantineCount(const BtiHandle& bti) const {
+    if (kind_ == BackendKind::kRust) {
+      return rust_smmu_bti_quarantine_count(bti.rust_bti);
+    }
     return bti.cpp_bti->quarantine_count();
   }
 
-  uint64_t BtiPmoCount(const BtiHandle& bti) const { return bti.cpp_bti->pmo_count(); }
+  uint64_t BtiPmoCount(const BtiHandle& bti) const {
+    if (kind_ == BackendKind::kRust) {
+      return rust_smmu_bti_pmo_count(bti.rust_bti);
+    }
+    return bti.cpp_bti->pmo_count();
+  }
 
   uint64_t BtiMinimumContiguity(const BtiHandle& bti) const {
+    if (kind_ == BackendKind::kRust) {
+      return rust_smmu_bti_minimum_contiguity(bti.rust_bti);
+    }
     return bti.cpp_bti->minimum_contiguity();
   }
 
-  uint64_t BtiAspaceSize(const BtiHandle& bti) const { return bti.cpp_bti->aspace_size(); }
+  uint64_t BtiAspaceSize(const BtiHandle& bti) const {
+    if (kind_ == BackendKind::kRust) {
+      return rust_smmu_bti_aspace_size(bti.rust_bti);
+    }
+    return bti.cpp_bti->aspace_size();
+  }
 
   zx::result<PmtHandle> BtiPin(BtiHandle& bti, PinnedVmObject pinned_vmo, uint32_t perms,
                                bool require_contiguous) {
+    if (kind_ == BackendKind::kRust) {
+      const RustSmmuPmt* raw = nullptr;
+      const zx_status_t status =
+          rust_smmu_bti_map(bti.rust_bti, &pinned_vmo, perms, require_contiguous, &raw);
+      if (status != ZX_OK) {
+        return zx::error(status);
+      }
+      PmtHandle handle;
+      handle.rust_pmt = raw;
+      return zx::ok(std::move(handle));
+    }
     const auto req = require_contiguous ? iommu::RequireContiguousMapping::Yes
                                         : iommu::RequireContiguousMapping::No;
     auto res = bti.cpp_bti->Map(std::move(pinned_vmo), perms, req);
     if (res.is_error()) {
       return res.take_error();
     }
-    return zx::ok(PmtHandle{.cpp_pmt = std::move(*res)});
+    PmtHandle handle;
+    handle.cpp_pmt = std::move(*res);
+    return zx::ok(std::move(handle));
   }
 
   zx::result<iommu::QueryAddressResult> PmtQueryAddress(PmtHandle& pmt, uint64_t offset,
                                                         size_t size) {
+    if (kind_ == BackendKind::kRust) {
+      uint64_t device_vaddr = 0;
+      size_t mapped_size = 0;
+      const zx_status_t status =
+          rust_smmu_pmt_query_address(pmt.rust_pmt, offset, size, &device_vaddr, &mapped_size);
+      if (status != ZX_OK) {
+        return zx::error(status);
+      }
+      return zx::ok(iommu::QueryAddressResult{.device_vaddr = device_vaddr, .size = mapped_size});
+    }
     return pmt.cpp_pmt->QueryAddress(offset, size);
   }
 
@@ -280,6 +713,12 @@ class SmmuBackendRunner {
   // other operations (including closing the BTI) can happen in between. Follow
   // with PmtClose().
   void PmtUnpin(PmtHandle& pmt) {
+    if (kind_ == BackendKind::kRust) {
+      if (pmt.rust_pmt != nullptr) {
+        rust_smmu_pmt_release_pinned_memory(pmt.rust_pmt);
+      }
+      return;
+    }
     if (pmt.cpp_pmt) {
       pmt.cpp_pmt->ReleasePinnedMemory();
     }
@@ -290,6 +729,14 @@ class SmmuBackendRunner {
   // life. If it is still pinned this is a leak, which quarantines it and puts
   // its BTI into the fault state.
   void PmtClose(PmtHandle& pmt) {
+    if (kind_ == BackendKind::kRust) {
+      if (pmt.rust_pmt != nullptr) {
+        const RustSmmuPmt* raw = std::exchange(pmt.rust_pmt, nullptr);
+        rust_smmu_pmt_on_zero_handles(raw);
+        rust_smmu_pmt_release(raw);
+      }
+      return;
+    }
     if (pmt.cpp_pmt) {
       pmt.cpp_pmt->OnDispatcherZeroHandles();
       pmt.cpp_pmt.reset();
@@ -307,11 +754,21 @@ class SmmuBackendRunner {
   void PmtLeakAndDrop(PmtHandle& pmt) { PmtClose(pmt); }
 
   bool ValidateModeString(const char* mode_str) const {
+    if (kind_ == BackendKind::kRust) {
+      return rust_smmu_validate_mode_string(mode_str);
+    }
     return ValidateSmmuModeString(mode_str);
   }
 
   ktl::optional<ArmSmmuMode> ParseMode(const char* mode_str,
                                        ktl::optional<uint64_t> base_addr = ktl::nullopt) const {
+    if (kind_ == BackendKind::kRust) {
+      uint32_t raw_mode = 0;
+      if (!rust_smmu_get_mode(mode_str, base_addr.has_value(), base_addr.value_or(0), &raw_mode)) {
+        return ktl::nullopt;
+      }
+      return static_cast<ArmSmmuMode>(raw_mode);
+    }
     return GetSmmuMode(mode_str, base_addr);
   }
 
@@ -518,9 +975,7 @@ class AbstractIommuSpec {
   std::map<uint64_t, BtiSpec> btis_;
 };
 
-std::vector<BackendKind> GetBackendsToTest() {
-  return {BackendKind::kCpp};
-}
+std::vector<BackendKind> GetBackendsToTest() { return {BackendKind::kCpp, BackendKind::kRust}; }
 
 // ============================================================================
 // 1. Designed ("White-Box") Sequence: Init, IDR Validation, & Global Config
@@ -591,13 +1046,77 @@ void RunDesignedInitAndGlobalConfig(SmmuBackendRunner& backend) {
     ASSERT_OK(fetch1.status_value());
     auto fetch2 = backend.FetchSmmu(hw_model.config().mmio_phys);
     EXPECT_EQ(ZX_ERR_ALREADY_BOUND, fetch2.status_value());
-    fetch1->cpp_iommu.reset();
+    fetch1->Reset();
 
     // Unidentified streams must fault when CR0.CLIENTPD == 0 && CR0.USFCFG == 1.
     EXPECT_EQ(DmaTranslationResult::Fault(DmaFaultType::kUnidentifiedStream),
               hw_model.TranslateDma(0x0123, 0x20'0000, IOMMU_FLAG_PERM_READ));
 
     backend.DestroySmmu(smmu);
+    EXPECT_EQ(0u, PmmMock::Get().GetAllocatedPageCount());
+  }
+
+  // 1f. Disabled mode (global and per-instance override): Smmu::Create still
+  // registers the instance for diagnostics, while FetchSmmu / *_smmu_fetch
+  // succeed repeatedly with a null/stub handle rather than exporting a
+  // StubIommu as an arm_smmu::Smmu, and raw FFI fetch rejects malformed
+  // descriptor sizes when global mode is not disabled.
+  {
+    SimSmmuHardwareModel hw_model;
+    const uint64_t mmio_phys = hw_model.config().mmio_phys;
+
+    char override_mode[64];
+    snprintf(override_mode, sizeof(override_mode), "enforced,0x%lx=disabled", mmio_phys);
+    BootOptions::Get()->SetArmSmmuMode(override_mode);
+
+    auto create_disabled = backend.CreateSmmu(hw_model.MakeZbiConfig());
+    ASSERT_OK(create_disabled.status_value());
+    if (backend.kind() == BackendKind::kRust) {
+      EXPECT_NE(nullptr, create_disabled->rust_smmu);
+    } else {
+      EXPECT_NE(nullptr, create_disabled->cpp_iommu.get());
+    }
+
+    // Per-instance disabled override (global mode == Enforced, instance op_mode == Disabled).
+    auto fetch_override_1 = backend.FetchSmmu(mmio_phys);
+    ASSERT_OK(fetch_override_1.status_value());
+    EXPECT_EQ(nullptr, fetch_override_1->cpp_iommu.get());
+    EXPECT_EQ(nullptr, fetch_override_1->rust_smmu);
+    auto fetch_override_2 = backend.FetchSmmu(mmio_phys);
+    ASSERT_OK(fetch_override_2.status_value());
+
+    zx_iommu_desc_arm_smmu_t valid_desc{.register_base = mmio_phys};
+    if (backend.kind() == BackendKind::kRust) {
+      const RustSmmu* rust_out = reinterpret_cast<const RustSmmu*>(uintptr_t{1});
+      EXPECT_EQ(ZX_OK, rust_smmu_fetch(reinterpret_cast<const uint8_t*>(&valid_desc),
+                                       sizeof(valid_desc), &rust_out));
+      EXPECT_EQ(nullptr, rust_out);
+    } else {
+      iommu::Iommu* cpp_out = reinterpret_cast<iommu::Iommu*>(uintptr_t{1});
+      EXPECT_EQ(ZX_OK, cpp_smmu_fetch(reinterpret_cast<const uint8_t*>(&valid_desc),
+                                      sizeof(valid_desc), &cpp_out));
+      EXPECT_EQ(nullptr, cpp_out);
+    }
+
+    // Malformed descriptor lengths must return ZX_ERR_INVALID_ARGS across both FFI surfaces.
+    uint8_t short_desc[4] = {};
+    iommu::Iommu* cpp_out = nullptr;
+    const RustSmmu* rust_out = nullptr;
+    EXPECT_EQ(ZX_ERR_INVALID_ARGS,
+              cpp_smmu_fetch(nullptr, sizeof(zx_iommu_desc_arm_smmu_t), &cpp_out));
+    EXPECT_EQ(ZX_ERR_INVALID_ARGS,
+              rust_smmu_fetch(nullptr, sizeof(zx_iommu_desc_arm_smmu_t), &rust_out));
+    EXPECT_EQ(ZX_ERR_INVALID_ARGS, cpp_smmu_fetch(short_desc, sizeof(short_desc), &cpp_out));
+    EXPECT_EQ(ZX_ERR_INVALID_ARGS, rust_smmu_fetch(short_desc, sizeof(short_desc), &rust_out));
+
+    // Global disabled mode also returns ZX_OK with nullptr.
+    BootOptions::Get()->SetArmSmmuMode("disabled");
+    auto fetch_global_disabled = backend.FetchSmmu(mmio_phys);
+    ASSERT_OK(fetch_global_disabled.status_value());
+    EXPECT_EQ(nullptr, fetch_global_disabled->cpp_iommu.get());
+    EXPECT_EQ(nullptr, fetch_global_disabled->rust_smmu);
+
+    backend.DestroySmmu(*create_disabled);
     EXPECT_EQ(0u, PmmMock::Get().GetAllocatedPageCount());
   }
 }
@@ -646,8 +1165,8 @@ void RunDesignedBoundaryStraddlingAndReclamation(SmmuBackendRunner& backend) {
   // Pin #2: 4 pages straddling the exact 4 MiB boundary between L2[1]'s L3 table
   // and L2[2]'s L3 table ([4 MiB - 4 KiB, 4 MiB + 12 KiB)).
   const size_t kPin2Pages = 4;
-  auto vmo2 = ModelTestVmObject::CreateDiscontiguous(
-      {0x8000'1000, 0x8000'9000, 0x8002'3000, 0x8005'7000});
+  auto vmo2 =
+      ModelTestVmObject::CreateDiscontiguous({0x8000'1000, 0x8000'9000, 0x8002'3000, 0x8005'7000});
   auto pmt2_res = backend.BtiPin(bti, PinnedVmObject(vmo2, 0, kPin2Pages * kPageSize),
                                  IOMMU_FLAG_PERM_READ, false);
   ASSERT_OK(pmt2_res.status_value());
@@ -659,9 +1178,9 @@ void RunDesignedBoundaryStraddlingAndReclamation(SmmuBackendRunner& backend) {
   spec.AddMapping(kStreamId, q2->device_vaddr, vmo2->page_paddrs(), IOMMU_FLAG_PERM_READ);
 
   // Verify translations across the L3 -> L2 boundary against AbstractIommuSpec.
-  for (uint64_t probe_iova : {uint64_t{0x20'0000}, uint64_t{0x3f'e000}, uint64_t{0x3f'f000},
-                              uint64_t{0x40'0000}, uint64_t{0x40'1000}, uint64_t{0x40'2000},
-                              uint64_t{0x40'3000}}) {
+  for (uint64_t probe_iova :
+       {uint64_t{0x20'0000}, uint64_t{0x3f'e000}, uint64_t{0x3f'f000}, uint64_t{0x40'0000},
+        uint64_t{0x40'1000}, uint64_t{0x40'2000}, uint64_t{0x40'3000}}) {
     EXPECT_EQ(spec.TranslateDma(kStreamId, probe_iova, IOMMU_FLAG_PERM_READ),
               hw_model.TranslateDma(kStreamId, probe_iova, IOMMU_FLAG_PERM_READ));
   }
@@ -744,8 +1263,8 @@ void RunDesignedPermissionsEnforcement(SmmuBackendRunner& backend) {
   EXPECT_EQ(ZX_ERR_INVALID_ARGS,
             backend.BtiPin(bti, PinnedVmObject(vmo_ro, 0, kPageSize), 0x80, false).status_value());
 
-  auto pmt_ro = backend.BtiPin(bti, PinnedVmObject(vmo_ro, 0, kPageSize), IOMMU_FLAG_PERM_READ,
-                               false);
+  auto pmt_ro =
+      backend.BtiPin(bti, PinnedVmObject(vmo_ro, 0, kPageSize), IOMMU_FLAG_PERM_READ, false);
   ASSERT_OK(pmt_ro.status_value());
   auto q_ro = backend.PmtQueryAddress(*pmt_ro, 0, kPageSize);
   ASSERT_OK(q_ro.status_value());
@@ -768,10 +1287,9 @@ void RunDesignedPermissionsEnforcement(SmmuBackendRunner& backend) {
                   IOMMU_FLAG_PERM_READ | IOMMU_FLAG_PERM_EXECUTE);
 
   for (uint64_t iova : {q_ro->device_vaddr, q_rw->device_vaddr, q_rx->device_vaddr}) {
-    for (uint32_t perm :
-         {uint32_t{IOMMU_FLAG_PERM_READ}, uint32_t{IOMMU_FLAG_PERM_WRITE},
-          uint32_t{IOMMU_FLAG_PERM_EXECUTE},
-          uint32_t{IOMMU_FLAG_PERM_READ | IOMMU_FLAG_PERM_WRITE}}) {
+    for (uint32_t perm : {uint32_t{IOMMU_FLAG_PERM_READ}, uint32_t{IOMMU_FLAG_PERM_WRITE},
+                          uint32_t{IOMMU_FLAG_PERM_EXECUTE},
+                          uint32_t{IOMMU_FLAG_PERM_READ | IOMMU_FLAG_PERM_WRITE}}) {
       EXPECT_EQ(spec.TranslateDma(kStreamId, iova + 0x120, perm),
                 hw_model.TranslateDma(kStreamId, iova + 0x120, perm));
     }
@@ -839,10 +1357,10 @@ void RunDesignedOomRollbackMidMap(SmmuBackendRunner& backend) {
     // must fault cleanly with no stale TLB entries!
     EXPECT_EQ(spec.TranslateDma(kStreamId, q_base->device_vaddr, IOMMU_FLAG_PERM_READ),
               hw_model.TranslateDma(kStreamId, q_base->device_vaddr, IOMMU_FLAG_PERM_READ));
-    EXPECT_EQ(spec.TranslateDma(kStreamId, q_base->device_vaddr + 510 * kPageSize,
-                                IOMMU_FLAG_PERM_WRITE),
-              hw_model.TranslateDma(kStreamId, q_base->device_vaddr + 510 * kPageSize,
-                                    IOMMU_FLAG_PERM_WRITE));
+    EXPECT_EQ(
+        spec.TranslateDma(kStreamId, q_base->device_vaddr + 510 * kPageSize, IOMMU_FLAG_PERM_WRITE),
+        hw_model.TranslateDma(kStreamId, q_base->device_vaddr + 510 * kPageSize,
+                              IOMMU_FLAG_PERM_WRITE));
     EXPECT_EQ(DmaTranslationResult::Fault(DmaFaultType::kTranslation),
               hw_model.TranslateDma(kStreamId, 0x40'0000, IOMMU_FLAG_PERM_READ));
   }
@@ -900,8 +1418,8 @@ void RunDesignedBtiLifecycleAndQuarantine(SmmuBackendRunner& backend) {
     auto q1 = backend.PmtQueryAddress(*pmt1, 0, 2 * kPageSize);
     ASSERT_OK(q1.status_value());
 
-    auto pmt2 = backend.BtiPin(bti, PinnedVmObject(vmo2, 0, 2 * kPageSize),
-                               IOMMU_FLAG_PERM_READ, true);
+    auto pmt2 =
+        backend.BtiPin(bti, PinnedVmObject(vmo2, 0, 2 * kPageSize), IOMMU_FLAG_PERM_READ, true);
     ASSERT_OK(pmt2.status_value());
     auto q2 = backend.PmtQueryAddress(*pmt2, 0, 2 * kPageSize);
     ASSERT_OK(q2.status_value());
@@ -919,10 +1437,10 @@ void RunDesignedBtiLifecycleAndQuarantine(SmmuBackendRunner& backend) {
               hw_model.TranslateDma(kStreamId, q2->device_vaddr, IOMMU_FLAG_PERM_READ));
 
     // Pinning while in fault state must fail with ZX_ERR_BAD_STATE.
-    EXPECT_EQ(ZX_ERR_BAD_STATE,
-              backend.BtiPin(bti, PinnedVmObject(vmo1, 0, 2 * kPageSize), IOMMU_FLAG_PERM_READ,
-                             false)
-                  .status_value());
+    EXPECT_EQ(
+        ZX_ERR_BAD_STATE,
+        backend.BtiPin(bti, PinnedVmObject(vmo1, 0, 2 * kPageSize), IOMMU_FLAG_PERM_READ, false)
+            .status_value());
 
     // ReleaseQuarantine restores BTI to kTranslation mode.
     backend.ReleaseQuarantine(bti);
@@ -972,8 +1490,7 @@ void RunDesignedBtiLifecycleAndQuarantine(SmmuBackendRunner& backend) {
 
     // In Passthru mode, requiring a contiguous mapping on a discontiguous VMO
     // must fail, while non-contiguous or physically contiguous requests succeed.
-    auto vmo_discontig =
-        ModelTestVmObject::CreateDiscontiguous({0xc000'0000, 0xc000'5000});
+    auto vmo_discontig = ModelTestVmObject::CreateDiscontiguous({0xc000'0000, 0xc000'5000});
     EXPECT_NOT_OK(backend
                       .BtiPin(bti, PinnedVmObject(vmo_discontig, 0, 2 * kPageSize),
                               IOMMU_FLAG_PERM_READ, true)
@@ -1092,8 +1609,8 @@ void RunDesignedFaultIrqHandling(SmmuBackendRunner& backend) {
   auto bti = std::move(*bti_res);
 
   // 7a. Trigger a Global Fault IRQ (USF = bit 1, MULTI = bit 31).
-  ASSERT_TRUE(hw_model.InjectGlobalFaultIrq((1u << 31) | (1u << 1), 0xdead'beef'0000ULL, 0x3u,
-                                            0x0bad));
+  ASSERT_TRUE(
+      hw_model.InjectGlobalFaultIrq((1u << 31) | (1u << 1), 0xdead'beef'0000ULL, 0x3u, 0x0bad));
   // Handler must clear GFSR via W1C and mask the global IRQ.
   EXPECT_EQ(0u, hw_model.gfsr());
   EXPECT_TRUE(InterruptMock::Get().IsMasked(hw_model.config().global_irq_num));
@@ -1292,6 +1809,10 @@ void RunRandomizedMiniStress(SmmuBackendRunner& backend, ArmSmmuMode mode, uint6
     uint16_t sid = 0;
     // The BTI's stream ID mask: bits which are ignored when matching.
     uint16_t mask = 0;
+    // Declared before `pmts` and `unpinned_open` so reverse member destruction on an early
+    // assertion return unpins/closes all PMTs before closing the BTI handle.
+    SmmuBackendRunner::BtiHandle handle;
+    std::vector<ActivePmtInfo> pmts;
     // A PMT of this BTI which has been unpinned but whose handle is still open.
     //
     // At most one per BTI. Two or more, on a BTI whose own handle has been
@@ -1299,8 +1820,6 @@ void RunRandomizedMiniStress(SmmuBackendRunner& backend, ArmSmmuMode mode, uint6
     // on_end_of_life twice" in pending_bugs.md), so the generator does not
     // produce it.
     std::optional<SmmuBackendRunner::PmtHandle> unpinned_open;
-    SmmuBackendRunner::BtiHandle handle;
-    std::vector<ActivePmtInfo> pmts;
   };
 
   std::vector<ActiveBtiInfo> active_btis;
@@ -1391,9 +1910,8 @@ void RunRandomizedMiniStress(SmmuBackendRunner& backend, ArmSmmuMode mode, uint6
         // Fail the 1st to 5th page table page allocation of this pin.
         PmmMock::Get().SetAllocationLimit(rng() % 5);
       }
-      auto pmt_res =
-          backend.BtiPin(bti_info.handle, PinnedVmObject(vmo, 0, num_pages * kPageSize), perms,
-                         contig);
+      auto pmt_res = backend.BtiPin(bti_info.handle, PinnedVmObject(vmo, 0, num_pages * kPageSize),
+                                    perms, contig);
       if (inject_oom) {
         PmmMock::Get().ClearAllocationLimit();
       }
@@ -1627,6 +2145,22 @@ TEST(SmmuModelTest, RandomizedMiniStressPassthru) {
   }
 }
 
+// Runs the randomized sequences with a seed which changes on every run, so that
+// repeated runs explore different sequences. The seed is printed; set
+// ARM_SMMU_MODEL_SEED to replay a run.
+TEST(SmmuModelTest, RandomizedMiniStressFreshSeed) {
+  const uint64_t seed = FreshModelSeed();
+  printf("SmmuModelTest.RandomizedMiniStressFreshSeed: ARM_SMMU_MODEL_SEED=0x%lx\n", seed);
+  for (BackendKind kind : GetBackendsToTest()) {
+    SmmuBackendRunner backend(kind);
+    // A fixed number of steps, so that a seed replays the same sequence.
+    RunRandomizedMiniStress(backend, ArmSmmuMode::kEnforced, seed, 300,
+                            std::chrono::milliseconds(0));
+    RunRandomizedMiniStress(backend, ArmSmmuMode::kPassthru, seed + 1, 300,
+                            std::chrono::milliseconds(0));
+  }
+}
+
 TEST(SmmuModelTest, HardwareModelDetectsOrderingAndCoherencyHazards) {
   BootOptions::Get()->SetArmSmmuMode("enforced");
   PmmMock::Get().ClearAllocationLimit();
@@ -1656,6 +2190,13 @@ TEST(SmmuModelTest, HardwareModelDetectsOrderingAndCoherencyHazards) {
   paddr_t pa = 0;
   ASSERT_OK(pmm_alloc_page(0, &page, &pa));
   auto* table_vaddr = reinterpret_cast<uint64_t*>(paddr_to_physmap(pa));
+  auto free_page_guard = fit::defer([&]() {
+    memset(table_vaddr, 0, kPageSize);
+    arch::CleanDataCacheRange(reinterpret_cast<vaddr_t>(table_vaddr), kPageSize);
+    VmPageDoublyLinkedList free_list;
+    free_list.push_back(page);
+    pmm_free(&free_list);
+  });
   memset(table_vaddr, 0, kPageSize);
   arch::CleanDataCacheRange(reinterpret_cast<vaddr_t>(table_vaddr), kPageSize);
 
@@ -1687,6 +2228,7 @@ TEST(SmmuModelTest, HardwareModelDetectsOrderingAndCoherencyHazards) {
   VmPageDoublyLinkedList free_list;
   free_list.push_back(page);
   pmm_free(&free_list);
+  free_page_guard.cancel();
 
   backend.PmtUnpinAndDrop(pmt);
   backend.DropBti(bti);
