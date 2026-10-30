@@ -1,0 +1,28 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "inspect-rust-codelab-testing",
+    testonly = True,
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    # TODO(https://fxbug.dev/543568916): rustc_library.bzl defaults lint_config
+    # to clippy_warn_production even when testonly = True, whereas GN
+    # rustc_artifact.gni skips clippy_warn_production on testonly = true
+    # targets.
+    # @bazel2gn:skip
+    lint_config = "//build/config/rust/lints:clippy_warn_default",
+    visibility = ["//examples/diagnostics/inspect/codelab/rust:__subpackages__"],
+    deps = [
+        "//examples/diagnostics/inspect/codelab/fidl:fuchsia.examples.inspect_rust",
+        # In GN, //src/lib/fuchsia-component-test is a group that forwards
+        # :fuchsia-component-test-lib alongside RealmBuilder component deps.
+        "//src/lib/fuchsia-component-test:fuchsia-component-test-lib",  # @bazel2gn:path_overwrite://src/lib/fuchsia-component-test
+        "//third_party/rust_crates/vendor:anyhow",
+    ],
+)
