@@ -1,0 +1,144 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "procfs",
+    srcs = [
+        "cgroups.rs",
+        "config_gz.rs",
+        "cpuinfo.rs",
+        "device_tree.rs",
+        "devices.rs",
+        "filesystems.rs",
+        "fs.rs",
+        "kmsg.rs",
+        "lib.rs",
+        "loadavg.rs",
+        "meminfo.rs",
+        "misc.rs",
+        "mounts_symlink.rs",
+        "net_dev.rs",
+        "pid_directory.rs",
+        "pressure_directory.rs",
+        "proc_directory.rs",
+        "self_symlink.rs",
+        "stat.rs",
+        "swaps.rs",
+        "sys_net.rs",
+        "sysctl.rs",
+        "sysctl_directory.rs",
+        "sysrq.rs",
+        "thread_self.rs",
+        "uid_cputime.rs",
+        "uid_io.rs",
+        "uid_procstat.rs",
+        "uptime.rs",
+        "vmstat.rs",
+        "zoneinfo.rs",
+    ],
+    crate_name = "starnix_modules_procfs",
+    crate_root = "lib.rs",
+    edition = "2024",
+    lint_config = "//src/starnix/build:kernel_library_config",
+    visibility = ["//src/starnix/modules:__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_rust",
+        "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_rust",
+        "//sdk/fidl/fuchsia.net.interfaces.admin:fuchsia.net.interfaces.admin_rust",
+        "//sdk/fidl/fuchsia.net.root:fuchsia.net.root_rust",
+        "//sdk/fidl/fuchsia.net.settings:fuchsia.net.settings_rust",
+        "//sdk/fidl/fuchsia.starnix.psi:fuchsia.starnix.psi_rust",
+        "//sdk/fidl/fuchsia.sysinfo:fuchsia.sysinfo_rust",
+        "//sdk/rust/zx",
+        "//src/connectivity/lib/net-types",
+        "//src/connectivity/network/netlink",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-rcu",
+        "//src/starnix/kernel/core",
+        "//src/starnix/lib/starnix_logging",
+        "//src/starnix/lib/starnix_sync",
+        "//src/starnix/lib/starnix_task_command",
+        "//src/starnix/lib/starnix_types",
+        "//src/starnix/lib/starnix_uapi",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:itertools",
+        "//third_party/rust_crates/vendor:itoa",
+        "//third_party/rust_crates/vendor:maplit",
+        "//third_party/rust_crates/vendor:regex-lite",
+        "//third_party/rust_crates/vendor:uuid",
+    ],
+)
+
+# TODO(https://fxbug.dev/42059075): Re-enable starnix in these environments.
+# @bazel2gn:raw_attribute:exclude_toolchain_tags = [ "asan", "hwasan" ]
+# @bazel2gn:raw_attribute:output_name = "starnix_modules_procfs_lib_test"
+rustc_test(
+    name = "procfs_test",
+    crate = ":procfs",
+    edition = "2024",
+    lint_config = "//src/starnix/config:starnix_clippy_lints_test",
+    deps = ["//src/lib/fuchsia"],
+)
+
+fx_packaged_binary(
+    name = "procfs_test_packaged_bin",
+    testonly = True,
+    binary = ":procfs_test",
+    binary_name = "starnix_modules_procfs_lib_test",
+)
+
+fx_component_manifest(
+    name = "starnix-procfs-tests-manifest",
+    testonly = True,
+    component_name = "starnix-procfs-tests",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/starnix:unit_test.shard.cml",
+    ],
+    manifest = "meta/starnix_procfs_tests.cml",
+)
+
+fx_test_component(
+    name = "starnix-procfs-tests-component",
+    compiled_manifest = ":starnix-procfs-tests-manifest",
+    component_name = "starnix-procfs-tests",
+    test_type = "starnix",
+    deps = [
+        ":procfs_test_packaged_bin",
+        # In GN, //src/starnix/kernel/vdso is a resource() propagated through
+        # //src/starnix/kernel/core's deps.
+        "//src/starnix/kernel/vdso",
+    ],
+)
+
+fx_package(
+    name = "starnix-procfs-tests-package",
+    package_name = "starnix-procfs-tests",
+    test_components = [":starnix-procfs-tests-component"],
+)
+
+fx_test(
+    name = "starnix-procfs-tests",
+    package = ":starnix-procfs-tests-package",
+)
