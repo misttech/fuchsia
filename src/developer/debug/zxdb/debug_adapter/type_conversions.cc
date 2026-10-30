@@ -4,9 +4,18 @@
 
 #include "src/developer/debug/zxdb/debug_adapter/type_conversions.h"
 
+#include <cstdint>
+#include <map>
+#include <string>
+#include <vector>
+
+#include <dap/types.h>
+
 #include "src/developer/debug/ipc/records.h"
 
 namespace zxdb {
+
+namespace {
 
 dap::ZxdbTracepointFrameSummary ToDapFrameSummary(const TracepointFrameSummary& frame) {
   dap::ZxdbTracepointFrameSummary summary;
@@ -85,6 +94,8 @@ dap::object ToDapEvaluations(const std::map<std::string, TracepointEvaluation>& 
   }
   return evals_obj;
 }
+
+}  // namespace
 
 dap::ZxdbTracepointFrameCapture ToDapFrameCapture(const TracepointFrameCapture& capture) {
   dap::ZxdbTracepointFrameCapture dap_capture;

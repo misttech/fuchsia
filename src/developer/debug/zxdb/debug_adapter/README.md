@@ -55,8 +55,8 @@ Public headers and subdirectories expose these DAP server and context types:
   entries (`context.h`).
 - `zxdb::DataId`: Hardware breakpoint and watchpoint data ID encoder and parser
   (`data_id.h`).
-- `zxdb::ToDapFrameCapture`, `zxdb::ToDapFrameSummary`: DAP event and response
-  type converters (`type_conversions.h`).
+- `zxdb::ToDapFrameCapture`: DAP tracepoint capture converter
+  (`type_conversions.h`).
 - `zxdb::AsyncBacktraceSubscription`, `zxdb::FormatAsyncTaskTree`,
   `dap::AsyncTaskNode`, `dap::AsyncBacktraceUpdate`: Subscription manager and
   DAP types for streaming async task trees (`async_backtrace_subscription.h`).
