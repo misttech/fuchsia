@@ -10,7 +10,6 @@
 #include <lib/inspect/component/cpp/tree_handler_settings.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/stdcompat/optional.h>
-#include <zircon/availability.h>
 
 #include <functional>
 #include <memory>
@@ -56,12 +55,10 @@ class TreeServer final : public fidl::WireServer<fuchsia_inspect::Tree> {
   void ListChildNames(ListChildNamesRequestView request,
                       ListChildNamesCompleter::Sync& completer) override;
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(25)
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_inspect::Tree> md,
                              fidl::UnknownMethodCompleter::Sync& completer) override {
     completer.Close(ZX_ERR_UNAVAILABLE);
   }
-#endif
 
  private:
   TreeServer(std::variant<Inspector, zx::vmo> data, TreeHandlerSettings settings,
@@ -89,12 +86,10 @@ class TreeNameIterator final : public fidl::WireServer<fuchsia_inspect::TreeName
   // which is defined with the rest of the FIDL protocol.
   void GetNext(GetNextCompleter::Sync& completer) override;
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(25)
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_inspect::TreeNameIterator> md,
                              fidl::UnknownMethodCompleter::Sync& completer) override {
     completer.Close(ZX_ERR_UNAVAILABLE);
   }
-#endif
 
  private:
   TreeNameIterator(std::vector<std::string>&& names) : names_(std::move(names)) {}

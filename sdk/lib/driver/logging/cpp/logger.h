@@ -26,7 +26,6 @@
 #include <lib/driver/incoming/cpp/namespace.h>
 #include <lib/syslog/structured_backend/cpp/log_buffer.h>
 #include <lib/syslog/structured_backend/cpp/logger.h>
-#include <lib/zx/socket.h>
 #endif  // !HOST_LOGGING
 
 #include <zircon/availability.h>
@@ -91,10 +90,6 @@ class Logger final {
   static std::unique_ptr<Logger> Create2(
       const Namespace& ns, async_dispatcher_t* dispatcher, std::string_view name,
       FuchsiaLogSeverity min_severity = FUCHSIA_LOG_INFO
-#if FUCHSIA_API_LEVEL_LESS_THAN(29)
-      ,
-      bool wait_for_initial_interest = true
-#endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)
 #if FUCHSIA_API_LEVEL_AT_LEAST(32)
       ,
       std::optional<fidl::ClientEnd<fuchsia_logger::LogSink>> maybe_log_sink = std::nullopt
@@ -104,10 +99,6 @@ class Logger final {
   static zx::result<std::unique_ptr<Logger>> Create(
       const Namespace& ns, async_dispatcher_t* dispatcher, std::string_view name,
       FuchsiaLogSeverity min_severity = FUCHSIA_LOG_INFO
-#if FUCHSIA_API_LEVEL_LESS_THAN(29)
-      ,
-      bool wait_for_initial_interest = true
-#endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)
 #if FUCHSIA_API_LEVEL_AT_LEAST(32)
       ,
       std::optional<fidl::ClientEnd<fuchsia_logger::LogSink>> maybe_log_sink = std::nullopt
@@ -124,17 +115,7 @@ class Logger final {
   Logger() = default;
 
 #if !HOST_LOGGING
-#if FUCHSIA_API_LEVEL_LESS_THAN(29)
-  Logger(std::string_view name, FuchsiaLogSeverity min_severity, zx::socket socket,
-         fidl::WireClient<fuchsia_logger::LogSink> log_sink)
-      : tag_(name),
-        socket_(std::move(socket)),
-        default_severity_(min_severity),
-        severity_(min_severity),
-        log_sink_(std::move(log_sink)) {}
-#else   // FUCHSIA_API_LEVEL_LESS_THAN(29)
   explicit Logger(fuchsia_logging::Logger logger) : logger_(std::move(logger)) {}
-#endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)
 #else   // !HOST_LOGGING
   Logger(std::string_view name, FuchsiaLogSeverity min_severity)
       : tag_(name), severity_(min_severity) {}
@@ -147,7 +128,7 @@ class Logger final {
 
   FuchsiaLogSeverity GetSeverity();
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(29)
+#if HOST_LOGGING
   void SetSeverity(FuchsiaLogSeverity severity);
 #endif
 
@@ -202,11 +183,7 @@ class Logger final {
   // on LogBuffer directly.
   bool FlushRecord(fuchsia_logging::LogBuffer& buffer, uint32_t dropped);
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(29)
-  bool IsNoOp() const { return !socket_.is_valid(); }
-#else
   bool IsNoOp() const { return !logger_.IsValid(); }
-#endif
 #else   // !HOST_LOGGING
   static bool IsNoOp() { return false; }
 #endif  // !HOST_LOGGING
@@ -219,10 +196,6 @@ class Logger final {
   static zx::result<std::unique_ptr<Logger>> MaybeCreate(
       const Namespace& ns, async_dispatcher_t* dispatcher, std::string_view name,
       FuchsiaLogSeverity min_severity = FUCHSIA_LOG_INFO
-#if FUCHSIA_API_LEVEL_LESS_THAN(29)
-      ,
-      bool wait_for_initial_interest = true
-#endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)
 #if FUCHSIA_API_LEVEL_AT_LEAST(32)
       ,
       std::optional<fidl::ClientEnd<fuchsia_logger::LogSink>> maybe_log_sink = std::nullopt
@@ -233,30 +206,7 @@ class Logger final {
   static std::unique_ptr<Logger> NoOp();
 
 #if !HOST_LOGGING
-#if FUCHSIA_API_LEVEL_LESS_THAN(29)
-#if FUCHSIA_API_LEVEL_AT_LEAST(27)
-  void HandleInterest(fuchsia_diagnostics_types::wire::Interest interest);
-#else   // FUCHSIA_API_LEVEL_AT_LEAST(27)
-  void HandleInterest(fuchsia_diagnostics::wire::Interest interest);
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
-
-  void OnInterestChange(
-      fidl::WireUnownedResult<fuchsia_logger::LogSink::WaitForInterestChange>& result);
-
-  // For thread-safety these members should be read-only.
-  const std::string tag_;
-#if !HOST_LOGGING
-  const zx::socket socket_;
-  const FuchsiaLogSeverity default_severity_ = FUCHSIA_LOG_INFO;
-#endif  // !HOST_LOGGING
-  // Messages below this won't be logged. This field is thread-safe.
-  std::atomic<FuchsiaLogSeverity> severity_ = FUCHSIA_LOG_INFO;
-
-  // Used to learn about changes in severity.
-  fidl::WireClient<fuchsia_logger::LogSink> log_sink_;
-#else   // FUCHSIA_API_LEVEL_AT_LEAST(29)
   const fuchsia_logging::Logger logger_;
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(29)
 #else   // !HOST_LOGGING
   const std::string tag_;
   std::atomic<FuchsiaLogSeverity> severity_ = FUCHSIA_LOG_INFO;

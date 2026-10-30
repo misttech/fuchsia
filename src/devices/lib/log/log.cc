@@ -7,9 +7,6 @@
 #include <fidl/fuchsia.logger/cpp/fidl.h>
 #include <fidl/fuchsia.logger/cpp/wire_types.h>
 #include <lib/component/incoming/cpp/protocol.h>
-#include <lib/fdio/directory.h>
-#include <lib/fdio/fd.h>
-#include <lib/fdio/fdio.h>
 #include <lib/zx/channel.h>
 #include <zircon/process.h>
 #include <zircon/processargs.h>
@@ -43,27 +40,6 @@ zx_koid_t GetKoid(zx_handle_t handle) {
       zx_object_get_info(handle, ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr);
   return status == ZX_OK ? info.koid : ZX_KOID_INVALID;
 }
-
-#if FUCHSIA_API_LEVEL_LESS_THAN(29)
-
-Logger& GetOrCreateLogger() {
-  static fbl::NoDestructor<Logger> logger = [] {
-    zx::channel logger_request, logger_client;
-    zx::channel::create(0, &logger_request, &logger_client);
-    fdio_service_connect("/svc/fuchsia.logger.LogSink", logger_request.release());
-    zx::socket remote, local;
-    zx::socket::create(ZX_SOCKET_DATAGRAM, &remote, &local);
-    fidl::ClientEnd<fuchsia_logger::LogSink> log_sink{std::move(logger_client)};
-    auto status = fidl::WireCall(log_sink)->ConnectStructured(std::move(remote));
-    if (!status.ok()) {
-      ZX_PANIC("Failed to create logger: %s", status.status_string());
-    }
-    return Logger(GetKoid(zx_process_self()), std::move(local));
-  }();
-  return *logger;
-}
-
-#else
 
 Logger CreateLogger(fuchsia_logging::RawLogSettings* settings) {
   zx_koid_t pid = GetKoid(zx_process_self());
@@ -105,8 +81,6 @@ Logger& GetOrCreateLogger(fuchsia_logging::RawLogSettings* settings = nullptr) {
   }
   return *logger;
 }
-
-#endif
 
 zx_koid_t GetCurrentThreadKoid() { return GetKoid(zx_thread_self()); }
 
@@ -186,36 +160,17 @@ void Logger::VLogWrite(FuchsiaLogSeverity severity, const char* tag, const char*
     file = StripFile(file, severity);
   }
   BeginRecord(buffer, severity, file, line, fmt_string);
-#if FUCHSIA_API_LEVEL_LESS_THAN(29)
-  for (const auto& global_tag : global_tags_) {
-    buffer.WriteKeyValue("tag", global_tag);
-  }
-#endif
   if (tag) {
     buffer.WriteKeyValue("tag", tag);
   }
-#if FUCHSIA_API_LEVEL_LESS_THAN(29)
-  FlushRecord(buffer, severity);
-#else
   [[maybe_unused]] zx::result<> result = logger_.FlushBuffer(buffer);
-#endif
 }
 
 void Logger::BeginRecord(fuchsia_logging::LogBuffer& buffer, FuchsiaLogSeverity severity,
                          std::optional<std::string_view> file_name, unsigned int line,
                          std::optional<std::string_view> msg) const {
-  buffer.BeginRecord(severity, file_name, line, msg,
-#if FUCHSIA_API_LEVEL_LESS_THAN(29)
-                     socket_.borrow(),
-#endif
-                     0, pid_, GetCurrentThread());
+  buffer.BeginRecord(severity, file_name, line, msg, 0, pid_, GetCurrentThread());
 }
-
-#if FUCHSIA_API_LEVEL_LESS_THAN(29)
-void Logger::FlushRecord(fuchsia_logging::LogBuffer& buffer, FuchsiaLogSeverity severity) const {
-  buffer.FlushRecord();
-}
-#endif
 
 zx_koid_t GetCurrentThread() { return tid; }
 

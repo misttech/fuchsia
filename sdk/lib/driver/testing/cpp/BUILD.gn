@@ -35,7 +35,6 @@ sdk_source_set("cpp") {
     "driver_runtime.cc",
     "driver_runtime.h",
     "driver_test.h",
-    "environment_variables.cc",
     "internal/driver_lifecycle.cc",
     "internal/driver_lifecycle.h",
     "internal/internals.h",
