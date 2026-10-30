@@ -1,0 +1,31 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@rules_python//python:py_library.bzl", "py_library")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_py_test.bzl", "host_py_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+py_library(
+    name = "multidict",
+    srcs = [
+        "__init__.py",
+        "multidict.py",
+    ],
+    imports = [".."],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//scripts/memory/debug_json:__pkg__",
+        "//scripts/memory/snapshots:__pkg__",
+    ],
+)
+
+host_py_test(
+    name = "multidict_test",
+    srcs = ["multidict_test.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//scripts/memory:__pkg__"],
+    deps = [":multidict"],
+)
