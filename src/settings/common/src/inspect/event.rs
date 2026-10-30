@@ -229,6 +229,8 @@ impl ExternalEventPublisher {
 mod tests {
     use super::*;
     use crate::inspect::listener_logger::ListenerInspectLogger;
+    use diagnostics_assertions::assert_data_tree;
+    use fuchsia_inspect as inspect;
     use futures::channel::mpsc;
 
     struct TestSetting;
@@ -236,31 +238,81 @@ mod tests {
         const NAME: &'static str = "TestSetting";
     }
 
-    #[test]
-    fn test_observer_into_parts() {
+    #[fuchsia::test]
+    async fn test_observer_into_parts() {
         let (tx, _rx) = mpsc::unbounded();
-        let logger = Rc::new(ListenerInspectLogger::new());
-        let publisher = UsagePublisher::<TestSetting>::new(tx, logger);
+        let inspector = inspect::Inspector::default();
+        let logger = Rc::new(ListenerInspectLogger::with_inspector(&inspector));
+        let publisher = UsagePublisher::<TestSetting>::new(tx, Rc::clone(&logger));
+        // Keep a second listener active so a double decrement can't saturate at zero.
+        let (other_tx, _other_rx) = mpsc::unbounded();
+        let other = UsagePublisher::<TestSetting>::new(other_tx, logger)
+            .request("Watch".to_string(), RequestType::Get);
         let response_publisher = publisher.request("Watch".to_string(), RequestType::Get);
         let dummy_responder = 42;
 
         let observer = HangingGetObserver::new(response_publisher, dummy_responder);
+        assert_data_tree!(inspector, root: {
+            active_listeners: {
+                TestSetting: {
+                    "count": 2u64,
+                }
+            }
+        });
+
         let (pub_out, resp_out) = observer.into_parts();
         assert_eq!(resp_out, 42);
+        // Taking the parts must not count as a response.
+        assert_data_tree!(inspector, root: {
+            active_listeners: {
+                TestSetting: {
+                    "count": 2u64,
+                }
+            }
+        });
 
         // Mark sent so drop doesn't log error
         pub_out.respond("Ok".to_string(), ResponseType::OkSome);
+        assert_data_tree!(inspector, root: {
+            active_listeners: {
+                TestSetting: {
+                    "count": 1u64,
+                }
+            }
+        });
+
+        other.respond("Ok".to_string(), ResponseType::OkSome);
     }
 
-    #[test]
-    fn test_observer_drop_cancels() {
+    #[fuchsia::test]
+    async fn test_observer_drop_cancels() {
         let (tx, mut rx) = mpsc::unbounded();
-        let logger = Rc::new(ListenerInspectLogger::new());
-        let publisher = UsagePublisher::<TestSetting>::new(tx, logger);
+        let inspector = inspect::Inspector::default();
+        let logger = Rc::new(ListenerInspectLogger::with_inspector(&inspector));
+        let publisher = UsagePublisher::<TestSetting>::new(tx, Rc::clone(&logger));
+        // Keep a second listener active so a double decrement can't saturate at zero.
+        let (other_tx, _other_rx) = mpsc::unbounded();
+        let other = UsagePublisher::<TestSetting>::new(other_tx, logger)
+            .request("Watch".to_string(), RequestType::Get);
         let response_publisher = publisher.request("Watch".to_string(), RequestType::Get);
 
         let observer = HangingGetObserver::new(response_publisher, ());
+        assert_data_tree!(inspector, root: {
+            active_listeners: {
+                TestSetting: {
+                    "count": 2u64,
+                }
+            }
+        });
         drop(observer);
+        assert_data_tree!(inspector, root: {
+            active_listeners: {
+                TestSetting: {
+                    "count": 1u64,
+                }
+            }
+        });
+        other.respond("Ok".to_string(), ResponseType::OkSome);
 
         // Verify request event was sent
         let req_event = rx.try_recv().unwrap();
