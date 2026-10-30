@@ -328,17 +328,16 @@ pub fn sys_rt_sigtimedwait(
 
             waiter = Waiter::new();
             task_state.wait_on_signal(&waiter);
-            // A new signal is enqueued when it's masked in the SignalState. So we need to invert
-            // the SigSet to block them, while recording `unblock` in `sigtimedwait_set` so
-            // default-fatal signals in `unblock` are consumed here rather than terminating the
-            // process at signal-generation time.
-            let tmp_mask = task_state.signal_mask() & !unblock;
-            task_state.set_temporary_signal_mask(tmp_mask);
-            task_state.signals_mut().set_sigtimedwait_set(unblock);
         }
 
+        // A new signal is enqueued when it's masked in the SignalState. So we need to invert
+        // the SigSet to block them.
+        let tmp_mask = current_task.read().signal_mask() & !unblock;
+
         // Wait for a timeout or a new signal.
-        let waiter_result = waiter.wait_until(current_task, deadline);
+        let waiter_result = current_task.wait_with_temporary_mask(tmp_mask, |current_task| {
+            waiter.wait_until(current_task, deadline)
+        });
 
         // Restore mask after timeout or get a new signal.
         current_task.write().restore_signal_mask();

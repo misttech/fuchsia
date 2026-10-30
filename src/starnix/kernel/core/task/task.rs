@@ -7,7 +7,7 @@ use crate::mm::{
 };
 use crate::mutable_state::{state_accessor, state_implementation};
 use crate::ptrace::{AtomicStopState, PtraceEventData, PtraceState, PtraceStatus, StopState};
-use crate::signals::{DeliveryAction, KernelSignal, SignalDetail, SignalInfo, SignalState};
+use crate::signals::{KernelSignal, SignalDetail, SignalInfo, SignalState};
 use crate::task::memory_attribution::MemoryAttributionLifecycleEvent;
 use crate::task::run_state::RunState;
 use crate::task::tracing::ZirconIdentity;
@@ -603,45 +603,8 @@ impl TaskMutableState<Base = Task> {
             /* current_task = */ None,
             /* event = */ None,
         );
-        self.signals.signal_wait.notify_all();
+        self.notify_signal_waiters(&SIGKILL);
         self.thaw();
-    }
-
-    /// Returns whether this task is a user task that can accept `signal_info` immediately (not
-    /// blocked unless forced, not waiting for `signal_info` in `rt_sigtimedwait(2)`, not stopped,
-    /// and not frozen).
-    ///
-    /// Checks only task-level state; callers must verify `task.is_running()` and thread-group
-    /// ignore and stop state.
-    pub(crate) fn can_accept_fatal_signal(&self, signal_info: &SignalInfo) -> bool {
-        self.base.mm().is_ok()
-            && !self.base.load_stopped().is_stopping_or_stopped()
-            && !self.is_frozen()
-            && ((!self.is_signal_masked(signal_info.signal)
-                && !self.signals.is_sigtimedwait_waiting(signal_info.signal))
-                || signal_info.force)
-    }
-
-    /// Returns whether `signal_info` with disposition `action` will immediately terminate this
-    /// task at signal-generation time without being blocked, consumed by `rt_sigtimedwait(2)`,
-    /// intercepted by `ptrace`, or deferred while stopped or frozen.
-    ///
-    /// Checks only task-level state (and excludes kernel threads without a user address space);
-    /// callers must verify `task.is_running()` and thread-group ignore and stop state.
-    pub(crate) fn will_terminate_immediately(
-        &self,
-        signal_info: &SignalInfo,
-        action: DeliveryAction,
-    ) -> bool {
-        if self.base.mm().is_err() {
-            return false;
-        }
-        if signal_info.signal == SIGKILL {
-            return true;
-        }
-        action == DeliveryAction::Terminate
-            && !self.is_ptraced()
-            && self.can_accept_fatal_signal(signal_info)
     }
 
     /// The set of pending signals for the task, including the signals pending for the thread

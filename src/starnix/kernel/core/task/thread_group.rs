@@ -739,7 +739,11 @@ impl ThreadGroup {
         // Keep `current_task` unexited (`!TaskFlags::EXITED`) until after `ptrace_event` so it can
         // block in `PTRACE_EVENT_EXIT`.
         let current_tid = current_task.as_ref().map(|task| task.tid.clone());
-        state.terminate_tasks(exit_status.clone(), current_tid.as_ref());
+        state.terminate_tasks(
+            exit_status.clone(),
+            SignalInfo::forced(SIGKILL),
+            current_tid.as_ref(),
+        );
 
         // From <https://man7.org/linux/man-pages/man2/ptrace.2.html>:
         //
@@ -2595,7 +2599,12 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
     /// wake and return to userspace, and that `process_mrelease(2)` cannot observe a non-running
     /// [`ThreadGroup`] before all member tasks are marked [`TaskFlags::EXITED`].
     #[allow(unused_mut, reason = "needed for some but not all macro outputs")]
-    fn terminate_tasks(mut self, exit_status: ExitStatus, excluded_tid: Option<&Pid>) {
+    fn terminate_tasks(
+        mut self,
+        exit_status: ExitStatus,
+        wake_signal: SignalInfo,
+        excluded_tid: Option<&Pid>,
+    ) {
         if self.is_running() {
             self.set_exiting(exit_status.clone());
         }
@@ -2613,7 +2622,7 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
 
         self.set_stopped(
             StopState::ForceWaking,
-            /* siginfo = */ None,
+            Some(wake_signal),
             /* finalize_only = */ false,
         );
 
@@ -2623,26 +2632,30 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
     }
 
     #[allow(unused_mut, reason = "needed for some but not all macro outputs")]
-    pub(crate) fn force_exit_for_default_fatal(mut self, signal_info: SignalInfo) {
-        let exit_status = ExitStatus::Kill(signal_info);
-        self.terminate_tasks(exit_status, /* excluded_tid = */ None);
+    pub(crate) fn force_exit_for_sigkill(mut self, signal_info: SignalInfo) {
+        let exit_status = ExitStatus::Kill(signal_info.clone());
+        self.terminate_tasks(exit_status, signal_info, /* excluded_tid = */ None);
     }
 
     /// Sends the signal `signal_info` to this thread group.
     #[allow(unused_mut, reason = "needed for some but not all macro outputs")]
     pub fn send_signal(mut self, signal_info: SignalInfo) {
-        let any_task_ptraced = self
-            .tasks
-            .iter()
-            .filter_map(|info| info.tid.get_task().ok())
-            .any(|task| task.is_running() && task.read().is_ptraced());
         let ignores_signal = self.base.ignores_signal(&signal_info);
-        if ignores_signal && (signal_info.signal == SIGKILL || !any_task_ptraced) {
+        if ignores_signal
+            && (signal_info.signal == SIGKILL
+                || !self
+                    .tasks
+                    .iter()
+                    .filter_map(|info| info.tid.get_task().ok())
+                    .any(|task| task.is_running() && task.read().is_ptraced()))
+        {
             return;
         }
 
+        // TODO(https://fxbug.dev/573607334): Immediately transition the thread group to Exiting
+        // for other unblocked default-fatal signals (DeliveryAction::Terminate when not ptraced).
         if signal_info.signal == SIGKILL {
-            self.force_exit_for_default_fatal(signal_info);
+            self.force_exit_for_sigkill(signal_info);
             return;
         }
 
@@ -2655,7 +2668,6 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
         // saved mask, as it can be accepted later (see the `SigtimedwaitTest.IgnoredUnmaskedSignal`
         // gvisor test), or when a task is ptraced, for the signal-delivery-stop.
         let queue_on_group = action != DeliveryAction::Ignore
-            || any_task_ptraced
             || self
                 .tasks
                 .iter()
@@ -2665,26 +2677,13 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
                     let task_state = task.read();
                     task_state.is_signal_masked(signal_info.signal)
                         || task_state.is_signal_masked_by_saved_mask(signal_info.signal)
+                        || task_state.is_ptraced()
                 });
 
         if queue_on_group {
             let mut pending_signals = self.base.pending_signals.lock();
             pending_signals.enqueue(signal_info.clone());
             self.base.has_pending_signals.store(true, Ordering::Relaxed);
-        }
-
-        if !ignores_signal
-            && action == DeliveryAction::Terminate
-            && !self.base.load_stopped().is_stopping_or_stopped()
-            && !self.base.leader.get_task().is_ok_and(|leader| leader.read().is_ptraced())
-            && self
-                .tasks
-                .iter()
-                .filter_map(|info| info.tid.get_task().ok())
-                .any(|task| task.is_running() && task.read().can_accept_fatal_signal(&signal_info))
-        {
-            self.force_exit_for_default_fatal(signal_info);
-            return;
         }
 
         let tasks: Vec<Pid> = self.tasks.iter().map(|info| info.tid.clone()).collect();
