@@ -152,8 +152,9 @@ discovered and exposed as `/<workflow-name>` slash commands (for example,
 
 * **Create a Skill (`SKILL.md`)** when you want to teach an agent **domain
   knowledge, coding or code-review rubrics, or interactive tool procedures**:
-  * Code-review checklists and subsystem guidelines loaded by `/review` (via
-    `AGENTIC_REVIEW`) or Gerrit AI review (`CRACS`).
+  * Code-review checklists and subsystem guidelines loaded by `/review` and
+    Gerrit AI review (`CRACS`) via
+    `.agents/code-review/agent_configs.textproto`.
   * CLI tool usage guides (such as `fx test`, `fx gh`, or debugger commands) and
     interactive triage runbooks where a single agent reasons step-by-step in the
     main conversation.

@@ -156,4 +156,3 @@ not independent; say so in the report summary.
   ends in `/SKILL.md` names the file itself. Skills from the vendor/google
   config resolve the same way relative to `vendor/google`. The script warns on
   stderr if a resolved `SKILL.md` is missing.
-- Per-directory `AGENTIC_REVIEW` files are not read by this skill.
