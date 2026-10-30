@@ -25,6 +25,7 @@ rustc_binary_host_tool(
     ],
     edition = "2024",
     target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//build/bazel/rules:__subpackages__"],
     deps = [
         "//third_party/rust_crates/vendor:argh",
         "//third_party/rust_crates/vendor:askama",

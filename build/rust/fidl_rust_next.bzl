@@ -2,10 +2,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+"""Allowlist for next-generation Rust FIDL bindings."""
+
 # LINT.IfChange
 # The new Rust bindings are currently in a phased rollout. This allowlist
 # controls where in the tree generated bindings may be used from.
 fidl_rust_next_allowlist = [
+    "//build/bazel/rules/fidl:__subpackages__",
     "//examples:__subpackages__",
     "//examples/fidl/new/key_value_store/use_generic_values/rust_next:__subpackages__",
     "//examples/fidl/rust_next:__subpackages__",

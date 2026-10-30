@@ -11,6 +11,7 @@ import("//build/rust/rustc_library.gni")
 # The new Rust bindings are currently in a phased rollout. This allowlist
 # controls where in the tree generated bindings may be used from.
 fidl_rust_next_allowlist = [
+  "//build/bazel/rules/fidl/*",
   "//examples/*",
   "//examples/fidl/new/key_value_store/use_generic_values/rust_next/*",
   "//examples/fidl/rust_next/*",

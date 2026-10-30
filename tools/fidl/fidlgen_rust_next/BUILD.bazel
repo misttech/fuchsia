@@ -55,6 +55,7 @@ rustc_binary_host_tool(
     ],
     edition = "2024",
     target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//build/bazel/rules:__subpackages__"],
     deps = [
         "//src/lib/fuchsia-sync",
         "//third_party/rust_crates/vendor:argh",
@@ -65,4 +66,13 @@ rustc_binary_host_tool(
         "//tools/fidl/fidl_ir",
         "//tools/fidl/lib/fidlgen_rs",
     ],
+)
+
+exports_files(
+    [
+        "configs/common.json",
+        "configs/fdomain.json",
+        "configs/fuchsia.json",
+    ],
+    visibility = ["//build/bazel/rules:__subpackages__"],
 )

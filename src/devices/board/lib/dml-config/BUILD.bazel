@@ -37,23 +37,21 @@ rustc_library(
         "//third_party/rust_crates/vendor:anyhow",
     ] + select({
         "@platforms//os:fuchsia": [
-            # TODO(https://fxbug.dev/546092413): This target is only built on
-            # host in Bazel (via `target_compatible_with` above) because
-            # `:board_structured_config`, `//sdk/lib/driver/runtime/rust/fidl`,
-            # and FIDL `_rust_next` bindings do not have Bazel targets yet.
-            # However, `bazel2gn` needs this branch to generate the
-            # `if (is_fuchsia)` deps in BUILD.gn, and Bazel's `genquery` still
-            # requires every label in `select()` to resolve to an existing Bazel
-            # target.
+            # This target is only built on host in Bazel (via
+            # `target_compatible_with` above) because `:board_structured_config`
+            # does not have a Bazel target yet. However, `bazel2gn` needs this
+            # branch to generate the `if (is_fuchsia)` deps in BUILD.gn, and
+            # Bazel's `genquery` still requires every label in `select()` to
+            # resolve to an existing Bazel target.
             #
-            # The placeholder `filegroup` targets below exist solely for
-            # `@bazel2gn:path_overwrite`; remove them and replace all overwrites
-            # with the real Bazel targets once they are available.
+            # The placeholder `filegroup` target below exists solely for
+            # `@bazel2gn:path_overwrite`; remove it once structured config is
+            # supported in Bazel.
             ":board_structured_config",  # @bazel2gn:path_overwrite::board_structured_config
-            ":fuchsia.driver.framework_rust_next",  # @bazel2gn:path_overwrite://sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust_next
-            ":fuchsia.hardware.platform.bus_rust_next",  # @bazel2gn:path_overwrite://sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_rust_next
-            ":fuchsia.hardware.power_rust_next",  # @bazel2gn:path_overwrite://sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power_rust_next
-            ":sdk_lib_driver_runtime_rust_fidl",  # @bazel2gn:path_overwrite://sdk/lib/driver/runtime/rust/fidl
+            "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust_next",
+            "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_rust_next",
+            "//sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power_rust_next",
+            "//sdk/lib/driver/runtime/rust/fidl",
             "//sdk/rust/zx",
             "//src/lib/fidl/rust_next/fidl_next",
             "//third_party/rust_crates/vendor:futures",
@@ -66,18 +64,6 @@ rustc_library(
 
 # @bazel2gn:skip
 filegroup(name = "board_structured_config")
-
-# @bazel2gn:skip
-filegroup(name = "fuchsia.driver.framework_rust_next")
-
-# @bazel2gn:skip
-filegroup(name = "fuchsia.hardware.platform.bus_rust_next")
-
-# @bazel2gn:skip
-filegroup(name = "fuchsia.hardware.power_rust_next")
-
-# @bazel2gn:skip
-filegroup(name = "sdk_lib_driver_runtime_rust_fidl")
 
 # @bazel2gn:skip
 host_rustc_test(
