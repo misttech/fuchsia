@@ -61,7 +61,11 @@ unsafe extern "C" {
     fn cpp_arch_max_num_cpus() -> u32;
     fn cpp_arch_set_blocking_disallowed(value: bool);
     fn cpp_arch_set_restricted_flag(restricted: bool);
-    fn cpp_arch_get_curr_percpu() -> *const core::ffi::c_void;
+    // `PerCpu` contains ZST fields which trigger `improper_ctypes`, even though `&'static PerCpu`
+    // is a thin pointer with identical ABI to `void*` and `PerCpu`'s layout is statically asserted
+    // against C++ `struct percpu`.
+    #[allow(improper_ctypes)]
+    fn cpp_arch_get_curr_percpu() -> &'static PerCpu;
     #[cfg(not(target_arch = "riscv64"))]
     #[link_name = "arch_mp_send_ipi"]
     fn c_arch_mp_send_ipi(
@@ -194,10 +198,13 @@ pub fn max_num_cpus() -> u32 {
     unsafe { cpp_arch_max_num_cpus() }
 }
 
-/// Return a pointer to the high-level percpu struct for the calling CPU.
+/// Return a reference to the high-level percpu struct for the calling CPU.
 #[inline(always)]
-pub fn get_curr_percpu() -> *const PerCpu {
-    unsafe { cpp_arch_get_curr_percpu().cast() }
+pub fn get_curr_percpu() -> &'static PerCpu {
+    // SAFETY: `cpp_arch_get_curr_percpu` returns a valid, non-null, 64-byte-aligned `'static`
+    // `PerCpu` pointer for the calling CPU (initialized during boot before Rust callers run), and
+    // all mutable fields of `PerCpu` use interior mutability (`UnsafeCell` / atomics).
+    unsafe { cpp_arch_get_curr_percpu() }
 }
 
 /// Copies `len` bytes from user memory at `src` into kernel memory at `dst`.

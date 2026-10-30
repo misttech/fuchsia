@@ -15,6 +15,7 @@
 #include <arch/interrupt.h>
 #include <arch/ops.h>
 #include <kernel/ffi.h>
+#include <kernel/percpu.h>
 #include <kernel/thread.h>
 #if defined(__x86_64__)
 #include <arch/user_copy.h>
@@ -67,7 +68,7 @@ void cpp_arch_set_current_thread(void* thread);
 void cpp_arch_set_restricted_flag(bool in_restricted);
 bool cpp_with_frame_pointers();
 void cpp_arch_set_blocking_disallowed(bool value);
-void* cpp_arch_get_curr_percpu();
+__attribute__((returns_nonnull, assume_aligned(alignof(percpu)))) void* cpp_arch_get_curr_percpu();
 uint32_t cpp_arch_vm_features();
 uint32_t cpp_arch_num_spinlocks_held();
 uint32_t cpp_arch_dcache_line_size();
@@ -124,7 +125,10 @@ FFI_ALWAYS_INLINE bool cpp_with_frame_pointers() { return WITH_FRAME_POINTERS !=
 FFI_ALWAYS_INLINE void cpp_arch_set_blocking_disallowed(bool value) {
   arch_set_blocking_disallowed(value);
 }
-FFI_ALWAYS_INLINE void* cpp_arch_get_curr_percpu() { return arch_get_curr_percpu(); }
+FFI_ALWAYS_INLINE __attribute__((returns_nonnull, assume_aligned(alignof(percpu)))) void*
+cpp_arch_get_curr_percpu() {
+  return arch_get_curr_percpu();
+}
 FFI_ALWAYS_INLINE uint32_t cpp_arch_vm_features() { return arch_vm_features(); }
 FFI_ALWAYS_INLINE uint32_t cpp_arch_num_spinlocks_held() { return arch_num_spinlocks_held(); }
 FFI_ALWAYS_INLINE uint32_t cpp_arch_dcache_line_size() { return arch_dcache_line_size(); }

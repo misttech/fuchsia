@@ -231,6 +231,7 @@ zr::static_assert!(
 
 impl PerCpu {
     /// Returns a reference to the percpu instance for given CPU number.
+    #[inline]
     pub fn get(cpu_num: cpu_num_t) -> &'static Self {
         assert!((cpu_num as usize) < Self::processor_count());
         // SAFETY: `cpu_num` is checked above to be in `0..Self::processor_count()`, and
@@ -240,13 +241,13 @@ impl PerCpu {
     }
 
     /// Returns a reference to the percpu instance for the calling CPU.
+    #[inline(always)]
     pub fn get_current() -> &'static Self {
-        // SAFETY: `arch_rs::get_curr_percpu()` returns the valid `'static` `PerCpu` pointer for
-        // the calling CPU.
-        unsafe { &*crate::arch_rs::get_curr_percpu() }
+        crate::arch_rs::get_curr_percpu()
     }
 
     /// Returns the number of percpu instances.
+    #[inline(always)]
     pub fn processor_count() -> usize {
         // SAFETY: `PROCESSOR_COUNT` is initialized once during early boot before any callers run.
         unsafe { PROCESSOR_COUNT }
@@ -254,8 +255,10 @@ impl PerCpu {
 
     /// Returns the currently active [`ChainLockTransaction`] pointer on this CPU, or null if none
     /// is active.
-    #[inline]
+    #[inline(always)]
     pub fn active_cl_transaction(&self) -> *mut ChainLockTransaction {
+        // `Ordering::Relaxed` suffices because `active_cl_transaction` is only accessed on the
+        // local CPU while interrupts are disabled.
         self.active_cl_transaction.load(Ordering::Relaxed)
     }
 
@@ -270,8 +273,10 @@ impl PerCpu {
     ///   [`ChainLockTransaction`] owned by the current execution context that remains valid,
     ///   pinned, and not mutably aliased (with interrupts disabled) until cleared or replaced by a
     ///   subsequent call to `set_active_cl_transaction`.
-    #[inline]
+    #[inline(always)]
     pub unsafe fn set_active_cl_transaction(&self, ptr: *mut ChainLockTransaction) {
+        // `Ordering::Relaxed` suffices because `active_cl_transaction` is only accessed on the
+        // local CPU while interrupts are disabled.
         self.active_cl_transaction.store(ptr, Ordering::Relaxed);
     }
 

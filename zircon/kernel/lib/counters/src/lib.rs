@@ -43,10 +43,12 @@ unsafe extern "C" {
 pub struct CounterDesc;
 
 impl CounterDesc {
+    #[inline(always)]
     pub const fn new() -> Self {
         Self
     }
 
+    #[inline(always)]
     pub fn begin(&self) -> *const Descriptor {
         ptr::addr_of!(kcountdesc_begin)
     }
@@ -118,21 +120,21 @@ impl Counter {
         Self { descriptor }
     }
 
-    #[inline]
+    #[inline(always)]
     fn index(self) -> usize {
         let desc_addr = self.descriptor as usize;
         let begin_addr = CounterDesc::new().begin() as usize;
-        (desc_addr - begin_addr) / size_of::<Descriptor>()
+        desc_addr.wrapping_sub(begin_addr) / size_of::<Descriptor>()
     }
 
-    #[inline]
+    #[inline(always)]
     fn slot_for_cpu(self, p: &PerCpu) -> &AtomicI64 {
         // SAFETY: `p.counters` points to this CPU's slice of the counters arena,
         // which contains an `int64_t` entry for each counter descriptor indexed by `index()`.
-        unsafe { &*p.counters.add(self.index()).cast::<AtomicI64>() }
+        unsafe { &*p.counters.wrapping_add(self.index()).cast::<AtomicI64>() }
     }
 
-    #[inline]
+    #[inline(always)]
     fn slot(self) -> &'static AtomicI64 {
         self.slot_for_cpu(PerCpu::get_current())
     }
@@ -168,19 +170,19 @@ impl Counter {
     }
 
     /// Return the value of the calling cpu's slot for this counter.
-    #[inline]
+    #[inline(always)]
     pub fn value_curr_cpu(self) -> i64 {
         self.slot().load(Ordering::Relaxed)
     }
 
     /// Set the value of calling cpu's slot to `value`. No memory order is implied.
-    #[inline]
+    #[inline(always)]
     pub fn set(self, value: u64) {
         self.slot().store(value as i64, Ordering::Relaxed);
     }
 
     /// Add the given delta value to the calling CPU's counter slot.
-    #[inline]
+    #[inline(always)]
     pub fn add(self, delta: i64) {
         let slot = self.slot();
         slot.store(slot.load(Ordering::Relaxed).wrapping_add(delta), Ordering::Relaxed);
@@ -188,7 +190,7 @@ impl Counter {
 
     /// Update the calling CPU's counter slot to the minimum of its current value and the given
     /// value.
-    #[inline]
+    #[inline(always)]
     pub fn min(self, value: i64) {
         let slot = self.slot();
         let current = slot.load(Ordering::Relaxed);
@@ -199,7 +201,7 @@ impl Counter {
 
     /// Update the calling CPU's counter slot to the maximum of its current value and the given
     /// value.
-    #[inline]
+    #[inline(always)]
     pub fn max(self, value: i64) {
         let slot = self.slot();
         let current = slot.load(Ordering::Relaxed);
