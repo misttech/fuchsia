@@ -4,7 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#include <lib/counters.h>
 #include <lib/object-constants.h>
 #include <lib/user_copy/user_ptr.h>
 
@@ -12,8 +11,6 @@
 #include <kernel/ffi.h>
 #include <object/process_dispatcher.h>
 #include <object/thread_dispatcher.h>
-
-KCOUNTER(thread_legacy_yield, "thread.legacy_yield")
 
 static_assert(sizeof(ThreadDispatcher::CoreThreadObservation) == 2 * sizeof(uintptr_t));
 static_assert(alignof(ThreadDispatcher::CoreThreadObservation) == alignof(uintptr_t));
@@ -161,16 +158,6 @@ zx_status_t cpp_sys_thread_raise_exception(uint32_t options, zx_excp_type_t type
 
   auto thread = ThreadDispatcher::GetCurrent();
   thread->process()->OnUserExceptionForJobDebugger(thread, &context);
-  return ZX_OK;
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE zx_status_t cpp_sys_thread_legacy_yield(uint32_t options) {
-  if (options != 0) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-  kcounter_add(thread_legacy_yield, 1);
-  Thread::Current::Yield();
   return ZX_OK;
 }
 

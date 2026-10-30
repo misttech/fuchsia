@@ -7,6 +7,7 @@
 use crate::arch_rs::UserEntryState;
 #[cfg(target_arch = "x86_64")]
 use crate::arch_rs::x86::vm::is_vaddr_canonical;
+use crate::counters::define_kcounter;
 use crate::object::{HandleValue, ProcessDispatcher, ThreadDispatcher, VmObjectDispatcher};
 use crate::user_copy::{UserInPtr, UserOutPtr};
 use boot_options::BootOptions;
@@ -19,6 +20,8 @@ use zx_types::{
     ZX_RIGHT_WRITE, ZX_THREAD_STATE_DEBUG_REGS, zx_exception_context_t, zx_excp_type_t, zx_rseq_t,
     zx_status_t,
 };
+
+define_kcounter!(THREAD_LEGACY_YIELD, "thread.legacy_yield", Sum);
 
 unsafe extern "C" {
     /// Resets the restartable sequence (rseq) registration for the calling thread.
@@ -226,6 +229,10 @@ pub fn sys_thread_set_rseq(vmo_handle: HandleValue, offset: u64, size: u64) -> R
 pub fn sys_thread_legacy_yield(options: u32) -> Result<(), Status> {
     ltracef!("options {:#x}\n", options);
 
-    ThreadDispatcher::legacy_yield(options)?;
+    if options != 0 {
+        return Err(Status::INVALID_ARGS);
+    }
+    THREAD_LEGACY_YIELD.add(1);
+    crate::kernel::thread::r#yield();
     Ok(())
 }

@@ -69,8 +69,6 @@ ProcessDispatcher* rust_thread_dispatcher_get_process(const ThreadDispatcher* th
 void rust_thread_dispatcher_assert_canary(const ThreadDispatcher* thread);
 bool rust_thread_dispatcher_is_dying_or_dead(const ThreadDispatcher* thread);
 zx_status_t rust_thread_dispatcher_initialize(const ThreadDispatcher* thread);
-zx_status_t rust_thread_dispatcher_start(const ThreadDispatcher* thread,
-                                         const UserEntryState* entry, bool ensure_initial_thread);
 zx_status_t rust_thread_dispatcher_make_runnable(const ThreadDispatcher* thread,
                                                  const UserEntryState* entry, bool suspended);
 void rust_thread_dispatcher_kill(const ThreadDispatcher* thread);
@@ -163,13 +161,6 @@ class ThreadDispatcher final : public Dispatcher,
   // Performs initialization on a newly constructed ThreadDispatcher
   // If this fails, then the object is invalid and should be deleted
   zx_status_t Initialize() TA_EXCL(get_lock()) { return rust_thread_dispatcher_initialize(this); }
-  // Start this thread running inside the parent process with the provided entry state, only
-  // valid to be called on a thread in the INITIALIZED state that has not yet been started. If
-  // `ensure_initial_thread` is true, the thread will only start if it is the first thread in the
-  // process.
-  zx_status_t Start(const EntryState& entry, bool ensure_initial_thread) {
-    return rust_thread_dispatcher_start(this, &entry, ensure_initial_thread);
-  }
   // Transitions a thread from the INITIALIZED state to either the RUNNING or SUSPENDED state.
   // Is the caller's responsibility to ensure this thread is registered with the parent process,
   // as such this is only expected to be called from the ProcessDispatcher.
@@ -460,7 +451,6 @@ zx_status_t cpp_thread_dispatcher_write_state(ThreadDispatcher* thread, uint32_t
                                               const void* buffer, size_t buffer_size);
 zx_status_t cpp_sys_thread_raise_exception(uint32_t options, zx_excp_type_t type,
                                            const zx_exception_context_t* user_context);
-zx_status_t cpp_sys_thread_legacy_yield(uint32_t options);
 }
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_THREAD_DISPATCHER_H_

@@ -227,13 +227,6 @@ unsafe extern "C" {
         exception_type: zx_excp_type_t,
         user_context: &zx_exception_context_t,
     ) -> zx_status_t;
-
-    /// Legacy thread yield.
-    ///
-    /// # Safety
-    ///
-    /// Yields execution of the current thread to the scheduler.
-    pub(crate) fn cpp_sys_thread_legacy_yield(options: u32) -> zx_status_t;
 }
 
 // Exported FFI functions for C++ callers:
@@ -317,16 +310,6 @@ pub extern "C" fn rust_thread_dispatcher_assert_canary(thread: &ThreadDispatcher
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_thread_dispatcher_initialize(thread: &ThreadDispatcher) -> zx_status_t {
     Status::result_into_raw(thread.initialize())
-}
-
-/// Starts this thread running inside its parent process with the provided entry state.
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_thread_dispatcher_start(
-    thread: &ThreadDispatcher,
-    entry: &UserEntryState,
-    ensure_initial_thread: bool,
-) -> zx_status_t {
-    Status::result_into_raw(thread.start(*entry, ensure_initial_thread))
 }
 
 /// Transitions a thread from the initialized state to either running or suspended.

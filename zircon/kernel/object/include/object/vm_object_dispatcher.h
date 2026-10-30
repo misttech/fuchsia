@@ -8,7 +8,6 @@
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_VM_OBJECT_DISPATCHER_H_
 
 #include <lib/object-constants.h>
-#include <lib/zx/result.h>
 #include <sys/types.h>
 #include <zircon/rights.h>
 #include <zircon/types.h>
@@ -46,8 +45,6 @@ zx_status_t rust_vm_object_dispatcher_get_name(const VmObjectDispatcher* disp,
                                                char (*out_name)[ZX_MAX_NAME_LEN]);
 zx_status_t rust_vm_object_dispatcher_set_name(VmObjectDispatcher* disp, const char* name,
                                                size_t len);
-zx_status_t rust_vm_object_dispatcher_stream_size_manager(
-    const VmObjectDispatcher* disp, ffi::Uninitialized<fbl::RefPtr<StreamSizeManager>>* out_ssm);
 zx_status_t rust_vm_object_dispatcher_create_child(
     const VmObjectDispatcher* disp, uint32_t options, uint64_t offset, uint64_t size,
     bool copy_name, ffi::Uninitialized<fbl::RefPtr<VmObject>>* out_child_vmo);
@@ -90,8 +87,6 @@ class VmObjectDispatcher final : public Dispatcher, public VmObjectChildObserver
     return rust_vm_object_dispatcher_set_name(this, name, len);
   }
   void on_zero_handles() final { rust_vm_object_dispatcher_on_zero_handles(this); }
-
-  zx::result<fbl::RefPtr<StreamSizeManager>> stream_size_manager() const TA_EXCL(get_lock());
 
   zx_status_t CreateChild(uint32_t options, uint64_t offset, uint64_t size, bool copy_name,
                           fbl::RefPtr<VmObject>* child_vmo) const;

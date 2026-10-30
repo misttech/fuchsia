@@ -59,9 +59,6 @@ class Handle final {
   // was created.
   uint32_t rights() const { return rights_; }
 
-  // Returns true if this handle has all of the desired rights bits set.
-  bool HasRights(zx_rights_t desired) const { return (rights_ & desired) == desired; }
-
   // Get the number of outstanding handles for a given dispatcher.
   static uint32_t Count(const Dispatcher&);
 

@@ -65,15 +65,6 @@ zx_status_t VmObjectDispatcher::Create(fbl::RefPtr<VmObject> vmo, uint64_t strea
   return ZX_OK;
 }
 
-zx::result<fbl::RefPtr<StreamSizeManager>> VmObjectDispatcher::stream_size_manager() const {
-  ffi::Uninitialized<fbl::RefPtr<StreamSizeManager>> uninit_ssm;
-  zx_status_t status = rust_vm_object_dispatcher_stream_size_manager(this, &uninit_ssm);
-  if (status != ZX_OK) {
-    return zx::error(status);
-  }
-  return zx::ok(ktl::move(uninit_ssm.Get()));
-}
-
 zx_status_t VmObjectDispatcher::CreateChild(uint32_t options, uint64_t offset, uint64_t size,
                                             bool copy_name,
                                             fbl::RefPtr<VmObject>* child_vmo) const {

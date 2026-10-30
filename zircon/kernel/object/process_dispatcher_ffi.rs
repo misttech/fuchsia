@@ -4,8 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use super::dispatcher::Dispatcher;
-use super::handle::{HandleValue, KernelHandle};
+use super::handle::KernelHandle;
 use super::handle_table::HandleTable;
 use super::job_dispatcher::JobDispatcher;
 use super::process_dispatcher::{ProcessDispatcher, ProcessState, ShareableProcessState};
@@ -14,7 +13,7 @@ use crate::arch_rs::UserEntryState;
 use core::mem::MaybeUninit;
 use zx_types::{
     zx_info_process_t, zx_info_task_runtime_t, zx_info_task_stats_t, zx_koid_t, zx_rights_t,
-    zx_status_t, zx_vaddr_t,
+    zx_status_t,
 };
 
 unsafe extern "C" {
@@ -31,22 +30,6 @@ unsafe extern "C" {
     ///
     /// `process` must point to a valid `ProcessDispatcher`.
     pub(crate) fn cpp_process_dispatcher_is_current(process: *const ProcessDispatcher) -> bool;
-
-    /// Calls into C++ implementation to start a process.
-    ///
-    /// # Safety
-    ///
-    /// `process` must point to a valid `ProcessDispatcher`.
-    /// `thread` must carry an acquired reference count transferred to C++.
-    /// `arg_handle` must be a valid raw owned handle or null.
-    pub(crate) fn cpp_process_dispatcher_start(
-        process: *mut ProcessDispatcher,
-        thread: *mut ThreadDispatcher,
-        pc: zx_vaddr_t,
-        sp: zx_vaddr_t,
-        arg_handle: *mut core::ffi::c_void,
-        arg2: usize,
-    ) -> zx_status_t;
 
     /// Calls into C++ implementation to kill a process.
     ///
@@ -68,34 +51,6 @@ unsafe extern "C" {
     ///
     /// `process` must point to a valid `ProcessDispatcher`.
     pub(crate) fn cpp_process_dispatcher_resume(process: *mut ProcessDispatcher);
-
-    /// Creates and adds a handle to the given process.
-    ///
-    /// # Safety
-    ///
-    /// `process` must point to a valid `ProcessDispatcher`.
-    /// `handle` must point to a valid `KernelHandle<Dispatcher>`.
-    /// `out_handle` must point to writable memory.
-    pub(crate) fn cpp_process_dispatcher_make_and_add_handle(
-        process: *mut ProcessDispatcher,
-        handle: *mut KernelHandle<Dispatcher>,
-        rights: zx_rights_t,
-        out_handle: *mut HandleValue,
-    ) -> zx_status_t;
-
-    /// Creates and adds a handle from a RefPtr to the given process.
-    ///
-    /// # Safety
-    ///
-    /// `process` must point to a valid `ProcessDispatcher`.
-    /// `dispatcher` must be a valid `fbl::RefPtr<Dispatcher>`.
-    /// `out_handle` must point to writable memory.
-    pub(crate) fn cpp_process_dispatcher_make_and_add_handle_from_ref(
-        process: *mut ProcessDispatcher,
-        raw_dispatcher: *mut Dispatcher,
-        rights: zx_rights_t,
-        out_handle: *mut HandleValue,
-    ) -> zx_status_t;
 
     /// Returns a pointer to the handle table of `process`.
     ///

@@ -24,25 +24,25 @@ use super::process_dispatcher_ffi::{
     cpp_process_dispatcher_get_threads, cpp_process_dispatcher_get_timer_slack_policy,
     cpp_process_dispatcher_handle_table, cpp_process_dispatcher_is_current,
     cpp_process_dispatcher_job, cpp_process_dispatcher_kill,
-    cpp_process_dispatcher_lookup_thread_by_id, cpp_process_dispatcher_make_and_add_handle,
-    cpp_process_dispatcher_make_and_add_handle_from_ref, cpp_process_dispatcher_normal_aspace,
+    cpp_process_dispatcher_lookup_thread_by_id, cpp_process_dispatcher_normal_aspace,
     cpp_process_dispatcher_restricted_aspace, cpp_process_dispatcher_resume,
     cpp_process_dispatcher_set_critical_to_job, cpp_process_dispatcher_set_debug_addr,
     cpp_process_dispatcher_set_dyn_break_on_load, cpp_process_dispatcher_shareable_state,
-    cpp_process_dispatcher_start, cpp_process_dispatcher_state, cpp_process_dispatcher_suspend,
-    cpp_process_remove_thread, cpp_shareable_process_state_aspace,
+    cpp_process_dispatcher_state, cpp_process_dispatcher_suspend, cpp_process_remove_thread,
+    cpp_shareable_process_state_aspace,
 };
 use super::thread_dispatcher::ThreadDispatcher;
 use super::vm_address_region_dispatcher::VmAddressRegionDispatcher;
 use crate::arch_rs::UserEntryState;
 use crate::kernel::thread::ThreadPtr;
+use crate::vm::pmm::{self, AllocFailure, AllocFailureType};
 use crate::vm::vm_aspace::VmAspace;
 use core::mem::MaybeUninit;
 use fbl::Array;
 use zx_status::Status;
 use zx_types::{
-    zx_info_process_t, zx_info_task_runtime_t, zx_info_task_stats_t, zx_koid_t, zx_rights_t,
-    zx_vaddr_t,
+    ZX_HANDLE_INVALID, ZX_RIGHT_TRANSFER, zx_info_process_t, zx_info_task_runtime_t,
+    zx_info_task_stats_t, zx_koid_t, zx_rights_t, zx_vaddr_t,
 };
 
 crate::object::dispatcher::impl_dispatcher_facade!(
@@ -172,21 +172,38 @@ impl ProcessDispatcher {
         arg_handle: Option<HandleOwner>,
         arg2: usize,
     ) -> Result<(), Status> {
-        let arg_handle_ptr = HandleOwner::release_opt(arg_handle);
-        let raw_thread = fbl::RefPtr::into_raw(thread) as *mut _;
-        // SAFETY: `self` is a valid reference, `raw_thread` transfers an acquired refcount,
-        // and `arg_handle_ptr` ownership is transferred to C++.
-        let status = unsafe {
-            cpp_process_dispatcher_start(
-                self.as_ffi_mut(),
-                raw_thread,
-                pc,
-                sp,
-                arg_handle_ptr.cast::<core::ffi::c_void>(),
-                arg2,
-            )
+        // Test that the thread belongs to the starting process.
+        if !core::ptr::eq(thread.process(), self) {
+            return Err(Status::ACCESS_DENIED);
+        }
+
+        // Insert the arg_handle into the process and get its local HandleValue.
+        let mut arg_nhv = HandleValue::new(ZX_HANDLE_INVALID);
+        if let Some(arg_handle) = arg_handle {
+            if !arg_handle.has_rights(ZX_RIGHT_TRANSFER) {
+                return Err(Status::ACCESS_DENIED);
+            }
+            arg_nhv = self.handle_table().map_handle_to_value(&arg_handle);
+            self.handle_table().add_handle(arg_handle);
+        }
+        let mut remove_arg_handle = zr::defer(|| {
+            if arg_nhv.raw_value() != ZX_HANDLE_INVALID {
+                // Remove `arg_handle` from the process that failed to start.
+                let _ = self.handle_table().remove_handle(self, arg_nhv);
+            }
+        });
+
+        let entry = UserEntryState {
+            pc: pc as u64,
+            sp: sp as u64,
+            arg1: arg_nhv.raw_value() as u64,
+            arg2: arg2 as u64,
+            tp: 0,
+            abi_reg: 0,
         };
-        Status::ok(status)
+        thread.start(entry, true)?;
+        remove_arg_handle.cancel();
+        Ok(())
     }
 
     /// Removes a handle from this process's handle table and returns the owned handle if found.
@@ -225,20 +242,22 @@ impl ProcessDispatcher {
     where
         T: fbl::HasRefCount + fbl::Recyclable + DispatcherOps,
     {
-        let mut handle = handle.cast();
-        let mut out = HandleValue::default();
-        // SAFETY: `self` is a valid `ProcessDispatcher`, `handle` is a valid `KernelHandle`, and
-        // `out` points to writable memory.
-        let status = unsafe {
-            cpp_process_dispatcher_make_and_add_handle(
-                self.as_ffi_mut(),
-                &mut handle,
-                rights,
-                &mut out,
-            )
+        let Some(handle) = HandleOwner::make(handle, rights) else {
+            // Report handle allocation failure in order to trigger an OOM action. We do this for
+            // two reasons. First, syscalls that create PeeredDispatchers can end up "leaking"
+            // handles in some cases (see https://fxbug.dev/379936010#comment8). Second, usermode
+            // programs are generally not equipped to deal with handle allocation failure. The
+            // system is likely hosed if we get here.
+            pmm::node().report_alloc_failure(AllocFailure {
+                r#type: AllocFailureType::Handle,
+                size: 1,
+                free_count: 0,
+            });
+            return Err(Status::NO_MEMORY);
         };
-        Status::ok(status)?;
-        Ok(out)
+        let hv = self.handle_table().map_handle_to_value(&handle);
+        self.handle_table().add_handle(handle);
+        Ok(hv)
     }
 
     /// Creates a handle for the given dispatcher reference in this process's handle table.
@@ -250,22 +269,18 @@ impl ProcessDispatcher {
     where
         T: fbl::HasRefCount + fbl::Recyclable + DispatcherOps,
     {
-        // SAFETY: T implements DispatcherOps and is layout-compatible with Dispatcher.
-        let raw_dispatcher =
-            fbl::RefPtr::into_raw(unsafe { dispatcher.cast::<super::Dispatcher>() });
-        let mut out = HandleValue::default();
-        // SAFETY: `self` is a valid `ProcessDispatcher`, `raw_dispatcher` carries an acquired
-        // reference count transferred to C++, and `out` points to writable memory.
-        let status = unsafe {
-            cpp_process_dispatcher_make_and_add_handle_from_ref(
-                self.as_ffi_mut(),
-                raw_dispatcher as *mut _,
-                rights,
-                &mut out,
-            )
+        let Some(handle) = HandleOwner::make_from_ref(dispatcher, rights) else {
+            // See comment in `make_and_add_handle` above.
+            pmm::node().report_alloc_failure(AllocFailure {
+                r#type: AllocFailureType::Handle,
+                size: 1,
+                free_count: 0,
+            });
+            return Err(Status::NO_MEMORY);
         };
-        Status::ok(status)?;
-        Ok(out)
+        let hv = self.handle_table().map_handle_to_value(&handle);
+        self.handle_table().add_handle(handle);
+        Ok(hv)
     }
 
     /// Enforces basic policy for this process.

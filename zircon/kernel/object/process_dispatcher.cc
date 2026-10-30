@@ -9,7 +9,6 @@
 #include <assert.h>
 #include <inttypes.h>
 #include <lib/counters.h>
-#include <lib/fit/defer.h>
 #include <lib/ktrace.h>
 #include <lib/page/size.h>
 #include <string.h>
@@ -26,7 +25,6 @@
 #include <object/thread_dispatcher.h>
 #include <object/vm_address_region_dispatcher.h>
 #include <vm/attribution.h>
-#include <vm/pmm.h>
 #include <vm/vm.h>
 #include <vm/vm_aspace.h>
 #include <vm/vm_object.h>
@@ -959,72 +957,4 @@ VmAspace* ProcessDispatcher::aspace_at(vaddr_t va) {
   }
 
   return shareable_state_->aspace();
-}
-
-zx_status_t ProcessDispatcher::MakeAndAddHandle(fbl::RefPtr<Dispatcher> dispatcher,
-                                                zx_rights_t rights, zx_handle_t* out) {
-  HandleOwner handle = Handle::Make(ktl::move(dispatcher), rights);
-  if (!handle) {
-    // Report handle allocation failure in order to trigger an OOM action.  We do this for two
-    // reasons.  First, syscalls that create PeeredDispatcher's can end up "leaking" handles in some
-    // cases (see https://fxbug.dev//379936010#comment8).  Second, usermode programs are generally
-    // not equipped to deal with handle allocation failure.  The system is likely hosed if we get
-    // here.
-    Pmm::Node().ReportAllocFailure(
-        PmmNode::AllocFailure{.type = PmmNode::AllocFailure::Type::Handle, .size = 1});
-    return ZX_ERR_NO_MEMORY;
-  }
-  *out = handle_table().MapHandleToValue(handle);
-  handle_table().AddHandle(ktl::move(handle));
-  return ZX_OK;
-}
-
-zx_status_t ProcessDispatcher::MakeAndAddHandle(KernelHandle<Dispatcher> kernel_handle,
-                                                zx_rights_t rights, zx_handle_t* out) {
-  HandleOwner handle = Handle::Make(ktl::move(kernel_handle), rights);
-  if (!handle) {
-    // See comment in the other MakeAndAddHandle overload above.
-    Pmm::Node().ReportAllocFailure(
-        PmmNode::AllocFailure{.type = PmmNode::AllocFailure::Type::Handle, .size = 1});
-    return ZX_ERR_NO_MEMORY;
-  }
-  *out = handle_table().MapHandleToValue(handle);
-  handle_table().AddHandle(ktl::move(handle));
-  return ZX_OK;
-}
-
-zx_status_t ProcessDispatcher::Start(fbl::RefPtr<ThreadDispatcher> thread, zx_vaddr_t pc,
-                                     zx_vaddr_t sp, HandleOwner arg_handle, uintptr_t arg2) {
-  // Test that the thread belongs to the starting process.
-  if (thread->process() != this) {
-    return ZX_ERR_ACCESS_DENIED;
-  }
-
-  // Insert the arg_handle into the process and get its local zx_handle_t.
-  zx_handle_t arg_nhv = ZX_HANDLE_INVALID;
-  auto remove_arg_handle = fit::defer([this, &arg_nhv] {
-    if (arg_nhv != ZX_HANDLE_INVALID) {
-      // Remove `arg_handle` from the process that failed to start.
-      handle_table().RemoveHandle(*this, arg_nhv);
-    }
-  });
-  if (arg_handle) {
-    if (!arg_handle->HasRights(ZX_RIGHT_TRANSFER)) {
-      return ZX_ERR_ACCESS_DENIED;
-    }
-    arg_nhv = handle_table().MapHandleToValue(arg_handle);
-    handle_table().AddHandle(ktl::move(arg_handle));
-  }
-
-  const ThreadDispatcher::EntryState entry = {
-      .pc = pc,
-      .sp = sp,
-      .arg1 = arg_nhv,
-      .arg2 = arg2,
-  };
-  zx_status_t status = thread->Start(entry, /*ensure_initial_thread=*/true);
-  if (status == ZX_OK) {
-    remove_arg_handle.cancel();
-  }
-  return status;
 }

@@ -11,7 +11,7 @@ use super::exceptionate::Exceptionate;
 use super::handle::KernelHandle;
 use super::process_dispatcher::ProcessDispatcher;
 use super::thread_dispatcher_ffi::{
-    cpp_sys_thread_legacy_yield, cpp_sys_thread_raise_exception, cpp_thread_dispatcher_alloc,
+    cpp_sys_thread_raise_exception, cpp_thread_dispatcher_alloc,
     cpp_thread_dispatcher_attach_to_core_thread, cpp_thread_dispatcher_current,
     cpp_thread_dispatcher_get_core_thread, cpp_thread_dispatcher_is_current,
     cpp_thread_dispatcher_lock_acquire, cpp_thread_dispatcher_lock_release,
@@ -1352,13 +1352,6 @@ impl ThreadDispatcher {
         // SAFETY: `user_context` is a valid reference.
         let status =
             unsafe { cpp_sys_thread_raise_exception(options, exception_type, user_context) };
-        Status::ok(status)
-    }
-
-    /// Yields execution of the current thread.
-    pub fn legacy_yield(options: u32) -> Result<(), Status> {
-        // SAFETY: `cpp_sys_thread_legacy_yield` yields the current thread if options is 0.
-        let status = unsafe { cpp_sys_thread_legacy_yield(options) };
         Status::ok(status)
     }
 

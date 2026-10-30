@@ -70,14 +70,6 @@ FFI_ALWAYS_INLINE bool cpp_process_dispatcher_is_current(const ProcessDispatcher
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE zx_status_t cpp_process_dispatcher_start(ProcessDispatcher* process,
-                                                           ThreadDispatcher* thread, zx_vaddr_t pc,
-                                                           zx_vaddr_t sp, Handle* arg_handle,
-                                                           uintptr_t arg2) {
-  return process->Start(fbl::ImportFromRawPtr(thread), pc, sp, HandleOwner(arg_handle), arg2);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_process_dispatcher_kill(ProcessDispatcher* process, int64_t retcode) {
   process->Kill(retcode);
 }
@@ -90,20 +82,6 @@ FFI_ALWAYS_INLINE zx_status_t cpp_process_dispatcher_suspend(ProcessDispatcher* 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_process_dispatcher_resume(ProcessDispatcher* process) {
   process->Resume();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE zx_status_t cpp_process_dispatcher_make_and_add_handle(
-    ProcessDispatcher* process, KernelHandle<Dispatcher>* handle, zx_rights_t rights,
-    zx_handle_t* out_handle) {
-  return process->MakeAndAddHandle(ktl::move(*handle), rights, out_handle);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE zx_status_t cpp_process_dispatcher_make_and_add_handle_from_ref(
-    ProcessDispatcher* process, Dispatcher* dispatcher, zx_rights_t rights,
-    zx_handle_t* out_handle) {
-  return process->MakeAndAddHandle(fbl::ImportFromRawPtr(dispatcher), rights, out_handle);
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.

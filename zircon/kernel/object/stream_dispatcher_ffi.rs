@@ -9,7 +9,6 @@ use zx_types::{zx_off_t, zx_status_t};
 
 use super::KernelHandle;
 use super::stream_dispatcher::{StreamDispatcher, StreamDispatcherState, StreamOptions};
-use super::vm_object_dispatcher::VmObjectDispatcher;
 use crate::vm::stream_size_manager::StreamSizeManager;
 use crate::vm::vm_object_paged::VmObjectPaged;
 use core::mem::MaybeUninit;
@@ -19,7 +18,8 @@ use core::mem::MaybeUninit;
 unsafe extern "C" {
     pub(crate) fn cpp_stream_dispatcher_create(
         options: u32,
-        vmo_dispatcher: *const VmObjectDispatcher,
+        vmo: *mut VmObjectPaged,
+        stream_size_manager: *mut StreamSizeManager,
         seek: zx_off_t,
         handle_out: *mut MaybeUninit<KernelHandle<StreamDispatcher>>,
     ) -> zx_status_t;

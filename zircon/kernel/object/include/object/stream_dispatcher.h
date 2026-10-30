@@ -16,13 +16,12 @@
 #include <object/handle.h>
 
 class StreamDispatcher;
-class VmObjectDispatcher;
 class VmObjectPaged;
 class StreamSizeManager;
 
 extern "C" {
 zx_status_t cpp_stream_dispatcher_create(
-    uint32_t options, const VmObjectDispatcher* vmo_dispatcher, zx_off_t seek,
+    uint32_t options, VmObjectPaged* raw_vmo, StreamSizeManager* raw_ssm, zx_off_t seek,
     ffi::Uninitialized<KernelHandle<StreamDispatcher>>* handle_out);
 
 void rust_stream_dispatcher_state_init(void* state, uint32_t options, zx_off_t seek,
@@ -49,7 +48,7 @@ class StreamDispatcher final : public Dispatcher {
 
  private:
   friend zx_status_t cpp_stream_dispatcher_create(
-      uint32_t, const VmObjectDispatcher*, zx_off_t,
+      uint32_t, VmObjectPaged*, StreamSizeManager*, zx_off_t,
       ffi::Uninitialized<KernelHandle<StreamDispatcher>>*);
 
   explicit StreamDispatcher(uint32_t options, fbl::RefPtr<VmObjectPaged> vmo,

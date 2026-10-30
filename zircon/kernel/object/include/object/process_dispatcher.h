@@ -47,19 +47,9 @@ zx_status_t cpp_process_dispatcher_create_shared(
     ffi::Uninitialized<zx_rights_t>* out_restricted_vmar_rights);
 ProcessDispatcher* cpp_process_dispatcher_current();
 bool cpp_process_dispatcher_is_current(const ProcessDispatcher* process);
-zx_status_t cpp_process_dispatcher_start(ProcessDispatcher* process, ThreadDispatcher* thread,
-                                         zx_vaddr_t pc, zx_vaddr_t sp, Handle* arg_handle,
-                                         uintptr_t arg2);
 void cpp_process_dispatcher_kill(ProcessDispatcher* process, int64_t retcode);
 zx_status_t cpp_process_dispatcher_suspend(ProcessDispatcher* process);
 void cpp_process_dispatcher_resume(ProcessDispatcher* process);
-zx_status_t cpp_process_dispatcher_make_and_add_handle(ProcessDispatcher* process,
-                                                       KernelHandle<Dispatcher>* handle,
-                                                       zx_rights_t rights, zx_handle_t* out_handle);
-zx_status_t cpp_process_dispatcher_make_and_add_handle_from_ref(ProcessDispatcher* process,
-                                                                Dispatcher* dispatcher,
-                                                                zx_rights_t rights,
-                                                                zx_handle_t* out_handle);
 const HandleTable* cpp_process_dispatcher_handle_table(const ProcessDispatcher* process);
 const ShareableProcessState* cpp_process_dispatcher_shareable_state(
     const ProcessDispatcher* process);
@@ -240,9 +230,6 @@ class ProcessDispatcher final
   [[nodiscard]] zx_status_t get_name(char (&out_name)[ZX_MAX_NAME_LEN]) const final;
   [[nodiscard]] zx_status_t set_name(const char* name, size_t len) final;
 
-  zx_status_t Start(fbl::RefPtr<ThreadDispatcher> thread, zx_vaddr_t pc, zx_vaddr_t sp,
-                    HandleOwner arg_handle, uintptr_t arg2);
-
   void Kill(int64_t retcode);
 
   // Suspends the process.
@@ -329,15 +316,6 @@ class ProcessDispatcher final
     }
     return vdso_code_address_;
   }
-
-  // Allocates a handle with the given rights to the given dispatcher. The handle is added to the
-  // calling process' handle table, and its value is returned in out.
-  zx_status_t MakeAndAddHandle(fbl::RefPtr<Dispatcher> dispatcher, zx_rights_t rights,
-                               zx_handle_t* out);
-  // Allocates a handle with the given rights to the dispatcher enclosed in the given kernel handle.
-  // The handle is added to the calling process' handle table, and its value is returned in out.
-  zx_status_t MakeAndAddHandle(KernelHandle<Dispatcher> kernel_handle, zx_rights_t rights,
-                               zx_handle_t* out);
 
   // Returns the "restricted" address space for a process, or nullptr if it does not have a
   // restricted address space.

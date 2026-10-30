@@ -935,54 +935,6 @@ pub unsafe extern "C" fn rust_handle_table_destroy(table: *mut HandleTable) {
     }
 }
 
-/// Returns a pointer to the `HandleTable`'s lock for C++ callers.
-///
-/// # Safety
-/// `table` must be a valid reference to an initialized `HandleTable`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_handle_table_get_lock(table: &HandleTable) -> *mut core::ffi::c_void {
-    core::ptr::from_ref(table.lock.raw_lock()).cast_mut().cast()
-}
-
-/// Maps a `Handle` pointer to a user-visible handle value using the table's mixer.
-///
-/// # Safety
-/// `handle` must be a valid pointer to a `Handle` or null.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_handle_table_map_handle_to_value(
-    table: &HandleTable,
-    handle: *const Handle,
-) -> zx_handle_t {
-    let Some(handle) = NonNull::new(handle.cast_mut()) else {
-        return ZX_HANDLE_INVALID;
-    };
-    // SAFETY: `handle` is non-null and points to a valid Handle.
-    table.map_handle_to_value(unsafe { handle.as_ref() }).raw_value()
-}
-
-/// Looks up a handle in `table` by handle value while holding the table's read or write lock.
-///
-/// # Safety
-/// The table's read or write lock must be held by the current thread.
-/// `caller` must be null or point to a valid `ProcessDispatcher`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_handle_table_get_handle_locked(
-    table: &HandleTable,
-    caller: *mut ProcessDispatcher,
-    handle_value: zx_handle_t,
-) -> *mut Handle {
-    // SAFETY: The C++ caller must be holding the HandleTable's lock (annotated with
-    // TA_REQ_SHARED(table->get_lock())).
-    let token = unsafe { ksync::LockToken::new() };
-    // SAFETY: `caller` if non-null points to a valid ProcessDispatcher for the call duration.
-    let caller_ref = NonNull::new(caller).map(|c| unsafe { c.as_ref() });
-    // Return the arena slot pointer directly (rather than casting through a `HandleRef`) so the
-    // C++ caller receives the original write provenance it needs to remove or delete the handle.
-    table
-        .lookup_handle_locked_internal(caller_ref, handle_value, &token)
-        .map_or(core::ptr::null_mut(), NonNull::as_ptr)
-}
-
 /// Returns the current number of handles in `table`.
 ///
 /// # Safety
@@ -1002,19 +954,6 @@ pub unsafe extern "C" fn rust_handle_table_add_handle(table: &HandleTable, handl
     if let Some(owner) = unsafe { HandleOwner::from_raw(handle) } {
         table.add_handle(owner);
     }
-}
-
-/// Removes a handle from `table` by user handle value, returning ownership to the caller.
-///
-/// # Safety
-/// `caller` must be a valid `ProcessDispatcher`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_handle_table_remove_handle_val(
-    table: &HandleTable,
-    caller: &ProcessDispatcher,
-    handle_value: zx_handle_t,
-) -> *mut Handle {
-    HandleOwner::release_opt(table.remove_handle(caller, handle_value))
 }
 
 /// Cleans and invalidates all handles in `table`.

@@ -161,11 +161,20 @@ impl StreamDispatcher {
         if options.write() {
             rights |= ZX_RIGHT_WRITE;
         }
-        // SAFETY: `vmo_dispatcher` is a valid `VmObjectDispatcher`, and
+        let ssm = vmo_dispatcher.stream_size_manager()?;
+        let vmo = crate::vm::vm_object::VmObject::downcast_paged(vmo_dispatcher.vmo().clone())
+            .expect("stream VMO must be paged");
+        // SAFETY: `vmo` and `ssm` transfer ownership of one RefPtr count to C++, and
         // `cpp_stream_dispatcher_create` initializes `handle` on success.
         let handle = unsafe {
             KernelHandle::create(|out| {
-                cpp_stream_dispatcher_create(options.bits(), vmo_dispatcher as *const _, seek, out)
+                cpp_stream_dispatcher_create(
+                    options.bits(),
+                    RefPtr::into_raw(vmo).cast_mut(),
+                    RefPtr::into_raw(ssm).cast_mut(),
+                    seek,
+                    out,
+                )
             })
         }?;
         Ok((handle, rights))

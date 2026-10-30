@@ -61,7 +61,6 @@ source_set("object") {
     "socket_dispatcher.cc",
     "socket_dispatcher_ffi.cc",
     "stream_dispatcher.cc",
-    "stream_dispatcher_ffi.cc",
     "suspend_token_dispatcher.cc",
     "suspend_token_dispatcher_ffi.cc",
     "thread_dispatcher.cc",
