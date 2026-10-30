@@ -43,6 +43,7 @@ rustc_binary("bin") {
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-fs",
     "//src/lib/fuchsia-runtime",
+    "//src/lib/fuchsia-url",
     "//src/storage/lib/vfs/rust:vfs",
     "//src/sys/lib/moniker",
     "//third_party/rust_crates:anyhow",

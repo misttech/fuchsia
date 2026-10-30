@@ -181,7 +181,7 @@ where
             let () = f.write_str("?hash=")?;
             let () = self.hash.url_display(f)?;
         }
-        let () = write!(f, "#{}", self.resource)?;
+        let () = write!(f, "#{}", self.resource.percent_encode())?;
         Ok(())
     }
 }

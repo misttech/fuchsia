@@ -151,23 +151,60 @@ Must begin with the string `?hash=` followed by the [package hash](#package-hash
 ## Resource path {#resource-path}
 
 A resource path is a UTF-8 string that identifies a resource within a package.
-This is a file path, consisting of a sequence of single `/` delimited
-path segments, each of which is a non-empty sequence of non-zero UTF-8
-characters not equal to `.`, `..`, or `/`. Must begin with single `#` character.
+It is a relative file path consisting of single-`/`-delimited segments. Each
+segment must be a non-empty UTF-8 byte sequence of at most 255 bytes, not equal
+to `.` or `..`, and must not contain NUL (`\0`) or newline (`\n`) characters.
+This definition matches [Fuchsia filesystem paths] except that it requires
+valid UTF-8 (the parser decodes `%HH` escapes as UTF-8 and rejects other byte
+sequences), rejects newline characters, and has no limit on the total path
+length.
 
-This must be relative to the root of the package.
+In a URL, a single `#` character precedes the percent-encoded resource path.
 
 Note: The scheme, [repository hostname](#repository-hostname),
 [package name](#package-name), and [package hash](#package-hash) components are
 all defined to use a restricted subset of characters, none of which require
 encoding, unlike the resource path.
 
-URL components containing reserved characters are percent-encoded according to
-[RFC 3986]. This definition is compatible with the definition of [Fuchsia filesystem paths]
-but it imposes a UTF-8 encoding rather than admitting arbitrary binary strings
-since such strings cannot always be encoded as valid URLs.
+The Fuchsia URL parser decodes each `%HH` escape (where `HH` is two hexadecimal
+digits in either case) in `#<resource-path>` as in [RFC 3986], and then
+validates the decoded resource path. Because the parser decodes escapes before
+it splits the resource path into segments, `%2F` acts as a segment separator.
 
-For example, `hello/unicode/%F0%9F%98%81` decodes to `hello/unicode/😁`.
+You must percent-encode the following characters, which the parser rejects when
+they appear unencoded after the `#`:
+
+| Character | Encoding |
+| --------- | -------- |
+| Space | `%20` |
+| Double quote (`"`) | `%22` |
+| Number sign (`#`) | `%23` |
+| Percent sign (`%`), unless it begins a `%HH` escape | `%25` |
+| Less-than sign (`<`) | `%3C` |
+| Greater-than sign (`>`) | `%3E` |
+| Backtick (`` ` ``) | `%60` |
+| Control characters U+0000 to U+001F | `%00` to `%1F` |
+| Control characters U+007F to U+009F | `%7F` and `%C2%80` to `%C2%9F` |
+| Any other non-ASCII character | Its UTF-8 bytes, such as `%C3%A9` for `é` |
+
+Because every `%` must begin a `%HH` escape, the parser rejects a `%` that isn't
+followed by two hexadecimal digits (for example, in `100%` or `%zz`). You can
+include any other ASCII character unencoded. Requiring non-ASCII characters to
+be percent-encoded keeps every URL ASCII, so that characters that are invisible
+or that look like other characters (such as a no-break space, a right-to-left
+override, or a Cyrillic `о` (U+043E)) can't hide in a URL. Because the decoded
+resource path must still follow the rules above, `%00` (NUL) and `%0A`
+(newline) are invalid even though they are encoded.
+
+Canonical URLs encode the resource path using the
+[WHATWG fragment percent-encode set] plus `%` and `#`. This encodes exactly the
+characters in the preceding table, using uppercase hexadecimal digits.
+
+For example, `hello/unicode/%F0%9F%98%81` decodes to `hello/unicode/😁`, whereas
+the parser rejects an unencoded `#hello/unicode/😁`. Similarly,
+`data/my%20file.txt` decodes to `data/my file.txt` and `data/100%25.txt` decodes
+to `data/100%.txt`, whereas the parser rejects an unencoded `#data/my file.txt`
+or `#data/100%.txt`.
 
 ### Syntax
 
@@ -203,4 +240,5 @@ fuchsia-pkg://{{ '<var>' }}repository{{ '</var>' }}/{{ '<var>' }}package-name{{ 
 [LDH labels]: https://tools.ietf.org/html/rfc5890#section-2.3.1
 [Fuchsia filesystem paths]: /docs/concepts/process/namespaces.md#object-relative-path-expressions
 [RFC 3986]: https://tools.ietf.org/html/rfc3986#page-11
+[WHATWG fragment percent-encode set]: https://url.spec.whatwg.org/#fragment-percent-encode-set
 [merkleroot]: /docs/concepts/security/merkleroot.md

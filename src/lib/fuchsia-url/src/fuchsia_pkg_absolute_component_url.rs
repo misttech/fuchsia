@@ -168,7 +168,10 @@ mod tests {
                 "fuchsia-pkg://example.org/name/variant/extra#resource",
                 ParseError::ExtraPathSegments,
             ),
-            ("fuchsia-pkg://example.org/name#", ParseError::MissingResource),
+            (
+                "fuchsia-pkg://example.org/name#",
+                ParseError::InvalidResourcePath(ResourcePathError::PathIsEmpty),
+            ),
             (
                 "fuchsia-pkg://example.org/name#/",
                 ParseError::InvalidResourcePath(ResourcePathError::PathStartsWithSlash),

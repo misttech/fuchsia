@@ -26,23 +26,28 @@ const BASE_TOOLS_PATH: &str = "/.dash/tools";
 #[derive(Debug)] // Necessary for PkgDir to be used in assert_matches!().
 struct PkgDir {
     url: url::Url,
-    resource: Option<String>,
+    resource: Option<fuchsia_url::Resource>,
     dir: fio::DirectoryProxy,
 }
 
-/// Returns (url without fragment, fragment if present)
-fn parse_url(url: &str) -> Result<(url::Url, Option<String>), LauncherError> {
-    let mut url = url::Url::parse(url).map_err(|e| {
-        log::warn!(url:?; "bad url: {:#}", anyhow::anyhow!(e));
+/// Returns (url without fragment, resource if present)
+fn parse_url(url: &str) -> Result<(url::Url, Option<fuchsia_url::Resource>), LauncherError> {
+    let bad_url = |e: anyhow::Error| {
+        log::warn!(url:?; "bad url: {:#}", e);
         LauncherError::BadUrl
-    })?;
-    if let Some(fragment) = url.fragment() {
-        let fragment = fragment.to_owned();
-        url.set_fragment(None);
-        Ok((url, Some(fragment)))
-    } else {
-        Ok((url, None))
+    };
+    let mut parsed = url::Url::parse(url).map_err(|e| bad_url(e.into()))?;
+    if parsed.fragment().is_none() {
+        return Ok((parsed, None));
     }
+    // Validate and percent-decode the fragment into a resource path, as process-resolver does
+    // when it resolves the URL in a `#!resolve` trampoline.
+    let resource = fuchsia_url::AbsoluteComponentUrl::parse(url)
+        .map_err(|e| bad_url(e.into()))?
+        .resource()
+        .clone();
+    parsed.set_fragment(None);
+    Ok((parsed, Some(resource)))
 }
 
 // For each of the given packages, resolve them and create a PkgDir with its URL and DirectoryProxy.
@@ -193,7 +198,8 @@ async fn create_trampolines(
     for pkg_dir in pkg_dirs {
         match &pkg_dir.resource {
             Some(res) => {
-                let contents = format!("#!resolve {}#{}\n", pkg_dir.url, res);
+                let contents = format!("#!resolve {}#{}\n", pkg_dir.url, res.percent_encode());
+                let res: &str = res.as_ref();
                 let mut binary_name =
                     res.split('/').next_back().ok_or(LauncherError::BadUrl)?.to_string();
                 if rename_log && binary_name == "log" {
@@ -222,7 +228,17 @@ async fn create_trampolines(
                 let mut pkg_trampolines = BTreeSet::new();
                 for entry in entries {
                     if entry.kind == fio::DirentType::File {
-                        let contents = format!("#!resolve {}#bin/{}\n", pkg_dir.url, entry.name);
+                        // `entry.name` is a raw file name, so percent-encode it for the fragment.
+                        let path = format!("bin/{}", entry.name);
+                        let resource: fuchsia_url::Resource = match path.parse() {
+                            Ok(resource) => resource,
+                            Err(e) => {
+                                warn!(path:?; "Skipping binary with invalid resource path: {e}");
+                                continue;
+                            }
+                        };
+                        let contents =
+                            format!("#!resolve {}#{}\n", pkg_dir.url, resource.percent_encode());
                         let mut binary_name = entry.name;
                         if rename_log && binary_name == "log" {
                             binary_name = "__log_real".to_string();
@@ -404,9 +420,24 @@ mod tests {
     #[fuchsia::test]
     async fn parse_url_test() {
         // Resource removed
-        let (url, res) = parse_url("my-scheme://example.test/path#resource").unwrap();
-        assert_eq!(url.as_str(), "my-scheme://example.test/path");
-        assert_eq!(res, Some("resource".to_string()));
+        let (url, res) = parse_url("fuchsia-pkg://example.test/path#resource").unwrap();
+        assert_eq!(url.as_str(), "fuchsia-pkg://example.test/path");
+        assert_eq!(res, Some("resource".parse().unwrap()));
+
+        // Resource percent-decoded
+        let (url, res) = parse_url("fuchsia-pkg://example.test/path#bin/a%20b%23c").unwrap();
+        assert_eq!(url.as_str(), "fuchsia-pkg://example.test/path");
+        assert_eq!(res, Some("bin/a b#c".parse().unwrap()));
+
+        // Invalid resources rejected
+        for url in [
+            "fuchsia-pkg://example.test/path#",
+            "fuchsia-pkg://example.test/path#bin/a b",
+            "fuchsia-pkg://example.test/path#bin/100%",
+            "fuchsia-pkg://example.test/path#bin/../a",
+        ] {
+            assert_matches!(parse_url(url), Err(LauncherError::BadUrl), "{url:?}");
+        }
 
         // Missing resource ignored
         let (url, res) = parse_url("my-scheme://example.test/path").unwrap();
@@ -568,6 +599,55 @@ mod tests {
         let (url, list) = pkg_trampolines.get_nth_package(2).unwrap();
         assert_eq!(list.len(), 0);
         assert_eq!(url.as_str(), "fuchsia-pkg://earth.org/blueorigin_pkg");
+    }
+
+    #[fuchsia::test]
+    async fn trampolines_percent_encode_binary_names() {
+        // Binary names are raw file names, which may contain characters that must be
+        // percent-encoded in the URL fragment of a `#!resolve` line.
+        let root = vfs::pseudo_directory! {
+            "Nasa" => vfs::pseudo_directory! {
+                "bin" => vfs::pseudo_directory! {
+                    "go 2 moon%" => read_only(b"Apollo"),
+                },
+            },
+        };
+        let pkg_dirs = vec![make_pkg("fuchsia-pkg://earth.org/nasa_pkg", "Nasa", &root).await];
+        let pkg_trampolines = create_trampolines(&pkg_dirs, None).await.unwrap();
+        let (_, list) = pkg_trampolines.get_nth_package(0).unwrap();
+        assert_eq!(list.len(), 1);
+        check_trampoline(
+            &list,
+            0,
+            "#!resolve fuchsia-pkg://earth.org/nasa_pkg#bin/go%202%20moon%25\n",
+            "go 2 moon%",
+        );
+    }
+
+    #[fuchsia::test]
+    async fn trampolines_percent_encode_tool_url_resources() {
+        // The resource of a tool URL is percent-decoded when parsed and percent-encoded again in
+        // the URL fragment of the `#!resolve` line.
+        let root = vfs::pseudo_directory! {
+            "Nasa" => vfs::pseudo_directory! {
+                "bin" => vfs::pseudo_directory! {
+                    "go 2 moon#" => read_only(b"Apollo"),
+                },
+            },
+        };
+        let pkg_dirs = vec![
+            make_pkg("fuchsia-pkg://earth.org/nasa_pkg#bin/go%202%20moon%23", "Nasa", &root).await,
+        ];
+        let pkg_trampolines = create_trampolines(&pkg_dirs, None).await.unwrap();
+        let (url, list) = pkg_trampolines.get_nth_package(0).unwrap();
+        assert_eq!(url.as_str(), "fuchsia-pkg://earth.org/nasa_pkg");
+        assert_eq!(list.len(), 1);
+        check_trampoline(
+            &list,
+            0,
+            "#!resolve fuchsia-pkg://earth.org/nasa_pkg#bin/go%202%20moon%23\n",
+            "go 2 moon#",
+        );
     }
 
     #[fuchsia::test]

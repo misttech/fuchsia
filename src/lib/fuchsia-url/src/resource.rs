@@ -11,8 +11,10 @@ pub const MAX_RESOURCE_PATH_SEGMENT_BYTES: usize = 255;
 pub struct Resource(String);
 
 impl Resource {
-    /// Percent encode the path for inclusion in URLs. Escapes ' ', '"', '<', '>', and '`'.
-    /// https://url.spec.whatwg.org/#fragment-percent-encode-set
+    /// Percent encode the path for inclusion in URLs as a `#<fragment>`. Escapes control
+    /// characters, ' ', '"', '#', '%', '<', '>', '`', and non-ASCII characters: the WHATWG
+    /// fragment percent-encode set plus '%' and '#'.
+    /// <https://url.spec.whatwg.org/#fragment-percent-encode-set>
     pub fn percent_encode(&self) -> impl std::fmt::Display {
         percent_encoding::utf8_percent_encode(&self.0, crate::FRAGMENT)
     }
@@ -22,7 +24,11 @@ impl Resource {
     /// maximum path length.
     /// https://fuchsia.dev/fuchsia-src/concepts/packages/package_url#resource-path
     ///
-    /// Percent decoding should be performed before calling this, if necessary.
+    /// Percent decoding should be performed before calling this, if necessary. URL syntax
+    /// requirements on the raw `#<fragment>` (such as percent-encoding control characters,
+    /// non-ASCII characters, ' ', '"', '#', '%', '<', '>', and '`') are enforced by URL parsing,
+    /// not by this function, so a decoded `Resource` may contain those characters (except NUL and
+    /// newline).
     pub fn validate_str(input: &str) -> Result<(), ResourcePathError> {
         if input.is_empty() {
             return Err(ResourcePathError::PathIsEmpty);
@@ -123,6 +129,16 @@ pub enum ResourcePathError {
     // TODO(https://fxbug.dev/42096516) allow newline once meta/contents supports it in blob paths
     #[error(r"object names cannot contain the newline character '\n'")]
     NameContainsNewline,
+
+    /// Only produced when parsing a URL whose raw (not yet percent-decoded) `#<fragment>` contains
+    /// an unencoded control character other than NUL or newline (which produce
+    /// [`NameContainsNull`](Self::NameContainsNull) and
+    /// [`NameContainsNewline`](Self::NameContainsNewline)), non-ASCII character, `' '`, `'"'`,
+    /// `'#'`, `'<'`, `'>'`, or `` '`' ``, or a `'%'` that does not begin a valid `%HH` escape, all
+    /// of which must be percent-encoded. `character` is the first such character. Never returned
+    /// by [`Resource::validate_str`].
+    #[error("URL fragments cannot contain unencoded {character:?}; it must be percent-encoded")]
+    UrlCannotContainUnencodedCharacter { character: char },
 }
 
 #[cfg(test)]

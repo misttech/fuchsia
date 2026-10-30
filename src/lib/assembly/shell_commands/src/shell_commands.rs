@@ -115,11 +115,17 @@ impl ShellCommandsBuilder {
         let (package_name, binaries) = package;
         let repo = &self.repository;
         for binary_path in binaries.iter() {
+            // `binary_path` is a resource path, which must be percent-encoded in the URL fragment.
+            let resource: fuchsia_url::Resource = binary_path
+                .as_str()
+                .parse()
+                .with_context(|| format!("Invalid shell command binary path {binary_path}"))?;
+            let resource = resource.percent_encode();
             // Take just the file name from the full path,
             let shebang = if self.bootfs {
-                format!("#!resolve fuchsia-boot:///{package_name}#{binary_path}\n")
+                format!("#!resolve fuchsia-boot:///{package_name}#{resource}\n")
             } else {
-                format!("#!resolve fuchsia-pkg://{repo}/{package_name}#{binary_path}\n")
+                format!("#!resolve fuchsia-pkg://{repo}/{package_name}#{resource}\n")
             };
 
             let file_name = &binary_path
@@ -302,5 +308,58 @@ mod tests {
         assert_eq!(builder.repository, "fuchsia.com");
 
         Ok(())
+    }
+
+    #[test]
+    fn test_trampolines_percent_encode_binary_paths() -> Result<()> {
+        // Binary paths are resource paths, which may contain characters that must be
+        // percent-encoded in the URL fragment of a `#!resolve` line.
+        let make_shell_commands = || {
+            ShellCommands::from([(
+                "package1".to_string(),
+                BTreeSet::from([PackageInternalPathBuf::from("bin/go 2 moon%")]),
+            )])
+        };
+
+        let mut builder = ShellCommandsBuilder::new_pkg();
+        builder.add_shell_commands(make_shell_commands(), "fuchsia.com".to_string());
+        let outdir = TempDir::new().unwrap();
+        let outdir_path = Utf8Path::from_path(outdir.path()).unwrap();
+        builder.build(outdir_path)?;
+        let contents = fs::read_to_string(
+            outdir_path
+                .join(PackageDestination::ShellCommands.to_string())
+                .join("package1/bin/go 2 moon%"),
+        )?;
+        assert_eq!(contents, "#!resolve fuchsia-pkg://fuchsia.com/package1#bin/go%202%20moon%25\n");
+
+        let mut builder = ShellCommandsBuilder::new_bootfs();
+        builder.add_bootfs_shell_commands(make_shell_commands());
+        let outdir = TempDir::new().unwrap();
+        let outdir_path = Utf8Path::from_path(outdir.path()).unwrap();
+        builder.build(outdir_path)?;
+        let contents = fs::read_to_string(
+            outdir_path
+                .join(BootfsPackageDestination::ShellCommands.to_string())
+                .join("package1/bin/go 2 moon%"),
+        )?;
+        assert_eq!(contents, "#!resolve fuchsia-boot:///package1#bin/go%202%20moon%25\n");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_rejects_invalid_binary_path() {
+        let mut builder = ShellCommandsBuilder::new_pkg();
+        builder.add_shell_commands(
+            ShellCommands::from([(
+                "package1".to_string(),
+                BTreeSet::from([PackageInternalPathBuf::from("bin/../binary1")]),
+            )]),
+            "fuchsia.com".to_string(),
+        );
+        let outdir = TempDir::new().unwrap();
+        let outdir_path = Utf8Path::from_path(outdir.path()).unwrap();
+        assert!(builder.build(outdir_path).is_err());
     }
 }

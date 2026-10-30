@@ -45,6 +45,10 @@ async fn resolve(
     (fidl::Vmo, Option<fidl::endpoints::ClientEnd<fidl_fuchsia_ldsvc::LoaderMarker>>),
     zx::Status,
 > {
+    // `fdio_spawn` passes the rest of a `#!resolve` line verbatim, so ignore surrounding ASCII
+    // whitespace (such as the `\r` of a CRLF line ending), which URL parsing rejects.
+    let url = url.trim_ascii();
+
     // Parse the URL
     let boot_url = fuchsia_url::boot::AbsoluteComponentUrl::parse(url);
     let pkg_url = AbsoluteComponentUrl::parse(url);
@@ -61,8 +65,12 @@ async fn resolve(
             let bin_path = url.resource().to_string();
             (pkg_resolver, pkg_url, bin_path)
         }
-        (_, _) => {
-            // There is a CTS test that attempts to resolve `fuchsia-pkg://example.com/mustnotexist`.
+        (Err(boot_err), Err(pkg_err)) => {
+            warn!(
+                "Could not parse {url:?} as a fuchsia-boot ({boot_err:#}) or fuchsia-pkg \
+                 ({pkg_err:#}) component URL"
+            );
+            // There is a CTS test that attempts to resolve `fuchsia-pkg://example.com/mustnotexist`
             // and expects to see INTERNAL, instead of the more suitable INVALID_ARGS.
             return Err(zx::Status::INTERNAL);
         }
@@ -182,6 +190,23 @@ mod tests {
         assert!(vmo.get_content_size().unwrap() > 0);
 
         // We can't make any assumptions about the libraries, especially in variations like ASAN.
+    }
+
+    #[fuchsia::test]
+    async fn success_resolve_ignores_surrounding_ascii_whitespace() {
+        // `fdio_spawn` passes the rest of a `#!resolve` line verbatim, which may end with the `\r`
+        // of a CRLF line ending.
+        let pkg_resolver = serve_pkg_resolver_success();
+        let (vmo, _) = resolve(
+            &pkg_resolver,
+            &pkg_resolver,
+            " fuchsia-pkg://fuchsia.com/foo#bin/process_resolver_bin_test \r",
+        )
+        .await
+        .unwrap();
+
+        // We don't know much about this test binary. Make a basic assertion.
+        assert!(vmo.get_content_size().unwrap() > 0);
     }
 
     #[fuchsia::test]

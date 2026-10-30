@@ -115,7 +115,7 @@ mod tests {
                 }),
             ),
             ("name", ParseError::MissingResource),
-            ("name#", ParseError::MissingResource),
+            ("name#", ParseError::InvalidResourcePath(ResourcePathError::PathIsEmpty)),
             ("#resource", ParseError::MissingName),
             (".#resource", ParseError::MissingName),
             ("..#resource", ParseError::MissingName),

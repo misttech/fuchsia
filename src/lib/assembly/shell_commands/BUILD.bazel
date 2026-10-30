@@ -23,6 +23,7 @@ rustc_library(
         "//src/lib/assembly/constants",
         "//src/lib/assembly/package_utils",
         "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-url",
         "//src/sys/pkg/lib/fuchsia-pkg",
         "//third_party/rust_crates/vendor:anyhow",
         "//third_party/rust_crates/vendor:camino",

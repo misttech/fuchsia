@@ -44,10 +44,6 @@ impl FuchsiaPkgAbsolutePackageUrl {
         Self::from_parts(UrlParts::parse(url)?)
     }
 
-    pub fn from_url(url: &url::Url) -> Result<Self, ParseError> {
-        Self::from_parts(UrlParts::from_url(url)?)
-    }
-
     /// Create a FuchsiaPkgAbsolutePackageUrl from its component parts and a &str `path` that will
     /// be validated.
     pub fn new_with_path(
@@ -192,6 +188,7 @@ impl<'de> serde::Deserialize<'de> for FuchsiaPkgAbsolutePackageUrl {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ResourcePathError;
     use crate::errors::PackagePathSegmentError;
     use assert_matches::assert_matches;
     use std::convert::TryFrom as _;
@@ -214,6 +211,10 @@ mod tests {
             ),
             ("fuchsia-pkg://example.org/name/variant/extra", ParseError::ExtraPathSegments),
             ("fuchsia-pkg://example.org/name#resource", ParseError::CannotContainResource),
+            (
+                "fuchsia-pkg://example.org/name#",
+                ParseError::InvalidResourcePath(ResourcePathError::PathIsEmpty),
+            ),
         ] {
             assert_matches!(
                 FuchsiaPkgAbsolutePackageUrl::parse(url),

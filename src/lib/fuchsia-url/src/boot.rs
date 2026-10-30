@@ -73,6 +73,9 @@ mod tests {
         let abs = "fuchsia-boot:///my/path#my-resource";
         assert_eq!(ComponentUrl::parse(abs).unwrap().to_string(), abs);
 
+        let abs_encoded = "fuchsia-boot:///my/path#my%20resource";
+        assert_eq!(ComponentUrl::parse(abs_encoded).unwrap().to_string(), abs_encoded);
+
         let abs_pathless = "fuchsia-boot://#my-resource";
         assert_eq!(ComponentUrl::parse(abs_pathless).unwrap().to_string(), abs_pathless);
 

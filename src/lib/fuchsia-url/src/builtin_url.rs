@@ -136,4 +136,19 @@ mod tests {
             ParseError::InvalidResourcePath(ResourcePathError::PathStartsWithSlash)
         );
     }
+
+    #[test]
+    fn test_parse_error_empty_trailing_fragment() {
+        assert_matches!(
+            BuiltinUrl::parse("fuchsia-builtin://#").unwrap_err(),
+            ParseError::InvalidResourcePath(ResourcePathError::PathIsEmpty)
+        );
+    }
+
+    #[test]
+    fn test_display_percent_encodes_resource() {
+        let url = BuiltinUrl::parse("fuchsia-builtin://#a%20b%25").unwrap();
+        assert_eq!(url.resource().map(|r| r.as_ref()), Some("a b%"));
+        assert_eq!(url.to_string(), "fuchsia-builtin://#a%20b%25");
+    }
 }
