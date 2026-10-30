@@ -137,6 +137,33 @@ impl [< $t:upper Range>] {
         let max = self.max.checked_sub(rhs.min)?;
         Some(Self {min, max})
     }
+
+    /// Returns whether `[self.min, self.max]` contains at least one integer matching the known
+    /// bits `(value, unknown_mask)` (i.e. `(x & !unknown_mask) == value`, assuming
+    /// `(value & unknown_mask) == 0`).
+    const fn contains_masked_value(self, value: [< $t >], unknown_mask: [< $t >]) -> bool {
+        debug_assert!(value & unknown_mask == 0);
+        if self.min > self.max {
+            return false;
+        }
+        let diff = self.min ^ self.max;
+        if diff == 0 {
+            return (self.min ^ value) & !unknown_mask == 0;
+        }
+        let b = ([< $t >]::BITS - 1) - diff.leading_zeros();
+        let common_mask: [< $t >] = if b == [< $t >]::BITS - 1 { 0 } else { !0 << (b + 1) };
+        if ((self.min ^ value) & common_mask) & !unknown_mask != 0 {
+            return false;
+        }
+        let value = (value & !common_mask) | (self.min & common_mask);
+        let unknown_mask = unknown_mask & !common_mask;
+        let bit_b: [< $t >] = 1 << b;
+        if unknown_mask & bit_b != 0 {
+            (value | (unknown_mask & !bit_b)) >= self.min || (value | bit_b) <= self.max
+        } else {
+            value <= self.max && self.min <= (value | unknown_mask)
+        }
+    }
 }
 
 impl PartialOrd for [< $t:upper Range>] {
@@ -387,6 +414,21 @@ impl [< $t:upper ScalarValueData>] {
         Self { value, unknown_mask, unwritten_mask, urange, _guard: () }
     }
 
+    /// Constructs a `ScalarValueData` if `urange` contains at least one value matching the known
+    /// bits `(value, unknown_mask)`, or returns `None` if no value in `urange` matches.
+    pub const fn try_new(
+        value: [< $t >],
+        unknown_mask: [< $t >],
+        unwritten_mask: [< $t >],
+        urange: [< $t:upper Range >],
+    ) -> Option<Self> {
+        if urange.contains_masked_value(value, unknown_mask) {
+            Some(Self::new(value, unknown_mask, unwritten_mask, urange))
+        } else {
+            None
+        }
+    }
+
     pub const fn is_known(&self) -> bool {
         self.unknown_mask == 0
     }
@@ -413,6 +455,21 @@ impl [< $t:upper ScalarValueData>] {
 
     pub fn update_range(self, urange: [< $t:upper Range >]) -> Self {
         Self::new(self.value, self.unknown_mask, self.unwritten_mask, urange)
+    }
+
+    /// Returns whether there exists at least one concrete value belonging to both `self` and
+    /// `other`.
+    pub fn can_be_equal(self, other: Self) -> bool {
+        if (self.value ^ other.value) & !(self.unknown_mask | other.unknown_mask) != 0 {
+            return false;
+        }
+        let range = [< $t:upper Range >]::new(
+            std::cmp::max(self.min(), other.min()),
+            std::cmp::min(self.max(), other.max()),
+        );
+        let value = self.value | other.value;
+        let unknown_mask = self.unknown_mask & other.unknown_mask;
+        range.contains_masked_value(value, unknown_mask)
     }
 
     pub fn checked_add<T: Into<[< $t:upper ScalarValueData>]>>(self, rhs: T) -> Option<Self> {
@@ -919,5 +976,82 @@ mod tests {
         if cfg!(target_endian = "little") {
             assert_eq!(swapped, U32Range::new(0x11aa_bb44, 0x11aa_cc44));
         }
+    }
+
+    #[test]
+    fn test_contains_masked_value_and_try_new_exhaustive_5bit_and_high_bits() {
+        for min in 0u64..32 {
+            for max in 0u64..32 {
+                let range64 = U64Range::new(min, max);
+                let range32 = U32Range::new(min as u32, max as u32);
+                for unknown_mask in 0u64..32 {
+                    for value in 0u64..32 {
+                        if value & unknown_mask != 0 {
+                            continue;
+                        }
+                        let expected =
+                            min <= max && (min..=max).any(|x| (x & !unknown_mask) == value);
+                        assert_eq!(
+                            range64.contains_masked_value(value, unknown_mask),
+                            expected,
+                            "u64 min={min} max={max} value={value:#b} unk={unknown_mask:#b}"
+                        );
+                        assert_eq!(
+                            U64ScalarValueData::try_new(value, unknown_mask, 0, range64).is_some(),
+                            expected,
+                            "u64 try_new min={min} max={max} value={value:#b} unk={unknown_mask:#b}"
+                        );
+                        assert_eq!(
+                            range32.contains_masked_value(value as u32, unknown_mask as u32),
+                            expected,
+                            "u32 min={min} max={max} value={value:#b} unk={unknown_mask:#b}"
+                        );
+                        assert_eq!(
+                            U32ScalarValueData::try_new(
+                                value as u32,
+                                unknown_mask as u32,
+                                0,
+                                range32,
+                            )
+                            .is_some(),
+                            expected,
+                            "u32 try_new min={min} max={max} value={value:#b} unk={unknown_mask:#b}"
+                        );
+                    }
+                }
+            }
+        }
+
+        // Highest bit (`b == BITS - 1`) coverage for both `u64` and `u32`.
+        let top64 = 1u64 << 63;
+        let top_range64 = U64Range::new(top64 - 1, top64);
+        assert!(top_range64.contains_masked_value(0, top64 | 2));
+        assert!(U64ScalarValueData::try_new(0, top64 | 2, 0, top_range64).is_some());
+        assert!(!top_range64.contains_masked_value(1, top64 | 2));
+        assert!(U64ScalarValueData::try_new(1, top64 | 2, 0, top_range64).is_none());
+
+        let top32 = 1u32 << 31;
+        let top_range32 = U32Range::new(top32 - 1, top32);
+        assert!(top_range32.contains_masked_value(0, top32 | 2));
+        assert!(U32ScalarValueData::try_new(0, top32 | 2, 0, top_range32).is_some());
+        assert!(!top_range32.contains_masked_value(1, top32 | 2));
+        assert!(U32ScalarValueData::try_new(1, top32 | 2, 0, top_range32).is_none());
+    }
+
+    #[test]
+    fn test_can_be_equal_common_prefix_and_msb_gap() {
+        // Shared `[umin, umax] = [4, 5]` prefix forces bit 2 = 1, turning `val = 2` into `6 > 5`.
+        let x = U64ScalarValueData::new(0, 7, 0, U64Range::new(4, 5));
+        let y = U64ScalarValueData::new(2, 4, 0, U64Range::new(2, 6));
+        assert!(!x.can_be_equal(y));
+        assert!(!U32ScalarValueData::from(x).can_be_equal(U32ScalarValueData::from(y)));
+
+        // Gap across the highest differing bit of `umin ^ umax`: `[umin, umax] = [2, 4]` vs
+        // combined known bits `(value = 1, unknown_mask = 4)` (`{1, 5}`), where `1 <= 4` and
+        // `2 <= 5` both hold yet `{1, 5}` misses `[2, 4]`.
+        let a = U64ScalarValueData::new(1, 6, 0, U64Range::new(1, 4));
+        let b = U64ScalarValueData::new(0, 5, 0, U64Range::new(2, 5));
+        assert!(!a.can_be_equal(b));
+        assert!(!U32ScalarValueData::from(a).can_be_equal(U32ScalarValueData::from(b)));
     }
 }

@@ -571,18 +571,22 @@ impl Type {
         // Both pointers share the same base, so they are equal iff their offsets are
         // equal. Constrain the offsets, and keep the rest of each type (including any
         // `Releasable` wrapper) so that neither pointer loses information.
-        let (offset, _) = Self::constraint(
+        let (new_offset1, new_offset2) = Self::constraint(
             context,
             JumpType::Eq,
             JumpWidth::W64,
             Type::ScalarValue(offset1),
             Type::ScalarValue(offset2),
         )?;
-        let offset = match offset {
+        let offset1 = match new_offset1 {
             Type::ScalarValue(offset) => offset,
             _ => offset1,
         };
-        Ok((type1.with_offset(offset), type2.with_offset(offset)))
+        let offset2 = match new_offset2 {
+            Type::ScalarValue(offset) => offset,
+            _ => offset2,
+        };
+        Ok((type1.with_offset(offset1), type2.with_offset(offset2)))
     }
 
     /// Constraints `type1` and `type2` for a conditional jump with the specified `jump_type` and
@@ -595,47 +599,57 @@ impl Type {
         type2: Self,
     ) -> Result<(Self, Self), VerifierErrorKind> {
         let result = match (jump_width, jump_type, type1.inner(context)?, type2.inner(context)?) {
-            (JumpWidth::W64, JumpType::Eq, Type::ScalarValue(data1), Type::ScalarValue(data2))
-                if data1.is_fully_initialized() && data2.is_fully_initialized() =>
-            {
-                let umin = std::cmp::max(data1.min(), data2.min());
-                let umax = std::cmp::min(data1.max(), data2.max());
-                let v = Type::ScalarValue(ScalarValueData::new(
-                    data1.value | data2.value,
-                    data1.unknown_mask & data2.unknown_mask,
-                    0,
-                    U64Range::new(umin, umax),
-                ));
-                (v.clone(), v)
-            }
-            (JumpWidth::W32, JumpType::Eq, Type::ScalarValue(data1), Type::ScalarValue(data2))
-                if data1.is_fully_initialized() && data2.is_fully_initialized() =>
-            {
-                // Refine ranges only when both operands fit in 32 bits; a range
-                // straddling 2^32 can have low bits below its min, so refining would
-                // drop reachable values.
-                let both_fit_u32 = data1.max() <= U32_MAX && data2.max() <= U32_MAX;
-                let (urange1, urange2) = if both_fit_u32 {
+            (JumpWidth::W64, JumpType::Eq, Type::ScalarValue(data1), Type::ScalarValue(data2)) => {
+                if data1.is_fully_initialized()
+                    && data2.is_fully_initialized()
+                    && data1.can_be_equal(*data2)
+                {
                     let umin = std::cmp::max(data1.min(), data2.min());
                     let umax = std::cmp::min(data1.max(), data2.max());
-                    let urange = U64Range::new(umin, umax);
-                    (urange, urange)
+                    let v = Type::ScalarValue(ScalarValueData::new(
+                        data1.value | data2.value,
+                        data1.unknown_mask & data2.unknown_mask,
+                        0,
+                        U64Range::new(umin, umax),
+                    ));
+                    (v.clone(), v)
                 } else {
-                    (data1.urange, data2.urange)
-                };
-                let v1 = Type::ScalarValue(ScalarValueData::new(
-                    data1.value | (data2.value & U32_MAX),
-                    data1.unknown_mask & (data2.unknown_mask | (U32_MAX << 32)),
-                    0,
-                    urange1,
-                ));
-                let v2 = Type::ScalarValue(ScalarValueData::new(
-                    data2.value | (data1.value & U32_MAX),
-                    data2.unknown_mask & (data1.unknown_mask | (U32_MAX << 32)),
-                    0,
-                    urange2,
-                ));
-                (v1, v2)
+                    (type1, type2)
+                }
+            }
+            (JumpWidth::W32, JumpType::Eq, Type::ScalarValue(data1), Type::ScalarValue(data2)) => {
+                if data1.is_fully_initialized()
+                    && data2.is_fully_initialized()
+                    && U32ScalarValueData::from(*data1)
+                        .can_be_equal(U32ScalarValueData::from(*data2))
+                {
+                    // Refine ranges only when both operands fit in 32 bits; a range
+                    // straddling 2^32 can have low bits below its min, so refining would
+                    // drop reachable values.
+                    let both_fit_u32 = data1.max() <= U32_MAX && data2.max() <= U32_MAX;
+                    let (urange1, urange2) = if both_fit_u32 {
+                        let umin = std::cmp::max(data1.min(), data2.min());
+                        let umax = std::cmp::min(data1.max(), data2.max());
+                        let urange = U64Range::new(umin, umax);
+                        (urange, urange)
+                    } else {
+                        (data1.urange, data2.urange)
+                    };
+                    let value1 = data1.value | (data2.value & U32_MAX);
+                    let unknown_mask1 = data1.unknown_mask & (data2.unknown_mask | (U32_MAX << 32));
+                    let value2 = data2.value | (data1.value & U32_MAX);
+                    let unknown_mask2 = data2.unknown_mask & (data1.unknown_mask | (U32_MAX << 32));
+                    if let (Some(s1), Some(s2)) = (
+                        ScalarValueData::try_new(value1, unknown_mask1, 0, urange1),
+                        ScalarValueData::try_new(value2, unknown_mask2, 0, urange2),
+                    ) {
+                        (Type::ScalarValue(s1), Type::ScalarValue(s2))
+                    } else {
+                        (type1, type2)
+                    }
+                } else {
+                    (type1, type2)
+                }
             }
             (
                 JumpWidth::W64,
@@ -4038,18 +4052,7 @@ impl BpfVisitor for &ComputationContext {
             offset,
             JumpType::Eq,
             JumpWidth::W32,
-            |x, y| {
-                comp32(x, y, |x, y| {
-                    // x == y
-                    if x.min == x.max && x.min == y.min && x.min == y.max {
-                        return Some(true);
-                    }
-                    if x.max < y.min || y.max < x.min {
-                        return Some(false);
-                    }
-                    None
-                })
-            },
+            comp_eq32,
         )
     }
     fn jeq64<'a>(
@@ -4067,18 +4070,7 @@ impl BpfVisitor for &ComputationContext {
             offset,
             JumpType::Eq,
             JumpWidth::W64,
-            |x, y| {
-                comp64(x, y, |x, y| {
-                    // x == y
-                    if x.min == x.max && x.min == y.min && x.min == y.max {
-                        return Some(true);
-                    }
-                    if x.max < y.min || y.max < x.min {
-                        return Some(false);
-                    }
-                    None
-                })
-            },
+            comp_eq64,
         )
     }
     fn jne<'a>(
@@ -4096,18 +4088,7 @@ impl BpfVisitor for &ComputationContext {
             offset,
             JumpType::Ne,
             JumpWidth::W32,
-            |x, y| {
-                comp32(x, y, |x, y| {
-                    // x != y
-                    if x.min == x.max && x.min == y.min && x.min == y.max {
-                        return Some(false);
-                    }
-                    if x.max < y.min || y.max < x.min {
-                        return Some(true);
-                    }
-                    None
-                })
-            },
+            |x, y| Ok(comp_eq32(x, y)?.map(|eq| !eq)),
         )
     }
     fn jne64<'a>(
@@ -4125,18 +4106,7 @@ impl BpfVisitor for &ComputationContext {
             offset,
             JumpType::Ne,
             JumpWidth::W64,
-            |x, y| {
-                comp64(x, y, |x, y| {
-                    // x != y
-                    if x.min == x.max && x.min == y.min && x.min == y.max {
-                        return Some(false);
-                    }
-                    if x.max < y.min || y.max < x.min {
-                        return Some(true);
-                    }
-                    None
-                })
-            },
+            |x, y| Ok(comp_eq64(x, y)?.map(|eq| !eq)),
         )
     }
     fn jge<'a>(
@@ -4784,18 +4754,7 @@ impl BpfVisitor for &ComputationContext {
         offset: i16,
         src: Register,
     ) -> Result<(), VerifierErrorKind> {
-        self.raw_atomic_cmpxchg("cmpxchg32", context, dst, offset, src, JumpWidth::W32, |x, y| {
-            comp32(x, y, |x, y| {
-                // x == y
-                if x.min == x.max && x.min == y.min && x.min == y.max {
-                    return Some(true);
-                }
-                if x.max < y.min || y.max < x.min {
-                    return Some(false);
-                }
-                None
-            })
-        })
+        self.raw_atomic_cmpxchg("cmpxchg32", context, dst, offset, src, JumpWidth::W32, comp_eq32)
     }
 
     fn atomic_cmpxchg64<'a>(
@@ -4805,18 +4764,7 @@ impl BpfVisitor for &ComputationContext {
         offset: i16,
         src: Register,
     ) -> Result<(), VerifierErrorKind> {
-        self.raw_atomic_cmpxchg("cmpxchg", context, dst, offset, src, JumpWidth::W64, |x, y| {
-            comp64(x, y, |x, y| {
-                // x == y
-                if x.min == x.max && x.min == y.min && x.min == y.max {
-                    return Some(true);
-                }
-                if x.max < y.min || y.max < x.min {
-                    return Some(false);
-                }
-                None
-            })
-        })
+        self.raw_atomic_cmpxchg("cmpxchg", context, dst, offset, src, JumpWidth::W64, comp_eq64)
     }
 
     fn load<'a>(
@@ -5033,6 +4981,23 @@ fn alu32(
     op: impl FnOnce(U32ScalarValueData, U32ScalarValueData) -> U32ScalarValueData,
 ) -> ScalarValueData {
     op(U32ScalarValueData::from(x), U32ScalarValueData::from(y)).into()
+}
+
+fn comp_eq64(x: ScalarValueData, y: ScalarValueData) -> Result<Option<bool>, ()> {
+    if !x.is_fully_initialized() || !y.is_fully_initialized() {
+        return Err(());
+    }
+    if x.min() == x.max() && x.min() == y.min() && x.min() == y.max() {
+        return Ok(Some(true));
+    }
+    if !x.can_be_equal(y) {
+        return Ok(Some(false));
+    }
+    Ok(None)
+}
+
+fn comp_eq32(x: ScalarValueData, y: ScalarValueData) -> Result<Option<bool>, ()> {
+    comp_eq64(U32ScalarValueData::from(x).into(), U32ScalarValueData::from(y).into())
 }
 
 fn comp64(
@@ -6329,5 +6294,92 @@ mod tests {
             verify_program(err_zero_size_var_offset, make_context(), &mut NullVerifierLogger).err(),
             Some(VerifierError { kind: VerifierErrorKind::VariableStackOffset, pc: Some(6) })
         );
+    }
+
+    #[test]
+    fn test_constraint_and_comp_eq_disjoint_known_bits() {
+        let mut comp_ctx = ComputationContext::default();
+
+        // Disjoint 64-bit scalars in `Type::constraint` must preserve `(type1, type2)` rather than
+        // falling through to `(type1.clone(), type1)` and overwriting `type2`.
+        let even = Type::from(2u64);
+        let odd_1_or_3 = Type::ScalarValue(ScalarValueData::new(1, 2, 0, U64Range::new(1, 3)));
+        assert_eq!(
+            Type::constraint(
+                &mut comp_ctx,
+                JumpType::Eq,
+                JumpWidth::W64,
+                even.clone(),
+                odd_1_or_3.clone()
+            ),
+            Ok((even, odd_1_or_3)),
+        );
+
+        // Disjoint same-base pointer offsets in `constrain_equal_offsets` must also preserve both
+        // pointers' original offsets.
+        let id = MemoryId::new();
+        let ptr1 = Type::PtrToMemory {
+            id: id.clone(),
+            offset: 2u64.into(),
+            buffer_size: 16,
+            origin: PointerOrigin::MapWritable,
+        };
+        let ptr2 = Type::PtrToMemory {
+            id,
+            offset: ScalarValueData::new(1, 2, 0, U64Range::new(1, 3)),
+            buffer_size: 16,
+            origin: PointerOrigin::MapWritable,
+        };
+        assert_eq!(
+            Type::constraint(
+                &mut comp_ctx,
+                JumpType::Eq,
+                JumpWidth::W64,
+                ptr1.clone(),
+                ptr2.clone()
+            ),
+            Ok((ptr1, ptr2)),
+        );
+
+        // `JumpWidth::W32` with `data1` straddling `2^32` (`[0xffff_ffff, 0x1_0000_0002]`): low
+        // 32-bit comparison against `3` can match in 32-bit projections, yet `{k*2^32 + 3}` has
+        // empty intersection with `[0xffff_ffff, 0x1_0000_0002]`, so `Type::constraint` must leave
+        // `(type1, type2)` unchanged rather than constructing an invalid `ScalarValueData`.
+        let straddling = Type::ScalarValue(ScalarValueData::new(
+            0,
+            u64::MAX,
+            0,
+            U64Range::new(0xffff_ffff, 0x1_0000_0002),
+        ));
+        let three = Type::from(3u64);
+        assert_eq!(
+            Type::constraint(
+                &mut comp_ctx,
+                JumpType::Eq,
+                JumpWidth::W32,
+                straddling.clone(),
+                three.clone()
+            ),
+            Ok((straddling, three)),
+        );
+
+        // Shared `common_mask` prefix (`[4, 5]` vs `{2, 6}`) and bit-`b` gap (`[2, 4]` vs `{1, 5}`).
+        let prefix_x = ScalarValueData::new(0, 7, 0, U64Range::new(4, 5));
+        let prefix_y = ScalarValueData::new(2, 4, 0, U64Range::new(2, 6));
+        assert_eq!(comp_eq64(prefix_x, prefix_y), Ok(Some(false)));
+        assert_eq!(comp_eq32(prefix_x, prefix_y), Ok(Some(false)));
+
+        let gap_x = ScalarValueData::new(1, 6, 0, U64Range::new(1, 4));
+        let gap_y = ScalarValueData::new(0, 5, 0, U64Range::new(2, 5));
+        assert_eq!(comp_eq64(gap_x, gap_y), Ok(Some(false)));
+        assert_eq!(comp_eq32(gap_x, gap_y), Ok(Some(false)));
+
+        // Singleton-range scalar whose `unknown_mask` was not cleared (`ScalarValueData::new`
+        // clamps `[4, 6]` against `value = 6, unknown_mask = 1` to `[6, 6]`) still constant-folds
+        // equality with `6` to `Some(true)`.
+        let singleton_with_unk = ScalarValueData::new(6, 1, 0, U64Range::new(4, 6));
+        assert!(!singleton_with_unk.is_known());
+        assert_eq!(comp_eq64(singleton_with_unk, 6u64.into()), Ok(Some(true)));
+        assert_eq!(comp_eq32(singleton_with_unk, 6u64.into()), Ok(Some(true)));
     }
 }

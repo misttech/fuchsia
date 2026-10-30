@@ -2,7 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -29,8 +31,27 @@ rustc_library(
         "@platforms//cpu:arm64": ["src/memio/arm64.rs"],
         "@platforms//cpu:riscv64": ["src/memio/riscv64.rs"],
     }),
+    crate_name = "ebpf",
+    edition = "2024",
+    lint_config = "//src/starnix/build:kernel_library_config",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:derivative",
+        "//third_party/rust_crates/vendor:paste",
+    ],
+    deps = [
+        "//src/starnix/lib/linux_uapi",
+        "//third_party/rust_crates/vendor:bitflags",
+        "//third_party/rust_crates/vendor:byteorder",
+        "//third_party/rust_crates/vendor:smallvec",
+        "//third_party/rust_crates/vendor:static_assertions",
+        "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
+
+rustc_test(
+    name = "ebpf_test",
     compile_data = [
-        "src/test_grammar.pest",
         "src/tests/access_with_check.data",
         "src/tests/ashr_fully_unknown_u64_stays_unbounded.data",
         "src/tests/atomic_aligned.data",
@@ -88,6 +109,9 @@ rustc_library(
         "src/tests/exponential_verification.data",
         "src/tests/forget_release.data",
         "src/tests/forget_release_multiple.data",
+        "src/tests/jeq32_disjoint_known_bits.data",
+        "src/tests/jeq64_disjoint_known_bits.data",
+        "src/tests/jeq64_known_bits_above_umax.data",
         "src/tests/malloc_double_free.data",
         "src/tests/malloc_multiple_use_free.data",
         "src/tests/malloc_null_check_jeq.data",
@@ -261,30 +285,26 @@ rustc_library(
         "//third_party/ubpf:src/tests/subnet.data",
         "//third_party/ubpf:src/tests/unload_reload.data",
     ],
-    crate_name = "ebpf",
+    crate = ":ebpf",
+    crate_name = "ebpf_lib_test",
     edition = "2024",
-    lint_config = "//src/starnix/build:kernel_library_config",
+    lint_config = "//src/starnix/config:starnix_clippy_lints_test",
     proc_macro_deps = [
-        "//third_party/rust_crates/vendor:derivative",
-        "//third_party/rust_crates/vendor:paste",
+        "//third_party/rust_crates/vendor:pest_derive",
     ],
-    test_deps = [
+    visibility = ["//visibility:private"],
+    deps = [
         "//sdk/rust/zx",
         "//src/lib/fuchsia-runtime",
         "//src/lib/test_util",
         "//third_party/rust_crates/vendor:libc",
         "//third_party/rust_crates/vendor:pest",
-        "//third_party/rust_crates/vendor:pest_derive",
         "//third_party/rust_crates/vendor:test-case",
     ],
-    with_unit_tests = True,
-    deps = [
-        "//src/starnix/lib/linux_uapi",
-        "//third_party/rust_crates/vendor:bitflags",
-        "//third_party/rust_crates/vendor:byteorder",
-        "//third_party/rust_crates/vendor:smallvec",
-        "//third_party/rust_crates/vendor:static_assertions",
-        "//third_party/rust_crates/vendor:thiserror",
-        "//third_party/rust_crates/vendor:zerocopy",
-    ],
+)
+
+fx_unittest_package(
+    name = "starnix-ebpf-tests",
+    unit_tests = [":ebpf_test"],
+    visibility = ["//src/starnix/lib:__pkg__"],
 )
