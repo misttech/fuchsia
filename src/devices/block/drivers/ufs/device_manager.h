@@ -35,7 +35,7 @@ constexpr zx::duration kSuspendIoDrainTimeout = zx::sec(5);
 // Number of PHY/device power cycles attempted synchronously when resuming from PowerDown fails.
 // We cap synchronous retries at 3 because each attempt can take several seconds of UIC/UPIU
 // timeouts while Power Broker's SetLevel is outstanding, and the driver keeps retrying in the
-// background afterwards (see Ufs::RetryResume()).
+// background afterwards (see Ufs::RetryResume()). Ufs::RecoverLink() uses the same cap.
 constexpr int kMaxPowerDownResumeAttempts = 3;
 // Pause between retries of a SCSI command that was answered with UNIT ATTENTION / NOT READY.
 constexpr zx::duration kUnavailableRetryDelay = zx::msec(10);
@@ -140,10 +140,31 @@ class DeviceManager {
 
   zx::result<> SuspendPower() TA_EXCL(power_lock_);
   zx::result<> ResumePower() TA_EXCL(power_lock_);
+  zx::result<> FinishLinkRecovery() TA_EXCL(power_lock_);
+
+  bool BeginLinkRecovery() TA_EXCL(power_lock_) {
+    std::scoped_lock lock(power_lock_);
+    while (suspend_in_progress_ || recovery_in_progress_) {
+      power_cv_.wait(power_lock_);
+    }
+    if (system_suspended_) {
+      return false;
+    }
+    recovery_in_progress_ = true;
+    return true;
+  }
+  void SetRecoveryInProgress(bool in_progress) TA_EXCL(power_lock_) {
+    std::scoped_lock lock(power_lock_);
+    recovery_in_progress_ = in_progress;
+    if (!in_progress) {
+      power_cv_.notify_all();
+    }
+  }
 
   bool IsResumed() TA_EXCL(power_lock_) {
     std::lock_guard<std::mutex> lock(power_lock_);
-    return !suspend_in_progress_ && current_power_mode_ == UfsPowerMode::kActive &&
+    return !suspend_in_progress_ && !recovery_in_progress_ &&
+           current_power_mode_ == UfsPowerMode::kActive &&
            current_power_condition_ == scsi::PowerCondition::kActive &&
            current_link_state_ == LinkState::kActive;
   }
@@ -261,7 +282,7 @@ class DeviceManager {
   // takes power_lock_: admin UPIUs complete on the admin worker without it, and the
   // exception-event handler reads IsResumed() (which takes and releases power_lock_) before, not
   // while, it issues its admin UPIUs.
-  std::mutex power_lock_;
+  mutable std::mutex power_lock_;
   UfsPowerMode current_power_mode_ TA_GUARDED(power_lock_) = UfsPowerMode::kPowerDown;
   scsi::PowerCondition current_power_condition_ TA_GUARDED(power_lock_) =
       scsi::PowerCondition::kIdle;
@@ -271,6 +292,9 @@ class DeviceManager {
   // exception-event handler leaves the background-operation state to SuspendPower(). Keeping I/O
   // off the hardware does not depend on it; that is RequestProcessor::BlockSlotAllocation().
   bool suspend_in_progress_ TA_GUARDED(power_lock_) = false;
+  bool recovery_in_progress_ TA_GUARDED(power_lock_) = false;
+  bool system_suspended_ TA_GUARDED(power_lock_) = false;
+  std::condition_variable_any power_cv_;
   // Set once PowerDown has been downgraded to Sleep because of a power-on write-protected LU, so
   // the downgrade is only logged once.
   bool power_down_blocked_ = false;

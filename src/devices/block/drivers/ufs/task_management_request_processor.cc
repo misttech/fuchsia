@@ -40,11 +40,14 @@ zx::result<> TaskManagementRequestProcessor::Init() {
 }
 
 uint32_t TaskManagementRequestProcessor::ProcessCompletionOfIoRequests() {
-  if (disable_completion_.load(std::memory_order_acquire)) {
+  if (disable_completion_.load(std::memory_order_acquire) || controller_.IsHardwarePoweredOff()) {
     return 0;
   }
 
-  std::lock_guard<std::mutex> lock(slot_lock_);
+  std::scoped_lock lock(slot_lock_);
+  if (disable_completion_.load(std::memory_order_acquire) || controller_.IsHardwarePoweredOff()) {
+    return 0;
+  }
   uint32_t active_slots = 0;
   ForEachAllocatedSlotLocked([&](uint8_t slot_num, RequestSlot &request_slot) {
     if (request_slot.state == SlotState::kScheduled) {
@@ -109,7 +112,12 @@ zx::result<TaskManagementResponseUpiu> TaskManagementRequestProcessor::SendTaskM
   {
     std::lock_guard<std::mutex> lock(slot_lock_);
     RequestSlot &request_slot = slots_.GetSlot(slot_num);
-    ZX_DEBUG_ASSERT_MSG(request_slot.state == SlotState::kReserved, "Invalid slot state");
+    if (request_slot.state != SlotState::kReserved || slot_allocation_blocked_) {
+      if (request_slot.state != SlotState::kFree) {
+        std::ignore = ClearSlotLocked(request_slot);
+      }
+      return zx::error(ZX_ERR_BAD_STATE);
+    }
 
     if (zx::result<> result = FillDescriptorAndSendRequest(slot_num, request); result.is_error()) {
       fdf::error("Failed to send upiu: {}", result);

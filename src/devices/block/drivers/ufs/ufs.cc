@@ -19,7 +19,10 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <mutex>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 #include <safemath/safe_conversions.h>
@@ -223,6 +226,7 @@ void Ufs::ProcessIoSubmissions() {
       data_vmo = unmap_vmo.is_valid() ? unmap_vmo.borrow() : io_cmd.request.data_vmo();
     }
     const uint8_t lun = io_cmd.lun;
+    const uint32_t block_size = io_cmd.block_size;
     const auto inline_crypto = io_cmd.request.inline_crypto();
     const scsi::Opcode opcode = io_cmd.request.opcode();
     uint64_t io_bytes = static_cast<uint64_t>(io_cmd.request.transfer_length()) * io_cmd.block_size;
@@ -234,9 +238,26 @@ void Ufs::ProcessIoSubmissions() {
       io_bytes = static_cast<uint64_t>(betoh32(desc->blocks)) * io_cmd.block_size;
     }
 
-    auto cb = [this, req = std::move(io_cmd.request), vmo = std::move(unmap_vmo), opcode,
-               io_bytes](zx_status_t status) mutable {
+    auto cb = [this, lun, block_size, req = std::move(io_cmd.request), vmo = std::move(unmap_vmo),
+               opcode, io_bytes](zx_status_t status) mutable {
       vmo.reset();
+      if (status == ZX_ERR_CANCELED) {
+        // The slot gate closed between ReserveSlot() and the doorbell (see
+        // TransferRequestProcessor::SendRequestUsingSlot()): nothing reached the hardware, so the
+        // request is simply retried once the gate re-opens. Requests that were in flight when the
+        // controller was reset are failed with ZX_ERR_IO instead (RecoverLink()).
+        std::scoped_lock lock(lock_);
+        if (shutdown_) {
+          req.Complete(ZX_ERR_IO_NOT_PRESENT);
+          return;
+        }
+        pending_commands_.push_front(IoCommand{
+            .request = std::move(req),
+            .lun = lun,
+            .block_size = block_size,
+        });
+        return;
+      }
       if (status == ZX_OK) {
         // Note: completions are currently processed on a single thread. If this becomes
         // multithreaded, we should only use Add() rather than Set() here (and handle KiB
@@ -314,59 +335,129 @@ zx::result<> Ufs::Isr() {
 
   const fdf::MmioBuffer& mmio = mmio_.value();
   auto interrupt_status = InterruptStatusReg::Get().ReadFrom(&mmio);
+  bool trigger_link_recovery = false;
 
-  // TODO(https://fxbug.dev/42075643): implement error handlers
+  // Software hibernate commands poll UHES/UHXS with UHESE/UHXSE masked; only consume them here
+  // when their interrupt enable bit is set so software polling is not raced.
+  if (interrupt_status.uic_hibernate_enter_status() ||
+      interrupt_status.uic_hibernate_exit_status()) {
+    auto ie = InterruptEnableReg::Get().ReadFrom(&mmio);
+    const bool is_enter =
+        interrupt_status.uic_hibernate_enter_status() && ie.uic_hibernate_enter_status_enable();
+    const bool is_exit =
+        interrupt_status.uic_hibernate_exit_status() && ie.uic_hibernate_exit_status_enable();
+    if (is_enter || is_exit) {
+      auto upmcrs =
+          HostControllerStatusReg::Get().ReadFrom(&mmio).uic_power_mode_change_request_status();
+      InterruptStatusReg::Get()
+          .FromValue(0)
+          .set_uic_hibernate_enter_status(is_enter)
+          .set_uic_hibernate_exit_status(is_exit)
+          .WriteTo(&mmio);
+      if (upmcrs != HostControllerStatusReg::PowerModeStatus::kPowerOk &&
+          upmcrs != HostControllerStatusReg::PowerModeStatus::kPowerLocal &&
+          upmcrs != HostControllerStatusReg::PowerModeStatus::kPowerRemote) {
+        fdf::error("UFS: Auto Hibern8 {} failed - status: 0x{:08x}, upmcrs: 0x{:08x}",
+                   is_enter ? "Enter" : "Exit", interrupt_status.reg_value(),
+                   static_cast<uint32_t>(upmcrs));
+        properties_.auto_hibern8_error_count.Add(1);
+        trigger_link_recovery = true;
+      }
+    }
+  }
+
+  uint32_t uecpa_val = 0;
+  uint32_t uecdl_val = 0;
+  uint32_t uecn_val = 0;
+  uint32_t uect_val = 0;
+  uint32_t uecdme_val = 0;
   if (interrupt_status.uic_error()) {
     fdf::error("UFS: UIC error on ISR");
     InterruptStatusReg::Get().FromValue(0).set_uic_error(true).WriteTo(&mmio);
+    properties_.uic_error_count.Add(1);
 
-    // UECPA for Host UIC Error Code within PHY Adapter Layer.
-    if (HostUicErrorCodePhyAdapterLayerReg::Get().ReadFrom(&mmio).uic_phy_adapter_layer_error()) {
-      fdf::error("UECPA error code: 0x{:x}", HostUicErrorCodePhyAdapterLayerReg::Get()
-                                                 .ReadFrom(&mmio)
-                                                 .uic_phy_adapter_layer_error_code());
+    // Reading the UEC* registers clears them. Only a Data Link layer PA_INIT error forces a host
+    // controller reset here, matching Linux ufshcd: PHY adapter lane errors and non-PA_INIT Data
+    // Link errors (CRC, NAC, frame syntax) are recovered by UniPro replay, and Network, Transport
+    // and DME errors are left to the affected request to time out and be retried. A link that is
+    // actually gone also raises ULLS below.
+    auto uecpa = HostUicErrorCodePhyAdapterLayerReg::Get().ReadFrom(&mmio);
+    uecpa_val = uecpa.reg_value();
+    if (uecpa.uic_phy_adapter_layer_error()) {
+      fdf::error("UECPA error code: 0x{:x}", uecpa.uic_phy_adapter_layer_error_code());
     }
-    // UECDL for Host UIC Error Code within Data Link Layer.
-    if (HostUicErrorCodeDataLinkLayerReg::Get().ReadFrom(&mmio).uic_data_link_layer_error()) {
-      fdf::error(
-          "UECDL error code: 0x{:x}",
-          HostUicErrorCodeDataLinkLayerReg::Get().ReadFrom(&mmio).uic_data_link_layer_error_code());
+    auto uecdl = HostUicErrorCodeDataLinkLayerReg::Get().ReadFrom(&mmio);
+    uecdl_val = uecdl.reg_value();
+    if (uecdl.uic_data_link_layer_error()) {
+      fdf::error("UECDL error code: 0x{:x}", uecdl.uic_data_link_layer_error_code());
+      if (uecdl.uic_data_link_layer_error_code() & kUicDataLinkLayerErrorPaInit) {
+        trigger_link_recovery = true;
+      }
     }
-    // UECN for Host UIC Error Code within Network Layer.
-    if (HostUicErrorCodeNetworkLayerReg::Get().ReadFrom(&mmio).uic_network_layer_error()) {
-      fdf::error(
-          "UECN error code: 0x{:x}",
-          HostUicErrorCodeNetworkLayerReg::Get().ReadFrom(&mmio).uic_network_layer_error_code());
+    auto uecn = HostUicErrorCodeNetworkLayerReg::Get().ReadFrom(&mmio);
+    uecn_val = uecn.reg_value();
+    if (uecn.uic_network_layer_error()) {
+      fdf::error("UECN error code: 0x{:x}", uecn.uic_network_layer_error_code());
     }
-    // UECT for Host UIC Error Code within Transport Layer.
-    if (HostUicErrorCodeTransportLayerReg::Get().ReadFrom(&mmio).uic_transport_layer_error()) {
-      fdf::error("UECT error code: 0x{:x}", HostUicErrorCodeTransportLayerReg::Get()
-                                                .ReadFrom(&mmio)
-                                                .uic_transport_layer_error_code());
+    auto uect = HostUicErrorCodeTransportLayerReg::Get().ReadFrom(&mmio);
+    uect_val = uect.reg_value();
+    if (uect.uic_transport_layer_error()) {
+      fdf::error("UECT error code: 0x{:x}", uect.uic_transport_layer_error_code());
     }
-    // UECDME for Host UIC Error Code within DME subcomponent.
-    if (HostUicErrorCodeReg::Get().ReadFrom(&mmio).uic_dme_error()) {
-      fdf::error("UECDME error code: 0x{:x}",
-                 HostUicErrorCodeReg::Get().ReadFrom(&mmio).uic_dme_error_code());
+    auto uecdme = HostUicErrorCodeReg::Get().ReadFrom(&mmio);
+    uecdme_val = uecdme.reg_value();
+    if (uecdme.uic_dme_error()) {
+      fdf::error("UECDME error code: 0x{:x}", uecdme.uic_dme_error_code());
     }
+  }
+  if (interrupt_status.uic_link_lost_status()) {
+    fdf::error("UFS: UIC link lost on ISR");
+    InterruptStatusReg::Get().FromValue(0).set_uic_link_lost_status(true).WriteTo(&mmio);
+    trigger_link_recovery = true;
+  }
+  if (interrupt_status.utp_error_status()) {
+    fdf::error("UFS: UTP error on ISR");
+    InterruptStatusReg::Get().FromValue(0).set_utp_error_status(true).WriteTo(&mmio);
   }
   if (interrupt_status.device_fatal_error_status()) {
     fdf::error("UFS: Device fatal error on ISR");
     InterruptStatusReg::Get().FromValue(0).set_device_fatal_error_status(true).WriteTo(&mmio);
+    trigger_link_recovery = true;
   }
   if (interrupt_status.host_controller_fatal_error_status()) {
     fdf::error("UFS: Host controller fatal error on ISR");
     InterruptStatusReg::Get().FromValue(0).set_host_controller_fatal_error_status(true).WriteTo(
         &mmio);
+    trigger_link_recovery = true;
   }
   if (interrupt_status.system_bus_fatal_error_status()) {
     fdf::error("UFS: System bus fatal error on ISR");
     InterruptStatusReg::Get().FromValue(0).set_system_bus_fatal_error_status(true).WriteTo(&mmio);
+    trigger_link_recovery = true;
   }
   if (interrupt_status.crypto_engine_fatal_error_status()) {
     fdf::error("UFS: Crypto engine fatal error on ISR");
     InterruptStatusReg::Get().FromValue(0).set_crypto_engine_fatal_error_status(true).WriteTo(
         &mmio);
+    trigger_link_recovery = true;
+  }
+  if (trigger_link_recovery) {
+    if (!interrupt_status.uic_error()) {
+      uecpa_val = HostUicErrorCodePhyAdapterLayerReg::Get().ReadFrom(&mmio).reg_value();
+      uecdl_val = HostUicErrorCodeDataLinkLayerReg::Get().ReadFrom(&mmio).reg_value();
+      uecn_val = HostUicErrorCodeNetworkLayerReg::Get().ReadFrom(&mmio).reg_value();
+      uect_val = HostUicErrorCodeTransportLayerReg::Get().ReadFrom(&mmio).reg_value();
+      uecdme_val = HostUicErrorCodeReg::Get().ReadFrom(&mmio).reg_value();
+    }
+    auto hcs = HostControllerStatusReg::Get().ReadFrom(&mmio);
+    auto ahit = AutoHibernateIdleTimerReg::Get().ReadFrom(&mmio);
+    fdf::error(
+        "UFS error dump: HCS=0x{:08x} (UPMCRS=0x{:x}), IS=0x{:08x}, AHIT=0x{:08x}, "
+        "UECPA=0x{:08x}, UECDL=0x{:08x}, UECN=0x{:08x}, UECT=0x{:08x}, UECDME=0x{:08x}",
+        hcs.reg_value(), static_cast<uint32_t>(hcs.uic_power_mode_change_request_status()),
+        interrupt_status.reg_value(), ahit.reg_value(), uecpa_val, uecdl_val, uecn_val, uect_val,
+        uecdme_val);
+    ScheduleLinkRecovery();
   }
   // Handle command completion interrupts.
   if (interrupt_status.utp_transfer_request_completion_status()) {
@@ -446,11 +537,8 @@ void Ufs::ProcessIo() {
   // can complete even during power transitions.
   ProcessIoCompletions();
 
-  {
-    std::lock_guard<std::mutex> lock(lock_);
-    if (!device_manager_->IsResumed()) {
-      return;
-    }
+  if (!device_manager_->IsResumed()) {
+    return;
   }
 
   ProcessIoSubmissions();
@@ -491,8 +579,8 @@ void Ufs::SetHardwarePoweredOff(bool powered_off) {
       continue;
     }
     libsync::Completion barrier;
-    zx_status_t status =
-        async::PostTask(worker->async_dispatcher(), [&barrier]() { barrier.Signal(); });
+    zx_status_t status = async::PostTask(
+        worker->async_dispatcher(), [on_destroy = fit::defer([&barrier] { barrier.Signal(); })] {});
     if (status == ZX_OK) {
       barrier.Wait();
     } else {
@@ -510,17 +598,24 @@ zx_status_t Ufs::StopHostControllerForPowerDown() {
   // IsHardwarePoweredOff() check (see uic_lock()).
   std::lock_guard<std::mutex> lock(uic_lock_);
 
-  // Mask interrupts and disable the host controller before powering down the PHY and clocks
-  // (matching ufshcd_hba_stop in Linux ufshcd) so that link-loss events during PHY power-down do
-  // not trigger interrupt handling while UFSHCI clocks/power domains are off.
-  InterruptEnableReg::Get().FromValue(0).WriteTo(&GetMmio());
-  zx_status_t status = DisableHostController();
-  if (status != ZX_OK) {
-    fdf::error("Failed to disable host controller before PowerDown: {}",
-               zx_status_get_string(status));
+  zx_status_t status = ZX_OK;
+  {
+    // Also hold ah8_lock_ so that an Auto-Hibern8 enable/disable that passed its own
+    // IsHardwarePoweredOff() check cannot write IE/AHIT between the IE = 0 below and the flag.
+    std::scoped_lock ah8_lock(ah8_lock_);
+    // Disable interrupt generation before powering down the PHY so link-loss events during
+    // power-down do not trigger spurious link recovery.
+    InterruptEnableReg::Get().FromValue(0).WriteTo(&GetMmio());
+    status = DisableHostController();
+    if (status != ZX_OK) {
+      fdf::error("Failed to disable host controller before PowerDown: {}",
+                 zx_status_get_string(status));
+    }
+    hardware_powered_off_.store(true, std::memory_order_release);
   }
   // From here on the ISR / I/O paths must not touch UFSHCI registers: the PHY driver is about to
-  // gate the UFSHCI power domains and clocks.
+  // gate the UFSHCI power domains and clocks. (Drains the IRQ and admin workers; done outside
+  // ah8_lock_.)
   SetHardwarePoweredOff(true);
   return status;
 }
@@ -531,6 +626,14 @@ void Ufs::ExecuteCommandsAsync(uint8_t target, uint16_t lun, std::span<scsi::Scs
     if (shutdown_) {
       for (auto& req : batch) {
         req.Complete(ZX_ERR_IO_NOT_PRESENT);
+      }
+      return;
+    }
+    if (link_failed_.load(std::memory_order_acquire)) {
+      // RecoverLink() gave up and the controller is stopped; ProcessIo() will not run these until
+      // the next resume re-initializes the link, so fail them now rather than queue them forever.
+      for (auto& req : batch) {
+        req.Complete(ZX_ERR_IO);
       }
       return;
     }
@@ -817,6 +920,7 @@ zx_status_t Ufs::Init() {
     }
   }
 
+  link_recovery_enabled_.store(true, std::memory_order_release);
   fdf::info("Bind Success");
 
   return ZX_OK;
@@ -945,7 +1049,7 @@ zx::result<> Ufs::InitController() {
   {
     auto ee_dispatcher = fdf::SynchronizedDispatcher::Create(
         fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "ufs-exception-event-worker",
-        [this](fdf_dispatcher_t*) { OnDispatcherShutdown(); });
+        [this](fdf_dispatcher_t*) { OnExceptionDispatcherShutdown(); });
     if (ee_dispatcher.is_error()) {
       fdf::error("Failed to create Exception Event dispatcher: {}",
                  zx_status_get_string(ee_dispatcher.status_value()));
@@ -1057,6 +1161,9 @@ zx::result<> Ufs::InitDeviceInterface(inspect::Node& controller_node) {
   properties_.power_suspended = inspect_node_.CreateBool("power_suspended", false);
   properties_.suspend_failures = inspect_node_.CreateUint("suspend_failures", 0);
   properties_.resume_failures = inspect_node_.CreateUint("resume_failures", 0);
+  properties_.auto_hibern8_error_count = inspect_node_.CreateUint("auto_hibern8_error_count", 0);
+  properties_.uic_error_count = inspect_node_.CreateUint("uic_error_count", 0);
+  properties_.link_recovery_count = inspect_node_.CreateUint("link_recovery_count", 0);
 
   zx::result<uint32_t> result = device_manager_->GetBootLunEnabled();
   if (result.is_error()) {
@@ -1098,9 +1205,31 @@ zx::result<> Ufs::ConfigureAutoHibernate() {
   }
 
   auto ahit_reg = AutoHibernateIdleTimerReg::FromTimeoutUs(config_.auto_hibernate_timer_us());
-  ahit_reg.WriteTo(&mmio);
-  fdf::info("UFS Auto-Hibernate enabled (scale: {}, value: {})",
-            static_cast<uint32_t>(ahit_reg.timer_scale()), ahit_reg.timer_value());
+  bool log_info = false;
+  {
+    std::scoped_lock lock(ah8_lock_);
+    saved_ahit_reg_ = ahit_reg.reg_value();
+    ah8_enabled_ = true;
+    if (!ah8_logged_) {
+      ah8_logged_ = true;
+      log_info = true;
+    }
+    if (ah8_disable_depth_ == 0 && !IsHardwarePoweredOff()) {
+      ahit_reg.WriteTo(&mmio);
+      InterruptEnableReg::Get()
+          .ReadFrom(&mmio)
+          .set_uic_hibernate_enter_status_enable(true)
+          .set_uic_hibernate_exit_status_enable(true)
+          .WriteTo(&mmio);
+    }
+  }
+  if (log_info) {
+    fdf::info("UFS Auto-Hibernate enabled (scale: {}, value: {})",
+              std::to_underlying(ahit_reg.timer_scale()), ahit_reg.timer_value());
+  } else {
+    fdf::debug("UFS Auto-Hibernate enabled (scale: {}, value: {})",
+               std::to_underlying(ahit_reg.timer_scale()), ahit_reg.timer_value());
+  }
   return zx::ok();
 }
 
@@ -1112,11 +1241,30 @@ zx::result<> Ufs::DisableAutoHibernate() {
   if (!CapabilityReg::Get().ReadFrom(&mmio).auto_hibernation_support()) {
     return zx::ok();
   }
-  AutoHibernateIdleTimerReg::Get().FromValue(0).WriteTo(&mmio);
+  std::scoped_lock lock(ah8_lock_);
+  ah8_enabled_ = false;
+  if (!IsHardwarePoweredOff()) {
+    InterruptEnableReg::Get()
+        .ReadFrom(&mmio)
+        .set_uic_hibernate_enter_status_enable(false)
+        .set_uic_hibernate_exit_status_enable(false)
+        .WriteTo(&mmio);
+    AutoHibernateIdleTimerReg::Get().FromValue(0).WriteTo(&mmio);
+    InterruptStatusReg::Get()
+        .FromValue(0)
+        .set_uic_hibernate_enter_status(true)
+        .set_uic_hibernate_exit_status(true)
+        .WriteTo(&mmio);
+  }
   return zx::ok();
 }
 
 zx::result<> Ufs::ReinitAfterPowerDown() {
+  {
+    std::scoped_lock lock(ah8_lock_);
+    ah8_enabled_ = false;
+    saved_ahit_reg_ = 0;
+  }
   const fdf::MmioBuffer& mmio = mmio_.value();
   InterruptEnableReg::Get().FromValue(0).WriteTo(&mmio);
 
@@ -1124,7 +1272,11 @@ zx::result<> Ufs::ReinitAfterPowerDown() {
     return result.take_error();
   }
   if (HostControllerEnableReg::Get().ReadFrom(&mmio).host_controller_enable()) {
-    DisableHostController();
+    if (zx_status_t status = DisableHostController(); status != ZX_OK) {
+      fdf::error("Failed to disable host controller before re-init: {}",
+                 zx_status_get_string(status));
+      return zx::error(status);
+    }
   }
   if (zx_status_t status = EnableHostController(); status != ZX_OK) {
     fdf::error("Failed to re-enable host controller: {}", zx_status_get_string(status));
@@ -1211,6 +1363,7 @@ zx::result<> Ufs::ReinitAfterPowerDown() {
     return result.take_error();
   }
 
+  link_failed_.store(false, std::memory_order_release);
   return zx::ok();
 }
 
@@ -1391,6 +1544,9 @@ zx::result<uint32_t> Ufs::AddLogicalUnits() {
 }
 
 void Ufs::DumpRegisters() {
+  if (IsHardwarePoweredOff() || !mmio_.has_value()) {
+    return;
+  }
   const fdf::MmioBuffer& mmio = mmio_.value();
   CapabilityReg::Get().ReadFrom(&mmio).Print(
       [](const char* arg) { fdf::debug("CapabilityReg::{}", arg); });
@@ -1437,6 +1593,275 @@ void Ufs::DumpRegisters() {
       [](const char* arg) { fdf::debug("UicCommandArgument2Reg::{}", arg); });
   UicCommandArgument3Reg::Get().ReadFrom(&mmio).Print(
       [](const char* arg) { fdf::debug("UicCommandArgument3Reg::{}", arg); });
+}
+
+void Ufs::DumpErrorRegisters() {
+  if (IsHardwarePoweredOff() || !mmio_.has_value()) {
+    return;
+  }
+  const fdf::MmioBuffer& mmio = mmio_.value();
+  auto hcs = HostControllerStatusReg::Get().ReadFrom(&mmio);
+  auto is = InterruptStatusReg::Get().ReadFrom(&mmio);
+  auto ahit = AutoHibernateIdleTimerReg::Get().ReadFrom(&mmio);
+  auto uecpa = HostUicErrorCodePhyAdapterLayerReg::Get().ReadFrom(&mmio);
+  auto uecdl = HostUicErrorCodeDataLinkLayerReg::Get().ReadFrom(&mmio);
+  auto uecn = HostUicErrorCodeNetworkLayerReg::Get().ReadFrom(&mmio);
+  auto uect = HostUicErrorCodeTransportLayerReg::Get().ReadFrom(&mmio);
+  auto uecdme = HostUicErrorCodeReg::Get().ReadFrom(&mmio);
+  fdf::error(
+      "UFS error dump: HCS=0x{:08x} (UPMCRS=0x{:x}), IS=0x{:08x}, AHIT=0x{:08x}, "
+      "UECPA=0x{:08x}, UECDL=0x{:08x}, UECN=0x{:08x}, UECT=0x{:08x}, UECDME=0x{:08x}",
+      hcs.reg_value(), static_cast<uint32_t>(hcs.uic_power_mode_change_request_status()),
+      is.reg_value(), ahit.reg_value(), uecpa.reg_value(), uecdl.reg_value(), uecn.reg_value(),
+      uect.reg_value(), uecdme.reg_value());
+}
+
+void Ufs::AcquireAutoHibernateDisable() {
+  bool link_parked = false;
+  {
+    std::scoped_lock lock(ah8_lock_);
+    if (ah8_disable_depth_++ == 0 && ah8_enabled_ && !IsHardwarePoweredOff() && mmio_.has_value()) {
+      const fdf::MmioBuffer& mmio = mmio_.value();
+      InterruptEnableReg::Get()
+          .ReadFrom(&mmio)
+          .set_uic_hibernate_enter_status_enable(false)
+          .set_uic_hibernate_exit_status_enable(false)
+          .WriteTo(&mmio);
+      AutoHibernateIdleTimerReg::Get().FromValue(0).WriteTo(&mmio);
+      // AHIT = 0 only stops future Auto-Hibern8 entries. If the link is already parked in (or
+      // entering) Hibern8 the controller reports DP = 0 / UTRLRDY = 0 in HCS until something wakes
+      // it; make sure that happens before the caller's link management access rather than during
+      // it.
+      auto hcs = HostControllerStatusReg::Get().ReadFrom(&mmio);
+      link_parked = !hcs.device_present() || !hcs.utp_transfer_request_list_ready();
+    }
+  }
+  if (link_parked) {
+    ExitAutoHibernate();
+  }
+}
+
+void Ufs::ExitAutoHibernate() {
+  // Issued outside ah8_lock_: SendCommand() nests its own ScopedAutoHibernateDisable (a no-op at
+  // depth > 0) and takes uic_lock(). UHES/UHXS interrupts are masked by the outermost acquire, so
+  // the command can poll IS.UHXS without racing the ISR.
+  DmeHibernateExitCommand dme_hibernate_exit_command(*this);
+  if (auto result = dme_hibernate_exit_command.SendCommand(); result.is_error()) {
+    fdf::error("Failed to exit Auto-Hibern8 before link management access: {}", result);
+    properties_.auto_hibern8_error_count.Add(1);
+    ScheduleLinkRecovery();
+    return;
+  }
+  if (!mmio_.has_value()) {
+    return;
+  }
+  const fdf::MmioBuffer& mmio = *mmio_;
+  auto wait_for = [&] {
+    auto hcs = HostControllerStatusReg::Get().ReadFrom(&mmio);
+    return hcs.device_present() && hcs.utp_transfer_request_list_ready();
+  };
+  fbl::String timeout_message = "Timeout waiting for the link to leave Auto-Hibern8";
+  if (zx_status_t status =
+          WaitWithTimeout(wait_for, zx::usec(kAutoHibernateExitTimeoutUs), timeout_message);
+      status != ZX_OK) {
+    properties_.auto_hibern8_error_count.Add(1);
+    ScheduleLinkRecovery();
+  }
+}
+
+void Ufs::ReleaseAutoHibernateDisable() {
+  {
+    std::scoped_lock lock(ah8_lock_);
+    ZX_DEBUG_ASSERT(ah8_disable_depth_ > 0);
+    const bool restore_ah8 = (--ah8_disable_depth_ == 0);
+    if (restore_ah8 && ah8_enabled_ && !IsHardwarePoweredOff() && mmio_.has_value()) {
+      const fdf::MmioBuffer& mmio = *mmio_;
+      InterruptStatusReg::Get()
+          .FromValue(0)
+          .set_uic_hibernate_enter_status(true)
+          .set_uic_hibernate_exit_status(true)
+          .WriteTo(&mmio);
+      AutoHibernateIdleTimerReg::Get().FromValue(saved_ahit_reg_).WriteTo(&mmio);
+      InterruptEnableReg::Get()
+          .ReadFrom(&mmio)
+          .set_uic_hibernate_enter_status_enable(true)
+          .set_uic_hibernate_exit_status_enable(true)
+          .WriteTo(&mmio);
+    }
+  }
+}
+
+void Ufs::ScheduleLinkRecovery() {
+  // Errors raised before Init() has finished (or during teardown) are handled by the init / stop
+  // paths themselves; running RecoverLink() underneath them would reset the controller while they
+  // still use it.
+  if (stopping_ || !link_recovery_enabled_.load(std::memory_order_acquire) ||
+      !exception_event_dispatcher_.get()) {
+    return;
+  }
+  {
+    std::scoped_lock lock(link_recovery_lock_);
+    if (link_recoveries_scheduled_ != link_recoveries_finished_) {
+      // A recovery is already posted or running; it resets the controller from scratch, so a
+      // second trigger adds nothing.
+      return;
+    }
+    ++link_recoveries_scheduled_;
+  }
+  // |done| bumps |link_recoveries_finished_| when the task finishes, if the dispatcher drops it
+  // during shutdown, or if PostTask() rejects it synchronously (with link_recovery_lock_ already
+  // released so the cleanup does not re-enter the lock).
+  if (zx_status_t status = async::PostTask(
+          exception_event_dispatcher_.async_dispatcher(),
+          [this, done = fit::defer([this] { MarkLinkRecoveryFinished(); })] { RecoverLink(); });
+      status != ZX_OK) {
+    fdf::error("Failed to schedule link recovery: {}", zx_status_get_string(status));
+  }
+}
+
+void Ufs::MarkLinkRecoveryFinished() {
+  std::scoped_lock lock(link_recovery_lock_);
+  ++link_recoveries_finished_;
+  link_recovery_cv_.notify_all();
+}
+
+zx_status_t Ufs::WaitForLinkRecovery(zx::duration timeout) {
+  ZX_DEBUG_ASSERT(!IsOnExceptionEventDispatcher());
+  // condition_variable_any so that the wait can take the mutex itself and this function keeps a
+  // plain scoped_lock (which the thread-safety analysis understands).
+  std::scoped_lock lock(link_recovery_lock_);
+  const uint64_t target = link_recoveries_scheduled_;
+  const bool finished = link_recovery_cv_.wait_for(
+      link_recovery_lock_, std::chrono::nanoseconds(timeout.to_nsecs()),
+      [&] TA_REQ(link_recovery_lock_) { return link_recoveries_finished_ >= target; });
+  return finished ? ZX_OK : ZX_ERR_TIMED_OUT;
+}
+
+void Ufs::RecoverLink() {
+  if (stopping_ || !device_manager_ || !device_manager_->BeginLinkRecovery()) {
+    return;
+  }
+
+  fdf::warn("UFS: Starting host controller and link recovery");
+  transfer_request_processor_->SetSlotAllocationBlocked(true);
+  task_management_request_processor_->SetSlotAllocationBlocked(true);
+  task_management_request_processor_->DisableCompletion();
+
+  {
+    std::scoped_lock ah8_lock(ah8_lock_);
+    ah8_enabled_ = false;
+  }
+  {
+    // Take admin_slot_lock_ before disabling transfer completions: SendRequestUpiu() holds it for
+    // the whole of an in-flight admin UPIU, which must still be able to complete (or time out)
+    // normally rather than stall here until its deadline with every completion masked.
+    std::scoped_lock admin_lock(transfer_request_processor_->admin_slot_lock());
+    transfer_request_processor_->DisableCompletion();
+    const bool hce_cleared = StopHostControllerForRecovery() == ZX_OK;
+    if (io_worker_dispatcher_.get()) {
+      libsync::Completion io_barrier;
+      if (async::PostTask(io_worker_dispatcher_.async_dispatcher(),
+                          [on_destroy = fit::defer([&io_barrier] { io_barrier.Signal(); })] {}) ==
+          ZX_OK) {
+        io_barrier.Wait();
+      }
+    }
+
+    // The device state after the reset is unknown, so in-flight block I/O fails with ZX_ERR_IO
+    // rather than being replayed. If HCE did not clear the controller may still DMA into the
+    // in-flight buffers: close their PMT handles without unpinning so that the BTI quarantines
+    // those pages instead of handing them back out.
+    task_management_request_processor_->AbortInflightRequests(ZX_ERR_IO_REFUSED,
+                                                              /*unpin=*/hce_cleared);
+    transfer_request_processor_->AbortInflightRequests(ZX_ERR_IO, /*unpin=*/hce_cleared);
+    task_management_request_processor_->EnableCompletion();
+    transfer_request_processor_->EnableCompletion();
+  }
+
+  zx::result<> recovery_result = zx::error(ZX_ERR_INTERNAL);
+  for (int attempt = 1; attempt <= kMaxPowerDownResumeAttempts; ++attempt) {
+    if (stopping_) {
+      break;
+    }
+    SetHardwarePoweredOff(false);
+    recovery_result = ReinitAfterPowerDown();
+    if (recovery_result.is_ok()) {
+      recovery_result = device_manager_->FinishLinkRecovery();
+    }
+    if (recovery_result.is_ok()) {
+      break;
+    }
+    fdf::error("UFS link recovery attempt {}/{} failed: {}", attempt, kMaxPowerDownResumeAttempts,
+               recovery_result);
+    // TODO(https://fxbug.dev/568465123): Until the inline encryption provider can restore the key
+    // slots that HCE = 0 cleared, RestoreCryptoState() fails deterministically while keys are
+    // programmed (see https://fxbug.dev/527952709); retrying only power-cycles the PHY again.
+    if (recovery_result.status_value() == ZX_ERR_NOT_SUPPORTED && HasProgrammedCryptoKeys()) {
+      break;
+    }
+  }
+
+  if (recovery_result.is_error()) {
+    // Leave the controller in the same state as a PowerDown suspend: interrupts masked, HCE = 0,
+    // registers marked off limits and the PHY powered down, so that a late interrupt cannot spin
+    // on an IS bit the ISR will not clear and the next "on" from Power Broker takes the
+    // ReinitAfterPowerDown() path (ResumePower() from PowerDown), which retries the recovery.
+    // (Nothing is pinned at this point, so the disable status does not matter here.)
+    std::ignore = StopHostControllerForRecovery();
+    if (zx::result<> result = Notify(NotifyEvent::kPostSuspend, 0); result.is_error()) {
+      fdf::error("PHY power-down after failed link recovery failed: {}", result);
+    }
+    link_failed_.store(true, std::memory_order_release);
+    device_manager_->SetCurrentPowerMode(UfsPowerMode::kPowerDown);
+  }
+  device_manager_->SetRecoveryInProgress(false);
+  task_management_request_processor_->SetSlotAllocationBlocked(false);
+  transfer_request_processor_->SetSlotAllocationBlocked(false);
+
+  if (recovery_result.is_ok()) {
+    properties_.link_recovery_count.Add(1);
+    fdf::info("UFS: Host controller and link recovery succeeded");
+    TriggerIoWork();
+  } else {
+    fdf::error("UFS: Host controller and link recovery failed after {} attempts: {}",
+               kMaxPowerDownResumeAttempts, recovery_result);
+    // Requests parked by the closed slot gate or that arrived during the recovery cannot be
+    // served; ExecuteCommandsAsync() fails anything newer while link_failed_ is set.
+    FailPendingCommands(ZX_ERR_IO);
+  }
+}
+
+zx_status_t Ufs::StopHostControllerForRecovery() {
+  zx_status_t status = ZX_ERR_BAD_STATE;
+  {
+    // Same ordering as StopHostControllerForPowerDown(): uic_lock_ keeps UIC commands and key-slot
+    // writes out, ah8_lock_ keeps Auto-Hibern8 register updates out, then the flag is published.
+    std::scoped_lock uic_lock(uic_lock_);
+    {
+      std::scoped_lock ah8_lock(ah8_lock_);
+      if (!IsHardwarePoweredOff() && mmio_.has_value()) {
+        InterruptEnableReg::Get().FromValue(0).WriteTo(&GetMmio());
+        if (status = DisableHostController(); status != ZX_OK) {
+          fdf::error("Failed to disable host controller for link recovery: {}",
+                     zx_status_get_string(status));
+        }
+      }
+      hardware_powered_off_.store(true, std::memory_order_release);
+    }
+  }
+  SetHardwarePoweredOff(true);
+  return status;
+}
+
+void Ufs::FailPendingCommands(zx_status_t status) {
+  std::deque<IoCommand> failed_commands;
+  {
+    std::scoped_lock lock(lock_);
+    failed_commands = std::move(pending_commands_);
+  }
+  for (auto& cmd : failed_commands) {
+    cmd.request.Complete(status);
+  }
 }
 
 zx_status_t Ufs::EnableHostController() {
@@ -1801,13 +2226,15 @@ zx::result<> Ufs::RestoreCryptoState() {
     return zx::ok();
   }
 
-  // TODO(https://fxbug.dev/568465123): CRYPTOCFG has been rewritten above, but the key material in
-  // the host controller's key table is also lost across PowerDown and must be re-pushed by the
-  // inline encryption provider (e.g. GSA KDN RESTORE_KEYS on Iris) before encrypted I/O can be
-  // resumed. Until that is plumbed through fuchsia.hardware.inlineencryption, fail resume rather
-  // than let encrypted I/O silently proceed with an empty key table. DeviceManager::SuspendPower()
-  // falls back to Sleep when keys are programmed, so this is not reachable in practice.
-  fdf::error("Cannot restore {} inline encryption key(s) after PowerDown suspend", restored_slots);
+  // TODO(https://fxbug.dev/568465123): CRYPTOCFG has been rewritten above, but HCE = 0 also clears
+  // the key material in the host controller's key table, and that must be re-pushed by the
+  // platform inline encryption provider (the driver never holds the keys) before encrypted I/O
+  // can resume. Until a provider-side key restore is plumbed through the PHY protocol (part of
+  // https://fxbug.dev/527952709), fail the resume or link recovery rather than let encrypted I/O
+  // silently proceed with an empty key table. DeviceManager::SuspendPower() falls back to Sleep
+  // when keys are programmed, so only link recovery can reach this today.
+  fdf::error("Cannot restore {} inline encryption key(s) after a host controller reset",
+             restored_slots);
   return zx::error(ZX_ERR_NOT_SUPPORTED);
 }
 
@@ -1826,6 +2253,14 @@ zx::result<std::vector<uint8_t>> Ufs::DeriveRawSecret(fidl::VectorView<uint8_t> 
   return zx::ok(std::vector<uint8_t>(secret.begin(), secret.end()));
 }
 
+void Ufs::OnExceptionDispatcherShutdown() {
+  // Hop back to the driver dispatcher: StopResources() blocks on the UFSHCI server shutdown and on
+  // synchronous PHY calls, which must not run from inside a dispatcher shutdown observer.
+  if (async::PostTask(dispatcher(), [this] { FinishStopWorkers(); }) != ZX_OK) {
+    FinishStopWorkers();
+  }
+}
+
 void Ufs::OnDispatcherShutdown() {
   std::optional<fdf::StopCompleter> completer;
   {
@@ -1841,9 +2276,18 @@ void Ufs::OnDispatcherShutdown() {
   }
 }
 
-void Ufs::FinishStop(fdf::StopCompleter completer) {
+void Ufs::FinishStopWorkers() {
   if (zx_status_t status = StopResources(); status != ZX_OK) {
-    completer(zx::error(status));
+    std::optional<fdf::StopCompleter> completer;
+    {
+      std::scoped_lock lock(lock_);
+      if (auto old = std::exchange(stop_completer_, std::nullopt); old.has_value()) {
+        completer.emplace(std::move(*old));
+      }
+    }
+    if (completer.has_value()) {
+      (*completer)(zx::error(status));
+    }
     return;
   }
 
@@ -1852,8 +2296,6 @@ void Ufs::FinishStop(fdf::StopCompleter completer) {
   }
 
   uint32_t dispatchers_to_shutdown = 0;
-  if (exception_event_dispatcher_.get())
-    dispatchers_to_shutdown++;
   if (irq_worker_dispatcher_.get())
     dispatchers_to_shutdown++;
   if (io_worker_dispatcher_.get())
@@ -1862,19 +2304,24 @@ void Ufs::FinishStop(fdf::StopCompleter completer) {
     dispatchers_to_shutdown++;
 
   if (dispatchers_to_shutdown == 0) {
-    completer(zx::ok());
+    std::optional<fdf::StopCompleter> completer;
+    {
+      std::scoped_lock lock(lock_);
+      if (auto old = std::exchange(stop_completer_, std::nullopt); old.has_value()) {
+        completer.emplace(std::move(*old));
+      }
+    }
+    if (completer.has_value()) {
+      (*completer)(zx::ok());
+    }
     return;
   }
 
   {
     std::lock_guard<std::mutex> lock(lock_);
-    stop_completer_.emplace(std::move(completer));
     pending_dispatcher_shutdowns_ = dispatchers_to_shutdown;
   }
 
-  if (exception_event_dispatcher_.get()) {
-    exception_event_dispatcher_.ShutdownAsync();
-  }
   if (irq_worker_dispatcher_.get()) {
     irq_worker_dispatcher_.ShutdownAsync();
   }
@@ -1884,6 +2331,21 @@ void Ufs::FinishStop(fdf::StopCompleter completer) {
   if (admin_worker_dispatcher_.get()) {
     admin_worker_dispatcher_.ShutdownAsync();
   }
+}
+
+void Ufs::FinishStop(fdf::StopCompleter completer) {
+  {
+    std::scoped_lock lock(lock_);
+    stop_completer_.emplace(std::move(completer));
+  }
+  // Shut down exception_event_dispatcher_ first so any in-progress RecoverLink() or runtime timer
+  // task finishes before StopResources() and irq_.destroy() tear down the IRQ and worker
+  // dispatchers that RecoverLink() depends on.
+  if (exception_event_dispatcher_.get()) {
+    exception_event_dispatcher_.ShutdownAsync();
+    return;
+  }
+  FinishStopWorkers();
 }
 
 void Ufs::Stop(fdf::StopCompleter completer) {

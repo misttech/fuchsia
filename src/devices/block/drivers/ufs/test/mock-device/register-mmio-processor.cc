@@ -58,6 +58,11 @@ void RegisterMmioProcessor::DefaultHCEHandler(UfsMockDevice& mock_device, uint32
   } else if ((!new_value.host_controller_enable() && prev_value.host_controller_enable())) {
     prev_value.set_host_controller_enable(false).WriteTo(mock_device.GetRegisters());
     HostControllerStatusReg::Get().FromValue(0).WriteTo(mock_device.GetRegisters());
+    UtrListDoorBellReg::Get().FromValue(0).WriteTo(mock_device.GetRegisters());
+    UtrListCompletionNotificationReg::Get().FromValue(0).WriteTo(mock_device.GetRegisters());
+    UtrListRunStopReg::Get().FromValue(0).WriteTo(mock_device.GetRegisters());
+    UtmrListDoorBellReg::Get().FromValue(0).WriteTo(mock_device.GetRegisters());
+    UtmrListRunStopReg::Get().FromValue(0).WriteTo(mock_device.GetRegisters());
   }
 }
 

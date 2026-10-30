@@ -8,6 +8,7 @@
 #include <lib/zx/result.h>
 #include <zircon/types.h>
 
+#include <cstdint>
 #include <optional>
 
 namespace ufs {
@@ -55,7 +56,7 @@ constexpr uint16_t DL_AFC0ReqTimeOutVal_Default = 32767;
 
 constexpr uint32_t kUicTimeoutUsec = 5000000;
 
-enum class UicCommandOpcode {
+enum class UicCommandOpcode : uint8_t {
   // Configuration
   kDmeGet = 0x01,
   kDmeSet = 0x02,
@@ -193,6 +194,7 @@ class DmeHibernateCommand : public UicCommand {
   explicit DmeHibernateCommand(Ufs &ufs, UicCommandOpcode opcode) : UicCommand(ufs, opcode) {}
 
  protected:
+  zx::result<> UicPreProcess() override;
   zx::result<> UicPostProcess() override;
   virtual uint32_t GetFlag() = 0;
 };

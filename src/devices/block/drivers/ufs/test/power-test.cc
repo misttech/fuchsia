@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/fake-bti/bti.h>
 #include <lib/fit/defer.h>
 #include <lib/fpromise/single_threaded_executor.h>
 
@@ -12,6 +13,38 @@
 
 namespace ufs {
 using namespace ufs_mock_device;
+
+namespace {
+
+// Reads the uint property |name| from the driver's "ufs" inspect node.
+uint64_t ReadUfsInspectUint(Ufs& ufs, const char* name) {
+  fpromise::result<inspect::Hierarchy> hierarchy =
+      fpromise::run_single_threaded(inspect::ReadFromInspector(ufs.inspect()));
+  if (hierarchy.is_error()) {
+    ADD_FAILURE() << "Failed to read inspect";
+    return 0;
+  }
+  const auto* node = hierarchy.value().GetByPath({"ufs"});
+  if (node == nullptr) {
+    ADD_FAILURE() << "No ufs inspect node";
+    return 0;
+  }
+  const auto* property = node->node().get_property<inspect::UintPropertyValue>(name);
+  if (property == nullptr) {
+    ADD_FAILURE() << "No inspect property " << name;
+    return 0;
+  }
+  return property->value();
+}
+
+// Number of VMOs currently pinned on the mock device's fake BTI. A PMT handle that is closed
+// without zx_pmt_unpin() keeps its VMO in this list, the fake-bti analogue of BTI quarantine.
+size_t CountPinnedVmos(UfsMockDevice& mock_device) {
+  zx::bti bti = mock_device.GetFakeBti();
+  size_t count = 0;
+  EXPECT_OK(fake_bti_get_pinned_vmos(bti.get(), nullptr, 0, &count));
+  return count;
+}
 
 class PowerTest : public UfsTest {
  public:
@@ -47,6 +80,150 @@ class PowerTest : public UfsTest {
     SetPowerLevelSync(Ufs::kPowerLevelOn);
     ASSERT_TRUE(dut_->IsResumed());
     SetPowerLevelSync(Ufs::kPowerLevelOff);
+  }
+
+  // Issues one block READ whose doorbell write is intercepted to raise a fatal Auto-Hibern8 exit
+  // status instead of completing it, so that the request is still in flight when RecoverLink()
+  // resets the controller. The in-flight request must fail with ZX_ERR_IO (the device state after
+  // the reset is unknown) and a new request must succeed once the link is back. With |hce_stuck|
+  // the mock ignores the HCE = 0 write issued by the recovery, i.e. the controller could not be
+  // stopped and may still DMA into the in-flight buffer: its PMT must then be left quarantined
+  // (not unpinned) rather than handed back to the allocator.
+  void RunInflightIoThroughLinkRecovery(bool hce_stuck) {
+    if (hce_stuck) {
+      // The stuck-HCE scenario ends with a Power Broker off/on cycle; fdf_power::Suspendable only
+      // acts on "off" once it has seen the first "on" (see VerifyInitialOffIgnoredAndSuspend()).
+      SetPowerLevelSync(Ufs::kPowerLevelOn);
+      ASSERT_TRUE(dut_->IsResumed());
+    }
+    scsi::BlockDevice* block_device = nullptr;
+    while (true) {
+      {
+        std::scoped_lock lock(dut_->lock());
+        if (!dut_->block_devs().empty() && dut_->block_devs().contains(0) &&
+            !dut_->block_devs().at(0).empty()) {
+          block_device = dut_->block_devs().at(0).at(0).get();
+          break;
+        }
+      }
+      zx::nanosleep(zx::deadline_after(zx::msec(1)));
+    }
+
+    std::unique_ptr<block_client::RemoteBlockDevice> client;
+    EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync([&] {
+      auto client_end = driver_test().Connect<fuchsia_hardware_block_volume::Service::Volume>(
+          block_device->DeviceName().c_str());
+      ASSERT_OK(client_end);
+      auto remote_device_result =
+          block_client::RemoteBlockDevice::Create(std::move(client_end.value()));
+      ASSERT_OK(remote_device_result);
+      client = std::move(remote_device_result.value());
+    }));
+
+    // Two blocks: the retry below reads from the second one so that its pin does not alias the
+    // (possibly quarantined) pin of the first in the fake BTI, which keys pins by VMO and offset.
+    zx::vmo vmo;
+    ASSERT_OK(zx::vmo::create(2 * ufs_mock_device::kMockBlockSize, 0, &vmo));
+    storage::Vmoid owned_vmoid;
+    EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync(
+        [&] { ASSERT_OK(client->BlockAttachVmo(vmo, &owned_vmoid)); }));
+    auto cleanup = fit::defer([&] {
+      EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync(
+          [&] { ASSERT_OK(client->BlockDetachVmo(std::move(owned_vmoid))); }));
+      mock_device_.GetRegisterMmioProcessor().Reset();
+    });
+
+    // Intercept the first UTRLDBR write for an I/O slot to simulate an AH8 exit fatal error before
+    // the transfer completes, then restore normal UTRLDBR handling for the post-recovery request.
+    std::atomic<bool> inject_ah8_error{true};
+    mock_device_.GetRegisterMmioProcessor().SetHook(
+        RegisterMap::kUTRLDBR, [&](UfsMockDevice& mock_device, uint32_t value) {
+          // Only intercept non-admin I/O slots (slot 0..30) on the first attempt.
+          if ((value & ~(1u << 31u)) != 0 && inject_ah8_error.exchange(false)) {
+            mock_device.GetRegisters()->Write<uint32_t>(value, RegisterMap::kUTRLDBR);
+            HostControllerStatusReg::Get()
+                .ReadFrom(mock_device.GetRegisters())
+                .set_uic_power_mode_change_request_status(
+                    HostControllerStatusReg::PowerModeStatus::kPowerFatalError)
+                .WriteTo(mock_device.GetRegisters());
+            InterruptStatusReg::Get()
+                .ReadFrom(mock_device.GetRegisters())
+                .set_uic_hibernate_exit_status(true)
+                .WriteTo(mock_device.GetRegisters());
+            mock_device.TriggerInterrupt();
+            return;
+          }
+          RegisterMmioProcessor::DefaultUTRLDBRHandler(mock_device, value);
+        });
+    if (hce_stuck) {
+      // HCE = 0 is swallowed: DisableHostController() times out and HCE stays set.
+      mock_device_.GetRegisterMmioProcessor().SetHook(
+          RegisterMap::kHCE, [&](UfsMockDevice& mock_device, uint32_t value) {
+            if (!HostControllerEnableReg::Get().FromValue(value).host_controller_enable()) {
+              return;
+            }
+            RegisterMmioProcessor::DefaultHCEHandler(mock_device, value);
+          });
+    }
+
+    const size_t pinned_before = CountPinnedVmos(mock_device_);
+    BlockFifoRequest request = {
+        .command = {.opcode = BLOCK_OPCODE_READ},
+        .vmoid = owned_vmoid.get(),
+        .length = 1,
+        .vmo_offset = 0,
+        .dev_offset = 0,
+    };
+    std::future<zx_status_t> inflight_tx =
+        std::async(std::launch::async, [&] { return client->FifoTransaction(&request, 1); });
+    while (inflight_tx.wait_for(std::chrono::milliseconds(10)) != std::future_status::ready) {
+      driver_test().runtime().RunUntilIdle();
+    }
+    EXPECT_EQ(inflight_tx.get(), ZX_ERR_IO);
+
+    const zx::time deadline = zx::deadline_after(zx::sec(30));
+    if (hce_stuck) {
+      // A controller that cannot be reset still owns its request list, so ReinitAfterPowerDown()
+      // fails at DisableHostController() and the recovery gives up: the device is recorded as
+      // PowerDown with the register space off limits, and the aborted request's buffer stays
+      // pinned (quarantined) instead of being unpinned underneath a possibly live DMA.
+      while (dut_->GetDeviceManager().GetCurrentPowerMode() != UfsPowerMode::kPowerDown &&
+             zx::clock::get_monotonic() < deadline) {
+        driver_test().runtime().RunUntilIdle();
+        zx::nanosleep(zx::deadline_after(zx::msec(1)));
+      }
+      ASSERT_EQ(dut_->GetDeviceManager().GetCurrentPowerMode(), UfsPowerMode::kPowerDown);
+      EXPECT_TRUE(dut_->IsHardwarePoweredOff());
+      EXPECT_EQ(ReadUfsInspectUint(*dut_, "link_recovery_count"), 0u);
+      EXPECT_EQ(CountPinnedVmos(mock_device_), pinned_before + 1);
+      // The next Power Broker off/on cycle takes the resume-from-PowerDown path (where the PHY
+      // power-cycles the controller) and brings the link back.
+      mock_device_.GetRegisterMmioProcessor().Reset();
+      SetPowerLevelSync(Ufs::kPowerLevelOff);
+      SetPowerLevelSync(Ufs::kPowerLevelOn);
+    } else {
+      while (ReadUfsInspectUint(*dut_, "link_recovery_count") == 0 &&
+             zx::clock::get_monotonic() < deadline) {
+        driver_test().runtime().RunUntilIdle();
+        zx::nanosleep(zx::deadline_after(zx::msec(1)));
+      }
+      EXPECT_EQ(ReadUfsInspectUint(*dut_, "link_recovery_count"), 1u);
+      // The controller was stopped before the abort, so the buffer was unpinned normally.
+      EXPECT_EQ(CountPinnedVmos(mock_device_), pinned_before);
+    }
+    EXPECT_EQ(ReadUfsInspectUint(*dut_, "auto_hibern8_error_count"), 1u);
+    ASSERT_TRUE(dut_->IsResumed());
+    const size_t pinned_after_recovery = pinned_before + (hce_stuck ? 1 : 0);
+
+    request.vmo_offset = 1;
+    std::future<zx_status_t> retry_tx =
+        std::async(std::launch::async, [&] { return client->FifoTransaction(&request, 1); });
+    while (retry_tx.wait_for(std::chrono::milliseconds(10)) != std::future_status::ready) {
+      driver_test().runtime().RunUntilIdle();
+    }
+    EXPECT_OK(retry_tx.get());
+    // A quarantined PMT is never handed back; a normal request pins and unpins its buffer.
+    EXPECT_EQ(CountPinnedVmos(mock_device_), pinned_after_recovery);
   }
 };
 
@@ -1194,4 +1371,299 @@ TEST_F(PowerTest, PowerDownSuspendFallsBackToSleepWithCryptoKeys) {
   mock_device_.GetUicCmdProcessor().Reset();
 }
 
+// Verifies that ScopedAutoHibernateDisable clears AHIT and masks UHES/UHXS during DME accesses and
+// restores both when the outermost scope exits.
+TEST_F(PowerTest, ScopedAutoHibernateDisableProtectsDmeAccess) {
+  CapabilityReg::Get()
+      .ReadFrom(mock_device_.GetRegisters())
+      .set_auto_hibernation_support(true)
+      .WriteTo(mock_device_.GetRegisters());
+  ASSERT_NO_FATAL_FAILURE(StartDriver(/*supply_power_framework=*/true));
+
+  const uint32_t configured_ahit =
+      AutoHibernateIdleTimerReg::Get().ReadFrom(mock_device_.GetRegisters()).reg_value();
+  ASSERT_NE(configured_ahit, 0u);
+
+  uint32_t ahit_during_dme_get = 0xFFFFFFFF;
+  bool uhes_enabled_during_dme_get = true;
+  bool uhxs_enabled_during_dme_get = true;
+  mock_device_.GetUicCmdProcessor().SetHook(
+      UicCommandOpcode::kDmeGet,
+      [&](UfsMockDevice& mock_device, uint32_t ucmdarg1, uint32_t ucmdarg2, uint32_t ucmdarg3) {
+        ahit_during_dme_get =
+            AutoHibernateIdleTimerReg::Get().ReadFrom(mock_device.GetRegisters()).reg_value();
+        auto ie = InterruptEnableReg::Get().ReadFrom(mock_device.GetRegisters());
+        uhes_enabled_during_dme_get = ie.uic_hibernate_enter_status_enable();
+        uhxs_enabled_during_dme_get = ie.uic_hibernate_exit_status_enable();
+        UicCmdProcessor::DefaultDmeGetHandler(mock_device, ucmdarg1, ucmdarg2, ucmdarg3);
+      });
+
+  DmeGetUicCommand dme_get(*dut_, PA_MaxRxHSGear, 0);
+  ASSERT_OK(dme_get.SendCommand());
+  EXPECT_EQ(ahit_during_dme_get, 0u);
+  EXPECT_FALSE(uhes_enabled_during_dme_get);
+  EXPECT_FALSE(uhxs_enabled_during_dme_get);
+
+  EXPECT_EQ(AutoHibernateIdleTimerReg::Get().ReadFrom(mock_device_.GetRegisters()).reg_value(),
+            configured_ahit);
+  auto ie_after = InterruptEnableReg::Get().ReadFrom(mock_device_.GetRegisters());
+  EXPECT_TRUE(ie_after.uic_hibernate_enter_status_enable());
+  EXPECT_TRUE(ie_after.uic_hibernate_exit_status_enable());
+
+  {
+    Ufs::ScopedAutoHibernateDisable outer_guard(*dut_);
+    EXPECT_EQ(AutoHibernateIdleTimerReg::Get().ReadFrom(mock_device_.GetRegisters()).reg_value(),
+              0u);
+    {
+      Ufs::ScopedAutoHibernateDisable inner_guard(*dut_);
+      EXPECT_EQ(AutoHibernateIdleTimerReg::Get().ReadFrom(mock_device_.GetRegisters()).reg_value(),
+                0u);
+    }
+    EXPECT_EQ(AutoHibernateIdleTimerReg::Get().ReadFrom(mock_device_.GetRegisters()).reg_value(),
+              0u);
+  }
+  EXPECT_EQ(AutoHibernateIdleTimerReg::Get().ReadFrom(mock_device_.GetRegisters()).reg_value(),
+            configured_ahit);
+
+  mock_device_.GetUicCmdProcessor().Reset();
+}
+
+// Verifies that an Auto-Hibern8 error interrupt triggers RecoverLink(), that the I/O in flight
+// across the controller reset fails with ZX_ERR_IO and that new I/O works once the link is back.
+TEST_F(PowerTest, AutoHibernateErrorRoutesToLinkRecoveryAndFailsInflightIo) {
+  CapabilityReg::Get()
+      .ReadFrom(mock_device_.GetRegisters())
+      .set_auto_hibernation_support(true)
+      .WriteTo(mock_device_.GetRegisters());
+  ASSERT_NO_FATAL_FAILURE(StartDriver(/*supply_power_framework=*/true));
+  RunInflightIoThroughLinkRecovery(/*hce_stuck=*/false);
+}
+
+// When HCE does not clear during recovery the controller may still DMA into the in-flight buffers,
+// so their PMTs are closed without unpinning (BTI quarantine) instead of being handed back out; the
+// recovery itself cannot re-initialize such a controller and falls back to the PowerDown state
+// until the next resume power-cycles it.
+TEST_F(PowerTest, RecoveryWithStuckHceQuarantinesPmts) {
+  CapabilityReg::Get()
+      .ReadFrom(mock_device_.GetRegisters())
+      .set_auto_hibernation_support(true)
+      .WriteTo(mock_device_.GetRegisters());
+  ASSERT_NO_FATAL_FAILURE(StartDriver(/*supply_power_framework=*/true));
+  RunInflightIoThroughLinkRecovery(/*hce_stuck=*/true);
+}
+
+// Only a Data Link layer PA_INIT error (or ULLS / fatal errors) resets the host controller; other
+// UIC error classes are logged and counted but left to UniPro replay and request timeouts.
+TEST_F(PowerTest, UicErrorInterruptRecoversLinkOnlyForDataLinkPaInit) {
+  ASSERT_NO_FATAL_FAILURE(StartDriver(/*supply_power_framework=*/true));
+  ASSERT_EQ(ReadUfsInspectUint(*dut_, "link_recovery_count"), 0u);
+
+  auto inject_uic_error = [&](auto&& program_error_register) {
+    program_error_register();
+    InterruptStatusReg::Get()
+        .ReadFrom(mock_device_.GetRegisters())
+        .set_uic_error(true)
+        .WriteTo(mock_device_.GetRegisters());
+    mock_device_.TriggerInterrupt();
+  };
+  auto wait_for_uic_error_count = [&](uint64_t expected) {
+    const zx::time deadline = zx::deadline_after(zx::sec(10));
+    while (ReadUfsInspectUint(*dut_, "uic_error_count") < expected &&
+           zx::clock::get_monotonic() < deadline) {
+      driver_test().runtime().RunUntilIdle();
+      zx::nanosleep(zx::deadline_after(zx::msec(1)));
+    }
+    EXPECT_EQ(ReadUfsInspectUint(*dut_, "uic_error_count"), expected);
+  };
+
+  // A Network layer error: counted, no recovery.
+  inject_uic_error([&] {
+    HostUicErrorCodeNetworkLayerReg::Get()
+        .FromValue(0)
+        .set_uic_network_layer_error(true)
+        .set_uic_network_layer_error_code(0x1)
+        .WriteTo(mock_device_.GetRegisters());
+  });
+  wait_for_uic_error_count(1);
+  // Give a (wrongly) scheduled recovery a chance to run before checking that none happened.
+  for (int i = 0; i < 20; ++i) {
+    driver_test().runtime().RunUntilIdle();
+    zx::nanosleep(zx::deadline_after(zx::msec(1)));
+  }
+  EXPECT_EQ(ReadUfsInspectUint(*dut_, "link_recovery_count"), 0u);
+  EXPECT_TRUE(dut_->IsResumed());
+
+  // A Data Link layer PA_INIT error: recovery.
+  inject_uic_error([&] {
+    HostUicErrorCodeDataLinkLayerReg::Get()
+        .FromValue(0)
+        .set_uic_data_link_layer_error(true)
+        .set_uic_data_link_layer_error_code(kUicDataLinkLayerErrorPaInit)
+        .WriteTo(mock_device_.GetRegisters());
+  });
+  wait_for_uic_error_count(2);
+  const zx::time deadline = zx::deadline_after(zx::sec(30));
+  while (ReadUfsInspectUint(*dut_, "link_recovery_count") == 0 &&
+         zx::clock::get_monotonic() < deadline) {
+    driver_test().runtime().RunUntilIdle();
+    zx::nanosleep(zx::deadline_after(zx::msec(1)));
+  }
+  EXPECT_EQ(ReadUfsInspectUint(*dut_, "link_recovery_count"), 1u);
+  EXPECT_TRUE(dut_->IsResumed());
+}
+
+// When the link is already parked in Auto-Hibern8 (HCS reports DP = 0 / UTRLRDY = 0), the
+// outermost ScopedAutoHibernateDisable issues DME_HIBERNATE_EXIT so the caller's DME access does
+// not race the wake-up; an active link needs no extra command.
+TEST_F(PowerTest, ScopedAutoHibernateDisableWakesParkedLink) {
+  CapabilityReg::Get()
+      .ReadFrom(mock_device_.GetRegisters())
+      .set_auto_hibernation_support(true)
+      .WriteTo(mock_device_.GetRegisters());
+  ASSERT_NO_FATAL_FAILURE(StartDriver(/*supply_power_framework=*/true));
+
+  std::atomic<uint32_t> hibernate_exits{0};
+  mock_device_.GetUicCmdProcessor().SetHook(
+      UicCommandOpcode::kDmeHibernateExit,
+      [&](UfsMockDevice& mock_device, uint32_t ucmdarg1, uint32_t ucmdarg2, uint32_t ucmdarg3) {
+        hibernate_exits.fetch_add(1);
+        // The controller leaves Hibern8: DP / UTRLRDY come back.
+        HostControllerStatusReg::Get()
+            .ReadFrom(mock_device.GetRegisters())
+            .set_device_present(true)
+            .set_utp_transfer_request_list_ready(true)
+            .WriteTo(mock_device.GetRegisters());
+        UicCmdProcessor::DefaultDmeHibernateExitHandler(mock_device, ucmdarg1, ucmdarg2, ucmdarg3);
+      });
+  auto reset_hooks = fit::defer([&] { mock_device_.GetUicCmdProcessor().Reset(); });
+
+  // Link active: no hibernate exit.
+  {
+    Ufs::ScopedAutoHibernateDisable guard(*dut_);
+    EXPECT_EQ(hibernate_exits.load(), 0u);
+  }
+
+  // Link parked in AH8.
+  HostControllerStatusReg::Get()
+      .ReadFrom(mock_device_.GetRegisters())
+      .set_device_present(false)
+      .set_utp_transfer_request_list_ready(false)
+      .WriteTo(mock_device_.GetRegisters());
+  {
+    Ufs::ScopedAutoHibernateDisable guard(*dut_);
+    EXPECT_EQ(hibernate_exits.load(), 1u);
+    auto hcs = HostControllerStatusReg::Get().ReadFrom(mock_device_.GetRegisters());
+    EXPECT_TRUE(hcs.device_present());
+    EXPECT_TRUE(hcs.utp_transfer_request_list_ready());
+    // Nested guards do not re-issue the command.
+    Ufs::ScopedAutoHibernateDisable inner_guard(*dut_);
+    EXPECT_EQ(hibernate_exits.load(), 1u);
+  }
+  EXPECT_EQ(ReadUfsInspectUint(*dut_, "auto_hibern8_error_count"), 0u);
+  EXPECT_EQ(ReadUfsInspectUint(*dut_, "link_recovery_count"), 0u);
+}
+
+// When every recovery attempt fails the controller is left stopped and new I/O fails immediately
+// instead of queueing; the next resume from PowerDown re-initializes the link and I/O works again.
+TEST_F(PowerTest, FailedLinkRecoveryFailsIoUntilNextResume) {
+  ASSERT_NO_FATAL_FAILURE(StartDriver(/*supply_power_framework=*/true));
+  // fdf_power::Suspendable only acts on "off" once it has seen the first "on" (see
+  // VerifyInitialOffIgnoredAndSuspend()), so register that first.
+  SetPowerLevelSync(Ufs::kPowerLevelOn);
+  ASSERT_TRUE(dut_->IsResumed());
+
+  scsi::BlockDevice* block_device = nullptr;
+  const zx::time bind_deadline = zx::deadline_after(zx::sec(30));
+  while (block_device == nullptr && zx::clock::get_monotonic() < bind_deadline) {
+    {
+      std::scoped_lock lock(dut_->lock());
+      if (dut_->block_devs().contains(0) && !dut_->block_devs().at(0).empty()) {
+        block_device = dut_->block_devs().at(0).at(0).get();
+      }
+    }
+    if (block_device == nullptr) {
+      zx::nanosleep(zx::deadline_after(zx::msec(1)));
+    }
+  }
+  ASSERT_NE(block_device, nullptr);
+
+  std::unique_ptr<block_client::RemoteBlockDevice> client;
+  EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync([&] {
+    auto client_end = driver_test().Connect<fuchsia_hardware_block_volume::Service::Volume>(
+        block_device->DeviceName().c_str());
+    ASSERT_OK(client_end);
+    auto remote_device_result =
+        block_client::RemoteBlockDevice::Create(std::move(client_end.value()));
+    ASSERT_OK(remote_device_result);
+    client = std::move(remote_device_result.value());
+  }));
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(ufs_mock_device::kMockBlockSize, 0, &vmo));
+  storage::Vmoid owned_vmoid;
+  EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync(
+      [&] { ASSERT_OK(client->BlockAttachVmo(vmo, &owned_vmoid)); }));
+  auto cleanup = fit::defer([&] {
+    EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync(
+        [&] { ASSERT_OK(client->BlockDetachVmo(std::move(owned_vmoid))); }));
+    mock_device_.GetRegisterMmioProcessor().Reset();
+  });
+
+  // Make every host controller re-enable time out: HCE = 1 is swallowed.
+  mock_device_.GetRegisterMmioProcessor().SetHook(
+      RegisterMap::kHCE, [&](UfsMockDevice& mock_device, uint32_t value) {
+        if (HostControllerEnableReg::Get().FromValue(value).host_controller_enable()) {
+          return;
+        }
+        RegisterMmioProcessor::DefaultHCEHandler(mock_device, value);
+      });
+
+  // Trigger recovery with a fatal controller error.
+  InterruptStatusReg::Get()
+      .ReadFrom(mock_device_.GetRegisters())
+      .set_host_controller_fatal_error_status(true)
+      .WriteTo(mock_device_.GetRegisters());
+  mock_device_.TriggerInterrupt();
+
+  // The recovery gives up after kMaxPowerDownResumeAttempts; the device is then recorded as
+  // PowerDown with the register space off limits.
+  const zx::time deadline = zx::deadline_after(zx::sec(30));
+  while (dut_->GetDeviceManager().GetCurrentPowerMode() != UfsPowerMode::kPowerDown &&
+         zx::clock::get_monotonic() < deadline) {
+    driver_test().runtime().RunUntilIdle();
+    zx::nanosleep(zx::deadline_after(zx::msec(1)));
+  }
+  ASSERT_EQ(dut_->GetDeviceManager().GetCurrentPowerMode(), UfsPowerMode::kPowerDown);
+  EXPECT_TRUE(dut_->IsHardwarePoweredOff());
+  EXPECT_FALSE(dut_->IsResumed());
+  EXPECT_EQ(ReadUfsInspectUint(*dut_, "link_recovery_count"), 0u);
+
+  // New I/O fails immediately instead of waiting in pending_commands_.
+  BlockFifoRequest request = {
+      .command = {.opcode = BLOCK_OPCODE_READ},
+      .vmoid = owned_vmoid.get(),
+      .length = 1,
+      .vmo_offset = 0,
+      .dev_offset = 0,
+  };
+  std::future<zx_status_t> failed_tx =
+      std::async(std::launch::async, [&] { return client->FifoTransaction(&request, 1); });
+  while (failed_tx.wait_for(std::chrono::milliseconds(10)) != std::future_status::ready) {
+    driver_test().runtime().RunUntilIdle();
+  }
+  EXPECT_EQ(failed_tx.get(), ZX_ERR_IO);
+
+  // The next Power Broker off/on cycle takes the resume-from-PowerDown path and recovers.
+  mock_device_.GetRegisterMmioProcessor().Reset();
+  SetPowerLevelSync(Ufs::kPowerLevelOff);
+  SetPowerLevelSync(Ufs::kPowerLevelOn);
+  ASSERT_TRUE(dut_->IsResumed());
+  std::future<zx_status_t> ok_tx =
+      std::async(std::launch::async, [&] { return client->FifoTransaction(&request, 1); });
+  while (ok_tx.wait_for(std::chrono::milliseconds(10)) != std::future_status::ready) {
+    driver_test().runtime().RunUntilIdle();
+  }
+  EXPECT_OK(ok_tx.get());
+}
+
+}  // namespace
 }  // namespace ufs

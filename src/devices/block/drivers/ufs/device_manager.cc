@@ -9,6 +9,8 @@
 #include <lib/trace/event.h>
 #include <lib/zx/clock.h>
 
+#include <utility>
+
 #include "src/devices/block/drivers/ufs/registers.h"
 #include "src/devices/block/drivers/ufs/transfer_request_processor.h"
 #include "src/devices/block/drivers/ufs/ufs.h"
@@ -340,7 +342,8 @@ zx::result<> DeviceManager::ConfigureBackgroundOp(inspect::Node &bkop_node) {
 
   // Currently we allow background operations in the active state. This may have a performance
   // penalty.
-  // TODO(b/42075643): We should only perform background operations in the power suspended state.
+  // TODO(https://fxbug.dev/42075643): We should only perform background operations in the power
+  // suspended state.
   if (zx::result<> result = EnableBackgroundOp(); result.is_error()) {
     return result.take_error();
   }
@@ -701,6 +704,8 @@ zx::result<> DeviceManager::InitUicPowerMode(inspect::Node &unipro_node) {
 }
 
 zx::result<> DeviceManager::ConfigureUicPowerMode() {
+  Ufs::ScopedAutoHibernateDisable ah8_guard(controller_);
+
   if (zx::result<> result = controller_.Notify(NotifyEvent::kPrePowerModeChange, 0);
       result.is_error()) {
     return result.take_error();
@@ -771,10 +776,8 @@ zx::result<> DeviceManager::ConfigureUicPowerMode() {
     return result.take_error();
   }
 
-  // Set TX HS Adapt Type (INITIAL = 1 for HS-G4+, NO_ADAPT = 3 for HS-G1..G3), matching the gear
-  // rule in ufshcd_dme_configure_adapt(). PA_TxHsAdaptType only exists from UniPro 1.8 (HS-G4);
-  // for lower gears NO_ADAPT is the hardware default, so (unlike Linux) a rejected DME_SET is
-  // tolerated there.
+  // PA_TxHsAdaptType only exists from UniPro 1.8 (HS-G4); for lower gears NO_ADAPT is default,
+  // so a rejected DME_SET is treated as non-fatal.
   constexpr uint32_t kPaInitialAdapt = 1;
   constexpr uint32_t kPaNoAdapt = 3;
   constexpr uint32_t kMinAdaptGear = 4;
@@ -958,9 +961,7 @@ zx::result<> DeviceManager::SetPowerCondition(scsi::PowerCondition target_power_
     return scsi_lun.take_error();
   }
 
-  // Send START STOP UNIT to change power mode. Like ufshcd_execute_start_stop(), retry when the
-  // device answers with UNIT ATTENTION / NOT READY (ZX_ERR_UNAVAILABLE), e.g. the POWER ON unit
-  // attention that follows a PowerDown suspend.
+  // Send START STOP UNIT to change power mode; retry if the device returns NOT READY.
   zx_status_t status = ZX_ERR_INTERNAL;
   for (int retry = 0; retry < kMaxRetries; ++retry) {
     status = controller_.StartStopUnit(kPlaceholderTarget, scsi_lun.value(),
@@ -1010,10 +1011,15 @@ zx::result<> DeviceManager::SuspendPower() {
 
   {
     std::lock_guard<std::mutex> lock(power_lock_);
+    while (suspend_in_progress_ || recovery_in_progress_) {
+      power_cv_.wait(power_lock_);
+    }
 
     if (current_power_mode_ == target_power_mode &&
         current_power_condition_ == target_power_condition &&
         current_link_state_ == target_link_state) {
+      system_suspended_ = true;
+      properties_.power_suspended.Set(true);
       return zx::ok();
     }
 
@@ -1028,12 +1034,11 @@ zx::result<> DeviceManager::SuspendPower() {
     suspend_in_progress_ = true;
   }
 
-  // Stop new I/O from reaching the controller and wait for the in-flight I/O to complete before
-  // issuing START STOP UNIT / stopping the host controller (ufshcd blocks SCSI requests and waits
-  // for outstanding ones for the same reason). The gate and the drain share the request
-  // processor's slot lock, so once this returns nothing but admin UPIUs can be submitted until
-  // ResumePower() re-opens it. This must happen outside power_lock_ because the I/O worker, which
-  // completes the in-flight commands, may be blocked in IsResumed().
+  // Drain in-flight requests before issuing START STOP UNIT or stopping the host controller.
+  // The gate and the drain share the request processor's slot lock, so once this returns nothing
+  // but admin UPIUs can be submitted until ResumePower() re-opens it. This must happen outside
+  // power_lock_ because the I/O worker, which completes the in-flight commands, may be blocked in
+  // IsResumed().
   zx::result<> result = req_processor_.BlockSlotAllocation(kSuspendIoDrainTimeout);
 
   std::lock_guard<std::mutex> lock(power_lock_);
@@ -1063,6 +1068,7 @@ zx::result<> DeviceManager::SuspendPower() {
     }
   }
   suspend_in_progress_ = false;
+  power_cv_.notify_all();
   if (!progress.suspended) {
     req_processor_.UnblockSlotAllocation();
     // Only posts to the I/O worker; it re-checks IsResumed() once this lock is released.
@@ -1080,19 +1086,10 @@ zx::result<> DeviceManager::SuspendPowerLocked(bool power_down, UfsPowerMode tar
       GetPowerModeInfo(target_power_mode).power_condition;
   const LinkState target_link_state = GetPowerModeInfo(target_power_mode).link_state;
 
-  // Disable background operations before the device leaves Active, as Linux does for both runtime
-  // and system suspend (__ufshcd_wl_suspend() -> ufshcd_disable_auto_bkops(); the link may not be
-  // turned off while auto-BKOPS is enabled since that would power the device off mid-operation).
-  // Linux's only exception - keeping the device Active with VCC on so urgent BKOPS or a
-  // WriteBooster flush can finish (UFSHCD_CAP_AUTO_BKOPS_SUSPEND / b_rpm_dev_flush_capable) -
-  // applies to runtime suspend into Hibern8 only, which this driver does not do. For the same
-  // reason a pending WriteBooster flush does not hold off a system suspend: the WriteBooster
-  // buffer is non-volatile, so nothing is lost by powering the device down, and the flush simply
-  // continues once the device is Active again.
-  // TODO(b/42075643): On resume Linux only re-enables BKOPS when bBackgroundOpStatus is at least
-  // "performance impact" (ufshcd_bkops_ctrl()) and otherwise relies on the URGENT_BKOPS exception
-  // event; ResumePower() re-enables unconditionally, matching our Active-state policy in
-  // ConfigureBackgroundOp().
+  // Disable background operations before the device leaves Active to prevent auto-bkops from
+  // racing with power mode transitions.
+  // TODO(https://fxbug.dev/42075643): Re-enable BKOPS on resume only when bBackgroundOpStatus
+  // indicates performance impact to avoid unnecessary background write amplification.
   if (zx::result<> result = DisableBackgroundOp(); result.is_error()) {
     return result.take_error();
   }
@@ -1107,38 +1104,25 @@ zx::result<> DeviceManager::SuspendPowerLocked(bool power_down, UfsPowerMode tar
   }
   progress.auto_hibernate_disabled = true;
 
-  if (!power_down) {
-    if (zx::result<> result = controller_.Notify(NotifyEvent::kPrePowerModeChange, 0);
-        result.is_error()) {
-      return result.take_error();
-    }
-  }
-
   if (zx::result<> result = SetPowerCondition(target_power_condition); result.is_error()) {
     return result.take_error();
   }
 
   DmeHibernateEnterCommand dme_hibernate_enter_command(controller_);
   if (auto result = dme_hibernate_enter_command.SendCommand(); result.is_error()) {
-    // TODO(b/42075643): Link has a problem and needs to perform error recovery.
-    // The device already left Active; bring it back (ufshcd's set_dev_active) so the state we
-    // leave behind matches what the I/O path assumes when it is re-opened. If that fails too, the
-    // recorded state (Active mode/link, non-Active condition) is repaired by the next
-    // ResumePower(), which re-issues START STOP UNIT without touching the link.
+    properties_.auto_hibern8_error_count.Add(1);
+    controller_.DumpErrorRegisters();
+    // Restore Active power condition to match the state expected by the I/O path.
     if (zx::result<> active = SetPowerCondition(scsi::PowerCondition::kActive); active.is_error()) {
       fdf::error("Failed to restore Active power condition after hibernate-enter failure: {}",
                  active);
     }
+    controller_.ScheduleLinkRecovery();
     return result.take_error();
   }
 
   zx_status_t power_down_status = ZX_OK;
-  if (!power_down) {
-    if (zx::result<> result = controller_.Notify(NotifyEvent::kPostPowerModeChange, 0);
-        result.is_error()) {
-      return result.take_error();
-    }
-  } else {
+  if (power_down) {
     // Block new admin UPIUs (RPMB, fuchsia.hardware.ufs, exception-event worker) for the rest of
     // the sequence; TransferRequestProcessor::SendRequestUpiu() checks IsHardwarePoweredOff()
     // under this lock, so once it is set below nothing can reach the registers.
@@ -1162,7 +1146,11 @@ zx::result<> DeviceManager::SuspendPowerLocked(bool power_down, UfsPowerMode tar
   current_link_state_ = target_link_state;
   current_power_mode_ = target_power_mode;
   current_power_condition_ = target_power_condition;
+  system_suspended_ = true;
   properties_.power_suspended.Set(true);
+  properties_.b_current_power_mode.Set(std::to_underlying(current_power_mode_));
+  properties_.power_condition.Set(std::to_underlying(current_power_condition_));
+  properties_.link_state.Set(std::to_underlying(current_link_state_));
   progress.suspended = true;
 
   if (power_down_status != ZX_OK) {
@@ -1182,10 +1170,15 @@ zx::result<> DeviceManager::ResumePower() {
   bool device_only = false;
   {
     std::lock_guard<std::mutex> lock(power_lock_);
+    while (suspend_in_progress_ || recovery_in_progress_) {
+      power_cv_.wait(power_lock_);
+    }
 
     if (current_power_mode_ == target_power_mode &&
         current_power_condition_ == target_power_condition &&
         current_link_state_ == target_link_state) {
+      system_suspended_ = false;
+      properties_.power_suspended.Set(false);
       return zx::ok();
     }
 
@@ -1205,9 +1198,7 @@ zx::result<> DeviceManager::ResumePower() {
   }
 
   if (from_power_down) {
-    // Mirror ufshcd_reset_and_restore(): a failed link startup / device init after PowerDown is
-    // retried with a full PHY + device power cycle in between, rather than leaving storage
-    // unusable until reboot.
+    // Recover from failed link startup or device init after PowerDown with a full controller reset.
     zx::result<> reinit_result = zx::ok();
     for (int attempt = 1; attempt <= kMaxPowerDownResumeAttempts; ++attempt) {
       if (zx::result<> result = controller_.Notify(NotifyEvent::kPreResume, 0); result.is_error()) {
@@ -1224,8 +1215,7 @@ zx::result<> DeviceManager::ResumePower() {
         reinit_result = controller_.ReinitAfterPowerDown();
         if (reinit_result.is_ok()) {
           // The device comes out of a power cycle in the Active power condition, but issue START
-          // STOP UNIT explicitly (as ufshcd does) so that the device state is known rather than
-          // assumed.
+          // STOP UNIT explicitly so that the device state is known rather than assumed.
           std::lock_guard<std::mutex> lock(power_lock_);
           reinit_result = SetPowerCondition(target_power_condition);
         }
@@ -1264,16 +1254,19 @@ zx::result<> DeviceManager::ResumePower() {
   std::lock_guard<std::mutex> lock(power_lock_);
   const bool link_in_hibernate = !from_power_down && !device_only;
   if (link_in_hibernate) {
-    if (zx::result<> result = controller_.Notify(NotifyEvent::kPrePowerModeChange, 0);
-        result.is_error()) {
-      return result.take_error();
-    }
-
     DmeHibernateExitCommand dme_hibernate_exit_command(controller_);
     if (auto result = dme_hibernate_exit_command.SendCommand(); result.is_error()) {
-      // TODO(https://fxbug.dev/42075643): Link has a problem and needs to perform error recovery.
+      properties_.auto_hibern8_error_count.Add(1);
+      controller_.DumpErrorRegisters();
+      system_suspended_ = false;
+      properties_.power_suspended.Set(false);
+      controller_.ScheduleLinkRecovery();
       return result.take_error();
     }
+    current_link_state_ = target_link_state;
+    current_power_mode_ = target_power_mode;
+    properties_.link_state.Set(std::to_underlying(current_link_state_));
+    properties_.b_current_power_mode.Set(std::to_underlying(current_power_mode_));
   }
 
   // (The PowerDown path already issued START STOP UNIT inside its retry loop.)
@@ -1286,14 +1279,11 @@ zx::result<> DeviceManager::ResumePower() {
   current_link_state_ = target_link_state;
   current_power_mode_ = target_power_mode;
   current_power_condition_ = target_power_condition;
+  system_suspended_ = false;
   properties_.power_suspended.Set(false);
-
-  if (link_in_hibernate) {
-    if (zx::result<> result = controller_.Notify(NotifyEvent::kPostPowerModeChange, 0);
-        result.is_error()) {
-      return result.take_error();
-    }
-  }
+  properties_.b_current_power_mode.Set(std::to_underlying(current_power_mode_));
+  properties_.power_condition.Set(std::to_underlying(current_power_condition_));
+  properties_.link_state.Set(std::to_underlying(current_link_state_));
 
   // From here on the device is Active and usable for I/O, so re-open the slot gate closed by
   // SuspendPower() (the caller posts TriggerIoWork() once we return); the remaining steps are
@@ -1305,7 +1295,8 @@ zx::result<> DeviceManager::ResumePower() {
     fdf::warn("PostResume callback failed: {}", result);
   }
 
-  // TODO(b/42075643): We should only perform background operations in the power suspended state.
+  // TODO(https://fxbug.dev/42075643): We should only perform background operations in the power
+  // suspended state.
   if (zx::result<> result = EnableBackgroundOp(); result.is_error()) {
     fdf::warn("Failed to re-enable background operations after resume: {}", result);
   }
@@ -1315,6 +1306,30 @@ zx::result<> DeviceManager::ResumePower() {
   }
 
   fdf::info("Power resumed.");
+  return zx::ok();
+}
+
+zx::result<> DeviceManager::FinishLinkRecovery() {
+  std::scoped_lock lock(power_lock_);
+  if (zx::result<> result = SetPowerCondition(scsi::PowerCondition::kActive); result.is_error()) {
+    return result.take_error();
+  }
+
+  current_link_state_ = LinkState::kActive;
+  current_power_mode_ = UfsPowerMode::kActive;
+  current_power_condition_ = scsi::PowerCondition::kActive;
+  recovery_in_progress_ = false;
+  power_cv_.notify_all();
+  properties_.b_current_power_mode.Set(std::to_underlying(current_power_mode_));
+  properties_.power_condition.Set(std::to_underlying(current_power_condition_));
+  properties_.link_state.Set(std::to_underlying(current_link_state_));
+
+  if (zx::result<> result = EnableBackgroundOp(); result.is_error()) {
+    fdf::warn("Failed to re-enable background operations after link recovery: {}", result);
+  }
+  if (zx::result<> result = controller_.ConfigureAutoHibernate(); result.is_error()) {
+    fdf::warn("Failed to re-enable auto-hibernate after link recovery: {}", result);
+  }
   return zx::ok();
 }
 

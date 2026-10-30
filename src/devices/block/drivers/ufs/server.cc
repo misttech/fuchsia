@@ -317,6 +317,8 @@ zx::result<> ValidateSetCommand(uint16_t attribute, AttrSetType attr_set_type,
 
 zx::result<std::optional<uint32_t>> UfsServer::DispatchUicCommand(
     UicCommandOpcode opcode, SendUicCommandRequestView request) {
+  Ufs::ScopedAutoHibernateDisable ah8_guard(*controller_);
+
   const auto arg1 = UicCommandArgument1Reg::Get().FromValue(request->argument[0]);
   const auto arg2 = UicCommandArgument2Reg::Get().FromValue(request->argument[1]);
   const auto attribute = static_cast<uint16_t>(arg1.mib_attribute());

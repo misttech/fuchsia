@@ -24,6 +24,7 @@
 
 #include <array>
 #include <atomic>
+#include <condition_variable>
 #include <deque>
 #include <mutex>
 #include <span>
@@ -49,6 +50,9 @@ constexpr uint32_t kMaxLunCount = 32;
 constexpr uint32_t kMaxLunIndex = kMaxLunCount - 1;
 constexpr uint32_t kDeviceInitTimeoutUs = 2000000;
 constexpr uint32_t kHostControllerTimeoutUs = 1000;
+// Bound on the HCS DP/UTRLRDY wait after a DME_HIBERNATE_EXIT issued to leave Auto-Hibern8 (M-PHY
+// T_ACTIVATE is in the order of hundreds of microseconds).
+constexpr uint32_t kAutoHibernateExitTimeoutUs = 10000;
 constexpr int kMaxRetries = 3;
 constexpr uint32_t kMaxTransferSize1MiB = 1024 * 1024;
 constexpr uint8_t kPlaceholderTarget = 0;
@@ -56,6 +60,10 @@ constexpr uint8_t kPlaceholderTarget = 0;
 // kResumeRetryInitialDelay and doubles up to kResumeRetryMaxDelay.
 constexpr zx::duration kResumeRetryInitialDelay = zx::sec(1);
 constexpr zx::duration kResumeRetryMaxDelay = zx::sec(30);
+// Heuristic upper bound on how long a synchronous caller waits for a scheduled RecoverLink() to
+// finish (see Ufs::WaitForLinkRecovery()); on expiry WakeFromRuntimeSleep() reports the original
+// wake error while the recovery continues in the background.
+constexpr zx::duration kLinkRecoveryWaitTimeout = kCommandTimeout * kMaxPowerDownResumeAttempts;
 
 constexpr uint32_t kBlockSize = 4096;
 constexpr uint32_t kSectorSize = 512;
@@ -101,6 +109,9 @@ struct InspectProperties {
   inspect::ExponentialUintHistogram wake_latency_us;  // Updated whenever the controller powers on.
   inspect::UintProperty suspend_failures;             // Incremented whenever SuspendPower() fails.
   inspect::UintProperty resume_failures;              // Incremented whenever ResumePower() fails.
+  inspect::UintProperty auto_hibern8_error_count;     // Incremented on AH8 entry/exit errors.
+  inspect::UintProperty uic_error_count;              // Incremented on every UIC error interrupt.
+  inspect::UintProperty link_recovery_count;          // Incremented when RecoverLink() succeeds.
   // Controller
   inspect::UintProperty max_transfer_bytes;  // Set once by the init thread.
   inspect::UintProperty logical_unit_count;  // Set once by the init thread.
@@ -285,6 +296,34 @@ class Ufs : public fdf::DriverBase2, public fdf_power::Suspendable<Ufs>, public 
   }
 
   void DumpRegisters();
+  void DumpErrorRegisters();
+
+  // Temporarily disables hardware Auto-Hibern8 (AHIT = 0) during DME/PHY accesses so the link
+  // cannot enter Hibern8 mid-access. Ref-counted across nested scopes.
+  class ScopedAutoHibernateDisable {
+   public:
+    explicit ScopedAutoHibernateDisable(Ufs &ufs) : ufs_(ufs) {
+      ufs_.AcquireAutoHibernateDisable();
+    }
+    ~ScopedAutoHibernateDisable() { ufs_.ReleaseAutoHibernateDisable(); }
+    ScopedAutoHibernateDisable(const ScopedAutoHibernateDisable &) = delete;
+    ScopedAutoHibernateDisable &operator=(const ScopedAutoHibernateDisable &) = delete;
+
+   private:
+    Ufs &ufs_;
+  };
+
+  void ScheduleLinkRecovery() TA_EXCL(link_recovery_lock_);
+  void RecoverLink() TA_EXCL(link_recovery_lock_);
+  // Blocks until the RecoverLink() that is scheduled or in progress has run to completion (success
+  // or terminal failure); returns ZX_OK at once if none is pending and ZX_ERR_TIMED_OUT after
+  // |timeout|. The caller re-checks IsResumed() for the outcome. Must not be called on
+  // exception_event_dispatcher_, which runs RecoverLink() itself.
+  zx_status_t WaitForLinkRecovery(zx::duration timeout) TA_EXCL(link_recovery_lock_);
+  bool IsOnExceptionEventDispatcher() const {
+    return exception_event_dispatcher_.get() != nullptr &&
+           fdf::Dispatcher::GetCurrent()->get() == exception_event_dispatcher_.get();
+  }
 
   bool HasWellKnownLun(WellKnownLuns lun) {
     return well_known_lun_set_.find(lun) != well_known_lun_set_.end();
@@ -440,6 +479,8 @@ class Ufs : public fdf::DriverBase2, public fdf_power::Suspendable<Ufs>, public 
   // are waiting for IO to start.
   std::deque<IoCommand> pending_commands_ TA_GUARDED(lock_);
 
+  void OnExceptionDispatcherShutdown() TA_EXCL(lock_);
+  void FinishStopWorkers() TA_EXCL(lock_);
   void OnDispatcherShutdown() TA_EXCL(lock_);
   void FinishStop(fdf::StopCompleter completer) TA_EXCL(lock_);
 
@@ -504,14 +545,50 @@ class Ufs : public fdf::DriverBase2, public fdf_power::Suspendable<Ufs>, public 
   // told that the level was reached once the device is actually back. Completed by RetryResume()
   // on success, or by Stop() if the driver goes away first.
   std::optional<fdf_power::ResumeCompleter> pending_resume_completer_;
+
+ private:
   // Set by Stop(): power-level transitions that arrive mid-teardown are acknowledged without
   // touching the hardware (the fdf_power::Suspendable binding lives until the driver is destroyed).
-  bool stopping_ = false;
+  std::atomic<bool> stopping_{false};
   void RetryResume(async_dispatcher_t *dispatcher, async::TaskBase *task, zx_status_t status);
   void ScheduleResumeRetry();
   void CompletePendingResume();
   async::TaskMethod<Ufs, &Ufs::RetryResume> resume_retry_task_{this};
   zx::duration resume_retry_delay_ = kResumeRetryInitialDelay;
+
+  void AcquireAutoHibernateDisable() TA_EXCL(ah8_lock_);
+  void ReleaseAutoHibernateDisable() TA_EXCL(ah8_lock_);
+  // Issues DME_HIBERNATE_EXIT and waits for the link to report active again. Called by the
+  // outermost AcquireAutoHibernateDisable() when HCS shows the link parked in Auto-Hibern8.
+  void ExitAutoHibernate() TA_EXCL(ah8_lock_, uic_lock_);
+  mutable std::mutex ah8_lock_;
+  uint32_t ah8_disable_depth_ TA_GUARDED(ah8_lock_) = 0;
+  uint32_t saved_ahit_reg_ TA_GUARDED(ah8_lock_) = 0;
+  bool ah8_enabled_ TA_GUARDED(ah8_lock_) = false;
+  bool ah8_logged_ TA_GUARDED(ah8_lock_) = false;
+  // Recovery bookkeeping: ScheduleLinkRecovery() bumps |link_recoveries_scheduled_| before it
+  // posts RecoverLink() and the posted task's cleanup bumps |link_recoveries_finished_| when it
+  // finishes (or if the dispatcher drops it on shutdown), so at most one recovery is outstanding
+  // (scheduled != finished) and WaitForLinkRecovery() can wait for the counters to match again.
+  // Leaf lock (acquired under power_lock_ by ScheduleLinkRecovery(); nothing is acquired under it).
+  void MarkLinkRecoveryFinished() TA_EXCL(link_recovery_lock_);
+  std::mutex link_recovery_lock_;
+  std::condition_variable_any link_recovery_cv_;
+  uint64_t link_recoveries_scheduled_ TA_GUARDED(link_recovery_lock_) = 0;
+  uint64_t link_recoveries_finished_ TA_GUARDED(link_recovery_lock_) = 0;
+  // Set once Init() has completed: UIC/fatal errors raised while the init thread still owns the
+  // controller are left to the init path instead of scheduling RecoverLink() underneath it.
+  std::atomic<bool> link_recovery_enabled_{false};
+  // Set when RecoverLink() gives up: the controller is left stopped (as after a PowerDown suspend)
+  // and new I/O fails immediately instead of queueing. Cleared by the next successful
+  // ReinitAfterPowerDown(), which the next resume from PowerDown performs.
+  std::atomic<bool> link_failed_{false};
+  void FailPendingCommands(zx_status_t status) TA_EXCL(lock_);
+  // Masks interrupts, resets the host controller (HCE = 0) and marks the register space powered
+  // off; the recovery-path counterpart of StopHostControllerForPowerDown(). Returns the status of
+  // the host controller disable: if HCE did not clear the controller may still DMA into the
+  // in-flight buffers, which the caller must then quarantine rather than unpin.
+  zx_status_t StopHostControllerForRecovery() TA_EXCL(uic_lock_, ah8_lock_);
   // True while the UFSHCI power domains/clocks are gated: set by StopHostControllerForPowerDown()
   // before kPostSuspend, cleared after a successful kPreResume.
   //

@@ -12,6 +12,18 @@
 namespace ufs {
 
 zx::result<std::optional<uint32_t>> UicCommand::SendCommand() {
+  std::optional<Ufs::ScopedAutoHibernateDisable> ah8_guard;
+  switch (GetOpcode()) {
+    case UicCommandOpcode::kDmeGet:
+    case UicCommandOpcode::kDmeSet:
+    case UicCommandOpcode::kDmePeerGet:
+    case UicCommandOpcode::kDmePeerSet:
+      ah8_guard.emplace(GetController());
+      break;
+    default:
+      break;
+  }
+
   // UIC commands are polled through UFSHCI registers, which must not be touched while the PHY
   // driver has the UFSHCI power domain gated (PowerDown suspend). Hold uic_lock() for the whole
   // command so that StopHostControllerForPowerDown() cannot gate the registers underneath us, and
@@ -149,6 +161,11 @@ std::tuple<uint32_t, uint32_t, uint32_t> DmePeerSetUicCommand::Arguments() const
       value_);
 }
 
+zx::result<> DmeHibernateCommand::UicPreProcess() {
+  InterruptStatusReg::Get().FromValue(GetFlag()).WriteTo(&GetController().GetMmio());
+  return zx::ok();
+}
+
 zx::result<> DmeHibernateCommand::UicPostProcess() {
   if (auto result = UicCommand::UicPostProcess(); result.is_error()) {
     return result.take_error();
@@ -170,6 +187,7 @@ zx::result<> DmeHibernateCommand::UicPostProcess() {
 
   HostControllerStatusReg::PowerModeStatus power_mode_state =
       HostControllerStatusReg::Get().ReadFrom(&mmio).uic_power_mode_change_request_status();
+  InterruptStatusReg::Get().FromValue(flag).WriteTo(&mmio);
   if (power_mode_state != HostControllerStatusReg::PowerModeStatus::kPowerOk &&
       power_mode_state != HostControllerStatusReg::PowerModeStatus::kPowerLocal &&
       power_mode_state != HostControllerStatusReg::PowerModeStatus::kPowerRemote) {
@@ -177,8 +195,6 @@ zx::result<> DmeHibernateCommand::UicPostProcess() {
                static_cast<uint32_t>(power_mode_state));
     return zx::error(ZX_ERR_BAD_STATE);
   }
-
-  InterruptStatusReg::Get().FromValue(flag).WriteTo(&mmio);
 
   return zx::ok();
 }

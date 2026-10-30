@@ -6,6 +6,8 @@
 #define SRC_DEVICES_BLOCK_DRIVERS_UFS_REGISTERS_H_
 
 #include <algorithm>
+#include <cstdint>
+#include <utility>
 
 #include <hwreg/bitfields.h>
 
@@ -14,7 +16,7 @@
 namespace ufs {
 
 // UFSHCI Specification Version 3.0, section 5.1 "Register Map".
-enum RegisterMap {
+enum RegisterMap : uint16_t {
   // Host Capabilities
   kCAP = 0x00,
   kVER = 0x08,
@@ -87,7 +89,7 @@ class VersionReg : public hwreg::RegisterBase<VersionReg, uint32_t, hwreg::Enabl
 class AutoHibernateIdleTimerReg
     : public hwreg::RegisterBase<AutoHibernateIdleTimerReg, uint32_t, hwreg::EnablePrinter> {
  public:
-  enum class Scale : uint32_t {
+  enum class Scale : uint8_t {
     k1us = 0,
     k10us = 1,
     k100us = 2,
@@ -97,16 +99,16 @@ class AutoHibernateIdleTimerReg
   };
 
   DEF_FIELD(9, 0, timer_value);
-  DEF_ENUM_FIELD(Scale, 12, 10, timer_scale);
+  DEF_ENUM_FIELD(Scale, 12, 10, timer_scale);  // NOLINT(modernize-use-to-underlying)
 
   static constexpr uint32_t kMaxTimerValue = 1023;
 
   static auto Get() { return hwreg::RegisterAddr<AutoHibernateIdleTimerReg>(RegisterMap::kAHIT); }
 
   static AutoHibernateIdleTimerReg FromTimeoutUs(uint32_t timeout_us) {
-    uint32_t scale = static_cast<uint32_t>(Scale::k1us);
+    uint8_t scale = std::to_underlying(Scale::k1us);
     uint32_t unit_us = 1;
-    while (scale < static_cast<uint32_t>(Scale::k100ms) && timeout_us > kMaxTimerValue * unit_us) {
+    while (scale < std::to_underlying(Scale::k100ms) && timeout_us > kMaxTimerValue * unit_us) {
       unit_us *= 10;
       scale++;
     }
@@ -173,13 +175,13 @@ class InterruptEnableReg
 class HostControllerStatusReg
     : public hwreg::RegisterBase<HostControllerStatusReg, uint32_t, hwreg::EnablePrinter> {
  public:
-  enum ErrorCode {
+  enum ErrorCode : uint8_t {
     kRejectUpiuHasInvalidTaskTagOrLun = 0,
     kInvalidUpiuType,
     kTrUpiuHasInvalidTaskTagOrLun,
     kTmrUpiuHasInvalidTaskTagOrLun,
   };
-  enum PowerModeStatus {
+  enum PowerModeStatus : uint8_t {
     kPowerOk = 0,
     kPowerLocal,
     kPowerRemote,
@@ -236,6 +238,10 @@ class HostUicErrorCodeDataLinkLayerReg
     return hwreg::RegisterAddr<HostUicErrorCodeDataLinkLayerReg>(RegisterMap::kUECDL);
   }
 };
+
+// UECDL error code bit for a PA_INIT error (UniPro DL_ErrorPAInit): the Data Link layer was
+// re-initialized, so in-flight frames are lost and the host controller must be reset.
+constexpr uint32_t kUicDataLinkLayerErrorPaInit = 1u << 13u;
 
 // UFSHCI Specification Version 3.0, section 5.3.7
 // "Offset 40h: UECN – Host UIC Error Code Network Layer".
@@ -385,7 +391,7 @@ class UtmrListRunStopReg
 // "Offset 90h: UICCMD – UIC Command".
 class UicCommandReg : public hwreg::RegisterBase<UicCommandReg, uint32_t, hwreg::EnablePrinter> {
  public:
-  DEF_ENUM_FIELD(UicCommandOpcode, 7, 0, command_opcode);
+  DEF_ENUM_FIELD(UicCommandOpcode, 7, 0, command_opcode);  // NOLINT(modernize-use-to-underlying)
 
   static auto Get() { return hwreg::RegisterAddr<UicCommandReg>(RegisterMap::kUICCMD); }
 };
@@ -408,12 +414,12 @@ class UicCommandArgument1Reg
 class UicCommandArgument2Reg
     : public hwreg::RegisterBase<UicCommandArgument2Reg, uint32_t, hwreg::EnablePrinter> {
  public:
-  enum GenericErrorCode {
+  enum GenericErrorCode : uint8_t {
     kSuccess = 0,
     kFailure = 1,
   };
 
-  DEF_ENUM_FIELD(AttrSetType, 23, 16, attr_set_type);
+  DEF_ENUM_FIELD(AttrSetType, 23, 16, attr_set_type);  // NOLINT(modernize-use-to-underlying)
   // Bits 7 to 1 are reserved. |result_code| is also used as a ConfigResultCode, but currently has
   // no use, so we only use it as a GenericErrorCode.
   DEF_ENUM_FIELD(GenericErrorCode, 7, 0, result_code);

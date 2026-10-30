@@ -11,6 +11,7 @@
 
 #include <optional>
 #include <type_traits>
+#include <utility>
 
 #include <safemath/checked_math.h>
 #include <safemath/safe_conversions.h>
@@ -235,101 +236,111 @@ void TransferRequestProcessor::SendRequestUsingSlot(
     uint64_t dma_length, fit::callback<void(zx_status_t)> completion_cb,
     block_server::internal::InlineCryptoOptions inline_crypto) {
   zx_status_t status = ZX_OK;
+  fit::callback<void(zx_status_t)> error_cb;
   {
     std::lock_guard<std::mutex> lock(slot_lock_);
     RequestSlot &request_slot = slots_.GetSlot(slot);
-    ZX_DEBUG_ASSERT_MSG(request_slot.state == SlotState::kReserved, "Invalid slot state");
+    if (request_slot.state != SlotState::kReserved ||
+        (slot != kAdminCommandSlotNumber && slot_allocation_blocked_)) {
+      request_slot.completion_cb = std::move(completion_cb);
+      status = ZX_ERR_CANCELED;
+    } else {
+      const uint16_t response_offset = request.GetResponseOffset();
+      const uint16_t response_length = request.GetResponseLength();
 
-    const uint16_t response_offset = request.GetResponseOffset();
-    const uint16_t response_length = request.GetResponseLength();
+      request_slot.completion_cb = std::move(completion_cb);
+      request_slot.data_vmo = std::move(data_vmo);
+      request_slot.dma_offset = dma_offset;
+      request_slot.dma_length = dma_length;
+      request_slot.is_read = (request.GetDataDirection() == DataDirection::kDeviceToHost);
+      request_slot.is_scsi_command = std::is_base_of_v<ScsiCommandUpiu, RequestType>;
+      request_slot.response_upiu_offset = response_offset;
 
-    request_slot.completion_cb = std::move(completion_cb);
-    request_slot.data_vmo = data_vmo;
-    request_slot.dma_offset = dma_offset;
-    request_slot.dma_length = dma_length;
-    request_slot.is_read = (request.GetDataDirection() == DataDirection::kDeviceToHost);
-    request_slot.is_scsi_command = std::is_base_of<ScsiCommandUpiu, RequestType>::value;
-    request_slot.response_upiu_offset = response_offset;
+      std::vector<zx_paddr_t> data_paddrs;
 
-    std::vector<zx_paddr_t> data_paddrs;
-
-    if (dma_length > 0) {
-      if (!request_slot.data_vmo->is_valid()) {
-        fdf::error("Invalid data VMO for transfer of length {}", dma_length);
-        status = ZX_ERR_BAD_HANDLE;
-      } else {
-        // Assign physical addresses(pin) to data vmo. The return value is the physical address of
-        // the pinned memory.
-        const uint32_t kPageSize = zx_system_get_page_size();
-        uint32_t option = request_slot.is_read ? ZX_BTI_PERM_WRITE : ZX_BTI_PERM_READ;
-
-        ZX_DEBUG_ASSERT(dma_length % kPageSize == 0);
-
-        data_paddrs.resize(dma_length / kPageSize, 0);
-        if (zx_status_t pin_status =
-                GetBti()->pin(option, *request_slot.data_vmo, dma_offset, dma_length,
-                              data_paddrs.data(), dma_length / kPageSize, &request_slot.pmt);
-            pin_status != ZX_OK) {
-          fdf::error("Failed to pin IO buffer: {}", zx_status_get_string(pin_status));
-          status = pin_status;
+      if (dma_length > 0) {
+        if (!request_slot.data_vmo->is_valid()) {
+          fdf::error("Invalid data VMO for transfer of length {}", dma_length);
+          status = ZX_ERR_BAD_HANDLE;
         } else {
-          // Ensure that any cached writes are written out to RAM before we issue the request.
-          // For writes, CLEAN is sufficient and cheaper. For reads, CLEAN_INVALIDATE ensures
-          // pending writes are flushed and cache lines are cleared before DMA.
-          uint32_t op =
-              request_slot.is_read ? ZX_VMO_OP_CACHE_CLEAN_INVALIDATE : ZX_VMO_OP_CACHE_CLEAN;
-          if (zx_status_t cache_status =
-                  request_slot.data_vmo->op_range(op, dma_offset, dma_length, nullptr, 0);
-              cache_status != ZX_OK) {
-            fdf::error("Failed to flush/invalidate cache for data VMO: {}",
-                       zx_status_get_string(cache_status));
-            status = cache_status;
+          // Assign physical addresses(pin) to data vmo. The return value is the physical address of
+          // the pinned memory.
+          const uint32_t kPageSize = zx_system_get_page_size();
+          uint32_t option = request_slot.is_read ? ZX_BTI_PERM_WRITE : ZX_BTI_PERM_READ;
+
+          ZX_DEBUG_ASSERT(dma_length % kPageSize == 0);
+
+          data_paddrs.resize(dma_length / kPageSize, 0);
+          if (zx_status_t pin_status =
+                  GetBti()->pin(option, *request_slot.data_vmo, dma_offset, dma_length,
+                                data_paddrs.data(), dma_length / kPageSize, &request_slot.pmt);
+              pin_status != ZX_OK) {
+            fdf::error("Failed to pin IO buffer: {}", zx_status_get_string(pin_status));
+            status = pin_status;
+          } else {
+            // Ensure that any cached writes are written out to RAM before we issue the request.
+            // For writes, CLEAN is sufficient and cheaper. For reads, CLEAN_INVALIDATE ensures
+            // pending writes are flushed and cache lines are cleared before DMA.
+            uint32_t op =
+                request_slot.is_read ? ZX_VMO_OP_CACHE_CLEAN_INVALIDATE : ZX_VMO_OP_CACHE_CLEAN;
+            if (zx_status_t cache_status =
+                    request_slot.data_vmo->op_range(op, dma_offset, dma_length, nullptr, 0);
+                cache_status != ZX_OK) {
+              fdf::error("Failed to flush/invalidate cache for data VMO: {}",
+                         zx_status_get_string(cache_status));
+              status = cache_status;
+            }
           }
+        }
+      }
+
+      if (status == ZX_OK) {
+        uint16_t prdt_offset = 0;
+        uint32_t prdt_entry_count = 0;
+        std::tie(prdt_offset, prdt_entry_count) = PreparePrdt<RequestType>(
+            request, lun, slot, data_paddrs, response_offset, response_length);
+
+        // Record the slot number to |task_tag| for debugging.
+        request.GetHeader().task_tag = slot;
+
+        // Copy request and prepare response.
+        const size_t length = static_cast<size_t>(response_offset) + response_length;
+        ZX_DEBUG_ASSERT_MSG(length <= slots_.GetDescriptorBufferSize(slot), "Invalid UPIU size");
+
+        CustomMemCpy(slots_.GetDescriptorBuffer(slot), request.GetData(), response_offset);
+        CustomMemSet(slots_.GetDescriptorBuffer<uint8_t>(slot) + response_offset, 0,
+                     response_length);
+
+        const bool reliable_write = (lun == std::to_underlying(WellKnownLuns::kRpmb) &&
+                                     request.GetDataDirection() == DataDirection::kHostToDevice);
+
+        if (zx::result<> result = FillDescriptorAndSendRequest(
+                slot, request.GetDataDirection(), response_offset, response_length, prdt_offset,
+                prdt_entry_count, reliable_write, inline_crypto);
+            result.is_error()) {
+          fdf::error("Failed to send upiu: {}", result);
+          status = result.status_value();
         }
       }
     }
 
-    if (status == ZX_OK) {
-      uint16_t prdt_offset = 0;
-      uint32_t prdt_entry_count = 0;
-      std::tie(prdt_offset, prdt_entry_count) = PreparePrdt<RequestType>(
-          request, lun, slot, data_paddrs, response_offset, response_length);
-
-      // Record the slot number to |task_tag| for debugging.
-      request.GetHeader().task_tag = slot;
-
-      // Copy request and prepare response.
-      const size_t length = static_cast<size_t>(response_offset) + response_length;
-      ZX_DEBUG_ASSERT_MSG(length <= slots_.GetDescriptorBufferSize(slot), "Invalid UPIU size");
-
-      CustomMemCpy(slots_.GetDescriptorBuffer(slot), request.GetData(), response_offset);
-      CustomMemSet(slots_.GetDescriptorBuffer<uint8_t>(slot) + response_offset, 0, response_length);
-
-      const bool reliable_write = (lun == static_cast<uint8_t>(WellKnownLuns::kRpmb) &&
-                                   request.GetDataDirection() == DataDirection::kHostToDevice);
-
-      if (zx::result<> result = FillDescriptorAndSendRequest(
-              slot, request.GetDataDirection(), response_offset, response_length, prdt_offset,
-              prdt_entry_count, reliable_write, inline_crypto);
-          result.is_error()) {
-        fdf::error("Failed to send upiu: {}", result);
-        status = result.status_value();
-      }
-    }
-
     if (status != ZX_OK) {
-      completion_cb = std::move(request_slot.completion_cb);
-      if (zx::result<> clear_res = ClearSlotLocked(request_slot); clear_res.is_error()) {
-        fdf::error("Failed to clear slot[{}]: {}", slot, clear_res);
+      error_cb = std::move(request_slot.completion_cb);
+      if (request_slot.state != SlotState::kFree) {
+        if (zx::result<> clear_res = ClearSlotLocked(request_slot); clear_res.is_error()) {
+          fdf::error("Failed to clear slot[{}]: {}", slot, clear_res);
+        }
+      } else {
+        request_slot.completion_cb = nullptr;
       }
     }
   }
 
-  // |completion_cb| is consumed once we've submitted the request; this is just used for the
-  // failure path to ensure the callback is invoked.
-  if (completion_cb) {
+  // |completion_cb| is consumed once we've submitted the request; |error_cb| is populated on the
+  // failure path to ensure the callback is invoked outside |slot_lock_|.
+  if (error_cb) {
     ZX_DEBUG_ASSERT(status != ZX_OK);
-    completion_cb(status);
+    error_cb(status);
   }
 }
 
@@ -542,8 +553,9 @@ uint32_t TransferRequestProcessor::ProcessCompletionOfAdminRequests() {
   zx_status_t status = ZX_OK;
   bool completed = false;
   {
-    std::lock_guard<std::mutex> lock(slot_lock_);
-    if (slots_.GetSlot(kAdminCommandSlotNumber).state != SlotState::kScheduled) {
+    std::scoped_lock lock(slot_lock_);
+    if (disable_completion_.load(std::memory_order_acquire) || controller_.IsHardwarePoweredOff() ||
+        slots_.GetSlot(kAdminCommandSlotNumber).state != SlotState::kScheduled) {
       return 0;
     }
     completed = ProcessSlotCompletion(kAdminCommandSlotNumber, ReadDoorBellRegister(), cb, status);
@@ -566,7 +578,10 @@ uint32_t TransferRequestProcessor::ProcessCompletionOfIoRequests() {
   uint32_t active_slots = 0;
   uint32_t doorbell = 0;
   {
-    std::lock_guard<std::mutex> lock(slot_lock_);
+    std::scoped_lock lock(slot_lock_);
+    if (disable_completion_.load(std::memory_order_acquire) || controller_.IsHardwarePoweredOff()) {
+      return 0;
+    }
     ForEachAllocatedSlotLocked(
         [&](uint8_t slot_num, RequestSlot &request_slot) {
           if (request_slot.state == SlotState::kScheduled) {
@@ -587,7 +602,11 @@ uint32_t TransferRequestProcessor::ProcessCompletionOfIoRequests() {
     fit::callback<void(zx_status_t)> cb;
     zx_status_t status = ZX_OK;
     {
-      std::lock_guard<std::mutex> lock(slot_lock_);
+      std::scoped_lock lock(slot_lock_);
+      if (disable_completion_.load(std::memory_order_acquire) ||
+          controller_.IsHardwarePoweredOff()) {
+        return completion_count;
+      }
       if (ProcessSlotCompletion(slot_num, doorbell, cb, status)) {
         completion_count++;
       }
