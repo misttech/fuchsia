@@ -104,7 +104,7 @@ func TestShouldBuild(t *testing.T) {
 		},
 		{
 			name:              "skipped",
-			files:             []string{"third_party/go/foo.go", "foo/bar.go"},
+			files:             []string{"third_party/golibs/foo.go", "foo/bar.go"},
 			expectNoCommand:   true,
 			expectShouldBuild: true,
 		},
