@@ -2,20 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/bazel/bazel_test_suite.gni")
-
-bazel_test_suite("bazel_tests") {
-  target_tests =
-      [ "//src/lib/fidl/rust/fidl_test_util:fidl_test_util_target_test" ]
-  host_tests = [ "//src/lib/fidl/rust/fidl_test_util:fidl_test_util_host_test" ]
-}
-
 group("tests") {
   testonly = true
   deps = [
-    ":bazel_tests",
     ":fidl_test_util_target_test",
-    ":fidl_test_util_test",
+    ":fidl_test_util_test($host_toolchain)",
   ]
 }
 
@@ -46,12 +37,16 @@ import("//build/tools/bazel2gn/bazel_migration.gni")
 
 rustc_library("fidl_test_util") {
   sources = [ "src/lib.rs" ]
+  crate_name = "fidl_test_util"
   edition = "2024"
   visibility = [
     ":*",
-    "//src/developer/*",
+    "//src/developer/ffx/plugins/audio/device:*",
+    "//src/developer/remote-control:*",
     "//src/media/audio/lib/rust:*",
-    "//src/session/*",
+    "//src/session/bin/element_manager:*",
+    "//src/session/bin/session_manager:*",
+    "//src/session/lib/realm_management:*",
     "//src/sys/lib/elf_runner:*",
     "//src/testing/sl4f:*",
   ]
@@ -79,9 +74,14 @@ rustc_test("fidl_test_util_test") {
            "//src/testing/fidl:placeholders_rust",
            "//src/testing/fidl:placeholders_rust_fdomain",
          ]
+  output_name = "fidl_test_util_lib_test"
 }
 fuchsia_unittest_package("fidl_test_util_target_test") {
   package_name = "fidl_test_util_target_test-gn"
   component_name = "fidl_test_util_target_test"
   deps = [ ":fidl_test_util_test" ]
+  visibility = [
+    ":*",
+    "//src/lib:*",
+  ]
 }

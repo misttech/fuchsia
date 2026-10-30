@@ -12,11 +12,15 @@ package(default_applicable_licenses = ["//:license"])
 rustc_library(
     name = "fidl_test_util",
     srcs = ["src/lib.rs"],
+    crate_name = "fidl_test_util",
     edition = "2024",
     visibility = [
-        "//src/developer:__subpackages__",
+        "//src/developer/ffx/plugins/audio/device:__pkg__",
+        "//src/developer/remote-control:__pkg__",
         "//src/media/audio/lib/rust:__pkg__",
-        "//src/session:__subpackages__",
+        "//src/session/bin/element_manager:__pkg__",
+        "//src/session/bin/session_manager:__pkg__",
+        "//src/session/lib/realm_management:__pkg__",
         "//src/sys/lib/elf_runner:__pkg__",
         "//src/testing/sl4f:__pkg__",
     ],
@@ -32,6 +36,7 @@ rustc_library(
 rustc_test(
     name = "fidl_test_util_test",
     crate = ":fidl_test_util",
+    crate_name = "fidl_test_util_lib_test",
     edition = "2024",
     deps = [
         "//src/lib/fdomain/local",
@@ -44,9 +49,12 @@ rustc_test(
 wrap_host_rust_test(
     name = "fidl_test_util_host_test",
     binary_name = "fidl_test_util_test",
+    visibility = ["//src/lib:__pkg__"],
 )
 
 fx_unittest_package(
     name = "fidl_test_util_target_test",
+    package_name = "fidl_test_util_target_test",
     unit_tests = [":fidl_test_util_test"],
+    visibility = ["//src/lib:__pkg__"],
 )
