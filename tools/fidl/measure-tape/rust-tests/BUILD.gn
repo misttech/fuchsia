@@ -2,11 +2,14 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/bazel_test_suite.gni")
 import("//build/components.gni")
 import("//build/rust/rustc_test.gni")
 import("//src/tests/fidl/conformance_suite/gidl-conformance-suite.gni")
 import("//tools/fidl/gidl/gidl.gni")
 import("//tools/fidl/measure-tape/measure_tape.gni")
+
+# LINT.IfChange
 
 # Types to enable for Rust measure tape tests.
 # Ideally this wouldn't be needed and all tests would be enabled
@@ -20,6 +23,7 @@ import("//tools/fidl/measure-tape/measure_tape.gni")
 #   | xargs printf "\"test.conformance/%s\",\n"
 #   | sort
 supported_conformance_types = [
+  "test.conformance/AnEmptyStructInStruct",
   "test.conformance/ArrayWithInternalPadding",
   "test.conformance/Bounded32NonnullableString",
   "test.conformance/Bounded32NonnullableVectorOfUint32s",
@@ -93,7 +97,6 @@ supported_conformance_types = [
   "test.conformance/MyUint64",
   "test.conformance/MyUint8",
   "test.conformance/NodeAttributes",
-  "test.conformance/AnEmptyStructInStruct",
   "test.conformance/OneLayerStructNoPaddingAlign4",
   "test.conformance/OneLayerStructNoPaddingAlign8",
   "test.conformance/OneLayerStructWithBool",
@@ -348,10 +351,21 @@ rustc_test("fidl_rust_measure_tape_tests_bin") {
 }
 
 fuchsia_unittest_package("fidl_rust_measure_tape_tests") {
+  package_name = "fidl_rust_measure_tape_tests-gn"
   deps = [ ":fidl_rust_measure_tape_tests_bin" ]
+}
+
+# LINT.ThenChange(//tools/fidl/measure-tape/rust-tests/BUILD.bazel)
+
+bazel_test_suite("bazel_tests") {
+  target_tests =
+      [ "//tools/fidl/measure-tape/rust-tests:fidl_rust_measure_tape_tests" ]
 }
 
 group("rust-tests") {
   testonly = true
-  deps = [ ":fidl_rust_measure_tape_tests" ]
+  deps = [
+    ":bazel_tests",
+    ":fidl_rust_measure_tape_tests",
+  ]
 }
