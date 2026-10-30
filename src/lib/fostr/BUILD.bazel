@@ -1,0 +1,50 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "fostr",
+    srcs = [
+        "fidl_types.cc",
+        "hex_dump.cc",
+        "zx_types.cc",
+    ],
+    hdrs = [
+        "fidl_types.h",
+        "hex_dump.h",
+        "indent.h",
+        "zx_types.h",
+    ],
+    implementation_deps = [":fostr_shared"],
+    visibility = [
+        "//src/connectivity/network/mdns/service:__pkg__",
+        "//src/connectivity/network/mdns/util:__pkg__",
+        "//src/connectivity/network/testing/netemul/network-context/lib:__pkg__",
+        "//src/developer/forensics/testing:__pkg__",
+        "//src/lib/fostr:__subpackages__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = select({
+        "@platforms//os:fuchsia": [
+            "//sdk/lib/fidl/hlcpp",
+            "//zircon/system/ulib/zx",
+        ],
+        "//conditions:default": ["//sdk/lib/fidl/hlcpp:hlcpp_base"],
+    }),
+    # Keeps the GN target a `source_set` when synced via bazel2gn.
+    alwayslink = True,
+)
+
+# Bazel-only counterpart of the GN `shared_library("fostr_shared")`, which
+# stays hand-written in BUILD.gn.
+# @bazel2gn:skip
+fx_cc_library(
+    name = "fostr_shared",
+    srcs = ["indent.cc"],
+    hdrs = ["indent.h"],
+    visibility = ["//visibility:private"],
+)
