@@ -20,6 +20,7 @@ pub const fn arm_smc_get_service_call_num_from_func_id(func_id: u32) -> u32 {
 
 // Fast Call: ARM SMCCC w0 encodes the function ID.
 // ARM SMCCC w0[31] is 1 for Fast Calls.
+#[cfg(any(target_arch = "aarch64", ktest))]
 #[inline]
 pub const fn is_smccc_fast_call(function_id: u32) -> bool {
     (function_id & (1 << 31)) != 0

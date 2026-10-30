@@ -9,6 +9,7 @@
 #include <lib/kconcurrent/chainlock.h>
 #include <lib/kconcurrent/chainlock_transaction.h>
 #include <lib/object-constants.h>
+#include <lib/page-map.h>
 #include <lib/stall.h>
 #include <zircon/types.h>
 
@@ -58,6 +59,7 @@ static_assert(static_cast<int>(ThreadStallState::Inactive) == 1);
 static_assert(static_cast<int>(ThreadStallState::Progressing) == 2);
 static_assert(static_cast<int>(ThreadStallState::Stalling) == 3);
 // LINT.ThenChange(//zircon/kernel/kernel/thread.rs:ThreadStallState)
+// NOLINTBEGIN(bugprone-signed-bitwise)
 // LINT.IfChange(thread_flags_and_signals)
 // Keep THREAD_FLAG_* and THREAD_SIGNAL_* in sync with Rust's constants.
 static_assert(THREAD_FLAG_DETACHED == 1 << 0);
@@ -77,6 +79,7 @@ static_assert(THREAD_SIGNAL_POLICY_KILL == 1 << 6);
 //   //zircon/kernel/include/kernel/thread.h:thread_flags_and_signals,
 //   //zircon/kernel/kernel/thread.rs:thread_flags_and_signals,
 // )
+// NOLINTEND(bugprone-signed-bitwise)
 
 // Rust `ChainLock` is a 16-byte pair of atomics (lock token and contention state) with 8-byte
 // alignment; the layout must match because Rust accesses it directly.
@@ -109,7 +112,6 @@ Thread* cpp_thread_create_with_profile(const char* name_ptr, size_t name_len,
                                        const SchedulerState::BaseProfile* profile);
 void cpp_thread_resume(Thread* thread);
 zx_status_t cpp_thread_join(Thread* thread, int* out_retcode, zx_instant_mono_t deadline);
-void cpp_thread_forget(Thread* thread);
 void cpp_thread_current_yield();
 void cpp_thread_kill(Thread* thread);
 zx_status_t cpp_thread_suspend(Thread* thread);
@@ -135,8 +137,6 @@ void cpp_thread_current_memory_allocation_state_disable();
 bool cpp_thread_current_memory_allocation_state_is_enabled();
 void cpp_thread_current_signal_policy_exception(uint32_t policy_exception_code,
                                                 uint32_t policy_exception_data);
-void cpp_thread_set_ready(Thread* thread) TA_NO_THREAD_SAFETY_ANALYSIS;
-Thread* cpp_unblock_list_pop_back(Thread::UnblockList* list);
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE Thread* cpp_thread_create_default(const char* name, thread_start_routine entry,
@@ -238,7 +238,8 @@ FFI_ALWAYS_INLINE void cpp_thread_lock_guard_init(ffi::Uninitialized<ThreadLockG
                                                   uint32_t line) {
   DEBUG_ASSERT(guard != nullptr);
   DEBUG_ASSERT(thread != nullptr);
-  guard->Initialize(thread, ChainLockTransaction::CallsiteInfo{label, line});
+  guard->Initialize(thread,
+                    ChainLockTransaction::CallsiteInfo{.label = label, .line_number = line});
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
@@ -359,12 +360,12 @@ FFI_ALWAYS_INLINE VmAspace* cpp_thread_current_switch_aspace(VmAspace* aspace) {
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_thread_current_memory_allocation_state_enable() {
-  return Thread::Current::memory_allocation_state().Enable();
+  Thread::Current::memory_allocation_state().Enable();
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_thread_current_memory_allocation_state_disable() {
-  return Thread::Current::memory_allocation_state().Disable();
+  Thread::Current::memory_allocation_state().Disable();
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
@@ -626,4 +627,25 @@ Thread* cpp_thread_create_for_test() {
 
 void cpp_thread_destroy_for_test(Thread* t) { delete t; }
 #endif
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_current_reset_rseq() {
+  Thread::Current::Get()->set_rseq_accessor({});
+}
+
+zx_status_t cpp_thread_current_set_rseq(VmObjectPaged* vmo_paged_raw, uint64_t offset) {
+  fbl::RefPtr<VmObjectPaged> vmo_paged = fbl::ImportFromRawPtr(vmo_paged_raw);
+  zx::result<page_map::Accessor<zx_rseq_t>> accessor =
+      page_map::PageMap::Get().MakeAccessor<zx_rseq_t>(ktl::move(vmo_paged), offset);
+  if (accessor.is_error()) {
+    return accessor.error_value();
+  }
+
+  Thread* const current_thread = Thread::Current::Get();
+  current_thread->set_rseq_accessor(ktl::move(*accessor));
+  // Set the thread signal to ensure we write out the cpu_id field before returning to user mode.
+  current_thread->SignalCheckRestartableSequenceIfNeeded();
+  return ZX_OK;
+}
+
 }  // extern "C"

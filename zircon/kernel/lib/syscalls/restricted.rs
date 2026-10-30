@@ -50,12 +50,8 @@ pub fn sys_restricted_bind_state(
     // Are we allowed to create a VMO?
     ProcessDispatcher::with_current(|up| up.enforce_basic_policy(ZX_POL_NEW_VMO))?;
 
-    // Check if user provided an exception report pointer.
-    let exception_ptr =
-        if !out_exception.is_null() { out_exception.as_ptr() } else { core::ptr::null_mut() };
-
     // Create the restricted state.
-    let rs = RestrictedState::create_from_raw(exception_ptr)?;
+    let rs = RestrictedState::create(core::ptr::NonNull::new(out_exception.as_ptr()))?;
 
     // Wrap the VMO in a VmObjectDispatcher so we can give a handle back to the user.
     let vmo = rs.vmo();

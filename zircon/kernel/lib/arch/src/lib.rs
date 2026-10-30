@@ -10,16 +10,16 @@ pub mod x86;
 
 #[cfg(target_arch = "aarch64")]
 pub use arm64::{
-    cycles, device_memory_barrier, store_memory_barrier, thread_memory_barrier, r#yield,
-    yield_processor,
+    cycles, device_memory_barrier, serialize_instructions, store_memory_barrier,
+    thread_memory_barrier, r#yield, yield_processor,
 };
 #[cfg(target_arch = "riscv64")]
 pub use riscv64::{
-    cycles, device_memory_barrier, store_memory_barrier, thread_memory_barrier, r#yield,
-    yield_processor,
+    cycles, device_memory_barrier, serialize_instructions, store_memory_barrier,
+    thread_memory_barrier, r#yield, yield_processor,
 };
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub use x86::{
-    cycles, device_memory_barrier, store_memory_barrier, thread_memory_barrier, r#yield,
-    yield_processor,
+    cycles, device_memory_barrier, serialize_instructions, store_memory_barrier,
+    thread_memory_barrier, r#yield, yield_processor,
 };

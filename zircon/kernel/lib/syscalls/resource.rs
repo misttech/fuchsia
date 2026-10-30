@@ -10,7 +10,6 @@ use crate::object::{
 };
 use crate::user_copy::UserInPtr;
 use core::mem::MaybeUninit;
-use page;
 use syscalls_macro::syscall;
 use zx_status::Status;
 use zx_types::{

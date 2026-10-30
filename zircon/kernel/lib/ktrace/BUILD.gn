@@ -21,7 +21,6 @@ source_set("ktrace") {
     "//zircon/kernel/lib/io:headers",
     "//zircon/kernel/lib/ktl",
     "//zircon/kernel/lib/percpu_writer",
-    "//zircon/kernel/lib/syscalls:headers",
     "//zircon/kernel/object:headers",
     "//zircon/system/ulib/zircon-internal",
   ]

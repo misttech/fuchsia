@@ -19,7 +19,6 @@ source_set("hypervisor") {
     "//zircon/kernel/hypervisor:headers",
     "//zircon/kernel/lib/boot-options",
     "//zircon/kernel/lib/page",
-    "//zircon/kernel/lib/syscalls:headers",
     "//zircon/kernel/platform/pc",
   ]
 }

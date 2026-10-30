@@ -5,6 +5,8 @@
 // https://opensource.org/licenses/MIT
 
 use crate::user_copy::{UserInPtr, UserOutPtr};
+use core::ops::{Deref, DerefMut};
+use explicit_memory::mandatory_memset;
 use syscalls_macro::syscall;
 use zx_status::Status;
 use zx_types::{ZX_CPRNG_ADD_ENTROPY_MAX_LEN, ZX_CPRNG_DRAW_MAX_LEN};
@@ -13,13 +15,10 @@ const MAX_CPRNG_DRAW: usize = ZX_CPRNG_DRAW_MAX_LEN;
 const MAX_CPRNG_SEED: usize = ZX_CPRNG_ADD_ENTROPY_MAX_LEN;
 
 unsafe extern "C" {
-    fn mandatory_memset(dst: *mut u8, c: core::ffi::c_int, n: usize) -> *mut u8;
     fn cpp_global_prng_is_thread_safe() -> bool;
     fn cpp_global_prng_draw(buffer: *mut u8, len: usize);
     fn cpp_global_prng_add_entropy(buffer: *const u8, len: usize);
 }
-
-use core::ops::{Deref, DerefMut};
 
 struct ZeroOnDrop<'a, T>(&'a mut [T]);
 

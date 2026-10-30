@@ -49,6 +49,17 @@ pub fn store_memory_barrier() {
     }
 }
 
+/// Force the processor to complete all modifications to register state and
+/// memory by previous instructions before the next instruction is fetched.
+#[inline(always)]
+pub fn serialize_instructions() {
+    // SAFETY: `fence.i` synchronizes the instruction and data streams without modifying
+    // memory or register state.
+    unsafe {
+        asm!("fence.i", options(nostack, preserves_flags));
+    }
+}
+
 /// Return the current CPU cycle count.
 #[inline(always)]
 pub fn cycles() -> u64 {

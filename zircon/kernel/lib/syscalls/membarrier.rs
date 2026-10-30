@@ -7,11 +7,6 @@
 use crate::kernel::mp::{self, MpIpiTarget};
 use syscalls_macro::syscall;
 
-unsafe extern "C" {
-    fn cpp_membarrier_data_barrier();
-    fn cpp_membarrier_instruction_barrier();
-}
-
 /// Issue a data membarrier on all running threads within this process.
 #[syscall]
 pub fn sys_membarrier_sync_process_data() {
@@ -19,8 +14,7 @@ pub fn sys_membarrier_sync_process_data() {
     // the calling process (specifically the calling thread's futex context). For now, just
     // issue a barrier to all running CPUs via kernel::mp::sync_exec.
     mp::sync_exec(MpIpiTarget::All, 0, || {
-        // SAFETY: cpp_membarrier_data_barrier executes a local architecture memory barrier.
-        unsafe { cpp_membarrier_data_barrier() }
+        libarch::thread_memory_barrier();
     });
 }
 
@@ -31,8 +25,8 @@ pub fn sys_membarrier_sync_process_insn() {
     // the calling process (specifically the calling thread's futex context). For now, just
     // issue a barrier to all running CPUs via kernel::mp::sync_exec.
     mp::sync_exec(MpIpiTarget::All, 0, || {
-        // SAFETY: cpp_membarrier_instruction_barrier executes a local memory barrier and
-        // architecture instruction stream serialization barrier.
-        unsafe { cpp_membarrier_instruction_barrier() }
+        // All architectures require a memory barrier before serializing the instruction stream.
+        libarch::thread_memory_barrier();
+        libarch::serialize_instructions();
     });
 }

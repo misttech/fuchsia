@@ -164,6 +164,11 @@ unsafe extern "C" {
     fn cpp_thread_create_for_test() -> *mut Thread;
     #[cfg(ktest)]
     fn cpp_thread_destroy_for_test(thread: *mut Thread);
+    fn cpp_thread_current_reset_rseq();
+    fn cpp_thread_current_set_rseq(
+        vmo_paged_raw: *mut crate::vm::vm_object_paged::VmObjectPaged,
+        offset: u64,
+    ) -> zx_status_t;
 }
 
 /// Stall accounting state of a thread.
@@ -3094,6 +3099,24 @@ pub fn current_exit(retcode: i32) -> ! {
 pub fn current_kill() {
     // SAFETY: `Thread::Current::Kill` only raises a signal on the calling thread.
     unsafe { cpp_thread_current_kill() }
+}
+
+/// Clears the restartable sequence (rseq) registration for the current thread.
+pub fn current_reset_rseq() {
+    // SAFETY: `Thread::Current::Get()` is valid on the calling thread.
+    unsafe { cpp_thread_current_reset_rseq() }
+}
+
+/// Registers a restartable sequence (rseq) for the current thread at `offset` within `vmo_paged`.
+pub fn current_set_rseq(
+    vmo_paged: fbl::RefPtr<crate::vm::vm_object_paged::VmObjectPaged>,
+    offset: u64,
+) -> Result<(), Status> {
+    // SAFETY: `RefPtr::into_raw` transfers the owned reference to `cpp_thread_current_set_rseq`,
+    // which adopts it via `fbl::ImportFromRawPtr`.
+    Status::ok(unsafe {
+        cpp_thread_current_set_rseq(fbl::RefPtr::into_raw(vmo_paged).cast_mut(), offset)
+    })
 }
 
 /// The current thread's [`PreemptionState`] (`Thread::Current::preemption_state()`), as a pointer

@@ -12,7 +12,6 @@
 #include <lib/fxt/interned_string.h>
 #include <lib/io.h>
 #include <lib/ktrace.h>
-#include <lib/syscalls/zx-syscall-numbers.h>
 #include <lib/zircon-internal/thread_annotations.h>
 #include <platform.h>
 #include <string.h>

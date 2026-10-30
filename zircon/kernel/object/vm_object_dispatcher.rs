@@ -23,7 +23,6 @@ use debug::ltracef;
 use fbl::{Canary, RefPtr};
 use ksync::{KMutex, LockToken, RawCriticalMutex, guarded};
 use object_constants_rs as object_constants;
-use page;
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zx_status::Status;
 use zx_types::{

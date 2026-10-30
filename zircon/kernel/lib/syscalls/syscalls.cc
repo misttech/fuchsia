@@ -10,7 +10,6 @@
 #include <lib/syscalls/safe-syscall-argument.h>
 #include <lib/syscalls/zx-syscall-numbers.h>
 #include <lib/userabi/vdso.h>
-#include <platform.h>
 #include <stdint.h>
 #include <trace.h>
 #include <zircon/errors.h>
@@ -47,14 +46,14 @@ struct SyscallNameRefEntry {
 #define INTERNAL_SYSCALL(...) KERNEL_SYSCALL(__VA_ARGS__)
 #define BLOCKING_SYSCALL(...) KERNEL_SYSCALL(__VA_ARGS__)
 
-#if defined(__clang__)
+#ifdef __clang__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wc99-designator"
 #endif
 SyscallNameRefEntry kSyscallNameRefs[] = {
 #include <lib/syscalls/kernel.inc>
 };
-#if defined(__clang__)
+#ifdef __clang__
 #pragma GCC diagnostic pop
 #endif
 
@@ -64,11 +63,6 @@ __NO_INLINE int sys_invalid_syscall(uint64_t num, uint64_t pc, uintptr_t vdso_co
                                          static_cast<uint32_t>(num));
   return ZX_ERR_BAD_SYSCALL;
 }
-
-struct syscall_pre_out {
-  uintptr_t vdso_code_address;
-  ProcessDispatcher* current_process;
-};
 
 inline fxt::StringRef<fxt::RefType::kId> syscall_name_ref(uint64_t syscall_num) {
   if (syscall_num < ktl::size(kSyscallNameRefs)) {
@@ -83,7 +77,7 @@ inline fxt::StringRef<fxt::RefType::kId> syscall_name_ref(uint64_t syscall_num) 
 
 // Try to do as much as possible in the shared preamble code to maximize code reuse
 // between syscalls.
-__NO_INLINE syscall_pre_out do_syscall_pre(uint64_t syscall_num, uint64_t pc) {
+__NO_INLINE uintptr_t do_syscall_pre(uint64_t syscall_num, uint64_t pc) {
   KTRACE_DURATION_BEGIN_LABEL_REF("kernel:syscall", syscall_name_ref(syscall_num));
 
   CPU_STATS_INC(syscalls);
@@ -96,10 +90,7 @@ __NO_INLINE syscall_pre_out do_syscall_pre(uint64_t syscall_num, uint64_t pc) {
   LTRACEF_LEVEL(2, "t %p syscall %s ip/pc %#" PRIx64 "\n", Thread::Current::Get(),
                 kSyscallNames[syscall_num], pc);
 
-  ProcessDispatcher* current_process = ProcessDispatcher::GetCurrent();
-  uintptr_t vdso_code_address = current_process->vdso_code_address();
-
-  return {vdso_code_address, current_process};
+  return ProcessDispatcher::GetCurrent()->vdso_code_address();
 }
 
 __NO_INLINE syscall_result do_syscall_post(uint64_t ret, uint64_t syscall_num) {
@@ -117,10 +108,8 @@ __NO_INLINE syscall_result do_syscall_post(uint64_t ret, uint64_t syscall_num) {
   KTRACE_DURATION_END_LABEL_REF("kernel:syscall", syscall_name_ref(syscall_num));
 
   // The assembler caller will re-disable interrupts at the appropriate time.
-  return {ret, Thread::Current::Get()->IsSignaled()};
+  return {.status = ret, .is_signaled = Thread::Current::Get()->IsSignaled()};
 }
-
-}  // namespace
 
 // Stamped out syscall veneer routine for every syscall. Try to maximize shared code by forcing
 // most of the setup and teardown code into non-inlined preamble and postamble code.
@@ -128,9 +117,7 @@ template <typename T>
 inline syscall_result do_syscall(uint64_t syscall_num, uint64_t pc, bool (*valid_pc)(uintptr_t),
                                  T make_call) {
   // Call the shared preamble code
-  auto pre_ret = do_syscall_pre(syscall_num, pc);
-  const uintptr_t vdso_code_address = pre_ret.vdso_code_address;
-  ProcessDispatcher* current_process = pre_ret.current_process;
+  const uintptr_t vdso_code_address = do_syscall_pre(syscall_num, pc);
 
   // Validate the user space program counter originated from the vdso at the proper location,
   // otherwise call through to the invalid syscall handler
@@ -139,18 +126,20 @@ inline syscall_result do_syscall(uint64_t syscall_num, uint64_t pc, bool (*valid
     ret = sys_invalid_syscall(syscall_num, pc, vdso_code_address);
   } else {
     // Per syscall inlined routine to marshall args appropriately
-    ret = make_call(current_process);
+    ret = make_call();
   }
 
   // Call through to the shared postamble code
   return do_syscall_post(ret, syscall_num);
 }
 
+}  // namespace
+
 // Called when an out of bounds syscall number is passed from user space
 syscall_result unknown_syscall(uint64_t syscall_num, uint64_t pc) {
   return do_syscall(
       syscall_num, pc, [](uintptr_t) { return false; },
-      [&](ProcessDispatcher*) {
+      [] {
         __builtin_unreachable();
         return ZX_ERR_INTERNAL;
       });

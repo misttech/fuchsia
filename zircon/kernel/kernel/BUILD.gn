@@ -69,6 +69,7 @@ source_set("kernel") {
     "//zircon/kernel/lib/mmu_rcu",
     "//zircon/kernel/lib/object-constants:headers",
     "//zircon/kernel/lib/page",
+    "//zircon/kernel/lib/page-map",
     "//zircon/kernel/lib/power-management",
     "//zircon/kernel/lib/sched",
     "//zircon/kernel/lib/stall",

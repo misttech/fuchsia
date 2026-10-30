@@ -31,7 +31,7 @@ SafeSyscallArgument<{{ ParameterType . }}>::RawType arg_{{ LowerCaseWithUndersco
 uint64_t pc) {
     return do_syscall(
         ZX_SYS_{{ $syscallName }}, pc, &VDso::ValidSyscallPC::{{ $syscallName }},
-        [&](ProcessDispatcher* current_process) -> uint64_t {
+        [&]() -> uint64_t {
 {{/* Write out locals for the ouput handles */}}
 {{- range $userOutHandles }}
     zx_handle_t out_handle_{{ LowerCaseWithUnderscores . }} = ZX_HANDLE_INVALID;

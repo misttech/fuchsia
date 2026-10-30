@@ -109,13 +109,6 @@ impl RestrictedState {
         .map_err(|_| Status::NO_MEMORY)
     }
 
-    /// Create a new `RestrictedState` from a raw `zx_exception_report_t` pointer.
-    pub fn create_from_raw(
-        exception_report_ptr: *mut zx_exception_report_t,
-    ) -> Result<Box<Self>, Status> {
-        Self::create(NonNull::new(exception_report_ptr))
-    }
-
     /// Return whether the thread is currently in restricted mode.
     pub fn in_restricted(&self) -> bool {
         self.in_restricted

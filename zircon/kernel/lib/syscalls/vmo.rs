@@ -17,7 +17,6 @@ use crate::vm::vm_object::{SupplyOptions, VmObject};
 use crate::vm::vm_object_paged::VmObjectPaged;
 use crate::vm::vm_page_list::VmPageSpliceList;
 use debug::ltracef;
-use page;
 use pin_init::stack_pin_init;
 use syscalls_macro::syscall;
 use zx_status::Status;

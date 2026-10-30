@@ -195,6 +195,13 @@ pub fn store_memory_barrier() {
     }
 }
 
+/// Force the processor to complete all modifications to register state and
+/// memory by previous instructions before the next instruction is fetched.
+#[inline(always)]
+pub fn serialize_instructions() {
+    isb();
+}
+
 /// Return the current CPU cycle count.
 #[inline(always)]
 pub fn cycles() -> u64 {
