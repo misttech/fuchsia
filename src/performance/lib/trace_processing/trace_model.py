@@ -17,6 +17,10 @@
 #   * Empty args are stored as a single shared, empty, read-only mapping, and
 #     non-empty args are wrapped in a read-only view rather than copied, so
 #     neither reading args nor constructing an event allocates a dict.
+#   * Event interns its category and name with sys.intern(). A trace has few
+#     distinct values for these, but the importers create a new string object
+#     for every event, so without interning each event carries its own copy.
+#     Interned strings are not immortal, so they are freed with the model.
 #
 # Nothing enforces the __slots__ convention. If that ever becomes necessary,
 # add a test that walks Event.__subclasses__() and
@@ -25,6 +29,7 @@
 
 import copy
 import enum
+import sys
 import typing
 from collections.abc import Iterator, Mapping, Sequence
 from functools import total_ordering
@@ -91,8 +96,11 @@ class Event:
         tid: int,
         args: Mapping[str, Any] | None,
     ) -> None:
-        self.category = category
-        self.name = name
+        # Intern category and name: a trace has few distinct values for each
+        # but the importers produce a separate string object per event. See
+        # "Memory layout of the model classes" at the top of this file.
+        self.category = sys.intern(category)
+        self.name = sys.intern(name)
         self.start = start
         self.pid = pid
         self.tid = tid
