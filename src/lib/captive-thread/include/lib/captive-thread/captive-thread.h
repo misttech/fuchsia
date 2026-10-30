@@ -230,7 +230,7 @@ class CaptiveThread {
   zx::channel channel_;
   zx::exception exception_;
   zx::suspend_token suspend_;
-  zx_thread_state_general_regs_t exit_regs_;
+  zx_thread_state_general_regs_t exit_regs_ = {};
   std::optional<zx_exception_report_t> exception_report_;
   RegsTuple stopped_regs_;
   std::unique_ptr<FakeStep> fake_step_;

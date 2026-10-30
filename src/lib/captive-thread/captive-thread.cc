@@ -182,6 +182,13 @@ uint64_t Checkpoint(zx_thread_state_general_regs_t& exit_regs) {
   __asm__("mov %%rax, %cc0(%%rdi)" : : "i"(offsetof(zx_thread_state_general_regs_t, fs_base)));
   __asm__("movq $0, %cc0(%%rdi)" : : "i"(offsetof(zx_thread_state_general_regs_t, gs_base)));
 
+  // Use zero for %rflags, as the AArch64 version does for CPSR.  The kernel
+  // fills in the mandatory bits.  Leaving this slot unwritten would restore
+  // whatever stale value was in memory; if that happened to have TF set, the
+  // thread would take a single-step exception on the exit path after its
+  // exception channel has already been unbound, and so crash the process.
+  __asm__("movq $0, %cc0(%%rdi)" : : "i"(offsetof(zx_thread_state_general_regs_t, rflags)));
+
   // Clear the return value register and return here.  On resumption below,
   // that register will be reloaded with the saved return address.
   __asm__("xor %eax, %eax");
