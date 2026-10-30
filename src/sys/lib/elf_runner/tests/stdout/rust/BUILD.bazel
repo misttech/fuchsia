@@ -1,0 +1,82 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "bin",
+    srcs = ["src/main.rs"],
+    crate_name = "prints_when_launched_rust",
+    edition = "2024",
+    tags = ["manual"],
+)
+
+fx_packaged_binary(
+    name = "bin_packaged_bin",
+    binary = ":bin",
+    binary_name = "prints_when_launched_rust",
+)
+
+fx_component_manifest(
+    name = "logs-stdout-and-stderr-rust-manifest",
+    component_name = "logs-stdout-and-stderr-rust",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/logs_stdout_and_stderr_rust.cml",
+)
+
+fx_component(
+    name = "logs-stdout-and-stderr-rust",
+    compiled_manifest = ":logs-stdout-and-stderr-rust-manifest",
+    deps = [":bin_packaged_bin"],
+)
+
+fx_component_manifest(
+    name = "logs-default-rust-manifest",
+    component_name = "logs-default-rust",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/logs_default_rust.cml",
+)
+
+fx_component(
+    name = "logs-default-rust",
+    compiled_manifest = ":logs-default-rust-manifest",
+    deps = [":bin_packaged_bin"],
+)
+
+fx_component_manifest(
+    name = "logs-stdout-rust-manifest",
+    component_name = "logs-stdout-rust",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/logs_stdout_rust.cml",
+)
+
+fx_component(
+    name = "logs-stdout-rust",
+    compiled_manifest = ":logs-stdout-rust-manifest",
+    deps = [":bin_packaged_bin"],
+)
+
+fx_component_manifest(
+    name = "logs-stderr-rust-manifest",
+    component_name = "logs-stderr-rust",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/logs_stderr_rust.cml",
+)
+
+fx_component(
+    name = "logs-stderr-rust",
+    compiled_manifest = ":logs-stderr-rust-manifest",
+    deps = [":bin_packaged_bin"],
+)
